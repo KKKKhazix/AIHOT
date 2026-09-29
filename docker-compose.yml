@@ -55,6 +55,9 @@ services:
   worker:
     <<: *app
     command: ["node", "apps/worker/src/main.ts"]
+    # On stop the worker lets a paid call in flight finish (STOP_TIMEOUT_MS, 195 s); Docker's default
+    # 10 s would kill it mid-call and leave "outcome unknown" receipts that are paid for again.
+    stop_grace_period: 210s
     depends_on:
       setup:
         condition: service_completed_successfully

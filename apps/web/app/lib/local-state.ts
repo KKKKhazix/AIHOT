@@ -1,6 +1,7 @@
 // Reader state kept only in this browser; nothing about a reader leaves it. Storage failures degrade
 // silently. Keep the keys and formats once readers have data under them.
 import { useSyncExternalStore } from "react";
+import { beijingDate } from "@aihot/contracts/time";
 
 export const KEYS = {
   starred: "aihot-starred-items",
@@ -106,14 +107,25 @@ function isStarredItem(v: unknown): v is LocalStarredItem {
   return typeof o.id === "string" && ID_PATTERN.test(o.id) && typeof o.title === "string";
 }
 
+/** Imported and already stored dates must be representable in the page's display timezone. */
+function isDisplayableDate(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    beijingDate(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function normalizeStarred(v: Record<string, unknown>): LocalStarredItem {
   return {
     id: String(v.id),
     title: String(v.title),
     summary: typeof v.summary === "string" ? v.summary : null,
     sourceName: typeof v.sourceName === "string" ? v.sourceName : "",
-    savedAt: typeof v.savedAt === "string" ? v.savedAt : new Date().toISOString(),
-    publishedAt: typeof v.publishedAt === "string" ? v.publishedAt : null,
+    savedAt: isDisplayableDate(v.savedAt) ? v.savedAt : new Date().toISOString(),
+    publishedAt: isDisplayableDate(v.publishedAt) ? v.publishedAt : null,
     score: typeof v.score === "number" ? v.score : null,
     aiSelected: v.aiSelected === true,
   };

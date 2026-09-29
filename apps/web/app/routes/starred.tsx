@@ -48,7 +48,7 @@ export default function StarredPage() {
     const blob = new Blob([JSON.stringify(exportBundle(), null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `aihot-local-data-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `${SITE.mcpPrefix}-local-data-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
   };

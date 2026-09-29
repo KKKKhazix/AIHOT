@@ -90,6 +90,24 @@ test("another source listing the same article records a discovery, not a revisio
   assert.ok(found.some((d) => d.source_id === OTHER), "the other source still counts as a discovery");
 });
 
+test("an article linking to a tweet is stored separately from the tweet", async () => {
+  const tweetId = `${Date.now()}123456`;
+  const url = `https://x.com/openai/status/${tweetId}`;
+  const tweet = await upsertMaterial({ sourceId: SOURCE, url, title: "Original tweet", via: "fetch" });
+  const article = await upsertMaterial({
+    sourceId: OTHER, url: `https://example.com/report-${tag()}?related=${url}`, title: "Independent report", via: "fetch",
+  });
+  assert.equal(article.created, true);
+  assert.notEqual(article.articleId, tweet.articleId);
+  assert.equal((await state(tweet.articleId)).title, "Original tweet");
+  assert.equal((await state(article.articleId)).title, "Independent report");
+  const alias = await upsertMaterial({
+    sourceId: OTHER, url: `https://twitter.com/openai/status/${tweetId}`, title: "Tweet alias", via: "fetch",
+  });
+  assert.equal(alias.created, false);
+  assert.equal(alias.articleId, tweet.articleId);
+});
+
 test("another source reporting an imported article first does not set its baseline", async () => {
   const url = `https://example.com/imported-mirror-${tag()}`;
   const id = await imported(url);

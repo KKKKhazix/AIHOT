@@ -37,7 +37,15 @@ export function normalizeUrl(input: string): string | null {
 
 /** Tweet id from an x.com / twitter.com status URL. */
 export function tweetIdFromUrl(url: string): string | null {
-  const m = /(?:x|twitter)\.com\/[^/]+\/status(?:es)?\/(\d+)/i.exec(url);
+  let u: URL;
+  try {
+    u = new URL(url.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  if (!/^(?:(?:www|mobile|m)\.)?(?:x|twitter)\.com$/.test(u.hostname)) return null;
+  const m = /^\/[^/]+\/status(?:es)?\/(\d+)(?:\/|$)/i.exec(u.pathname);
   return m ? m[1]! : null;
 }
 

@@ -146,12 +146,15 @@ export async function publishArticle(articleId: string, options: PublishOptions 
 }
 
 export async function publishArticleTx(tx: Tx, articleId: string, options: PublishOptions = {}): Promise<PublishResult | null> {
-  const now = options.now ?? new Date();
   const [article] = await tx<ArticleRow[]>`
     SELECT id, source_id, url, title, language, published_at, discovered_at, timeline_at, backfill, body_status,
            body_text, x_post, grouped_at
     FROM articles WHERE id = ${articleId} FOR UPDATE`;
   if (!article) return null;
+  // Reports take this lock exclusively while reading candidates. Hold it through commit so a
+  // release stamped before their cutoff cannot commit after their candidate snapshot.
+  await tx`SELECT pg_advisory_xact_lock_shared(hashtext('report_candidates'))`;
+  const now = options.now ?? new Date(); // sample after both locks, which may span a report cutoff
   const [source] = await tx<SourceFacts[]>`
     SELECT id, name, kind, tier, participation_mode, first_party, site_fulltext, syndicate_fulltext FROM sources WHERE id = ${article.source_id}`;
   if (!source) return null;
@@ -203,7 +206,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   } else if (selected && visibleAfter && visibleAfter > now && article.grouped_at && article.grouped_at <= now) {
     const earliest = new Date(Math.max(selectedReadyAt!.getTime(), article.grouped_at.getTime()));
     if (earliest < visibleAfter) {
-      // A grouping decision can predate this write. The item cannot have been public before now.
+      // A grouping decision can predate publication. Reports wait for this release to commit.
       visibleAfter = new Date(Math.max(earliest.getTime(), now.getTime()));
       // The not-yet-visible sync entry follows the same release time as the site.
       await tx`UPDATE selected_ledger SET visible_at = ${visibleAfter} WHERE article_id = ${articleId} AND visible_at > ${visibleAfter}`;

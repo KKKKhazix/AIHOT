@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type SyntheticEvent } from "react";
+import { useEffect, useId, useState, type CSSProperties, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 import type { LbConfidence, LbStability } from "@aihot/contracts/leaderboard";
 import { LB_CONFIDENCE_LABELS } from "@aihot/contracts/leaderboard";
@@ -20,17 +20,17 @@ function position(r: DOMRect): CSSProperties {
 /** Confidence as a dotted label. On desktop, hovering a sensitive ranking shows its scenario rank range. */
 export function EvidenceBadge({ confidence, stability, rank }: { confidence: LbConfidence; stability: LbStability | null; rank: number }) {
   const id = useId();
-  const anchor = useRef<HTMLSpanElement>(null);
   const [at, setAt] = useState<CSSProperties | null>(null);
   const open = at !== null;
   useEffect(() => {
     if (!open) return;
-    const update = () => { if (anchor.current) setAt(position(anchor.current.getBoundingClientRect())); };
+    // Scrolling never fires mouseleave (the pointer does not move), so the only
+    // reliable dismissal is closing the tooltip on scroll itself.
     const close = () => setAt(null);
-    window.addEventListener("scroll", update, true);
+    window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
     return () => {
-      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
     };
   }, [open]);
@@ -48,7 +48,7 @@ export function EvidenceBadge({ confidence, stability, rank }: { confidence: LbC
   if (!stability) return chip;
   const moved = stability.from !== stability.to || stability.unavailable > 0 || stability.incomplete > 0;
   return (
-    <span ref={anchor} className="inline-flex" tabIndex={moved ? 0 : -1} aria-describedby={moved && at ? id : undefined} onMouseEnter={moved ? show : undefined} onMouseLeave={() => setAt(null)} onFocus={moved ? show : undefined} onBlur={() => setAt(null)} onKeyDown={(e) => { if (e.key === "Escape") setAt(null); }}>
+    <span className="inline-flex" tabIndex={moved ? 0 : -1} aria-describedby={moved && at ? id : undefined} onMouseEnter={moved ? show : undefined} onMouseLeave={() => setAt(null)} onFocus={moved ? show : undefined} onBlur={() => setAt(null)} onKeyDown={(e) => { if (e.key === "Escape") setAt(null); }}>
       {chip}
       {moved && at && createPortal(
         <span

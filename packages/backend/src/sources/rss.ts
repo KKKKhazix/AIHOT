@@ -15,6 +15,9 @@ const parser = new XMLParser({
   processEntities: true,
   htmlEntities: true,
   trimValues: true,
+  // XHTML is mixed content: keep its markup and text order for stripTags/sanitizeBody below.
+  // Only XHTML stops parsing; escaped HTML and CDATA retain their existing entity handling.
+  stopNodes: ["feed.entry.title[type=xhtml]", "feed.entry.summary[type=xhtml]", "feed.entry.content[type=xhtml]"],
 });
 
 function text(v: unknown): string {

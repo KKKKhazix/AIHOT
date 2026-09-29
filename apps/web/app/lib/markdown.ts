@@ -5,13 +5,15 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function inline(s: string): string {
+function inline(s: string, site: string): string {
   let out = esc(s);
   out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
   out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, text: string, href: string) => {
-    const external = /^https?:\/\//.test(href) && !/^https:\/\/aihot\.news/.test(href);
-    const h = href.replace(/^https:\/\/aihot\.news(?=\/)/, "");
+    // A link to this site's own address becomes an in-site path; any other address opens in a new tab.
+    const own = href === site || href.startsWith(`${site}/`);
+    const external = /^https?:\/\//.test(href) && !own;
+    const h = own ? href.slice(site.length) || "/" : href;
     return `<a href="${h}"${external ? ' target="_blank" rel="noopener noreferrer"' : ""}>${text}</a>`;
   });
   // Bare URLs.
@@ -28,7 +30,8 @@ export interface RenderedCopy {
   outline: Array<{ id: string; text: string }>;
 }
 
-export function renderMarkdown(md: string): RenderedCopy {
+/** `site` is the site's own address (seo.ts siteUrl()), so links to it stay on the site. */
+export function renderMarkdown(md: string, site: string): RenderedCopy {
   const lines = md.replace(/\r\n/g, "\n").split("\n");
   const html: string[] = [];
   const outline: RenderedCopy["outline"] = [];
@@ -46,7 +49,7 @@ export function renderMarkdown(md: string): RenderedCopy {
       const text = heading[2]!.trim();
       const id = slugifyHeading(text, h++);
       if (level === 2) outline.push({ id, text });
-      html.push(`<h${level} id="${id}">${inline(text)}</h${level}>`);
+      html.push(`<h${level} id="${id}">${inline(text, site)}</h${level}>`);
       i++;
       continue;
     }
@@ -58,13 +61,13 @@ export function renderMarkdown(md: string): RenderedCopy {
         i++;
       }
       const [head, ...body] = rows;
-      html.push(`<table><thead><tr>${(head ?? []).map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
+      html.push(`<table><thead><tr>${(head ?? []).map((c) => `<th>${inline(c, site)}</th>`).join("")}</tr></thead><tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${inline(c, site)}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
       continue;
     }
     if (/^>\s?/.test(line)) {
       const buf: string[] = [];
       while (i < lines.length && /^>\s?/.test(lines[i]!)) buf.push(lines[i++]!.replace(/^>\s?/, ""));
-      html.push(`<blockquote><p>${inline(buf.join(" "))}</p></blockquote>`);
+      html.push(`<blockquote><p>${inline(buf.join(" "), site)}</p></blockquote>`);
       continue;
     }
     if (/^\s*[-*]\s+/.test(line) || /^\s*\d+[.．]\s+/.test(line)) {
@@ -77,12 +80,12 @@ export function renderMarkdown(md: string): RenderedCopy {
         i++;
       }
       const tag = ordered ? "ol" : "ul";
-      html.push(`<${tag}>${items.map((it) => `<li>${inline(it)}</li>`).join("")}</${tag}>`);
+      html.push(`<${tag}>${items.map((it) => `<li>${inline(it, site)}</li>`).join("")}</${tag}>`);
       continue;
     }
     const para: string[] = [];
     while (i < lines.length && lines[i]!.trim() && !/^(#{2,4}\s|\||>|\s*[-*]\s|\s*\d+[.．]\s)/.test(lines[i]!)) para.push(lines[i++]!.trim());
-    html.push(`<p>${inline(para.join(""))}</p>`);
+    html.push(`<p>${inline(para.join(""), site)}</p>`);
   }
   return { html: html.join("\n"), outline };
 }

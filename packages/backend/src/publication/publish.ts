@@ -203,11 +203,10 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   } else if (selected && visibleAfter && visibleAfter > now && article.grouped_at && article.grouped_at <= now) {
     const earliest = new Date(Math.max(selectedReadyAt!.getTime(), article.grouped_at.getTime()));
     if (earliest < visibleAfter) {
-      visibleAfter = earliest;
-      // Released early by grouping: the not-yet-visible sync entry follows, so snapshot and changes
-      // show the item when the site does. No client has read past an entry that is not visible yet.
-      const releaseAt = visibleAfter > now ? visibleAfter : now;
-      await tx`UPDATE selected_ledger SET visible_at = ${releaseAt} WHERE article_id = ${articleId} AND visible_at > ${releaseAt}`;
+      // A grouping decision can predate this write. The item cannot have been public before now.
+      visibleAfter = new Date(Math.max(earliest.getTime(), now.getTime()));
+      // The not-yet-visible sync entry follows the same release time as the site.
+      await tx`UPDATE selected_ledger SET visible_at = ${visibleAfter} WHERE article_id = ${articleId} AND visible_at > ${visibleAfter}`;
     }
   }
 

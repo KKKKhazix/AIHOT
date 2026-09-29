@@ -1,3 +1,4 @@
+import { gate, stub, tag } from "./setup.ts";
 // A selected item released across the 08:00 boundary must appear in the next issue exactly once.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
@@ -7,7 +8,6 @@ import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle, publishArticleTx } from "@aihot/backend/publication/publish";
 import { candidates, composeDaily } from "@aihot/backend/reports/compose";
-import { gate, stub, tag } from "./setup.ts";
 
 const T = tag();
 const SOURCE = `test-report-boundary-${T}`;

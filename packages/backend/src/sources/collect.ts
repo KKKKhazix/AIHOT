@@ -240,7 +240,7 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
     await sql<SourceRow[]>`
       SELECT id, name, kind, config, tier, participation_mode, first_party, interval_minutes, enabled, cursor, fail_count
       FROM sources WHERE id IN ${sql(sourceIds)}`
-  ).filter((m) => m.enabled && shardHandle(m));
+  ).filter((m) => m.enabled && shardHandle(m)).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   if (members.length === 0) return { key, status: "skipped", accounts: 0, found: 0, created: 0 };
   const minutes = shardMinutes(members[0]!.participation_mode);
   const runs = new Map<string, number>();

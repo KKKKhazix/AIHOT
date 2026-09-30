@@ -78,7 +78,9 @@ export function proxyBodyImages(html: string, absolute = false, lifetimeSeconds 
       // RSS keeps its existing single signed full image.
       const width = Number(attrs.match(/\bwidth="(\d+)"/i)?.[1] ?? 0);
       const candidates = !absolute && width >= IMAGE_WIDTHS["image-720"] ? proxiedImageSet(decoded, "body", false, now, lifetimeSeconds) : null;
-      const responsive = candidates ? ` srcset="${candidates.replace(/&/g, "&amp;")}" sizes="auto, (min-width: 1536px) 760px, (min-width: 1024px) calc(100vw - 524px), (min-width: 640px) 608px, calc(100vw - 32px)"` : "";
+      // `sizes=auto` adds size containment in Chrome: stale publisher width/height metadata then
+      // overrides the loaded image's real ratio. Let intrinsic dimensions win after loading.
+      const responsive = candidates ? ` srcset="${candidates.replace(/&/g, "&amp;")}" sizes="(min-width: 1536px) 760px, (min-width: 1024px) calc(100vw - 524px), (min-width: 640px) 608px, calc(100vw - 32px)"` : "";
       const source = proxied ? ` src="${proxied.replace(/&/g, "&amp;")}"${responsive} loading="lazy" decoding="async"` : "";
       return `<img${attrs.replace(src[0], source)}>`;
     })

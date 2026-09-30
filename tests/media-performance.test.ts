@@ -164,6 +164,7 @@ test("responsive URLs and web body candidates retain exact signatures and stable
   assert.match(web, /srcset="[^"]+image-720/);
   assert.match(web, /loading="lazy"/);
   assert.match(web, /width="800" height="400"/);
+  assert.doesNotMatch(web, /sizes="auto\b/, "body images must use their loaded ratio even if publisher dimensions are wrong");
   assert.doesNotMatch(proxyBodyImages(html, true), /srcset=/);
 });
 

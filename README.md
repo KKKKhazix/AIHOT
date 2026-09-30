@@ -22,7 +22,8 @@
   <a href="#跑起来">跑起来</a> ·
   <a href="docs/customize.md">改成你的行业</a> ·
   <a href="#它是怎么工作的">它是怎么工作的</a> ·
-  <a href="#文档">文档</a>
+  <a href="#文档">文档</a> ·
+  <a href="https://github.com/KKKKhazix/AIHOT/discussions">社区交流</a>
 </p>
 
 <br>
@@ -108,6 +109,8 @@
 
 ## 跑起来
 
+想创建自己的独立站点，可以先点 [Use this template](https://github.com/KKKKhazix/AIHOT/generate)，再克隆你生成的仓库。想持续合并上游更新或贡献代码，建议先 Fork。下面的命令适合直接试用。
+
 需要 [Docker](https://docs.docker.com/get-docker/)，和一个 OpenAI 兼容的模型 API Key（DeepSeek、千问、智谱都可以）。
 
 ```bash
@@ -157,6 +160,12 @@ docker compose up -d --build
 | [模型榜与 Codex 重置监控](docs/leaderboard.md) | 两个 AI 专属模块 |
 
 技术栈：Node.js 24 · TypeScript · React Router（服务端渲染）· Fastify · PostgreSQL · pg-boss · Tailwind CSS · Docker Compose。
+
+## 交流与贡献
+
+部署和使用问题到 [问答区](https://github.com/KKKKhazix/AIHOT/discussions/categories/q-a)，新想法到 [想法交流区](https://github.com/KKKKhazix/AIHOT/discussions/categories/ideas)，欢迎在 [作品展示区](https://github.com/KKKKhazix/AIHOT/discussions/categories/show-and-tell) 分享你做出的行业热点站。
+
+发现 Bug 或有明确的功能建议，可以 [提交 Issue](https://github.com/KKKKhazix/AIHOT/issues/new/choose)。准备改代码前，先看 [贡献说明](CONTRIBUTING.md)；安全漏洞请走 [私密报告入口](SECURITY.md)。
 
 ## 最后
 

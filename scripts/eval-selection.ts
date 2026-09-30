@@ -11,13 +11,23 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { REPO_ROOT } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
-import { ANALYZE_PROMPT_VERSION, normalizeAnalysis, runAnalysis, type AnalyzeInputArticle } from "@aihot/backend/editorial/analyze";
+import {
+  SELECTION_PROMPT_VERSION,
+  buildScoreInput,
+  normalizeAnalysis,
+  runSelectionPrefilter,
+  runSelectionScores,
+  tierThreshold,
+  type AnalysisRun,
+  type AnalyzeInputArticle,
+} from "@aihot/backend/editorial/analyze";
+import { modelFor } from "@aihot/backend/editorial/models";
 import { importSelectBenchRun } from "@aihot/backend/admin/selectbench";
 
 const { values } = parseArgs({
   options: {
     gold: { type: "string", default: ".data/gold.jsonl" },
-    models: { type: "string", default: "default" },
+    models: { type: "string" },
     n: { type: "string", default: "200" },
     split: { type: "string", default: "all" },
     concurrency: { type: "string", default: "6" },
@@ -81,16 +91,74 @@ async function pmap<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): 
   return out;
 }
 
+function safeReportNamePart(value: string): string {
+  const safe = value.trim().replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+  return safe || "all";
+}
+
+async function usageFor(receiptIds: number[]) {
+  const ids = [...new Set(receiptIds)];
+  if (!ids.length) return { tokensIn: 0, tokensOut: 0, avgLatencyMs: 0 };
+  const [usage] = await sql<{ tin: number; tout: number; latency: number }[]>`
+    SELECT
+      sum(coalesce((usage->>'prompt_tokens')::int, (usage->>'input_tokens')::int, 0)) AS tin,
+      sum(coalesce((usage->>'completion_tokens')::int, (usage->>'output_tokens')::int, 0)) AS tout,
+      avg(latency_ms) AS latency
+    FROM receipt_attempts WHERE receipt_id IN ${sql(ids)}`;
+  return {
+    tokensIn: Number(usage?.tin ?? 0),
+    tokensOut: Number(usage?.tout ?? 0),
+    avgLatencyMs: Math.round(Number(usage?.latency ?? 0)),
+  };
+}
+
+const models = values.models
+  ? values.models.split(",").map((model) => model.trim()).filter(Boolean)
+  : [await modelFor("score")];
+if (!models.length) throw new Error("--models did not name any models");
+
 const report: Record<string, unknown> = {};
-for (const model of values.models!.split(",")) {
+for (const model of models) {
   const started = Date.now();
+  // Two gold cases can have different source metadata / thresholds while rendering the same score prompt.
+  // Share only that score result (including a failure); prefilter and threshold semantics remain per case.
+  const scoreRequests = new Map<string, Promise<{ scores: AnalysisRun["scores"]; receiptIds: number[]; error: string | null }>>();
   const results = await pmap(sample, Number(values.concurrency), async (r) => {
+    const input = toInput(r);
+    const receiptIds: number[] = [];
     try {
-      const res = await runAnalysis(toInput(r), { scoreModel: model, stages: "selection" });
-      const out = normalizeAnalysis(res);
-      return { r, out, receiptIds: [res.prefilter.receiptId, ...(res.scores?.receiptIds ?? [])], error: null as string | null };
+      const prefilter = await runSelectionPrefilter(input, {}, (id) => receiptIds.push(id));
+      if (prefilter.label === "BLOCK") {
+        const run: AnalysisRun = { prefilter, scores: null, writing: null, structure: null };
+        return { r, out: normalizeAnalysis(run), receiptIds, error: null as string | null };
+      }
+
+      const threshold = tierThreshold(input.source.tier);
+      if (threshold === null) {
+        const run: AnalysisRun = { prefilter, scores: null, writing: null, structure: null };
+        return { r, out: normalizeAnalysis(run), receiptIds, error: null as string | null };
+      }
+
+      const key = buildScoreInput(input);
+      let request = scoreRequests.get(key);
+      if (!request) {
+        const sharedReceiptIds: number[] = [];
+        request = runSelectionScores(input, { scoreModel: model }, (id) => sharedReceiptIds.push(id)).then(
+          (scores) => ({ scores, receiptIds: sharedReceiptIds, error: null }),
+          (error: unknown) => ({ scores: null, receiptIds: sharedReceiptIds, error: String(error).slice(0, 200) }),
+        );
+        scoreRequests.set(key, request);
+      }
+      const shared = await request;
+      receiptIds.push(...shared.receiptIds);
+      if (shared.error) return { r, out: null, receiptIds, error: shared.error };
+
+      // Model output is independent of source tier; the decision threshold is not.
+      const scores = shared.scores ? { ...shared.scores, threshold } : null;
+      const run: AnalysisRun = { prefilter, scores, writing: null, structure: null };
+      return { r, out: normalizeAnalysis(run), receiptIds, error: null as string | null };
     } catch (error) {
-      return { r, out: null, receiptIds: [] as number[], error: String(error).slice(0, 200) };
+      return { r, out: null, receiptIds, error: String(error).slice(0, 200) };
     }
   });
   let tp = 0, fp = 0, fn = 0, tn = 0, either = 0, errors = 0;
@@ -105,13 +173,7 @@ for (const model of values.models!.split(",")) {
     else if (pred === "reject" && gold === "select") { fn++; mistakes.push({ kind: "FN", title: x.r.material.title, score: x.out.score, relevance: x.out.relevance, stratum: x.r.samplingContext?.samplingStratum ?? null }); }
     else tn++;
   }
-  const receiptIds = results.flatMap((x) => x.receiptIds);
-  const [usage] = receiptIds.length
-    ? await sql<{ tin: number; tout: number; latency: number }[]>`
-        SELECT sum((usage->>'prompt_tokens')::int) AS tin, sum((usage->>'completion_tokens')::int) AS tout,
-               avg((response->>'_latencyMs')::int) AS latency
-        FROM receipts WHERE id IN ${sql(receiptIds)}`
-    : [{ tin: 0, tout: 0, latency: 0 }];
+  const usage = await usageFor(results.flatMap((x) => x.receiptIds));
   const precision = tp / Math.max(1, tp + fp);
   const recall = tp / Math.max(1, tp + fn);
   const f1 = (2 * precision * recall) / Math.max(1e-9, precision + recall);
@@ -121,7 +183,7 @@ for (const model of values.models!.split(",")) {
     precision: +precision.toFixed(3), recall: +recall.toFixed(3), f1: +f1.toFixed(3),
     selectedRate: +((tp + fp) / Math.max(1, tp + fp + fn + tn)).toFixed(3),
     goldSelectRate: +((tp + fn) / Math.max(1, tp + fp + fn + tn)).toFixed(3),
-    tokensIn: Number(usage?.tin ?? 0), tokensOut: Number(usage?.tout ?? 0), avgLatencyMs: Math.round(Number(usage?.latency ?? 0)),
+    ...usage,
     wallSeconds: Math.round((Date.now() - started) / 1000),
   };
   console.log(JSON.stringify(summary));
@@ -156,8 +218,9 @@ for (const model of values.models!.split(",")) {
 }
 const outDir = path.join(REPO_ROOT, ".data/eval");
 mkdirSync(outDir, { recursive: true });
-const file = path.join(outDir, `selection-${values.split}-${values.n}-${Date.now()}.json`);
-const meta = { split: values.split, n: sample.length, seed: Number(values.seed), promptVersion: ANALYZE_PROMPT_VERSION, createdAt: new Date().toISOString() };
+const splitName = safeReportNamePart(values.split!);
+const file = path.join(outDir, `selection-${splitName}-${sample.length}-${Date.now()}.json`);
+const meta = { split: values.split, n: sample.length, seed: Number(values.seed), promptVersion: SELECTION_PROMPT_VERSION, createdAt: new Date().toISOString() };
 writeFileSync(file, JSON.stringify({ meta, models: report }, null, 2));
 console.log(`report: ${file}`);
 if (!values["no-import"]) {

@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 部署与使用问答
+    url: https://github.com/KKKKhazix/AIHOT/discussions/categories/q-a
+    about: 安装、配置、部署和使用中遇到的问题。
+  - name: 想法交流
+    url: https://github.com/KKKKhazix/AIHOT/discussions/categories/ideas
+    about: 一起讨论还没形成具体开发任务的想法。
+  - name: 作品展示
+    url: https://github.com/KKKKhazix/AIHOT/discussions/categories/show-and-tell
+    about: 分享你用 AIHOT 搭建的行业热点站。
+  - name: 私密报告安全漏洞
+    url: https://github.com/KKKKhazix/AIHOT/security/advisories/new
+    about: 安全漏洞通过此入口提交，请不要在公开 Issue 中披露利用细节。

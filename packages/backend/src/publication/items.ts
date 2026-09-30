@@ -151,7 +151,7 @@ export function xView(row: Pick<ItemRow, "x_post" | "zh_text"> & Partial<Pick<It
 }
 
 export function toItemSummary(row: ItemRow): ItemSummary {
-  const x = row.channel === "x" ? xView(row, true) : null;
+  const x = row.channel === "x" && row.body_mode === "full" ? xView(row, true) : null;
   return {
     id: row.id,
     revision: row.revision,

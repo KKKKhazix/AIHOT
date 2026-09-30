@@ -112,3 +112,21 @@ test("empty and oversized batches are rejected before creating a source", async 
   }
   assert.equal((await sql`SELECT id FROM sources WHERE id = ${sourceId}`).length, 0);
 });
+
+
+test("paused sources reject pushes without recording success, then accept after resuming", async () => {
+  const sourceId = `ingest-paused-${T}`;
+  const lastOk = new Date("2020-01-01T00:00:00Z");
+  await sql`INSERT INTO sources (id, name, kind, enabled, health, last_ok_at)
+            VALUES (${sourceId}, 'Paused source', 'external', false, 'paused', ${lastOk})`;
+  const body = { sourceId, items: [{ title: "Report", url: `https://example.org/${sourceId}` }] };
+  const paused = await push(body);
+  assert.equal(paused.statusCode, 409, paused.body);
+  const [source] = await sql`SELECT last_ok_at FROM sources WHERE id = ${sourceId}`;
+  assert.equal(source!.last_ok_at.toISOString(), lastOk.toISOString());
+  assert.equal((await sql`SELECT id FROM articles WHERE source_id = ${sourceId}`).length, 0);
+  await sql`UPDATE sources SET enabled = true WHERE id = ${sourceId}`;
+  const resumed = await push(body);
+  assert.equal(resumed.statusCode, 200, resumed.body);
+  assert.deepEqual(resumed.json(), { ok: true, created: 1 });
+});

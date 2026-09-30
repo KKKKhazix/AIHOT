@@ -44,8 +44,9 @@ export async function ingestItems(body: unknown): Promise<{ ok: true; created: n
     INSERT INTO sources (id, name, kind, config, tier, participation_mode, interval_minutes, enabled, health, tags)
     VALUES (${sourceId.slice(0, 120)}, ${typeof body.sourceName === "string" && body.sourceName.trim() ? body.sourceName.trim().slice(0, 200) : sourceId.slice(0, 120)},
             'external', '{}'::jsonb, 'T2', 'isolated', 1440, true, 'ok', ${["ingest:auto-created"]})
-    ON CONFLICT (id) DO UPDATE SET last_ok_at = now()
+    ON CONFLICT (id) DO UPDATE SET last_ok_at = now() WHERE sources.enabled
     RETURNING id, participation_mode, enabled`;
+  if (!source) throw new IngestError(409, "source paused");
 
   const seen = new Set<string>();
   let created = 0;

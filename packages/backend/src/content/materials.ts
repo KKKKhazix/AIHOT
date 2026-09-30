@@ -134,7 +134,8 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   const discoveredAt = m.discoveredAt ?? new Date();
   const title = collapseWhitespace(m.title).slice(0, 1000) || m.url;
 
-  const t = decideTimeline(m.publishedAt, discoveredAt, m.backfill);
+  const publishedAtClaim = m.publishedAt && Number.isFinite(m.publishedAt.getTime()) ? m.publishedAt : null;
+  const t = decideTimeline(publishedAtClaim, discoveredAt, m.backfill);
   const newId = m.id ?? newArticleId();
   const hash = contentHash({ title, bodyText: m.bodyText, excerpt: m.excerpt });
   const [inserted] = await db<{ id: string }[]>`
@@ -142,7 +143,7 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
       discovered_at, source_updated_at, timeline_at, backfill, backfill_reason, revision, content_hash, excerpt,
       body_text, body_html, body_status, media, x_post, raw)
     VALUES (${newId}, ${m.sourceId}, ${identityKey}, ${m.url}, ${title}, ${m.author ?? null}, ${m.language ?? null},
-      ${t.publishedAt}, ${m.publishedAt ?? null}, ${discoveredAt}, ${m.sourceUpdatedAt ?? null}, ${t.timelineAt},
+      ${t.publishedAt}, ${publishedAtClaim}, ${discoveredAt}, ${m.sourceUpdatedAt ?? null}, ${t.timelineAt},
       ${t.backfill}, ${t.backfillReason}, 1, ${hash}, ${m.excerpt ?? null}, ${m.bodyText ?? null}, ${m.bodyHtml ?? null},
       ${m.bodyStatus ?? (m.bodyText ? "ok" : "pending")}, ${db.json((m.media ?? []) as never)},
       ${m.xPost ? db.json(m.xPost as never) : null}, ${m.raw === undefined ? null : db.json(m.raw as never)})

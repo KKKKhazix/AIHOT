@@ -1,15 +1,15 @@
 import { SITE, withSubject } from "@aihot/industry/site";
-import { Link, redirect, useLoaderData } from "react-router";
+import { data as withHeaders, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/topic";
 import type { FeedItemSummary } from "@aihot/contracts/site";
-import { loadOr404 } from "../lib/api.server";
+import { loadOr404, releaseBoundCache } from "../lib/api.server";
 import { breadcrumbLd, pageMeta, titled } from "../lib/seo";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { EmptyState, MoreLink } from "../components/ui/Page";
 
-/** Selected items of a topic: shared caches keep the page as long as its api answer (one minute). */
-export function headers() {
-  return { "Cache-Control": "public, max-age=0, s-maxage=60" };
+// 主题HTML和导航数据使用API同一个绝对截止，不能跨过发布时刻。
+export function headers({ loaderHeaders }: Route.HeadersArgs) {
+  return loaderHeaders;
 }
 
 interface TopicPageData {
@@ -17,6 +17,7 @@ interface TopicPageData {
   items: FeedItemSummary[];
   page: number;
   pageCount: number;
+  refreshAt: string | null;
 }
 
 export async function loader({ params, request }: Route.LoaderArgs) {
@@ -24,8 +25,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   if (params.page !== undefined && (!/^\d+$/.test(params.page) || page < 1)) throw new Response("Not found", { status: 404 });
   // Page 1 lives at the topic's own address (308).
   if (params.page === "1") throw redirect(`/topics/${params.slug}`, 308);
-  const data = await loadOr404<TopicPageData>(`/api/site/topics/${encodeURIComponent(params.slug)}?page=${page}`, { signal: request.signal });
-  return { data };
+  const upstream = new Headers();
+  const data = await loadOr404<TopicPageData>(`/api/site/topics/${encodeURIComponent(params.slug)}?page=${page}`, { signal: request.signal, responseHeaders: upstream });
+  return withHeaders({ data }, { headers: releaseBoundCache(data.refreshAt, 60, Date.now(), upstream) });
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {

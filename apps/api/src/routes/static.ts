@@ -9,7 +9,8 @@ import { FEATURES } from "@aihot/industry/features";
 import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT, config } from "@aihot/backend/config";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
-import { sitemapXml } from "@aihot/backend/publication/sitemap";
+import { sitemapSnapshot } from "@aihot/backend/publication/sitemap";
+import { cacheUntil } from "./site.ts";
 import { llmsTxt, loadLlmsAvailability } from "@aihot/backend/publication/llms";
 
 const REF = path.join(REPO_ROOT, "reference");
@@ -111,8 +112,9 @@ async function openApiJson(): Promise<string> {
 export function registerStatic(app: FastifyInstance) {
   app.get("/sitemap.xml", async (req, reply) => {
     try {
-      const xml = await sitemapXml();
-      return sendTextWithEtag(req, reply, xml, { etagPrefix: "sitemap", cacheControl: "public, max-age=0, s-maxage=300, must-revalidate", contentType: "application/xml" });
+      const data = await sitemapSnapshot();
+      const cacheControl = cacheUntil(reply, 300, data.refreshAt).replace(/(^|, )max-age=\d+/, "$1max-age=0");
+      return sendTextWithEtag(req, reply, data.xml, { etagPrefix: "sitemap", cacheControl: `${cacheControl}, must-revalidate`, contentType: "application/xml" });
     } catch (error) {
       req.log.error({ err: error }, "sitemap unavailable");
       return reply.code(503).header("Retry-After", "300").header("Cache-Control", "no-store").send("Sitemap temporarily unavailable");

@@ -11,7 +11,8 @@ import { cached } from "../lib/cache.ts";
 import { escapeXml } from "../lib/text.ts";
 import { siteUrl } from "./links.ts";
 import { leaderboardUrls } from "../leaderboard/read.ts";
-import { topicPageCounts } from "./topics.ts";
+import { topicCountSnapshot } from "./topics.ts";
+import { selectedCondition } from "./items.ts";
 
 async function leaderboardDetailUrls(): Promise<string[]> {
   const fixed = new Set(["/leaderboard", "/leaderboard/sources", "/leaderboard/rules"]);
@@ -22,7 +23,8 @@ const MAX_URLS = 45_000;
 const TTL_MS = 5 * 60 * 1000;
 const CACHE_FILE = path.join(config.dataDir, "sitemap-last.xml");
 
-let lastGood: string | null = null;
+interface SitemapSnapshot { xml: string; refreshAt: string | null }
+let lastGood: SitemapSnapshot | null = null;
 
 interface Entry {
   loc: string;
@@ -31,25 +33,26 @@ interface Entry {
   priority?: number;
 }
 
-async function build(): Promise<string> {
+async function build(): Promise<SitemapSnapshot> {
+  const now = new Date();
   const entries: Entry[] = [];
-  const [latestItem] = await sql<{ t: Date | null }[]>`SELECT max(timeline_at) AS t FROM publications WHERE visibility = 'public' AND selected`;
+  const [latestItem] = await sql<{ t: Date | null }[]>`SELECT max(p.timeline_at) AS t FROM publications p WHERE ${selectedCondition(now)}`;
   const [latestDaily] = await sql<{ key: string | null; t: Date | null }[]>`SELECT max(key) AS key, max(generated_at) AS t FROM reports WHERE kind = 'daily'`;
-  const now = latestItem?.t ?? new Date();
+  const latest = latestItem?.t ?? now;
   entries.push(
-    { loc: "/", lastmod: now, changefreq: "hourly", priority: 1 },
-    { loc: "/all", lastmod: now, changefreq: "hourly", priority: 0.9 },
+    { loc: "/", lastmod: latest, changefreq: "hourly", priority: 1 },
+    { loc: "/all", lastmod: latest, changefreq: "hourly", priority: 0.9 },
     { loc: "/daily", lastmod: latestDaily?.t, changefreq: "daily", priority: 0.9 },
-    { loc: "/hot", lastmod: now, changefreq: "hourly", priority: 0.9 },
+    { loc: "/hot", lastmod: latest, changefreq: "hourly", priority: 0.9 },
     { loc: "/daily/archive", lastmod: latestDaily?.t, changefreq: "daily", priority: 0.7 },
     { loc: "/weekly", changefreq: "weekly", priority: 0.7 },
     { loc: "/monthly", changefreq: "monthly", priority: 0.6 },
     { loc: "/topics", changefreq: "daily", priority: 0.7 },
-    { loc: "/agent", lastmod: now, changefreq: "weekly", priority: 0.7 },
+    { loc: "/agent", lastmod: latest, changefreq: "weekly", priority: 0.7 },
     { loc: "/about", changefreq: "monthly", priority: 0.5 },
     { loc: "/terms", changefreq: "monthly", priority: 0.4 },
     { loc: "/privacy", changefreq: "monthly", priority: 0.4 },
-    { loc: "/changelog", lastmod: now, changefreq: "weekly", priority: 0.5 },
+    { loc: "/changelog", lastmod: latest, changefreq: "weekly", priority: 0.5 },
   );
   if (FEATURES.leaderboard) {
     entries.push(
@@ -62,7 +65,8 @@ async function build(): Promise<string> {
   if (FEATURES.codexResetMonitor) entries.push({ loc: "/codex-reset", changefreq: "hourly", priority: 0.6 });
   const reports = await sql<{ kind: string; key: string; generated_at: Date }[]>`SELECT kind, key, generated_at FROM reports ORDER BY kind, key DESC`;
   for (const r of reports) entries.push({ loc: `/${r.kind}/${r.key}`, lastmod: r.generated_at, changefreq: r.kind === "daily" ? "never" : "monthly", priority: r.kind === "daily" ? 0.6 : 0.6 });
-  for (const t of await topicPageCounts()) {
+  const topics = await topicCountSnapshot(now);
+  for (const t of topics.counts) {
     if (!t.indexable) continue;
     entries.push({ loc: `/topics/${t.slug}`, lastmod: t.latest, changefreq: "daily", priority: 0.6 });
     for (let p = 2; p <= t.pages; p++) entries.push({ loc: `/topics/${t.slug}/page/${p}`, lastmod: t.latest, changefreq: "weekly", priority: 0.3 });
@@ -91,26 +95,34 @@ async function build(): Promise<string> {
       return `<url>\n${parts.join("\n")}\n</url>`;
     })
     .join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`;
+  return { xml: `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`, refreshAt: topics.refreshAt };
 }
 
-const sitemap = cached(refreshSitemap, { freshMs: TTL_MS, maxStaleMs: 60 * 60_000 });
+const sitemap = cached(refreshSitemap, {
+  freshMs: TTL_MS, maxStaleMs: 60 * 60_000,
+  expiresAt: (value) => value.refreshAt ? Date.parse(value.refreshAt) : null,
+});
 
-export function sitemapXml(): Promise<string> {
+export async function sitemapXml(): Promise<string> {
+  return (await sitemapSnapshot()).xml;
+}
+
+export function sitemapSnapshot(): Promise<SitemapSnapshot> {
   return sitemap.get();
 }
 
-async function refreshSitemap(): Promise<string> {
+async function refreshSitemap(): Promise<SitemapSnapshot> {
   try {
-    const xml = await build();
-    lastGood = xml;
+    const snapshot = await build();
+    lastGood = snapshot;
     await mkdir(path.dirname(CACHE_FILE), { recursive: true });
-    await writeFile(CACHE_FILE, xml).catch(() => {});
-    return xml;
+    await writeFile(CACHE_FILE, snapshot.xml).catch(() => {});
+    return snapshot;
   } catch (error) {
-    if (lastGood) return lastGood;
+    // 回退只能明确标为过期；磁盘旧文档也不能借本次读取获得新的缓存寿命。
+    if (lastGood) return { xml: lastGood.xml, refreshAt: new Date(0).toISOString() };
     const last = await readFile(CACHE_FILE, "utf8").catch(() => null);
-    if (last) return last;
+    if (last) return { xml: last, refreshAt: new Date(0).toISOString() };
     throw error;
   }
 }

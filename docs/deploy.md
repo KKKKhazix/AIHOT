@@ -43,6 +43,8 @@ docker compose --profile https up -d --build
 
 已经有 Nginx 的话，不用 Caddy，把站点反向代理到 `http://127.0.0.1:3000`，带上 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`，并在 `.env` 里设 `TRUST_PROXY=true`。`SITE_URL` 一定要写成读者实际访问的地址：生成的链接、RSS、分享图和 MCP 都用它。
 
+MCP 默认接受 `SITE_URL` 的主机以及 `localhost`、`127.0.0.1`、`[::1]`。额外主机用 `MCP_ALLOWED_HOSTS` 配置，以逗号分隔，例如 `EXTRA.EXAMPLE:8443,[2001:db8::1]`。主机名不区分大小写，IPv6 必须加方括号；可带 0–65535 的十进制端口，匹配时忽略端口。非法项（含用户信息、路径或无效端口等）不会加入白名单。非 IPv6 主机按原始拼写匹配；`127.1` 等 IPv4 别名只有明确列入白名单才会被接受，不会自动等同于 `127.0.0.1`。此配置只影响 Host 校验，不会扩大浏览器 Origin 许可。
+
 ### 更新
 
 ```bash

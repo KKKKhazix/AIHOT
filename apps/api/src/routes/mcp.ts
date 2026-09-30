@@ -216,8 +216,24 @@ export function buildMcpServer(): McpServer {
   return server;
 }
 
+function hostnameFromAuthority(authority: string | string[] | undefined): string | null {
+  if (typeof authority !== "string") return null;
+  // 先限定单一主机和可选端口，避免 URL 将用户信息、路径或多值头当作合法地址。
+  const match = /^(\[[0-9a-f:.]+\]|[a-z0-9._-]+)(?::([0-9]+))?$/i.exec(authority);
+  if (!match || match[0] !== authority || (match[2] !== undefined && Number(match[2]) > 65535)) return null;
+  // 普通主机按原始拼写匹配，既保留显式配置的别名，也不让别名自动命中回环白名单。
+  const hostname = match[1]!.toLowerCase();
+  if (!hostname.startsWith("[")) return hostname;
+  try {
+    return new URL(`http://${authority}`).hostname;
+  } catch {
+    return null;
+  }
+}
+
 const SITE_HOST = new URL(config.siteUrl).hostname;
-const ALLOWED_HOSTS = new Set([SITE_HOST, "localhost", "127.0.0.1", "[::1]", ...(process.env.MCP_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean)]);
+const ALLOWED_HOSTS = new Set([SITE_HOST, "localhost", "127.0.0.1", "[::1]", ...(process.env.MCP_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim())]
+  .map(hostnameFromAuthority).filter((host): host is string => host !== null));
 
 function allowedOrigin(origin: string | undefined): boolean {
   if (!origin) return true;
@@ -251,8 +267,11 @@ export function registerMcp(app: FastifyInstance) {
 
   const serve = async (req: FastifyRequest, reply: FastifyReply) => {
     reply.header("Cache-Control", "no-store");
-    const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "").split(":")[0]!.toLowerCase();
-    if (!ALLOWED_HOSTS.has(host)) return reply.code(421).type("application/json").send({ error: "misdirected_request" });
+    const authorityHeader = req.headers["x-forwarded-host"] === undefined ? "host" : "x-forwarded-host";
+    // Node 会丢弃重复 Host 的后续值；只统计当前生效的原始字段，保留转发头优先级。
+    const authorityCount = req.raw.rawHeaders.filter((name, index) => index % 2 === 0 && name.toLowerCase() === authorityHeader).length;
+    const host = authorityCount === 1 ? hostnameFromAuthority(req.headers[authorityHeader]) : null;
+    if (host === null || !ALLOWED_HOSTS.has(host)) return reply.code(421).type("application/json").send({ error: "misdirected_request" });
     if (!allowedOrigin(req.headers.origin)) return reply.code(403).type("application/json").send({ error: "origin_not_allowed" });
     corsHeaders(reply, req.headers.origin);
     // One JSON-RPC message per request (batches were dropped from the protocol).

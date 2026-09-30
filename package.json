@@ -10,6 +10,9 @@
   "engines": {
     "node": ">=24.11"
   },
+  "overrides": {
+    "fflate": "0.7.5"
+  },
   "scripts": {
     "db:migrate": "node --env-file-if-exists=.env scripts/migrate.ts",
     "dev:api": "npm run dev -w @aihot/api",

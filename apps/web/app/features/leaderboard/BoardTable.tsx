@@ -72,12 +72,14 @@ export function BoardTable({ entries, board }: { entries: LbBoardEntry[]; board:
   useLayoutEffect(() => {
     if (!body.current) return;
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    // Animate sorting the same models. A filtered subset may move rows several screens upward.
+    const sameModels = tops.current.size === rows.length && rows.every((e) => tops.current.has(e.model.slug));
     const next = new Map<string, number>();
     for (const row of Array.from(body.current.rows)) {
       const key = row.dataset.slug ?? "";
       const prev = tops.current.get(key);
       next.set(key, row.offsetTop);
-      if (prev !== undefined && prev !== row.offsetTop && !reduce && row.animate) {
+      if (sameModels && prev !== undefined && prev !== row.offsetTop && !reduce && row.animate) {
         row.animate([{ transform: `translateY(${prev - row.offsetTop}px)` }, { transform: "none" }], { duration: 420, easing: "cubic-bezier(0.25, 1, 0.5, 1)" });
       }
     }
@@ -96,7 +98,7 @@ export function BoardTable({ entries, board }: { entries: LbBoardEntry[]; board:
 
   return (
     <table className="w-full border-collapse text-[14px]">
-      <caption className="sr-only">可按列重排的前 {entries.length} 名模型</caption>
+      <caption className="sr-only">当前展示 {entries.length} 个模型，可按列重排；名次来自原榜</caption>
       <thead className="bg-[rgba(28,39,51,0.04)] text-[12px] text-ink-4 dark:bg-white/[0.03]">
         <tr className="border-y border-line">
           <th scope="col" className="w-[44px] py-2.5 pl-4 pr-1 text-left font-medium lg:w-[68px] lg:pl-[22px] lg:pr-3">
@@ -150,6 +152,7 @@ export function BoardTable({ entries, board }: { entries: LbBoardEntry[]; board:
                   </span>
                 </span>
               </Link>
+              {e.access?.weightsUrl && <a href={e.access.weightsUrl} target="_blank" rel="noopener noreferrer" className="relative z-10 mt-1 inline-block text-[11px] text-accent hover:underline" aria-label={`${e.model.name} 官方权重`}>官方权重 ↗</a>}
             </td>
             <td className="mono hidden px-3 py-3 text-[12px] text-ink-3 lg:table-cell">
               <time dateTime={e.model.releasedAt ?? undefined}>{e.model.releasedAt ?? "—"}</time>

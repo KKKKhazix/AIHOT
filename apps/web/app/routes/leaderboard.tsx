@@ -1,5 +1,6 @@
 import { SITE, withSubject } from "@aihot/industry/site";
 import { Link, data, useLoaderData } from "react-router";
+import { useState } from "react";
 import type { Route } from "./+types/leaderboard";
 import type { LbBoardResponse } from "@aihot/contracts/leaderboard";
 import { loadOr404 } from "../lib/api.server";
@@ -7,6 +8,7 @@ import { breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
 import { BoardTable } from "../features/leaderboard/BoardTable";
 import { Podium } from "../features/leaderboard/Podium";
 import { IconInfo } from "../components/icons";
+import { PillToggles } from "../components/ui/Tabs";
 import { modelHref, shortStamp } from "../features/leaderboard/format";
 import { useEntrance } from "../lib/hydration";
 
@@ -25,7 +27,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
   return pageMeta({
     title: board.title,
     rawTitle: true,
-    description: board.key === "overall" ? "汇总多家公开模型评测榜单，给出${SITE.name} 共识分、评测完整度、上线日期与 API 参考价格。" : board.description,
+    description: board.key === "overall" ? `汇总多家公开模型评测榜单，给出 ${SITE.name} 共识分、评测完整度、上线日期与 API 参考价格。` : board.description,
     path,
     image: "/og/pages/leaderboard.png",
     jsonLd: [
@@ -51,7 +53,13 @@ export function headers() {
 }
 
 export default function LeaderboardPage() {
-  const { board, entries, run } = useLoaderData<typeof loader>();
+  const { board, entries, filterEntries, run } = useLoaderData<typeof loader>();
+  const [filters, setFilters] = useState<string[]>([]);
+  const domestic = filters.includes("domestic");
+  const openWeights = filters.includes("open-weights");
+  const filtered = filters.length > 0;
+  const shown = filtered ? [...entries, ...(filterEntries ?? [])]
+    .filter((e) => (!domestic || e.access?.domestic) && (!openWeights || !!e.access?.weightsUrl)).slice(0, 30) : entries;
   const entrance = useEntrance();
   return (
     <div key={board.key} className={entrance ? "animate-fade-up" : undefined}>
@@ -64,19 +72,25 @@ export default function LeaderboardPage() {
         </p>
       </div>
 
-      <Podium entries={entries} board={board.key} />
+      {!filtered && <Podium entries={entries} board={board.key} />}
 
       <section className="card mt-3 overflow-hidden" aria-labelledby="lb-board-title">
-        <div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-[22px]">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 lg:px-[22px]">
           <h2 id="lb-board-title" className="text-[16px] font-bold text-ink">
             {board.key === "overall" ? "综合榜" : `${board.name}榜`}
-            <span className="mono ml-2 text-[11px] font-normal tracking-wide text-ink-4">TOP {entries.length}</span>
+            <span className="mono ml-2 text-[11px] font-normal tracking-wide text-ink-4">{filtered ? `${shown.length} 个模型` : `TOP ${entries.length}`}</span>
           </h2>
-          <span className="text-right text-[12px] text-ink-4">按多项公开评测的共同证据排名</span>
+          <PillToggles
+            label="筛选模型"
+            items={[{ key: "domestic", label: "国产厂商" }, { key: "open-weights", label: "开放权重" }]}
+            selected={filters}
+            onChange={setFilters}
+          />
         </div>
-        <BoardTable entries={entries} board={board.key} />
+        {shown.length ? <BoardTable entries={shown} board={board.key} /> : <p role="status" className="border-t border-line px-5 py-10 text-center text-[14px] text-ink-3">当前榜单暂无符合条件的模型。</p>}
         <div className="border-t border-line px-4 py-3 text-[12px] leading-relaxed text-ink-4 lg:px-[22px]">
-          <p>每个榜单最多展示 30 个模型</p>
+          <p>按多项公开评测的共同证据排名。每个榜单或筛选结果最多展示 30 个模型，筛选后保留原榜名次与分数。</p>
+          {filtered && <p>国产厂商按模型开发方归属筛选，不代表所有版本均可在国内直接使用。开放权重仅收录已核验的官方权重，使用许可与部署要求请查看权重页面。</p>}
           <p>共识指数不是正确率；同分仍按共同证据确定的名次展示。</p>
         </div>
       </section>

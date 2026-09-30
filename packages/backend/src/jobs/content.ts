@@ -79,15 +79,33 @@ export async function queueProcessing(articleId: string, opts: { step?: Step; at
     { singletonKey: tagged ? `manual:analyze:${articleId}:${opts.attemptTag}` : articleId, priority: r.historical ? PRIORITY.history : PRIORITY.live }, opts.db);
 }
 
+/** 信源转为编辑来源时补齐未分析的资料；其余新任务由安全网继续接手。 */
+export async function resumeSourceArticles(sourceId: string, db: Db): Promise<void> {
+  const rows = await db<{ id: string }[]>`
+    WITH resumed AS (
+      UPDATE articles a SET processing_state = 'new', processing_attempts = 0, processing_error = NULL,
+        processing_retry_at = NULL, processing_queued_at = NULL
+      WHERE a.source_id = ${sourceId} AND a.processing_state = 'skipped'
+        AND NOT EXISTS (SELECT 1 FROM analyses n WHERE n.article_id = a.id AND n.input_revision = a.revision)
+      RETURNING a.id, a.discovered_at
+    ) SELECT id FROM resumed ORDER BY discovered_at DESC, id LIMIT 500`;
+  for (const row of rows) await queueProcessing(row.id, { db });
+}
+
 /**
  * A post of a non-editorial source: recorded (hot_signal material only feeds heat; isolated material
  * never reaches public surfaces). Returns whether it is discussion evidence to group.
  */
 export async function settleNonEditorial(articleId: string): Promise<{ group: boolean }> {
-  const [row] = await sql<{ participation_mode: string; backfill: boolean; published_at: Date | null; discovered_at: Date }[]>`
-    UPDATE articles a SET processing_state = 'skipped', processing_attempts = 0, processing_retry_at = NULL, processing_queued_at = NULL
-    FROM sources s WHERE s.id = a.source_id AND a.id = ${articleId} AND s.participation_mode <> 'editorial'
-    RETURNING s.participation_mode, a.backfill, a.published_at, a.discovered_at`;
+  const row = await sql.begin(async (tx) => {
+    // 与信源更新保持先信源、后文章的锁顺序；等待晋升提交后重新读取参与方式。
+    await tx`SELECT s.id FROM sources s JOIN articles a ON a.source_id = s.id WHERE a.id = ${articleId} FOR SHARE OF s`;
+    const [settled] = await tx<{ participation_mode: string; backfill: boolean; published_at: Date | null; discovered_at: Date }[]>`
+      UPDATE articles a SET processing_state = 'skipped', processing_attempts = 0, processing_retry_at = NULL, processing_queued_at = NULL
+      FROM sources s WHERE s.id = a.source_id AND a.id = ${articleId} AND s.participation_mode <> 'editorial'
+      RETURNING s.participation_mode, a.backfill, a.published_at, a.discovered_at`;
+    return settled;
+  });
   if (!row) return { group: false };
   await publishArticle(articleId);
   return { group: row.participation_mode === "hot_signal" && !isHistorical(row) };

@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { sql } from "../db.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
+import { resumeSourceArticles } from "../jobs/content.ts";
 import { republishKey } from "../jobs/publication.ts";
 import { normalizeUrl } from "../lib/url.ts";
 import { fetchJsonList } from "../sources/json-list.ts";
@@ -115,6 +116,9 @@ export async function updateSource(id: string, input: { patch: unknown; version:
       health = CASE WHEN ${patch.enabled ?? null}::boolean IS FALSE THEN 'paused' WHEN ${patch.enabled ?? null}::boolean IS TRUE AND health = 'paused' THEN 'unknown' ELSE health END,
       next_fetch_at = CASE WHEN ${patch.enabled ?? null}::boolean IS TRUE THEN now() ELSE next_fetch_at END
       WHERE id = ${id} RETURNING *`;
+    if (before.participation_mode !== "editorial" && after!.participation_mode === "editorial") {
+      await resumeSourceArticles(id, tx);
+    }
     await audit(actor, "source.update", `source:${id}`, input.reason ?? null, Object.fromEntries(keys.map((k) => [k, before[k]])), patch);
     // What public exits show for this source's articles is derived from these fields: re-derive them
     // all (in the worker) so a revoked licence or an isolated source stops on every exit.

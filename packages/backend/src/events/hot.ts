@@ -23,6 +23,8 @@ interface HeatRow {
   heat_prev_obs: number;
   /** Participants with a source whose collection was behind: their newest evidence may be missing. */
   behind_participants: number;
+  /** 两个比较窗口中有滞后信源的参与者；不影响仅看当前窗口的快照完整性。 */
+  comparison_behind_participants: number;
   recent6h: number;
   editorial_participants: number;
   signal_participants: number;
@@ -55,31 +57,36 @@ async function heatRows(at: Date, behind: string[] = []): Promise<HeatRow[]> {
   const prev = new Date(at.getTime() - 6 * 3600 * 1000);
   const decayNow = sql`power(0.5, extract(epoch FROM (${at}::timestamptz - last_at)) / 3600.0 / ${HALF_LIFE_HOURS})`;
   const decayPrev = sql`power(0.5, extract(epoch FROM (${prev}::timestamptz - last_prev)) / 3600.0 / ${HALF_LIFE_HOURS})`;
+  const inCurrentWindow = sql`observed_at > ${at}::timestamptz - make_interval(hours => ${WINDOW_HOURS})`;
   const inPrevWindow = sql`last_prev IS NOT NULL AND last_prev > ${prev}::timestamptz - make_interval(hours => ${WINDOW_HOURS})`;
   return sql<HeatRow[]>`
     WITH obs AS (
-      SELECT story_id, participant_key, max(observed_at) AS last_at, min(observed_at) AS first_at,
-             bool_or(kind = 'editorial') AS editorial,
+      SELECT story_id, participant_key,
+             max(observed_at) FILTER (WHERE ${inCurrentWindow}) AS last_at,
+             min(observed_at) FILTER (WHERE ${inCurrentWindow}) AS first_at,
+             bool_or(kind = 'editorial') FILTER (WHERE ${inCurrentWindow}) AS editorial,
              max(observed_at) FILTER (WHERE observed_at <= ${prev}) AS last_prev,
+             bool_or(source_id = ANY(${behind}::text[])) FILTER (WHERE ${inCurrentWindow}) AS behind_current,
              bool_or(source_id = ANY(${behind}::text[])) AS behind
       FROM story_signals
-      WHERE observed_at > ${at}::timestamptz - make_interval(hours => ${WINDOW_HOURS}) AND observed_at <= ${at}
+      WHERE observed_at > ${prev}::timestamptz - make_interval(hours => ${WINDOW_HOURS}) AND observed_at <= ${at}
       GROUP BY story_id, participant_key
     ), agg AS (
       SELECT story_id,
-        count(*) AS participants,
+        count(last_at) AS participants,
         sum(${decayNow}) AS heat,
         coalesce(sum(${decayPrev}) FILTER (WHERE ${inPrevWindow}), 0) AS heat_prev,
         coalesce(sum(${decayNow}) FILTER (WHERE NOT behind), 0) AS heat_obs,
         coalesce(sum(${decayPrev}) FILTER (WHERE ${inPrevWindow} AND NOT behind), 0) AS heat_prev_obs,
-        count(*) FILTER (WHERE behind) AS behind_participants,
+        count(*) FILTER (WHERE behind_current) AS behind_participants,
+        count(*) FILTER (WHERE behind) AS comparison_behind_participants,
         count(*) FILTER (WHERE first_at > ${prev}) AS recent6h,
         count(*) FILTER (WHERE editorial) AS editorial_participants,
         count(*) FILTER (WHERE NOT editorial) AS signal_participants
-      FROM obs GROUP BY story_id
+      FROM obs GROUP BY story_id HAVING count(last_at) > 0
     )
     SELECT a.story_id, st.public_id::text AS public_id, st.title, st.first_report_at, st.latest_at,
-           a.participants, a.heat, a.heat_prev, a.heat_obs, a.heat_prev_obs, a.behind_participants, a.recent6h, a.editorial_participants, a.signal_participants
+           a.participants, a.heat, a.heat_prev, a.heat_obs, a.heat_prev_obs, a.behind_participants, a.comparison_behind_participants, a.recent6h, a.editorial_participants, a.signal_participants
     FROM agg a JOIN stories st ON st.id = a.story_id
     WHERE st.merged_into IS NULL`;
 }
@@ -116,7 +123,7 @@ export async function computeHotRanking(at = new Date()): Promise<{ id: number; 
     // The change against six hours before compares only participants whose sources were observed
     // throughout; with none of the earlier ones observed there is no comparison.
     const prevAll = heatIndex(Number(r.heat_prev));
-    const [cur, prev] = Number(r.behind_participants) > 0 ? [heatIndex(Number(r.heat_obs)), heatIndex(Number(r.heat_prev_obs))] : [heat, prevAll];
+    const [cur, prev] = Number(r.comparison_behind_participants) > 0 ? [heatIndex(Number(r.heat_obs)), heatIndex(Number(r.heat_prev_obs))] : [heat, prevAll];
     const pct = prev > 0 ? (cur - prev) / prev : null;
     const firstAt = r.first_report_at ?? reports[0]!.at;
     const isNew = at.getTime() - firstAt.getTime() < 6 * 3600 * 1000;

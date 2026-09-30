@@ -20,6 +20,7 @@ import type {
   LbStability,
 } from "@aihot/contracts/leaderboard";
 import { sql } from "../db.ts";
+import { boardSubset, modelAccess } from "./access.ts";
 import {
   BOARD_COPY,
   BOARD_LIMIT,
@@ -193,7 +194,8 @@ async function buildRunView(runId: string): Promise<RunView> {
 
   const pageSlugs = new Set<string>();
   for (const key of LEADERBOARD_PUBLIC_BOARDS) {
-    for (const e of boards.get(key)?.entries ?? []) if (e.rank <= BOARD_LIMIT) pageSlugs.add(e.slug);
+    const entries = (boards.get(key)?.entries ?? []).map((e) => ({ ...e, access: modelAccess(modelsById.get(e.model_id)!) }));
+    for (const e of [...boardSubset(entries), ...boardSubset(entries, true), ...boardSubset(entries, false, true), ...boardSubset(entries, true, true)]) pageSlugs.add(e.slug);
   }
 
   const priceRows = await sql<{ model_id: string; currency: "CNY" | "USD"; input: number | null; output: number | null; cached_input: number | null; source_url: string | null; verified_on: Date | null }[]>`
@@ -269,7 +271,6 @@ export async function loadBoard(key: LeaderboardBoardKey): Promise<LbBoardRespon
   const board = view.boards.get(key);
   if (!board) return null;
   const entries: LbBoardEntry[] = board.entries
-    .filter((e) => e.rank <= BOARD_LIMIT)
     .map((e) => {
       const m = view.modelsById.get(e.model_id)!;
       return {
@@ -281,6 +282,7 @@ export async function loadBoard(key: LeaderboardBoardKey): Promise<LbBoardRespon
         confidence: confidenceOf(e),
         stability: e.detail?.stability ?? null,
         price: view.prices.get(m.id) ?? null,
+        access: modelAccess(m),
       };
     });
   const copy = BOARD_COPY[key];
@@ -288,7 +290,9 @@ export async function loadBoard(key: LeaderboardBoardKey): Promise<LbBoardRespon
     run: view.info,
     board: { ...copy, sourceCount: board.sourceCount, operatorCount: board.operatorCount, modelCount: board.modelCount },
     tabs: boardTabs(),
-    entries,
+    entries: boardSubset(entries),
+    filterEntries: [...new Map([...boardSubset(entries, true), ...boardSubset(entries, false, true), ...boardSubset(entries, true, true)]
+      .filter((e) => e.rank > BOARD_LIMIT).map((e) => [e.model.slug, e])).values()].sort((a, b) => a.rank - b.rank),
   };
 }
 

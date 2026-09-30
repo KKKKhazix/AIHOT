@@ -63,7 +63,9 @@ node --env-file=.env scripts/eval-selection.ts --gold .data/gold.jsonl --split d
 - 门槛从 40 到 90 每隔 2 分，各自会得到什么结果；
 - 判错的条目，完整报告写到 `.data/eval/`，同时导入后台 SelectBench。
 
-常用参数：`--models default,deepseek-flash` 同批比较几个模型，`--n 200` 最多抽多少条，`--split holdout` 只跑留出集。同样的输入和提示词再跑不会重复调用模型（有回执复用），只有改过的部分才会产生新调用。
+默认不传 `--models` 时，评测跟随当前 production 的“精选评分”模型路由（后台切换、`SCORE_MODEL` 或默认模型）；`--models default,deepseek-flash` 可显式比较几个模型。其他常用参数：`--n 200` 最多抽多少条，`--split holdout` 只跑留出集。
+
+同次评测中，若不同标注样本渲染出完全相同的评分输入，只共享模型评分结果，各样本仍按自己的预筛结果、信源分级门槛和 gold 独立计分；失败结果也在该次运行内共享，避免并发首跑和缓存重跑得到不同的评测覆盖。重复运行会复用已有回执。报告的 token usage 与平均 latency 按相关回执的全部 provider attempts 汇总，因此解析失败后的重试不会漏计；缓存重跑显示的是这些回执的累计历史用量，不代表本次新增费用。
 
 ### 3. 看错例，改标准，再跑
 

@@ -23,6 +23,10 @@ interface Target {
   config_ref: string | null;
 }
 
+export class DeliveryConflict extends Error {
+  code = "conflict";
+}
+
 /** Default content targets; they start disabled and are switched on in production only. */
 export async function ensureContentTargets() {
   await sql`
@@ -73,15 +77,20 @@ export async function deliverContent(req: DeliveryRequest): Promise<Array<{ targ
  * Sends a stored delivery again after an operator checked the group and found it missing. Only
  * for deliveries in doubt or definitely failed; the safety valve still applies.
  */
-export async function resendDelivery(id: number): Promise<{ status: string }> {
-  const [d] = await sql<{ status: string; payload: unknown; target_key: string; config_ref: string | null; kind: string }[]>`
-    SELECT d.status, d.payload, d.target_key, t.config_ref, t.kind FROM deliveries d JOIN notify_targets t ON t.key = d.target_key WHERE d.id = ${id}`;
+export async function resendDelivery(id: number, version?: string): Promise<{ status: string }> {
+  const [d] = await sql<{ status: string; version: string; payload: unknown; target_key: string; config_ref: string | null; kind: string }[]>`
+    SELECT d.status, d.updated_at::text AS version, d.payload, d.target_key, t.config_ref, t.kind
+    FROM deliveries d JOIN notify_targets t ON t.key = d.target_key WHERE d.id = ${id}`;
   if (!d) throw new Error(`delivery ${id} not found`);
-  if (d.status !== "unknown" && d.status !== "failed") throw new Error(`delivery ${id} is ${d.status}`);
+  if (d.status !== "unknown" && d.status !== "failed") throw new DeliveryConflict("这条投递不需要处理");
   if (!config.feishuContentPushEnabled || d.kind !== "feishu_webhook") throw new Error("content push is disabled in this environment");
   const url = d.config_ref ? credential("integrations", d.config_ref) : undefined;
   if (!url) throw new Error("webhook not configured");
-  await sql`UPDATE deliveries SET status = 'sending', attempts = attempts + 1, updated_at = now() WHERE id = ${id}`;
+  // Keep PostgreSQL's timestamp precision: a retry may already have failed again by the time this
+  // update runs. Only the request that claims the version the operator read may send the card.
+  const claimed = await sql`UPDATE deliveries SET status = 'sending', attempts = attempts + 1, updated_at = now()
+    WHERE id = ${id} AND status IN ('unknown', 'failed') AND updated_at::text = ${version ?? d.version}`;
+  if (!claimed.count) throw new DeliveryConflict("这条投递已被其他操作处理，请刷新后重试");
   try {
     const res = await postWebhook(url, d.payload);
     const status = res.ok ? "sent" : res.status < 500 ? "failed" : "unknown";

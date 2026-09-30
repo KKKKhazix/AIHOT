@@ -99,6 +99,7 @@ export interface LbBoardEntry {
   confidence: LbConfidence;
   stability: LbStability | null;
   price: LbPrice | null;
+  access: { domestic: boolean; weightsUrl: string | null };
 }
 
 export interface LbBoardResponse {
@@ -106,6 +107,8 @@ export interface LbBoardResponse {
   board: LbBoardMeta;
   tabs: LbBoardTab[];
   entries: LbBoardEntry[];
+  /** Additional ranked models needed by the filters, each subset still capped at 30. */
+  filterEntries: LbBoardEntry[];
 }
 
 export type LbScoreFormat = "percent" | "fraction" | "number";

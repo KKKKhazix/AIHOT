@@ -11,6 +11,7 @@ import { getArticle } from "../providers/socialdata.ts";
 import { onlyXArticleLink, xArticleText } from "../sources/x.ts";
 import { sanitizeBody, trimTrailingChrome } from "./sanitize.ts";
 import { contentHash } from "./materials.ts";
+import { markdownBody } from "./markdown.ts";
 
 export interface ExtractedBody {
   html: string;
@@ -45,29 +46,6 @@ export function readable(html: string, url: string): ExtractedBody | null {
   return { html: clean, text, images, via: "readability" };
 }
 
-function markdownToHtml(md: string): string {
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const inline = (s: string) =>
-    esc(s)
-      .replace(/!\[([^\]]*)\]\((https?:[^)\s]+)\)/g, '<img src="$2" alt="$1">')
-      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2">$1</a>')
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/`([^`]+)`/g, "<code>$1</code>");
-  const blocks = md.split(/\n{2,}/);
-  return blocks
-    .map((b) => {
-      const t = b.trim();
-      if (!t) return "";
-      if (/^```/.test(t)) return `<pre><code>${esc(t.replace(/^```\w*\n?|```$/g, ""))}</code></pre>`;
-      const h = /^(#{1,4})\s+(.+)$/.exec(t);
-      if (h) return `<h${Math.min(h[1]!.length + 1, 4)}>${inline(h[2]!)}</h${Math.min(h[1]!.length + 1, 4)}>`;
-      if (/^[-*]\s/.test(t)) return `<ul>${t.split("\n").map((l) => `<li>${inline(l.replace(/^[-*]\s+/, ""))}</li>`).join("")}</ul>`;
-      if (/^>\s?/.test(t)) return `<blockquote><p>${inline(t.replace(/^>\s?/gm, ""))}</p></blockquote>`;
-      return `<p>${inline(t).replace(/\n/g, "<br>")}</p>`;
-    })
-    .join("");
-}
-
 export async function extractFromUrl(url: string, opts: { allowJina: boolean; subject: string }): Promise<ExtractedBody | null> {
   try {
     const res = await guardedFetch(url, { timeoutMs: 20_000, maxBytes: 6 * 1024 * 1024 });
@@ -82,7 +60,7 @@ export async function extractFromUrl(url: string, opts: { allowJina: boolean; su
   if (!opts.allowJina) return null;
   try {
     const page = await jinaRead(url, { purpose: "body_fallback", subject: opts.subject });
-    const html = trimTrailingChrome(sanitizeBody(markdownToHtml(page.markdown), url));
+    const html = markdownBody(page.markdown, url);
     const text = stripTags(html);
     if (text.length < MIN_BODY_CHARS) return null;
     return { html, text, images: [], via: "jina" };

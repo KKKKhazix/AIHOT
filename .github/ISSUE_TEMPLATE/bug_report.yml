@@ -1,0 +1,49 @@
+name: 问题反馈 / Bug report
+description: 报告可以复现的故障，帮助我们定位和修复。
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        部署与使用问题可以先到 [问答区](https://github.com/KKKKhazix/AIHOT/discussions/categories/q-a) 交流。
+        安全漏洞请通过 [私密漏洞报告](https://github.com/KKKKhazix/AIHOT/security/advisories/new) 提交。
+        请勿上传完整 .env、API Key、管理员密码、Cookie 或生产数据库。
+  - type: input
+    id: revision
+    attributes:
+      label: 代码版本
+      description: 在仓库目录执行 git rev-parse --short HEAD；不确定时说明下载或更新日期。
+      placeholder: 提交号或下载日期
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 写明系统、Docker 或本机部署、相关版本；网页问题请注明浏览器。
+      placeholder: Ubuntu / macOS；Docker Compose / Node.js；是否有反向代理；是否改过相关配置。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 从哪个页面、命令或操作开始？提供能复现问题的最少步骤。
+      placeholder: |
+        1. 打开……
+        2. 执行……
+        3. 出现……
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: 预期结果与实际结果
+      placeholder: 预期……；实际……
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 相关日志或截图（可选）
+      description: 只贴相关片段，提交前移除密钥、密码、Cookie 和个人信息；没有日志也可以提交。

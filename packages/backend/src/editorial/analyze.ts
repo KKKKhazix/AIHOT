@@ -13,8 +13,8 @@ import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { CATEGORIES } from "@aihot/industry/taxonomy";
 import { SELECTION } from "@aihot/industry/selection";
 import { sql } from "../db.ts";
-import { chatJson, MODELS, type ContentPart } from "../providers/llm.ts";
-import { completeReceipt, ProviderRejectedError } from "../providers/receipts.ts";
+import { chatJson, MODELS, ModelOutputError, type ContentPart } from "../providers/llm.ts";
+import { completeReceipt, ProviderRejectedError, ReceiptUnknownError } from "../providers/receipts.ts";
 import { collapseWhitespace } from "../lib/text.ts";
 import { modelFor } from "./models.ts";
 import { buildMaterial, firstImagePart, loadAnalyzeInput, type AnalyzeInputArticle } from "./input.ts";
@@ -38,6 +38,7 @@ export const PROMPT_VERSIONS = {
   structure: promptVersion("structure"),
 } as const;
 /** Every step's prompt, as stored on each judgement. */
+export const SELECTION_PROMPT_VERSION = [PROMPT_VERSIONS.prefilter, PROMPT_VERSIONS.score].join("+");
 export const ANALYZE_PROMPT_VERSION = Object.values(PROMPT_VERSIONS).join("+");
 
 // ── Scoring ───────────────────────────────────────────────────────────────────────────────
@@ -182,7 +183,11 @@ export function waitsForPage(a: AnalyzeInputArticle): boolean {
 }
 
 type StepOpts = { attemptTag?: string; scoreModel?: string };
+type ReceiptObserver = (receiptId: number) => void;
 export class AnalysisInterruptedError extends Error {}
+
+const observableReceiptId = (error: unknown): number | null =>
+  error instanceof ModelOutputError || error instanceof ReceiptUnknownError ? error.receiptId : null;
 
 function checkAnalysisRunning() {
   if (shutdownSignal.signal.aborted) throw new AnalysisInterruptedError("worker shutting down between analysis stages");
@@ -211,7 +216,29 @@ async function runPrefilter(a: AnalyzeInputArticle, opts: StepOpts): Promise<Ana
   return { label, reason: res.data.reason, model: res.model, receiptId: res.receiptId, reused: res.reused };
 }
 
-async function runScores(a: AnalyzeInputArticle, threshold: number, opts: StepOpts): Promise<NonNullable<AnalysisRun["scores"]>> {
+/** The production prefilter step, exposed separately so SelectBench can preserve partial receipt evidence. */
+export async function runSelectionPrefilter(
+  a: AnalyzeInputArticle,
+  opts: StepOpts = {},
+  onReceipt?: ReceiptObserver,
+): Promise<AnalysisRun["prefilter"]> {
+  try {
+    const result = await runPrefilter(a, opts);
+    onReceipt?.(result.receiptId);
+    return result;
+  } catch (error) {
+    const receiptId = observableReceiptId(error);
+    if (receiptId !== null) onReceipt?.(receiptId);
+    throw error;
+  }
+}
+
+async function runScores(
+  a: AnalyzeInputArticle,
+  threshold: number,
+  opts: StepOpts,
+  onReceipt?: ReceiptObserver,
+): Promise<NonNullable<AnalysisRun["scores"]>> {
   const model = opts.scoreModel ?? (await modelFor("score"));
   const call = scoreCall(model);
   const input = buildScoreInput(a);
@@ -228,16 +255,29 @@ async function runScores(a: AnalyzeInputArticle, threshold: number, opts: StepOp
         // Each call is its own paid request; an explicit re-evaluation gets new ones.
         attemptTag: tagged(opts.attemptTag, `score-${i + 1}`),
       });
+      onReceipt?.(res.receiptId);
       values.push(res.data.attentionScore);
       receiptIds.push(res.receiptId);
       reused &&= res.reused;
     } catch (error) {
+      const receiptId = observableReceiptId(error);
+      if (receiptId !== null) onReceipt?.(receiptId);
       // The model's content filter declines the material (Zhipu 1301): not scored, so not selected.
       if (isContentFilter(error)) return { model, threshold, values, receiptIds, reused: false, refused: true };
       throw error;
     }
   }
   return { model, threshold, values, receiptIds, reused };
+}
+
+/** The production score step; its threshold stays case-specific even when an evaluator shares model output. */
+export async function runSelectionScores(
+  a: AnalyzeInputArticle,
+  opts: StepOpts = {},
+  onReceipt?: ReceiptObserver,
+): Promise<AnalysisRun["scores"]> {
+  const threshold = tierThreshold(a.source.tier);
+  return threshold === null ? null : runScores(a, threshold, opts, onReceipt);
 }
 
 async function runStructure(a: AnalyzeInputArticle, opts: StepOpts): Promise<NonNullable<AnalysisRun["structure"]>> {
@@ -338,18 +378,17 @@ async function runSummarize(a: AnalyzeInputArticle, opts: StepOpts): Promise<Non
  */
 export async function runAnalysis(a: AnalyzeInputArticle, opts: StepOpts & { stages?: "selection" | "all" } = {}): Promise<AnalysisRun> {
   checkAnalysisRunning();
-  const prefilter = await runPrefilter(a, opts);
+  const prefilter = await runSelectionPrefilter(a, opts);
   // UNKNOWN is let through (its material is as complete as it will get); BLOCK stops here.
   if (prefilter.label === "BLOCK") return { prefilter, scores: null, writing: null, structure: null };
-  const threshold = tierThreshold(a.source.tier);
   if (opts.stages === "selection") {
-    const scores = threshold === null ? null : await runScores(a, threshold, opts);
+    const scores = await runSelectionScores(a, opts);
     return { prefilter, scores, writing: null, structure: null };
   }
   // The structure step needs nothing from the scores: it runs beside them.
   const structure = runStructure(a, opts).then((value) => ({ value }), (error: unknown) => ({ error }));
   try {
-    const scores = threshold === null ? null : await runScores(a, threshold, opts);
+    const scores = await runSelectionScores(a, opts);
     const sum = scores && !scores.refused && scores.values.length === SCORE_CALLS ? scores.values.reduce((total, v) => total + v, 0) : null;
     const near = sum !== null && (sum >= scores!.threshold * SCORE_CALLS || sum > UNDERSTAND_FLOOR * SCORE_CALLS);
     const writing = (near ? await runUnderstand(a, opts) : null) ?? (await runSummarize(a, opts));

@@ -3,13 +3,13 @@ import weights from "./model-weights.json" with { type: "json" };
 import { BOARD_LIMIT } from "./registry.ts";
 
 // This describes the developer, not the reader's network, account or an API reseller.
-const DOMESTIC_PROVIDERS = new Set(["alibaba", "deepseek", "moonshot", "xiaomi", "z-ai", "minimax", "baidu", "tencent", "bytedance", "stepfun", "meituan", "inclusionai"]);
-const DOMESTIC_NAMES = new Set(["alibaba", "deepseek", "moonshot ai", "xiaomi", "z.ai", "minimax", "baidu", "tencent", "bytedance", "stepfun", "meituan", "inclusionai"]);
+const DOMESTIC_PROVIDERS = new Set(["alibaba", "deepseek", "moonshot", "xiaomi", "z-ai", "minimax", "baidu", "tencent", "bytedance", "stepfun", "meituan", "inclusionai", "ant-group", "china-mobile", "kuaishou"]);
+const DOMESTIC_NAMES = new Set(["alibaba", "deepseek", "moonshot ai", "xiaomi", "z.ai", "minimax", "baidu", "tencent", "bytedance", "stepfun", "meituan", "inclusionai", "ant-group", "china mobile", "kuaishou"]);
 
 export function modelAccess(model: { slug: string; provider_slug: string | null; provider: string | null }): LbBoardEntry["access"] {
   const repository = (weights.models as Record<string, string>)[model.slug];
   return {
-    domestic: DOMESTIC_PROVIDERS.has(model.provider_slug ?? "") || DOMESTIC_NAMES.has(model.provider?.toLowerCase() ?? ""),
+    domestic: DOMESTIC_PROVIDERS.has(model.provider_slug ?? "") || DOMESTIC_NAMES.has(model.provider?.trim().toLowerCase() ?? ""),
     weightsUrl: repository ? `https://huggingface.co/${repository}` : null,
   };
 }

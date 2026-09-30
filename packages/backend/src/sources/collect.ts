@@ -21,8 +21,6 @@ export interface CollectResult {
   error?: string;
 }
 
-const MAX_ITEMS_PER_RUN = 60;
-
 export function noiseFiltered(c: Candidate, source: SourceRow): boolean {
   const f = source.config.ingestNoiseFilter;
   const cats: string[] = c.categories ?? [];
@@ -53,7 +51,7 @@ async function loadSource(id: string): Promise<SourceRow | null> {
 /** Titles of the articles already stored under these URLs. */
 async function storedTitles(urls: string[]): Promise<Map<string, string>> {
   if (urls.length === 0) return new Map();
-  const rows = await sql<{ url: string; title: string }[]>`SELECT url, title FROM articles WHERE url IN ${sql(urls)}`;
+  const rows = await sql<{ url: string; title: string }[]>`SELECT url, title FROM articles WHERE url = ANY(${urls}::text[])`;
   return new Map(rows.map((r) => [r.url, r.title]));
 }
 
@@ -132,10 +130,8 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     if (firstImport) {
       const cutoff = Date.now() - backfillMonths * 30 * 86400000;
       candidates = candidates.filter((c) => !c.publishedAt || c.publishedAt.getTime() >= cutoff).slice(0, backfillLimit);
-    } else if (source.kind !== "x_search") {
-      // X keeps every post it read: its watermark already covers them, so a cut here would lose them.
-      candidates = candidates.slice(0, MAX_ITEMS_PER_RUN);
     }
+    // 普通采集须处理全部已返回条目，再推进游标或 RSS 验证器，避免截断尾部后永久漏收。
 
     // Detail pages only for material we have not seen (bounded per run), and only for what the listing lacks.
     const d = source.config.detail;

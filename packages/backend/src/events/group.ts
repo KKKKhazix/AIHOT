@@ -19,7 +19,7 @@ import { sql, type Db } from "../db.ts";
 import { newShortId, newUuid, sha256 } from "../lib/ids.ts";
 import { chatJson } from "../providers/llm.ts";
 import { BudgetExceededError, ReceiptBusyError, completeReceipt } from "../providers/receipts.ts";
-import { embeddingsAvailable, ensureEmbeddings } from "../providers/embeddings.ts";
+import { EMBEDDING_MODEL, compatibleEmbedding, cosine, embeddingsAvailable, ensureEmbeddings } from "../providers/embeddings.ts";
 import { isHistorical, STALE_ON_DISCOVERY_MS } from "../content/materials.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { publishArticle } from "../publication/publish.ts";
@@ -159,9 +159,9 @@ export async function warmRecallWindow(onProgress?: (done: number, total: number
   const ids = [...new Set((await recallPool(true)).map((r) => r.article_id))];
   const texts = await reportTexts(ids);
   const items = ids.map((id) => ({ id, text: texts.get(id) ?? "" })).filter((x) => x.text);
-  const stored = new Set((await sql<{ ref_id: string; text_hash: string }[]>`
-    SELECT ref_id, text_hash FROM embeddings WHERE kind = 'article' AND ref_id = ANY(${items.map((i) => i.id)})`)
-    .map((r) => `${r.ref_id}:${r.text_hash}`));
+  const stored = new Set((await sql<{ ref_id: string; text_hash: string; vector: number[] }[]>`
+    SELECT ref_id, text_hash, vector FROM embeddings WHERE kind = 'article' AND model = ${EMBEDDING_MODEL} AND ref_id = ANY(${items.map((i) => i.id)})`)
+    .filter((r) => compatibleEmbedding(r.vector)).map((r) => `${r.ref_id}:${r.text_hash}`));
   const missing = items.filter((i) => !stored.has(`${i.id}:${sha256(i.text)}`));
   let done = 0;
   for (let i = 0; i < missing.length; i += 100) {
@@ -181,16 +181,6 @@ export async function warmRecallWindow(onProgress?: (done: number, total: number
     onProgress?.(done, missing.length);
   }
   return { total: items.length, embedded: missing.length };
-}
-
-function cosine32(a: Float32Array, b: Float32Array): number {
-  let dot = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i]! * b[i]!;
-    na += a[i]! * a[i]!;
-    nb += b[i]! * b[i]!;
-  }
-  return na && nb ? dot / Math.sqrt(na * nb) : 0;
 }
 
 /**
@@ -223,7 +213,7 @@ async function recallFacts(queryId: string, queryText: string, minScore: number,
         for (const r of pool) {
           const v = fresh.get(r.article_id) ?? vectorCache.get(r.article_id)?.vector;
           if (!v) continue;
-          const s = cosine32(mine, v);
+          const s = cosine(mine, v);
           if (s >= minScore) consider(r, s);
         }
       }
@@ -817,7 +807,7 @@ async function rematchSignals(articleId: string, queryText: string): Promise<num
   let close = 0;
   for (const p of posts) {
     const v = vectors.get(p.id);
-    if (!v || cosine32(mine, v) < SIGNAL_MIN_COSINE) continue;
+    if (!v || cosine(mine, v) < SIGNAL_MIN_COSINE) continue;
     // A post still waiting in the queue keeps that job (same key): it will meet the new fact anyway.
     await enqueue(QUEUES.group, { articleId: p.id, signalOnly: true }, { singletonKey: p.id, priority: -1 });
     close += 1;

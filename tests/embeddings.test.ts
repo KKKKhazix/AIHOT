@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { sha256 } from "@aihot/backend/lib/ids";
-import { EMBEDDING_MODEL, ensureEmbeddings } from "@aihot/backend/providers/embeddings";
+// 测试种子使用二维向量，先显式配置再加载读取该配置的模块。
+process.env.EMBEDDING_DIMS = "2";
+const { EMBEDDING_MODEL, ensureEmbeddings } = await import("@aihot/backend/providers/embeddings");
 
 const T = tag();
 after(closeDb);

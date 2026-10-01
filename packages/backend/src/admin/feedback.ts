@@ -1,19 +1,19 @@
 // Feedback handling: list, status and note, per-source bans, and deletion on request
 // (privacy notice: feedback material is removed once handling ends or when the sender asks).
+import type { AdminFeedback, BeforeJson } from "@aihot/contracts/admin";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.ts";
 import { sql } from "../db.ts";
-import { audit } from "./auth.ts";
-import { Conflict } from "./sources.ts";
+import { audit, Conflict } from "../audit.ts";
 
 export const FEEDBACK_STATUSES = ["new", "triaged", "replied", "resolved", "spam"] as const;
 export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
 
-export async function listFeedback(f: { status?: string; q?: string; page?: number }) {
+export async function listFeedback(f: { status?: string; q?: string; page?: number }): Promise<BeforeJson<AdminFeedback>> {
   const page = Math.max(1, f.page ?? 1);
   const q = f.q?.trim() ? `%${f.q.trim()}%` : null;
-  const rows = await sql`
+  const rows = await sql<BeforeJson<AdminFeedback["rows"][number]>[]>`
     SELECT fb.id, fb.content, fb.email, fb.page_url, split_part(fb.screenshot_key, ':', 1) AS screenshot, fb.source_hash, fb.status, fb.note,
            fb.forwarded_at, fb.forward_error, fb.created_at, fb.updated_at,
            EXISTS (SELECT 1 FROM feedback_bans b WHERE b.source_hash = fb.source_hash) AS banned,
@@ -23,7 +23,7 @@ export async function listFeedback(f: { status?: string; q?: string; page?: numb
       AND (${q}::text IS NULL OR fb.content ILIKE ${q} OR fb.email ILIKE ${q} OR fb.page_url ILIKE ${q})
     ORDER BY fb.created_at DESC LIMIT 50 OFFSET ${(page - 1) * 50}`;
   const counts = await sql<{ status: string; n: number }[]>`SELECT status, count(*)::int AS n FROM feedback GROUP BY 1`;
-  const bans = await sql`SELECT source_hash, reason, created_by, created_at FROM feedback_bans ORDER BY created_at DESC LIMIT 100`;
+  const bans = await sql<BeforeJson<AdminFeedback["bans"][number]>[]>`SELECT source_hash, reason, created_by, created_at FROM feedback_bans ORDER BY created_at DESC LIMIT 100`;
   return { page, rows, counts: Object.fromEntries(counts.map((c) => [c.status, c.n])), bans };
 }
 
@@ -36,7 +36,7 @@ export async function updateFeedback(id: number, input: { status?: string; note?
     const [after] = await tx`
       UPDATE feedback SET status = coalesce(${input.status ?? null}, status), note = ${input.note === undefined ? before.note : input.note}, updated_at = now()
       WHERE id = ${id} RETURNING id, status, note, updated_at`;
-    await audit(actor, "feedback.update", `feedback:${id}`, null, { status: before.status, note: before.note }, { status: after!.status, note: after!.note });
+    await audit(actor, "feedback.update", `feedback:${id}`, null, { status: before.status, note: before.note }, { status: after!.status, note: after!.note }, { db: tx });
     return after;
   });
 }

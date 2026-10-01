@@ -19,12 +19,28 @@ const { xView } = await import("@aihot/backend/publication/items");
 
 let imageHits = 0;
 let failureHits = 0;
+let animationHits = 0;
 const png = await sharp({ create: { width: 800, height: 400, channels: 3, background: "#176b75" } }).png().toBuffer();
 // Ten noisy 160×120 frames: a GIF that animated WebP clearly beats.
 const frames = await sharp({ create: { width: 160, height: 1200, channels: 3, background: "#808080", noise: { type: "gaussian", mean: 128, sigma: 40 } } }).raw().toBuffer();
 const animatedGif = await sharp(frames, { raw: { width: 160, height: 1200, channels: 3, pageHeight: 120 } }).gif({ loop: 0, delay: Array(10).fill(90) }).toBuffer();
+const tinyGif = await sharp(Buffer.from([255, 0, 0, 0, 0, 255]), { raw: { width: 1, height: 2, channels: 3, pageHeight: 1 } }).gif({ loop: 2, delay: [80, 160] }).toBuffer();
+// Inflate the two image descriptors only: metadata exceeds the decode budget without actually
+// allocating hundreds of millions of pixels in this test (or on an HTTP request).
+const overBudgetGif = Buffer.from(tinyGif);
+const descriptor = Buffer.from([44, 0, 0, 0, 0, 1, 0, 1, 0]);
+for (let at = overBudgetGif.indexOf(descriptor); at !== -1; at = overBudgetGif.indexOf(descriptor, at + 9)) {
+  overBudgetGif.writeUInt16LE(11000, at + 5);
+  overBudgetGif.writeUInt16LE(11000, at + 7);
+}
 const server = createServer(async (req, res) => {
-  if (req.url === "/anim.gif") { res.writeHead(200, { "content-type": "image/gif" }); return res.end(animatedGif); }
+  if (req.url === "/anim.gif") { animationHits++; res.writeHead(200, { "content-type": "image/gif" }); return res.end(animatedGif); }
+  if (req.url === "/tiny.gif") { res.writeHead(200, { "content-type": "image/gif" }); return res.end(tinyGif); }
+  if (req.url === "/over-budget.gif") { res.writeHead(200, { "content-type": "image/gif" }); return res.end(overBudgetGif); }
+  if (req.url === "/binary-image") { res.writeHead(200, { "content-type": "application/octet-stream" }); return res.end(png); }
+  if (req.url === "/binary-alias") { res.writeHead(200, { "content-type": "binary/octet-stream" }); return res.end(png); }
+  if (req.url === "/binary-alias-error") { res.writeHead(200, { "content-type": "binary/octet-stream" }); return res.end("<html>Not an image</html>"); }
+  if (req.url === "/binary-error") { res.writeHead(200, { "content-type": "application/octet-stream" }); return res.end("<html>Image not found</html>"); }
   if (req.url?.startsWith("/redirect/")) {
     await new Promise((resolve) => setTimeout(resolve, 80));
     res.writeHead(302, { location: `/redirect/${Number(req.url.split("/").pop()) + 1}` });
@@ -42,6 +58,8 @@ after(async () => {
   server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   const { closeDb } = await import("@aihot/backend/db");
+  const { stopBoss } = await import("@aihot/backend/jobs/queue");
+  await stopBoss();
   await closeDb();
   await rm(dir, { recursive: true, force: true });
 });
@@ -81,7 +99,7 @@ test("concurrent cold OG and poster requests all succeed with identical cached b
   const cards = await Promise.all(Array.from({ length: 6 }, () => renderOg(card)));
   for (const result of cards) assert.deepEqual(result, cards[0]);
   assert.equal((await sharp(cards[0]!.png).metadata()).width, 1200);
-  const poster = { url: "https://example.com/items/test", kicker: "测试", title: "海报并发验证", summary: null, source: "测试来源", date: "2026-09-28", score: null };
+  const poster = { url: "https://aihot.news/items/test", kicker: "AIHOT", title: "海报并发验证", summary: null, source: "AIHOT", date: "2026-09-28", score: null };
   const posters = await Promise.all(Array.from({ length: 4 }, () => renderPoster(poster)));
   for (const result of posters) assert.deepEqual(result, posters[0]);
   assert.equal((await sharp(posters[0]!.png).metadata()).width, 1080);
@@ -168,7 +186,7 @@ test("responsive URLs and web body candidates retain exact signatures and stable
   assert.doesNotMatch(proxyBodyImages(html, true), /srcset=/);
 });
 
-test("image HTTP responses keep issued URLs valid, reject tampering before fetching and do not vary on Accept", async () => {
+test("image HTTP responses keep legacy URLs valid, reject tampering before fetching and do not vary on Accept", async () => {
   const { default: Fastify } = await import("fastify");
   const { registerMedia } = await import("../apps/api/src/routes/media.ts");
   const { signature } = await import("@aihot/backend/media/imgproxy");
@@ -203,16 +221,95 @@ test("background preparation turns a cached GIF into a smaller animated WebP wit
   const { convertAnimated } = await import("@aihot/backend/media/images");
   const passed = await produceImage(`${base}/anim.gif`, "image-336");
   assert.equal(passed.type, "image/gif");
+  assert.equal(passed.pendingAnimation, true);
   const saved = await convertAnimated(`${base}/anim.gif`, "image-336");
   assert.ok(saved > 0);
   const served = await produceImage(`${base}/anim.gif`, "image-336");
   assert.equal(served.type, "image/webp");
+  assert.equal(served.pendingAnimation, undefined);
   assert.ok(served.body.length < animatedGif.length);
   const meta = await sharp(served.body, { animated: true }).metadata();
   assert.equal(meta.pages, 10);
   assert.deepEqual(meta.delay, Array(10).fill(90));
   assert.equal(meta.width, 160);
   assert.equal(await convertAnimated(`${base}/anim.gif`, "image-336"), 0);
+});
+
+test("pending animations expire at caches, then publish the prepared disk rendition without refetching", async () => {
+  const { default: Fastify } = await import("fastify");
+  const { registerMedia } = await import("../apps/api/src/routes/media.ts");
+  const { signature } = await import("@aihot/backend/media/imgproxy");
+  const { convertAnimated } = await import("@aihot/backend/media/images");
+  const { getBoss, QUEUES } = await import("@aihot/backend/jobs/queue");
+  const boss = await getBoss();
+  // Other files leave article preparation jobs in the shared throwaway database. Exercise this
+  // rendition's real queue callback without claiming unrelated synthetic articles.
+  await boss.deleteAllJobs(QUEUES.prepareMedia);
+  const app = Fastify();
+  registerMedia(app);
+  const url = `${base}/anim.gif`;
+  const exp = String(Math.ceil(Date.now() / 1000) + 3600);
+  const params = new URLSearchParams({ u: url, mode: "image-720", exp, sig: signature(url, "image-720", exp) });
+  const first = await app.inject({ url: `/api/img-proxy?${params}` });
+  assert.equal(first.statusCode, 200);
+  assert.match(String(first.headers["cache-control"]), /max-age=60, s-maxage=60/);
+  const again = await app.inject({ url: `/api/img-proxy?${params}` });
+  assert.deepEqual(again.rawPayload, first.rawPayload);
+  const fetched = animationHits;
+  const jobs = await boss.fetch<{ url: string; mode: string }>(QUEUES.prepareMedia);
+  assert.equal(jobs.length, 1);
+  assert.deepEqual(jobs[0]!.data, { url, mode: "image-720" });
+  const saved = await convertAnimated(jobs[0]!.data.url, jobs[0]!.data.mode);
+  assert.ok(saved > 0);
+  await boss.complete(QUEUES.prepareMedia, jobs[0]!.id);
+  const prepared = await app.inject({ url: `/api/img-proxy?${params}` });
+  assert.equal(prepared.headers["content-type"], "image/webp");
+  assert.ok(Number(/s-maxage=(\d+)/.exec(String(prepared.headers["cache-control"]))?.[1]) > 3500);
+  assert.equal(animationHits, fetched);
+  const unchanged = await produceImage(`${base}/tiny.gif`, "image-720");
+  assert.equal(unchanged.pendingAnimation, true);
+  assert.equal(await convertAnimated(`${base}/tiny.gif`, "image-720"), 0);
+  const ready = await produceImage(`${base}/tiny.gif`, "image-720");
+  assert.deepEqual(ready.body, tinyGif);
+  assert.equal(ready.pendingAnimation, undefined);
+  const unsupported = await produceImage(`${base}/over-budget.gif`, "image-720");
+  assert.deepEqual(unsupported.body, overBudgetGif);
+  assert.equal(unsupported.pendingAnimation, undefined);
+  assert.equal(await convertAnimated(`${base}/over-budget.gif`, "image-720"), 0);
+  await app.close();
+});
+
+test("binary-labelled real images work, but binary-labelled error pages still return 502", async () => {
+  const { default: Fastify } = await import("fastify");
+  const { registerMedia } = await import("../apps/api/src/routes/media.ts");
+  const { proxiedImage } = await import("@aihot/backend/media/imgproxy");
+  const app = Fastify();
+  registerMedia(app);
+  const image = await app.inject({ url: proxiedImage(`${base}/binary-image`, "image-336")! });
+  assert.equal(image.statusCode, 200);
+  assert.equal(image.headers["content-type"], "image/webp");
+  assert.equal((await sharp(image.rawPayload).metadata()).width, 336);
+  const error = await app.inject({ url: proxiedImage(`${base}/binary-error`, "image-336")! });
+  assert.equal(error.statusCode, 502);
+  // Arduino's CDN serves real JPEG/PNG bytes under this generic MIME alias. A 200 HTML error with
+  // the same label must still fail; accepting the label alone would disguise an upstream failure.
+  const alias = await app.inject({ url: proxiedImage(`${base}/binary-alias`, "image-336")! });
+  assert.equal(alias.statusCode, 200);
+  assert.equal((await sharp(alias.rawPayload).metadata()).width, 336);
+  const aliasError = await app.inject({ url: proxiedImage(`${base}/binary-alias-error`, "image-336")! });
+  assert.equal(aliasError.statusCode, 502);
+  await app.close();
+});
+
+test("tracking pixels are omitted from old and new bodies without removing article illustrations", async () => {
+  const { sanitizeBody } = await import("@aihot/backend/content/sanitize");
+  const { proxyBodyImages } = await import("@aihot/backend/media/imgproxy");
+  const html = '<p>Article</p><img src="https://ids4.ad.gt/api/v1/ip_match?id=example"><img src="https://secure.adnxs.com/getuid?x=1"><img src="https://example.org/pixel" width="1" height="1"><img src="https://example.org/chart.png" width="800" height="400">';
+  for (const body of [sanitizeBody(html), proxyBodyImages(html)]) {
+    assert.doesNotMatch(body, /ids4|adnxs|example.org\/pixel/);
+    assert.equal((body.match(/<img\b/g) ?? []).length, 1);
+    assert.match(decodeURIComponent(body), /example.org\/chart.png/);
+  }
 });
 
 test("preparation finds every rendition a card and a page ask for, including escaped body images", async () => {

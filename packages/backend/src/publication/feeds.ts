@@ -1,3 +1,4 @@
+import { listedCondition, selectedCondition } from "./scope.ts";
 // RSS feeds. GUID = article id (isPermaLink=false), <link> = the site's page, pubDate = source
 // publication time. Summary feeds never carry content:encoded; full feeds inline bodies only for
 // sources that explicitly allow redistribution. Titles come from the site's name and categories.
@@ -9,7 +10,7 @@ import { escapeXml } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { reportHeadline, reportIndex } from "./reports.ts";
 import { textToHtml } from "../content/sanitize.ts";
-import { categoryCondition, listedCondition, selectedCondition, xView, type ItemRow } from "./items.ts";
+import { categoryCondition, xView, type ItemRow } from "./items.ts";
 import { dailyUrl, itemUrl, siteUrl } from "./links.ts";
 
 interface FeedMeta {
@@ -114,7 +115,7 @@ export type ItemFeedKind = "selected" | "selected-full" | "all";
 export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKey | null, now = new Date()): Promise<string> {
   const includeContent = kind === "selected-full";
   const scope = kind === "all"
-    ? sql`${listedCondition(now)} AND p.eligible AND coalesce(p.published_at, p.discovered_at) > ${now}::timestamptz - interval '7 days'
+    ? sql`${listedCondition(now)} AND coalesce(p.published_at, p.discovered_at) > ${now}::timestamptz - interval '7 days'
         AND coalesce(p.published_at, p.discovered_at) <= ${now}`
     : sql`${selectedCondition(now)} ${categoryCondition(category, true)}
         ${category ? sql`AND coalesce(p.published_at, p.discovered_at) >= ${new Date(now.getTime() - 7 * 86400_000)}` : sql``}`;

@@ -10,21 +10,18 @@ import { scheduleMpReconcile } from "@aihot/backend/sources/mp";
 import { refreshSourceIcons } from "@aihot/backend/sources/icons";
 import { computeHotRanking, snapshotHeat } from "@aihot/backend/events/hot";
 import { refreshStoryStatuses } from "@aihot/backend/events/digest";
-import { linkRelatedStories } from "@aihot/backend/events/group";
-import { catchUpReports, composeDaily, composeMonthly, composeWeekly } from "@aihot/backend/reports/compose";
-import { addDays, beijingDate, isoWeekLabel } from "@aihot/contracts/time";
+import { linkRelatedStories } from "@aihot/backend/events/consolidate";
+import { catchUpReports, composeDaily, composeMonthly, composeWeekly, dueDaily, dueWeekly, dueMonthly } from "@aihot/backend/reports/compose";
 import { runLeaderboardRound } from "@aihot/backend/leaderboard/method/run";
 import { refreshLeaderboard } from "@aihot/backend/leaderboard/fetch/refresh";
 import { monitorTick } from "@aihot/backend/monitor/scan";
 import { dailyRetention } from "@aihot/backend/operations/retention";
 import { submitIndexNow } from "@aihot/backend/operations/indexnow";
 import { checkAlerts, sendDigest } from "@aihot/backend/operations/alerts";
-import { autoReleaseUnknownReceipts } from "@aihot/backend/admin/runs";
+import { recoverStaleWork } from "@aihot/backend/operations/recover";
 import { forwardPendingFeedback } from "@aihot/backend/operations/feedback";
 import { backupConfigured, runBackup } from "@aihot/backend/operations/backup";
 import { sourceHealthWeekly } from "@aihot/backend/operations/reports";
-import { markStalePendingReceipts } from "@aihot/backend/providers/receipts";
-import { markStaleDeliveries } from "@aihot/backend/notify/deliver";
 
 interface Scheduled {
   name: string;
@@ -43,16 +40,13 @@ export const SCHEDULES: Scheduled[] = [
   { name: "hot.snapshot", cron: "2 * * * *", run: () => snapshotHeat() },
   { name: "stories.status", cron: "7 * * * *", run: refreshStoryStatuses },
   { name: "stories.links", cron: "12 * * * *", run: linkRelatedStories },
-  { name: "reports.daily", cron: "0 8 * * *", missed: "once", run: () => composeDaily(beijingDate(Date.now())) },
-  { name: "reports.weekly", cron: "0 10 * * 1", missed: "once", run: () => composeWeekly(isoWeekLabel(addDays(beijingDate(Date.now()), -7))) },
+  { name: "reports.daily", cron: "0 8 * * *", missed: "once", run: () => composeDaily(dueDaily()) },
+  { name: "reports.weekly", cron: "0 10 * * 1", missed: "once", run: () => composeWeekly(dueWeekly()) },
   {
     name: "reports.monthly",
     cron: "30 10 1 * *",
     missed: "once",
-    run: () => {
-      const [y, m] = beijingDate(Date.now()).split("-").map(Number) as [number, number];
-      return composeMonthly(m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`);
-    },
+    run: () => composeMonthly(dueMonthly()),
   },
   { name: "reports.catch-up", cron: "15 * * * *", run: () => catchUpReports() },
   { name: "ops.retention", cron: "30 3 * * *", missed: "once", run: () => dailyRetention() },
@@ -64,7 +58,7 @@ export const SCHEDULES: Scheduled[] = [
   {
     name: "ops.recover",
     cron: "*/10 * * * *",
-    run: async () => ({ receipts: await markStalePendingReceipts(), released: await autoReleaseUnknownReceipts(), deliveries: await markStaleDeliveries() }),
+    run: recoverStaleWork,
   },
   { name: "ops.alerts", cron: "*/10 * * * *", run: () => checkAlerts() },
   // One message with the follow-ups that do not touch readers (nothing when there are none).

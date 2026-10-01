@@ -20,20 +20,20 @@ export function parseJinaText(text: string): JinaPage {
 
 /**
  * Reads a page through Jina. The receipt key is the target URL plus the day, so a same-day retry of an
- * article's body or detail reuses it. A listing is read afresh on every fetch (`perRead`): with the day
- * key each listing was read once a day and every later fetch saw the morning's page.
+ * article's body or detail reuses it. A listing passes its fetch `round` instead: with the day key each
+ * listing was read once a day and every later fetch saw the morning's page, while a key that changed on
+ * every call would pay again for a request whose outcome is unknown.
  */
 export async function jinaRead(
   targetUrl: string,
-  opts: { purpose: string; subject: string; format?: "markdown" | "html"; cacheToleranceSeconds?: number; perRead?: boolean },
+  opts: { purpose: string; subject: string; format?: "markdown" | "html"; cacheToleranceSeconds?: number; round?: string },
 ): Promise<JinaPage & { receiptId: number; raw: string }> {
   const key = credential("collectors", "JINA_API_KEY");
   if (!key) throw new Error("JINA_API_KEY is not configured");
   const base = (credential("collectors", "JINA_BASE_URL") ?? "https://r.jina.ai").replace(/\/$/, "");
   // A listing whose freshness matters (xAI news) caps how old Jina's cached rendering may be.
   const tolerance: Record<string, string> = Number.isInteger(opts.cacheToleranceSeconds) && opts.cacheToleranceSeconds! >= 0 ? { "x-cache-tolerance": String(opts.cacheToleranceSeconds) } : {};
-  const now = new Date().toISOString();
-  const day = opts.perRead ? now : now.slice(0, 10);
+  const day = opts.round ?? new Date().toISOString().slice(0, 10);
   const receipt = await paidRequest(
     { service: "jina", model: null, purpose: opts.purpose, subject: opts.subject, identity: { url: targetUrl, day, format: opts.format ?? "markdown" }, requestSummary: { url: targetUrl } },
     async () => {
@@ -47,8 +47,7 @@ export async function jinaRead(
       }
       if (res.status === 429 || res.status >= 500) throw new ProviderRejectedError(`jina HTTP ${res.status}`, res.status, true);
       const text = res.text();
-      // Billed in tokens; estimated at about ¥0.36 per million (a recharge-pack price). Without the usage
-      // header nothing is guessed.
+      // Billed in tokens; estimated at about ¥0.36 per million. Without the usage header nothing is guessed.
       const tokens = Number(res.headers.get("x-usage-tokens")) || null;
       const cost = tokens ? { amount: (tokens / 1e6) * 0.36, currency: "CNY", basis: "estimated" as const } : null;
       return { response: { text: text.slice(0, 2_000_000), status: res.status }, requestId: res.headers.get("x-request-id"), usage: { bytes: res.body.length, tokens }, cost };

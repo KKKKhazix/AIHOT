@@ -86,17 +86,22 @@ export async function extractArticleBody(articleId: string, allowJina = process.
   const [a] = await sql<{ id: string; url: string; body_status: string; revision: number; x_post: { tweetId?: string } | null }[]>`
     SELECT id, url, body_status, revision, x_post FROM articles WHERE id = ${articleId}`;
   if (!a || a.body_status === "ok") return "skipped";
-  if (a.x_post?.tweetId) return extractXArticle(a.id, a.x_post.tweetId);
+  if (a.x_post?.tweetId) return extractXArticle(a.id, a.x_post.tweetId, a.revision);
   const got = await extractFromUrl(a.url, { allowJina, subject: `article:${a.id}` });
   if (!got) {
-    await sql`UPDATE articles SET body_status = 'unconfirmed', updated_at = now() WHERE id = ${articleId} AND body_status <> 'ok'`;
-    return "unconfirmed";
+    return markUnconfirmed(articleId, a.revision);
   }
   // The body is new content: a new revision, so an analysis of the body-less input counts as stale.
-  await sql.begin(async (tx) => {
-    const [row] = await tx<{ title: string; excerpt: string | null }[]>`SELECT title, excerpt FROM articles WHERE id = ${articleId} FOR UPDATE`;
-    if (!row) return;
+  return sql.begin(async (tx) => {
+    const [row] = await tx<{ title: string; excerpt: string | null; content_hash: string | null }[]>`
+      SELECT title, excerpt, content_hash FROM articles
+      WHERE id = ${articleId} AND revision = ${a.revision} AND body_status <> 'ok' FOR UPDATE`;
+    if (!row) return "skipped";
     const hash = contentHash({ title: row.title, bodyText: got.text, excerpt: row.excerpt });
+    if (hash === row.content_hash) {
+      await tx`UPDATE articles SET body_status = 'ok', updated_at = now() WHERE id = ${articleId}`;
+      return "ok";
+    }
     const [r] = await tx<{ revision: number }[]>`
       UPDATE articles SET body_html = ${got.html}, body_text = ${got.text}, body_status = 'ok',
         media = CASE WHEN jsonb_array_length(media) = 0 THEN ${tx.json(got.images as never)}::jsonb ELSE media END,
@@ -104,8 +109,14 @@ export async function extractArticleBody(articleId: string, allowJina = process.
       WHERE id = ${articleId} RETURNING revision`;
     await tx`INSERT INTO article_revisions (article_id, revision, content_hash, title, body_text)
              VALUES (${articleId}, ${r!.revision}, ${hash}, ${row.title}, ${got.text})`;
+    return "ok";
   });
-  return "ok";
+}
+
+async function markUnconfirmed(articleId: string, revision: number): Promise<"unconfirmed" | "skipped"> {
+  const rows = await sql`UPDATE articles SET body_status = 'unconfirmed', updated_at = now()
+    WHERE id = ${articleId} AND revision = ${revision} AND body_status <> 'ok' RETURNING id`;
+  return rows.length ? "unconfirmed" : "skipped";
 }
 
 /**
@@ -114,19 +125,30 @@ export async function extractArticleBody(articleId: string, allowJina = process.
  * No article (the link points at someone else's, or X has none) leaves the post "unconfirmed", and
  * the judging steps are told the article was not fetched.
  */
-async function extractXArticle(articleId: string, tweetId: string): Promise<"ok" | "unconfirmed"> {
+async function extractXArticle(articleId: string, tweetId: string, revision: number): Promise<"ok" | "unconfirmed" | "skipped"> {
   const found = await getArticle(tweetId, { purpose: "x_article", subject: `article:${articleId}` });
   const got = found ? xArticleText(found) : null;
   if (!got) {
-    await sql`UPDATE articles SET body_status = 'unconfirmed', updated_at = now() WHERE id = ${articleId} AND body_status <> 'ok'`;
-    return "unconfirmed";
+    return markUnconfirmed(articleId, revision);
   }
-  await sql.begin(async (tx) => {
-    const [row] = await tx<{ title: string; excerpt: string | null; body_text: string | null; x_post: { text?: string } | null }[]>`
-      SELECT title, excerpt, body_text, x_post FROM articles WHERE id = ${articleId} FOR UPDATE`;
-    if (!row) return;
+  return sql.begin(async (tx) => {
+    const [row] = await tx<{ title: string; excerpt: string | null; body_text: string | null; x_post: { text?: string } | null; x_article: { title?: string | null; text?: string } | null }[]>`
+      SELECT title, excerpt, body_text, x_post, x_article FROM articles
+      WHERE id = ${articleId} AND revision = ${revision} AND body_status <> 'ok' FOR UPDATE`;
+    if (!row) return "skipped";
+    const block = (a: { title?: string | null; text?: string } | null) => (a ? [a.title ? `# ${a.title}` : "", a.text ?? ""].filter(Boolean).join("\n\n") : "");
+    // The post's own text, without an article appended by an earlier extraction (an admin re-run
+    // extracts again from the post; appending once more would repeat the article).
+    const previous = block(row.x_article);
+    let base = row.body_text ?? "";
+    if (previous && base.endsWith(previous)) base = base.slice(0, -previous.length).replace(/\s+$/, "");
     const title = got.title && onlyXArticleLink(row.x_post?.text) ? got.title : row.title;
-    const bodyText = [row.body_text ?? "", got.title ? `# ${got.title}` : "", got.text].filter(Boolean).join("\n\n");
+    const bodyText = [base, block(got)].filter(Boolean).join("\n\n");
+    if (bodyText === row.body_text && title === row.title) {
+      // The same article again: nothing new, no new revision.
+      await tx`UPDATE articles SET body_status = 'ok', x_article = ${tx.json(got as never)}, updated_at = now() WHERE id = ${articleId}`;
+      return "ok";
+    }
     const hash = contentHash({ title, bodyText, excerpt: row.excerpt });
     const [r] = await tx<{ revision: number }[]>`
       UPDATE articles SET title = ${title}, body_text = ${bodyText}, x_article = ${tx.json(got as never)}, body_status = 'ok',
@@ -134,8 +156,8 @@ async function extractXArticle(articleId: string, tweetId: string): Promise<"ok"
       WHERE id = ${articleId} RETURNING revision`;
     await tx`INSERT INTO article_revisions (article_id, revision, content_hash, title, body_text)
              VALUES (${articleId}, ${r!.revision}, ${hash}, ${title}, ${bodyText})`;
+    return "ok";
   });
-  return "ok";
 }
 
 export { collapseWhitespace };

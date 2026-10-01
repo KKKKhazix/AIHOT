@@ -27,8 +27,8 @@ before(async () => {
     return answer(id);
   }) as typeof fetch;
   config.feishuContentPushEnabled = true;
-  await sql`INSERT INTO notify_targets (key, purpose, kind, config_ref)
-    VALUES (${TARGET}, 'content', 'feishu_webhook', 'TEST_DELIVERY_WEBHOOK')`;
+  await sql`INSERT INTO notify_targets (key, purpose, kind, config_ref, enabled)
+    VALUES (${TARGET}, 'content', 'feishu_webhook', 'TEST_DELIVERY_WEBHOOK', true)`;
 });
 const realFetch = globalThis.fetch;
 after(async () => {
@@ -43,7 +43,7 @@ after(async () => {
 
 async function delivery(status = "unknown") {
   const [row] = await sql<{ id: number }[]>`INSERT INTO deliveries (target_key, subject_kind, subject_id, dedupe_key, status)
-    VALUES (${TARGET}, 'selected', 'test', ${`${T}-${ids.length}`}, ${status}) RETURNING id`;
+    VALUES (${TARGET}, 'codex_reset', 'test', ${`${T}-${ids.length}`}, ${status}) RETURNING id`;
   ids.push(row.id);
   await sql`UPDATE deliveries SET payload = ${sql.json({ id: row.id })} WHERE id = ${row.id}`;
   return row.id;

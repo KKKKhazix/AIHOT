@@ -1,6 +1,7 @@
 // Operator settings: about-page QR codes (replaced without a release), notification targets
 // (switching a group on records enabled_at so older content is never back-filled) and per-service
 // request budgets (the circuit breaker paid calls check before sending).
+import type { AdminBudget, AdminNotifyTarget, AdminSettings, BeforeJson } from "@aihot/contracts/admin";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
@@ -8,7 +9,7 @@ import { config } from "../config.ts";
 import { sql } from "../db.ts";
 import { sha256 } from "../lib/ids.ts";
 import { loadContact, type ContactSettings } from "../site/contact.ts";
-import { audit } from "./auth.ts";
+import { audit } from "../audit.ts";
 
 const MAX_QR_BYTES = 2 * 1024 * 1024;
 
@@ -31,8 +32,14 @@ export async function replaceContactQr(input: { slot: keyof ContactSettings; dat
   return next;
 }
 
-export async function listTargets() {
-  return sql`
+/** The settings page: contact QR codes, content push targets and paid-service budgets. */
+export async function settingsOverview(): Promise<BeforeJson<AdminSettings>> {
+  const [contact, targets, budgets] = await Promise.all([loadContact(), listTargets(), listBudgets()]);
+  return { contact, targets, budgets };
+}
+
+export async function listTargets(): Promise<BeforeJson<AdminNotifyTarget>[]> {
+  return sql<BeforeJson<AdminNotifyTarget>[]>`
     SELECT t.key, t.purpose, t.kind, t.enabled, t.enabled_at, t.config_ref, t.note, t.updated_at,
            (SELECT count(*)::int FROM deliveries d WHERE d.target_key = t.key AND d.created_at > now() - interval '7 days') AS deliveries_7d,
            (SELECT max(d.sent_at) FROM deliveries d WHERE d.target_key = t.key) AS last_sent_at
@@ -50,8 +57,8 @@ export async function setTargetEnabled(key: string, enabled: boolean, reason: st
   return { ...after, pushEnabledHere: config.feishuContentPushEnabled };
 }
 
-export async function listBudgets() {
-  return sql`
+export async function listBudgets(): Promise<BeforeJson<AdminBudget>[]> {
+  return sql<BeforeJson<AdminBudget>[]>`
     SELECT b.service, b.per_minute, b.per_hour, b.per_day, b.note, b.updated_at,
            (SELECT count(*)::int FROM receipt_attempts a WHERE a.service = b.service AND a.origin = 'live' AND a.started_at > now() - interval '1 day') AS used_day,
            (SELECT count(*)::int FROM receipt_attempts a WHERE a.service = b.service AND a.origin = 'live' AND a.started_at > now() - interval '1 hour') AS used_hour

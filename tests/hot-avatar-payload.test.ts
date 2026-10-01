@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, test } from 'node:test';
 import { closeDb, sql } from '@aihot/backend/db';
-import { loadHotStrip, rankingExtras, type HotEntry } from '@aihot/backend/events/hot-read';
+import { loadHotStrip, rankingExtras } from '@aihot/backend/publication/hot';
+import type { HotEntry } from '@aihot/backend/events/hot';
 import { proxiedImage } from '@aihot/backend/media/imgproxy';
 
 const t = `hotfaces-${tag()}`;
@@ -28,6 +29,7 @@ const storyIds: number[] = [];
 after(async () => {
   if (rankingId !== undefined) await sql`DELETE FROM hot_rankings WHERE id=${rankingId}`;
   if (storyIds.length) await sql`DELETE FROM story_signals WHERE story_id=ANY(${storyIds}::bigint[])`;
+  if (storyIds.length) await sql`DELETE FROM facts WHERE story_id=ANY(${storyIds}::bigint[])`;
   if (storyIds.length) await sql`DELETE FROM stories WHERE id=ANY(${storyIds}::bigint[])`;
   await sql`DELETE FROM articles WHERE source_id LIKE ${t+'%'}`;
   await sql`DELETE FROM sources WHERE id LIKE ${t+'%'}`;
@@ -41,11 +43,18 @@ test('faces are 精选组 sources by tier (T1, T1.5, T2), at most 6; 氛围组 o
     await sql`INSERT INTO articles (id,source_id,identity_key,url,title,discovered_at,timeline_at)
       VALUES(${sourceId(i)},${sourceId(i)},${sourceId(i)},${'https://example.org/'+sourceId(i)},${name(i)},now(),now())`;
   }
+  // A visible ranking now needs a currently public editorial report, just like a real event.
+  // One report may cover these three events; avatar order still comes from the same ten sources.
+  await sql`INSERT INTO publications (article_id,source_id,title,url,timeline_at,discovered_at,sort_at,eligible,channel)
+    VALUES (${sourceId(1)},${sourceId(1)},${name(1)},${'https://example.org/'+sourceId(1)},now(),now(),now(),true,'news')`;
   const entries: HotEntry[] = [];
   const at = new Date('2099-01-01T00:00:00Z');
   for (let i=0;i<3;i++) {
     const [story] = await sql<{id:number;public_id:string}[]>`INSERT INTO stories(public_id,title) VALUES(${randomUUID()},${t}) RETURNING id,public_id`;
     storyIds.push(story!.id);
+    const [fact] = await sql<{id:number}[]>`INSERT INTO facts (public_id,story_id,title)
+      VALUES (${randomUUID()},${story!.id},${t}) RETURNING id`;
+    await sql`INSERT INTO fact_articles (fact_id,article_id,role) VALUES (${fact!.id},${sourceId(1)},'report')`;
     for (const [p, person] of inputs.entries()) await sql`INSERT INTO story_signals(story_id,article_id,participant_key,source_id,kind,observed_at)
       VALUES(${story!.id},${sourceId(p)},${sourceId(p)},${sourceId(p)},${person.kind},${at})`;
     entries.push({ rank:i+1,storyId:story!.id,storyPublicId:story!.public_id,title:t,heat:10,trend:'flat',trendPct:0,badges:[],

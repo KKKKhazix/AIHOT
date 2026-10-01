@@ -22,7 +22,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
   const path = `/leaderboard/${model.slug}`;
   return pageMeta({
     title: `${model.name} 排名与各榜成绩`,
-    description: `查看 ${model.name} 的 ${SITE.name} 共识分、当前排名，以及它在各家公开评测榜单中的名次和原始分数。`,
+    description: `查看 ${model.name} 的 ${SITE.name} 共识分、${loaderData.historical ? "历史排名" : "当前排名"}，以及它在各家公开评测榜单中的名次和原始分数。`,
     path,
     image: "/og/pages/leaderboard.png",
     jsonLd: [
@@ -294,11 +294,21 @@ export default function LeaderboardModelPage() {
         <IconArrowLeft size={14} /> 返回{LEADERBOARD_BOARD_LABELS[from as keyof typeof LEADERBOARD_BOARD_LABELS]}榜
       </Link>
 
+      {d.historical && <p className="well mt-4 px-4 py-3 text-[13px] leading-relaxed text-ink-3">
+        该模型当前未入榜。以下保留它最后一次已发布的成绩，排名与评测证据截至 {new Date(d.run.generatedAt).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" })}。
+      </p>}
       <header className="mt-5 flex flex-col gap-5 pb-7 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-center gap-4">
           <BrandMark brand={model.brand} size={52} />
           <div className="min-w-0">
-            <h1 className="text-[24px] font-semibold leading-[1.3] tracking-[-0.02em] text-ink">{model.name}</h1>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h1 className="text-[24px] font-semibold leading-[1.3] tracking-[-0.02em] text-ink">{model.name}</h1>
+              {model.weightsUrl && (
+                <a href={model.weightsUrl} target="_blank" rel="noopener noreferrer" className="whitespace-nowrap text-[12.5px] text-accent hover:underline">
+                  开源权重 ↗
+                </a>
+              )}
+            </div>
             <p className="num mt-1 text-[12.5px] text-ink-3">
               {model.provider ?? "—"} · {model.releasedAt ? `${model.releasedAt} 发布` : "发布日期待核实"} · {shortStamp(d.run.generatedAt)} 更新
             </p>
@@ -337,6 +347,7 @@ export default function LeaderboardModelPage() {
                     原价 {listPrice(price.input, "USD")} / {listPrice(price.output, "USD")}
                   </span>
                 )}
+                {price.note && <span>{price.note}</span>}
                 {price.officialUrl && (
                   <a href={price.officialUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-accent hover:text-accent-ink">
                     厂商官方价格 <IconArrowUpRight size={12} />
@@ -370,6 +381,20 @@ export default function LeaderboardModelPage() {
             </ul>
           </div>
         ))}
+        {d.excluded.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-[14px] font-semibold text-ink">测过，但按规则不计入</h3>
+            <p className="mt-1 text-[12.5px] text-ink-3">这些评测公开了该模型的成绩，但只有不能代表单个模型的运行方式（例如开启回退后，被拦下的请求改由其他模型作答），按规则不计分。</p>
+            <ul className="mt-2.5 space-y-1.5 text-[13px]">
+              {d.excluded.map((x) => (
+                <li key={x.key}>
+                  <Link to={`/leaderboard/sources/${x.key}`} className="font-medium text-ink-2 transition-colors hover:text-accent">{x.name}</Link>
+                  <span className="text-ink-3">：{x.reason}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {d.unmeasured.length > 0 && (
           <div className="mt-6">
             <h3 className="text-[14px] font-semibold text-ink">没有测到的计分评测</h3>

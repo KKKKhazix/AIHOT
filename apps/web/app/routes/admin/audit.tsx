@@ -1,23 +1,14 @@
 import { SITE } from "@aihot/industry/site";
 import { Form, Link, useSearchParams } from "react-router";
+import type { AdminAudit, AdminAuditRow } from "@aihot/contracts/admin";
 import type { Route } from "./+types/audit";
 import { adminGet } from "../../lib/admin.server";
 import { bj } from "../../features/admin/format";
 import { AdminPage, Card, DataTable, Input, Json, Pager } from "../../features/admin/ui";
 
-interface Row {
-  id: number;
-  created_at: string;
-  actor: string;
-  action: string;
-  subject: string | null;
-  reason: string | null;
-  before: unknown;
-  after: unknown;
-}
 
 export async function loader({ request }: Route.LoaderArgs) {
-  return adminGet<{ page: number; rows: Row[] }>(request, `/api/admin/audit${new URL(request.url).search}`);
+  return adminGet<AdminAudit>(request, `/api/admin/audit${new URL(request.url).search}`);
 }
 
 export const meta: Route.MetaFunction = () => [{ title: `审计记录 · ${SITE.name} 后台` }];

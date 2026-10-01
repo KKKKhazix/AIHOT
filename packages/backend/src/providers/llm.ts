@@ -214,6 +214,7 @@ export async function chatJson<S extends z.ZodType>(opts: ChatJsonOptions<S>): P
       let json: Record<string, unknown>;
       try {
         json = JSON.parse(text);
+        if (!json || typeof json !== "object" || Array.isArray(json)) throw new Error("Expected a response object");
       } catch {
         json = { unparsable: text.slice(0, 20000) };
       }

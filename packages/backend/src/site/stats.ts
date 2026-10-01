@@ -4,7 +4,7 @@
 import type { SiteStats } from "@aihot/contracts/site";
 import { sql } from "../db.ts";
 import { cached } from "../lib/cache.ts";
-import { selectedCondition } from "../publication/items.ts";
+import { selectedCondition } from "../publication/scope.ts";
 
 export type { SiteStats };
 

@@ -76,16 +76,6 @@ export const ITEM_FROM = sql`
   LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh' AND tr.revision >= a.revision
   LEFT JOIN quote_translations qt ON p.channel = 'x' AND qt.tweet_id = substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')`;
 
-/** Listed items: public, and a selected item only after its release gate. */
-export function listedCondition(now: Date) {
-  return sql`p.visibility = 'public' AND (NOT p.selected OR p.visible_after <= ${now})`;
-}
-
-/** Selected set as shown on the home timeline, v1 selected mode and RSS. */
-export function selectedCondition(now: Date) {
-  return sql`p.visibility = 'public' AND p.selected AND p.visible_after <= ${now}`;
-}
-
 export function channelCondition(channel: ChannelKey | null | undefined) {
   if (!channel || channel === "all") return sql``;
   if (channel === "firstParty") return sql`AND p.first_party`;
@@ -151,7 +141,7 @@ export function xView(row: Pick<ItemRow, "x_post" | "zh_text"> & Partial<Pick<It
 }
 
 export function toItemSummary(row: ItemRow): ItemSummary {
-  const x = row.channel === "x" ? xView(row, true) : null;
+  const x = row.channel === "x" && row.body_mode === "full" ? xView(row, true) : null;
   return {
     id: row.id,
     revision: row.revision,

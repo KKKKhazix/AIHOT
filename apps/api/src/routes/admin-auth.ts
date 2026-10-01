@@ -1,5 +1,7 @@
 // Admin sign-in and the /api/admin guard. Public routes never read the session.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { ZodError } from "zod";
+import type { AdminMe } from "@aihot/contracts/admin";
 import { config } from "@aihot/backend/config";
 import {
   completeLogin,
@@ -56,6 +58,9 @@ export function adminHandler(fn: AdminHandler) {
     try {
       return await fn(req, reply, admin);
     } catch (error) {
+      if (error instanceof ZodError) {
+        return sendProblem(req, reply, { status: 400, code: "invalid_request", detail: error.issues.map((issue) => `${issue.path.join(".") || "请求"}: ${issue.message}`).join("; ").slice(0, 300) });
+      }
       if ((error as { statusCode?: number }).statusCode === 400 || error instanceof SyntaxError) {
         return sendProblem(req, reply, { status: 400, code: "invalid_request", detail: String((error as Error).message).slice(0, 300) });
       }
@@ -133,5 +138,5 @@ export function registerAdminAuth(app: FastifyInstance) {
     return reply.redirect("/", 303);
   });
 
-  app.get("/api/admin/me", adminHandler(async (_req, _reply, admin) => ({ name: admin.name, csrf: admin.csrf, dev: admin.dev })));
+  app.get("/api/admin/me", adminHandler(async (_req, _reply, admin): Promise<AdminMe> => ({ name: admin.name, csrf: admin.csrf, dev: admin.dev })));
 }

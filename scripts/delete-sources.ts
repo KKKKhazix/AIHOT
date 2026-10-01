@@ -2,7 +2,7 @@
 //   node --env-file=.env scripts/delete-sources.ts "<reason>" <source-id>...
 // Items that were ever selected are withdrawn first, so sync clients get a removal; reports stop citing
 // the deleted items (a report cites ids it cannot find as published).
-import { audit } from "@aihot/backend/admin/auth";
+import { audit } from "@aihot/backend/audit";
 import { setVisibility } from "@aihot/backend/admin/content";
 import { closeDb, sql } from "@aihot/backend/db";
 import { stopBoss } from "@aihot/backend/jobs/queue";

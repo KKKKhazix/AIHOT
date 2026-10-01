@@ -30,6 +30,13 @@ const api = createServer((req, res) => {
     res.setHeader("Cache-Control", "public, max-age=30, s-maxage=30");
     return res.end(JSON.stringify({ filters, cards: [], nextCursor: null, refreshAt, dayCounts: [], hot: null, generatedAt: "2026-09-28T00:00:00Z" }));
   }
+  if (url.pathname === "/api/site/topics" || url.pathname === "/api/site/topics/test-topic") {
+    res.setHeader("X-Accel-Expires", `@${deadline}`);
+    res.setHeader("Cache-Control", "public, max-age=30, s-maxage=30");
+    const topic = { slug: "test-topic", name: "测试主题", group: "field", definition: "测试说明", total: 0, recent: 0, indexable: false, latestAt: null, related: [] };
+    return res.end(JSON.stringify(url.pathname.endsWith("test-topic")
+      ? { topic, items: [], page: 1, pageCount: 1, refreshAt } : { topics: [topic], refreshAt }));
+  }
   if (url.pathname === "/api/site/hot") return res.end(JSON.stringify({ entries: [] }));
   if (url.pathname === "/api/site/echo-client") return res.end(JSON.stringify({ forwarded: req.headers["x-forwarded-for"], real: req.headers["x-real-ip"] }));
   if (url.pathname === "/api/site/items/long-lived") return res.end(JSON.stringify({ id: "long-lived", title: "t" }));
@@ -219,4 +226,31 @@ test("browser caching preserves noindex and private sign-in responses", async ()
 test("a visitor cannot name its own address to the api without a trusted proxy in front", async () => {
   const res = await fetch(`${origin}/api/site/echo-client`, { headers: { "X-Forwarded-For": "6.6.6.6", "X-Real-IP": "6.6.6.6" } });
   assert.deepEqual(await res.json(), { forwarded: "127.0.0.1", real: "127.0.0.1" });
+});
+
+// 主题目录与详情沿用API的绝对截止，HTML和导航数据不额外延长窗口。
+test("主题HTML和导航数据共享发布截止，过期上游不得续期", async () => {
+  const savedDeadline = deadline;
+  const savedRefresh = refreshAt;
+  try {
+    deadline = Math.floor(Date.now() / 1000) + 20;
+    refreshAt = new Date((deadline + 5) * 1000).toISOString();
+    for (const pathname of ["/topics", "/topics.data", "/topics/test-topic", "/topics/test-topic.data"]) {
+      const res = await fetch(origin + pathname);
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("X-Accel-Expires"), `@${deadline}`);
+      assert.doesNotMatch(res.headers.get("Cache-Control")!, /stale/);
+      const seconds = Number(res.headers.get("Cache-Control")!.match(/s-maxage=(\d+)/)![1]);
+      assert.ok(Date.parse(res.headers.get("Date")!) / 1000 + seconds <= deadline);
+      await res.text();
+    }
+    refreshAt = new Date(Date.now() - 1).toISOString();
+    for (const pathname of ["/topics", "/topics.data", "/topics/test-topic", "/topics/test-topic.data"]) {
+      const res = await fetch(origin + pathname);
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("Cache-Control"), "no-cache");
+      assert.equal(res.headers.get("X-Accel-Expires"), "0");
+      await res.text();
+    }
+  } finally { deadline = savedDeadline; refreshAt = savedRefresh; }
 });

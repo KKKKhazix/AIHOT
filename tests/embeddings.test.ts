@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { sha256 } from "@aihot/backend/lib/ids";
-import { EMBEDDING_MODEL, ensureEmbeddings } from "@aihot/backend/providers/embeddings";
+process.env.EMBEDDING_DIMS = "2";
+const { EMBEDDING_MODEL, ensureEmbeddings } = await import("@aihot/backend/providers/embeddings");
 
 const T = tag();
 after(closeDb);

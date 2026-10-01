@@ -1,9 +1,10 @@
+import { listedCondition } from "./scope.ts";
 // Public pool (/all) with numeric pages, and search in its two orderings.
 import type { PoolResponse, TimelineFilters } from "@aihot/contracts/site";
 import { beijingDate, beijingMidnight } from "@aihot/contracts/time";
 import { one, sql, withCustomPlans, type Db } from "../db.ts";
 import {
-  categoryCondition, channelCondition, ITEM_COLUMNS, ITEM_FROM, listedCondition, tagCondition, toFeedItemSummary, topicCondition,
+  categoryCondition, channelCondition, ITEM_COLUMNS, ITEM_FROM, tagCondition, toFeedItemSummary, topicCondition,
   type ItemRow,
 } from "./items.ts";
 
@@ -130,12 +131,12 @@ export async function loadPool(query: PoolQuery): Promise<PoolResponse> {
       // Page ids from the timeline index first, then the joins for those rows only.
       const rows = await db<ItemRow[]>`
         WITH page AS (
-          SELECT p.article_id FROM publications p WHERE ${listedCondition(now)} AND p.eligible ${filters}
+          SELECT p.article_id FROM publications p WHERE ${listedCondition(now)} ${filters}
           ORDER BY p.timeline_at DESC, p.article_id DESC LIMIT ${POOL_PAGE_SIZE} OFFSET ${offset})
         SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id IN (SELECT article_id FROM page)
         ORDER BY p.timeline_at DESC, p.article_id DESC`;
       return { rows, total: await poolCount(filterKey, () => db<{ n: number }[]>`
-        SELECT count(*) AS n FROM (SELECT 1 FROM publications p WHERE ${listedCondition(now)} AND p.eligible ${filters} LIMIT ${cap}) t`) };
+        SELECT count(*) AS n FROM (SELECT 1 FROM publications p WHERE ${listedCondition(now)} ${filters} LIMIT ${cap}) t`) };
     }
     if (tab === "relevance") {
       // Rank narrow rows first: no article bodies or translations enter the sort/count. The public
@@ -162,7 +163,7 @@ export async function loadPool(query: PoolQuery): Promise<PoolResponse> {
         WITH matches AS ${splitFields ? sql`MATERIALIZED` : sql`NOT MATERIALIZED`} (${matches}), scored AS MATERIALIZED (
           SELECT p.article_id, p.timeline_at, matches.part + (${titleScore}) AS rel
           FROM matches JOIN publications p ON p.article_id = matches.article_id JOIN sources s ON s.id = p.source_id
-          WHERE ${listedCondition(now)} AND p.eligible ${filters}
+          WHERE ${listedCondition(now)} ${filters}
         ), page AS MATERIALIZED (
           SELECT article_id, rel FROM scored ORDER BY rel DESC, timeline_at DESC, article_id DESC
           LIMIT ${POOL_PAGE_SIZE} OFFSET ${offset}
@@ -177,14 +178,14 @@ export async function loadPool(query: PoolQuery): Promise<PoolResponse> {
     // search rows, where one- and two-character terms scan a small table instead of every item.
     const rows = await db<ItemRow[]>`
       WITH page AS (
-        SELECT p.article_id FROM publications p WHERE ${listedCondition(now)} AND p.eligible ${filters} ${directMatchCondition(terms)}
+        SELECT p.article_id FROM publications p WHERE ${listedCondition(now)} ${filters} ${directMatchCondition(terms)}
         ORDER BY p.timeline_at DESC, p.article_id DESC LIMIT ${POOL_PAGE_SIZE} OFFSET ${offset})
       SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id IN (SELECT article_id FROM page)
       ORDER BY p.timeline_at DESC, p.article_id DESC`;
     const direct = terms.reduce((acc, t) => sql`${acc} AND ${like(sql`ps.direct`, t)}`, sql``);
     const { n } = one(await db<{ n: number }[]>`
       SELECT count(*) AS n FROM (SELECT 1 FROM pool_search ps JOIN publications p ON p.article_id = ps.article_id
-        WHERE ${listedCondition(now)} AND p.eligible ${filters} ${direct} LIMIT ${cap}) t`);
+        WHERE ${listedCondition(now)} ${filters} ${direct} LIMIT ${cap}) t`);
     return { rows, total: Number(n) };
   };
 
@@ -192,7 +193,7 @@ export async function loadPool(query: PoolQuery): Promise<PoolResponse> {
   const today = beijingDate(now);
   const meta = one(await sql<{ today_count: number; updated_at: Date | null }[]>`
     SELECT (SELECT count(*) FROM publications p
-      WHERE ${listedCondition(now)} AND p.eligible AND p.timeline_at >= ${beijingMidnight(today)} ${filters}) AS today_count,
+      WHERE ${listedCondition(now)} AND p.timeline_at >= ${beijingMidnight(today)} ${filters}) AS today_count,
       (SELECT max(p.updated_at) FROM publications p WHERE p.eligible) AS updated_at`);
 
   return {

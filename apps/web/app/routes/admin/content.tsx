@@ -1,26 +1,16 @@
 import { SITE } from "@aihot/industry/site";
 import { Form, Link, useNavigate, useSearchParams } from "react-router";
+import type { AdminContentRow, AdminContentSearch } from "@aihot/contracts/admin";
 import type { Route } from "./+types/content";
 import { adminGet } from "../../lib/admin.server";
 import { VISIBILITY_LABEL } from "../../features/admin/labels";
 import { AdminPage, Badge, Button, Card, DataTable, Empty, Input, Time } from "../../features/admin/ui";
 
-interface Row {
-  id: string;
-  title: string;
-  url: string;
-  source: string;
-  discovered_at: string;
-  processing_state: string;
-  visibility: string | null;
-  selected: boolean | null;
-  score: number | null;
-}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const q = new URL(request.url).searchParams.get("q")?.trim() ?? "";
-  if (!q) return { q, rows: [] as Row[] };
-  const { rows } = await adminGet<{ rows: Row[] }>(request, `/api/admin/content?q=${encodeURIComponent(q)}`);
+  if (!q) return { q, rows: [] as AdminContentRow[] };
+  const { rows } = await adminGet<AdminContentSearch>(request, `/api/admin/content?q=${encodeURIComponent(q)}`);
   return { q, rows };
 }
 

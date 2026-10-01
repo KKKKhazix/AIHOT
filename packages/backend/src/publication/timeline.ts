@@ -1,3 +1,4 @@
+import { selectedCondition, pendingReleaseCondition, listedCondition } from "./scope.ts";
 // Home timeline: selected items folded into reading groups (reference SELECTED_READING):
 // one card per story, per fact outside a story, or per standalone article. A card sits at its latest
 // development's first appearance, so a new development brings it back up while a representative swap
@@ -7,7 +8,7 @@ import { beijingDate } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
 import {
-  ITEM_COLUMNS, ITEM_FROM, categoryCondition, channelCondition, selectedCondition, tagCondition, toFeedItemSummary, topicCondition,
+  ITEM_COLUMNS, ITEM_FROM, categoryCondition, channelCondition, tagCondition, toFeedItemSummary, topicCondition,
   type ItemRow,
 } from "./items.ts";
 
@@ -54,7 +55,7 @@ async function groupPool(q: TimelineQuery, now: Date, storyIds: number[], factId
     SELECT DISTINCT f.story_id, f.id AS fact_id, p.article_id, p.source_id, p.timeline_at AS at
     FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
     WHERE (f.story_id IN ${sql(storyIds.length ? storyIds : [0])} OR f.id IN ${sql(factIds.length ? factIds : [0])})
-      AND p.visibility = 'public' AND p.eligible AND (NOT p.selected OR p.visible_after <= ${now}) ${filterSql(q)}`;
+      AND ${listedCondition(now)} ${filterSql(q)}`;
 }
 
 /**
@@ -204,6 +205,6 @@ export async function loadTimeline(q: TimelineQuery): Promise<Omit<TimelineRespo
 export async function nextRelease(q: TimelineQuery, now: Date): Promise<string | null> {
   const [row] = await sql<{ t: Date | null }[]>`
     SELECT min(p.visible_after) AS t FROM publications p
-    WHERE p.visibility = 'public' AND p.selected AND p.visible_after > ${now} ${filterSql(q)}`;
+    WHERE ${pendingReleaseCondition(now)} ${filterSql(q)}`;
   return row?.t ? row.t.toISOString() : null;
 }

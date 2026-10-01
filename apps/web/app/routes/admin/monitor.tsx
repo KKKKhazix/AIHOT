@@ -1,64 +1,22 @@
 import { SITE } from "@aihot/industry/site";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import type { AdminMonitorEvent, AdminMonitorEvents, AdminMonitorPost, AdminMonitorPosts } from "@aihot/contracts/admin";
 import type { Route } from "./+types/monitor";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { bj } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, Empty, Field, FilterChips, Input, Json, Pager, ReasonDialog, Select } from "../../features/admin/ui";
 
-interface EventPost {
-  postId: string;
-  stage: string;
-  action: string;
-  text: string;
-  originalText: string;
-  publishedAt: string;
-  url: string;
-}
-interface MonitorEvent {
-  id: string;
-  type: "direct_reset" | "reset_credit";
-  status: "announced" | "confirmed";
-  label: string;
-  display_label: string;
-  scope: string;
-  schedule: { precision: string; from: string; through: string; label: string } | null;
-  estimate: { label: string; basis: string } | null;
-  presentation: Record<string, any> | null;
-  confirmed_at: string | null;
-  occurred_on: string | null;
-  confirmation_basis: string | null;
-  withdrawn: boolean;
-  created_at: string;
-  updated_at: string;
-  posts: EventPost[];
-}
-interface Post {
-  id: string;
-  published_at: string;
-  text: string;
-  url: string;
-  translation: string | null;
-  processed_at: string | null;
-  propositions: Array<Record<string, any>> | null;
-  needs_review: boolean | null;
-  relevant: boolean | null;
-  held: Array<{ action: string; excerpt: string }> | null;
-  reviewed: boolean | null;
-  skipped: boolean | null;
-  failures: { count: number; since: string; error?: string } | null;
-  links: Array<{ eventId: string; stage: string }>;
-}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const tab = url.searchParams.get("tab") ?? "events";
   if (tab === "posts") {
-    const posts = await adminGet<{ page: number; filter: string; rows: Post[] }>(request, `/api/admin/monitor/posts?filter=${url.searchParams.get("filter") ?? "relevant"}&page=${url.searchParams.get("page") ?? 1}`);
+    const posts = await adminGet<AdminMonitorPosts>(request, `/api/admin/monitor/posts?filter=${url.searchParams.get("filter") ?? "relevant"}&page=${url.searchParams.get("page") ?? 1}`);
     return { tab, posts, events: null };
   }
-  const events = await adminGet<{ events: MonitorEvent[] }>(request, `/api/admin/monitor/events${url.searchParams.get("withdrawn") ? "?withdrawn=1" : ""}`);
+  const events = await adminGet<AdminMonitorEvents>(request, `/api/admin/monitor/events${url.searchParams.get("withdrawn") ? "?withdrawn=1" : ""}`);
   return { tab, posts: null, events };
 }
 
@@ -68,7 +26,7 @@ const toLocal = (iso: string | null | undefined) => (iso ? new Date(new Date(iso
 const fromLocal = (v: string) => (v ? `${v}:00+08:00` : null);
 const KIND: Record<string, string> = { direct_reset: "额度重置", reset_credit: "重置卡" };
 
-function EventCard({ e, all }: { e: MonitorEvent; all: MonitorEvent[] }) {
+function EventCard({ e, all }: { e: AdminMonitorEvent; all: AdminMonitorEvent[] }) {
   const { run, pending } = useAdminAction();
   const [dialog, setDialog] = useState<null | "edit" | "review" | "withdraw" | "move">(null);
   const [form, setForm] = useState(() => formOf(e));
@@ -140,13 +98,13 @@ function EventCard({ e, all }: { e: MonitorEvent; all: MonitorEvent[] }) {
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="类型">
-            <Select value={form.type} onChange={(ev) => setForm({ ...form, type: ev.target.value as MonitorEvent["type"] })}>
+            <Select value={form.type} onChange={(ev) => setForm({ ...form, type: ev.target.value as AdminMonitorEvent["type"] })}>
               <option value="direct_reset">额度重置</option>
               <option value="reset_credit">重置卡</option>
             </Select>
           </Field>
           <Field label="状态">
-            <Select value={form.status} onChange={(ev) => setForm({ ...form, status: ev.target.value as MonitorEvent["status"] })}>
+            <Select value={form.status} onChange={(ev) => setForm({ ...form, status: ev.target.value as AdminMonitorEvent["status"] })}>
               <option value="announced">已宣布</option>
               <option value="confirmed">已确认</option>
             </Select>
@@ -221,7 +179,7 @@ function EventCard({ e, all }: { e: MonitorEvent; all: MonitorEvent[] }) {
   );
 }
 
-function formOf(e: MonitorEvent) {
+function formOf(e: AdminMonitorEvent) {
   const p = e.presentation ?? {};
   return {
     type: e.type,
@@ -236,7 +194,7 @@ function formOf(e: MonitorEvent) {
   };
 }
 
-function PostRow({ post }: { post: Post }) {
+function PostRow({ post }: { post: AdminMonitorPost }) {
   const props = post.propositions ?? [];
   const { run, pending } = useAdminAction();
   const [dialog, setDialog] = useState<null | "skip" | "reviewed">(null);

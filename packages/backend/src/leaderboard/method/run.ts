@@ -4,14 +4,15 @@
 import { newArticleId, sha256, stableJson } from "../../lib/ids.ts";
 import { sql } from "../../db.ts";
 import { buildRunInputs, type RunInputs } from "./inputs.ts";
-import { BUDGETS, METHOD_VERSION } from "./v15.ts";
+import { ANCHORS, BUDGETS, METHOD_VERSION } from "./v15.ts";
 import { computeBoardsInWorker } from "./compute.ts";
 
 export const TIE_POLICY = "published-order-then-slug/highs-js";
 const PUBLIC_BOARDS = ["overall", "coding", "reasoning", "knowledge", "professional"];
 
 export interface RoundResult {
-  status: "published" | "unchanged" | "failed";
+  /** "refreshed": the same ranking republished with the current exchange rate and verification times. */
+  status: "published" | "refreshed" | "unchanged" | "failed";
   runId: string | null;
   fingerprint: string;
   boards: Array<{ board: string; models: number; optimal: boolean; ms: number }>;
@@ -23,14 +24,36 @@ export function inputFingerprint(inputs: RunInputs): string {
   return sha256(stableJson({ method: METHOD_VERSION, boards: inputs.boards }));
 }
 
-export async function lastCheck(): Promise<{ at: string; fingerprint: string } | null> {
-  const [row] = await sql<{ value: { at: string; fingerprint: string } }[]>`SELECT value FROM settings WHERE key = 'leaderboard.last_check'`;
-  return row?.value ?? null;
+async function currentFxQuote() {
+  const [fx] = await sql<{ as_of: Date; rate: number; source_name: string; source_url: string | null }[]>`
+    SELECT as_of, rate, source_name, source_url FROM fx_rates WHERE pair = 'USD/CNY' ORDER BY as_of DESC LIMIT 1`;
+  return fx ? { asOf: fx.as_of.toISOString().slice(0, 10), rate: fx.rate, sourceName: fx.source_name, sourceUrl: fx.source_url } : null;
 }
 
-async function recordCheck(fingerprint: string, at: Date) {
-  await sql`INSERT INTO settings (key, value, updated_by) VALUES ('leaderboard.last_check', ${sql.json({ at: at.toISOString(), fingerprint })}, 'worker')
-            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`;
+/**
+ * Evidence moved on without moving the ranking (a newer exchange rate, sources verified again): the
+ * same ranking is published again as a new run carrying the current evidence, so prices and the
+ * sources' verification times on the site stay current. Nothing is solved again. Returns the new run.
+ */
+async function republishEvidence(latestId: string, inputs: RunInputs, at: Date): Promise<string | null> {
+  const [latest] = await sql<{ summary: Record<string, any> }[]>`SELECT summary FROM lb_runs WHERE id = ${latestId}`;
+  if (!latest) return null;
+  const fxQuote = await currentFxQuote();
+  const was = latest.summary;
+  const evidenceOf = (x: { fxQuote?: unknown; sources?: unknown; categories?: unknown; consensus?: { evidence?: unknown } }) =>
+    stableJson({ fx: x.fxQuote ?? null, sources: x.sources ?? null, categories: x.categories ?? null, evidence: x.consensus?.evidence ?? null });
+  const next = { ...was, fxQuote, sources: inputs.sources, categories: inputs.categories, consensus: { ...was.consensus, evidence: inputs.evidence } };
+  if (evidenceOf(next) === evidenceOf(was)) return null;
+  const runId = newArticleId();
+  await sql.begin(async (tx) => {
+    const [run] = await tx<{ methodology_version: string }[]>`SELECT methodology_version FROM lb_runs WHERE id = ${latestId}`;
+    await tx`INSERT INTO lb_runs (id, methodology_version, generated_at, source_snapshot_ids, summary, status, origin)
+             VALUES (${runId}, ${run!.methodology_version}, ${at}, ${inputs.snapshotIds}, ${tx.json(next as never)}, 'published', 'computed')`;
+    await tx`INSERT INTO lb_rankings (run_id, board, model_id, rank, score, uncertainty, coverage, confidence, metric_count, summary, component_scores, detail)
+             SELECT ${runId}, board, model_id, rank, score, uncertainty, coverage, confidence, metric_count, summary, component_scores, detail
+             FROM lb_rankings WHERE run_id = ${latestId}`;
+  });
+  return runId;
 }
 
 export async function runLeaderboardRound(opts: { at?: Date; force?: boolean } = {}): Promise<RoundResult> {
@@ -41,23 +64,32 @@ export async function runLeaderboardRound(opts: { at?: Date; force?: boolean } =
     SELECT id, summary->'consensus'->>'fingerprint' AS fingerprint FROM lb_runs
     WHERE status = 'published' ORDER BY generated_at DESC LIMIT 1`;
   if (!opts.force && latest?.fingerprint === fingerprint) {
-    await recordCheck(fingerprint, at);
-    return { status: "unchanged", runId: latest.id, fingerprint, boards: [] };
+    const refreshed = await republishEvidence(latest.id, inputs, at);
+    return { status: refreshed ? "refreshed" : "unchanged", runId: refreshed ?? latest.id, fingerprint, boards: [] };
   }
 
-  const { outputs, timings } = await computeBoardsInWorker(inputs.boards);
+  const { outputs: computed, timings } = await computeBoardsInWorker(inputs.boards);
 
-  // A published board must solve to optimality over one connected evidence network.
-  const broken = outputs.filter((o) => PUBLIC_BOARDS.includes(o.board) && (!o.solver.optimal || !o.publishable_connectivity));
-  const overall = outputs.find((o) => o.board === "overall");
-  const reason = !overall ? "overall board has no evidence" : broken.length ? `not publishable: ${broken.map((b) => b.board).join(", ")}` : undefined;
+  // A published board must solve to optimality over one connected evidence network, and meet the
+  // method's evidence minimums (legacy public consensus): the overall board at least 10 qualified
+  // models with 8 reference models among them, a category 5 and 4. A public board short of them fails
+  // the round, so the previous valid run stays on the site; an internal board short of them is left out.
+  const enough = (board: string) => {
+    const models = inputs.boards.find((b) => b.board === board)?.models ?? [];
+    const anchors = models.filter((m) => (ANCHORS as readonly string[]).includes(m)).length;
+    return board === "overall" ? models.length >= 10 && anchors >= 8 : models.length >= 5 && anchors >= 4;
+  };
+  const outputs = computed.filter((o) => PUBLIC_BOARDS.includes(o.board) || enough(o.board));
+  const broken = PUBLIC_BOARDS.filter((board) => {
+    const output = outputs.find((o) => o.board === board);
+    return !output || !output.solver.optimal || !output.publishable_connectivity || !enough(board);
+  });
+  const reason = broken.length ? `not publishable: ${broken.join(", ")}` : undefined;
 
-  const [fx] = await sql<{ as_of: Date; rate: number; source_name: string; source_url: string | null }[]>`
-    SELECT as_of, rate, source_name, source_url FROM fx_rates WHERE pair = 'USD/CNY' ORDER BY as_of DESC LIMIT 1`;
   const runId = newArticleId();
   const summary = {
     budgets: BUDGETS,
-    fxQuote: fx ? { asOf: fx.as_of.toISOString().slice(0, 10), rate: fx.rate, sourceName: fx.source_name, sourceUrl: fx.source_url } : null,
+    fxQuote: await currentFxQuote(),
     sources: inputs.sources,
     categories: inputs.categories,
     consensus: {
@@ -94,6 +126,5 @@ export async function runLeaderboardRound(opts: { at?: Date; force?: boolean } =
       for (let i = 0; i < rows.length; i += 500) await tx`INSERT INTO lb_rankings ${tx(rows.slice(i, i + 500) as never)}`;
     }
   });
-  await recordCheck(fingerprint, at);
   return { status, runId, fingerprint, boards: timings, reason };
 }

@@ -321,6 +321,8 @@ export interface ReportCitation {
 export interface ReportDetail {
   kind: ReportKind;
   key: string;
+  /** 同类现存刊物的时间顺序号；补入或删除更早刊物时会重算。 */
+  issueNumber: number;
   title: string;
   windowStart: string;
   windowEnd: string;
@@ -347,6 +349,7 @@ export interface ReportDetail {
 
 export interface ReportIndexEntry {
   key: string;
+  issueNumber: number;
   title: string | null;
   generatedAt: string;
   count: number;
@@ -385,5 +388,5 @@ export interface StoryFollowup {
 }
 export interface StoryFollowupsResponse { items: StoryFollowup[]; more: boolean }
 
-/** All issue keys keep numbering and calendars stable; closed daily months omit their titles. */
-export interface ReportNavigationEntry { key: string; title?: string | null; count?: number }
+/** 最近期刊导航携带完整序列中的期号；关闭的日报月份省略标题。 */
+export interface ReportNavigationEntry { key: string; issueNumber?: number; title?: string | null; count?: number }

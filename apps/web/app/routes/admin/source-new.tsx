@@ -1,6 +1,7 @@
 import { SITE } from "@aihot/industry/site";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
+import type { AdminSourceCreated, AdminSourcePreview } from "@aihot/contracts/admin";
 import type { Route } from "./+types/source-new";
 import { useAdminAction } from "../../features/admin/action";
 import { bj } from "../../features/admin/format";
@@ -18,11 +19,6 @@ const TEMPLATES: Record<string, Record<string, unknown>> = {
   external: {},
 };
 
-interface Preview {
-  ms: number;
-  count: number;
-  items: Array<{ title: string; url: string; publishedAt: string | null; excerpt: string }>;
-}
 
 export default function NewSource() {
   const navigate = useNavigate();
@@ -30,7 +26,7 @@ export default function NewSource() {
   const [form, setForm] = useState({ id: "", name: "", kind: "rss", tier: "T2", participation_mode: "editorial", interval_minutes: 30, first_party: false, site_fulltext: true, syndicate_fulltext: false, tags: "" });
   const [config, setConfig] = useState(JSON.stringify(TEMPLATES.rss, null, 2));
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const [preview, setPreview] = useState<AdminSourcePreview | null>(null);
   const [duplicate, setDuplicate] = useState<{ id: string; name: string } | null>(null);
 
   const parsed = () => {
@@ -112,7 +108,7 @@ export default function NewSource() {
               onClick={async () => {
                 const c = parsed();
                 if (!c) return;
-                const r = await run<Preview>("POST", "/api/admin/sources/preview", { id: form.id || "draft", kind: form.kind, config: c }, { label: "preview", revalidate: false });
+                const r = await run<AdminSourcePreview>("POST", "/api/admin/sources/preview", { id: form.id || "draft", kind: form.kind, config: c }, { label: "preview", revalidate: false });
                 if (r) setPreview(r);
               }}
             >
@@ -125,15 +121,15 @@ export default function NewSource() {
               onClick={async () => {
                 const c = parsed();
                 if (!c) return;
-                const r = await run<{ created: boolean; duplicate?: { id: string; name: string }; source?: { id: string } }>(
+                const r = await run<AdminSourceCreated>(
                   "POST",
                   "/api/admin/sources",
                   { ...form, tags: form.tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean), config: c },
                   { label: "create", revalidate: false },
                 );
                 if (!r) return;
-                if (!r.created && r.duplicate) setDuplicate(r.duplicate);
-                else if (r.source) navigate(`/admin/sources/${encodeURIComponent(r.source.id)}`);
+                if (r.created) navigate(`/admin/sources/${encodeURIComponent(r.source.id)}`);
+                else setDuplicate(r.duplicate);
               }}
             >
               创建

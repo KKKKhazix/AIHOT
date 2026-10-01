@@ -43,14 +43,22 @@ docker compose --profile https up -d --build
 
 已经有 Nginx 的话，不用 Caddy，把站点反向代理到 `http://127.0.0.1:3000`，带上 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`，并在 `.env` 里设 `TRUST_PROXY=true`。`SITE_URL` 一定要写成读者实际访问的地址：生成的链接、RSS、分享图和 MCP 都用它。
 
+MCP 默认接受 `SITE_URL` 的主机以及 `localhost`、`127.0.0.1`、`[::1]`。额外主机用 `MCP_ALLOWED_HOSTS` 配置，以逗号分隔，例如 `extra.example:8443,[2001:db8::1]`。主机名不区分大小写，IPv6 必须加方括号；可带 0–65535 的十进制端口，匹配时忽略端口。包含路径、用户信息或非法端口的配置不会生效。`127.1` 等别名需要明确列入；此配置只影响 Host 校验，不扩大浏览器 Origin 许可。
+
 ### 更新
+
+先按下节备份数据库。构建完成后停止旧服务，再运行迁移和新版服务：
 
 ```bash
 git pull
-docker compose up -d --build
+docker compose build
+docker compose stop api worker web
+docker compose run --rm setup && docker compose up -d
 ```
 
-数据库迁移只做向后兼容的增量，更新时自动执行。
+迁移成功后再启动服务；迁移失败时先查看错误，不要继续启动。使用 HTTPS 配置的站点继续保留 `--profile https`。
+
+这次更新会修复仍引用已撤回内容的历史事件文字：先把旧文字存入后台审计，再按仍可公开的报道回退显示，不会在迁移中调用模型。旧 API 和 worker 必须在迁移前停止，避免旧任务把失效文字写回；正常关闭 worker 会等待正在处理的任务退出。非 Docker 部署也按“备份、构建、停止 API/worker/web、迁移、启动”的顺序更新。
 
 ### 备份
 

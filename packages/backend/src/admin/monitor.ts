@@ -1,14 +1,14 @@
 // Reset monitor corrections (F12/F19): edit an event, confirm it from a receipt review (a reader's
 // or our own account showing the reset when Tibo never posted "done"), withdraw or restore it, and
 // move a post between events. Public exits (page, v1 snapshot, version probe) follow updated_at.
+import type { AdminMonitorEvents, AdminMonitorPosts, BeforeJson } from "@aihot/contracts/admin";
 import { z } from "zod";
 import { sql, type Tx } from "../db.ts";
-import { manualSchedule } from "../monitor/time.ts";
-import { audit } from "./auth.ts";
-import { Conflict } from "./sources.ts";
+import { estimateFor, manualSchedule, type Schedule } from "../monitor/time.ts";
+import { audit, Conflict } from "../audit.ts";
 
-export async function listMonitorEvents(opts: { withdrawn?: boolean } = {}) {
-  const events = await sql`
+export async function listMonitorEvents(opts: { withdrawn?: boolean } = {}): Promise<BeforeJson<AdminMonitorEvents>> {
+  const events = await sql<BeforeJson<AdminMonitorEvents["events"][number]>[]>`
     SELECT e.id, e.type, e.status, e.label, e.display_label, e.scope, e.schedule, e.estimate, e.presentation, e.confirmed_at, e.occurred_on,
            e.confirmation_basis, e.withdrawn, e.created_at, e.updated_at,
            coalesce((SELECT jsonb_agg(jsonb_build_object('postId', l.post_id, 'stage', l.stage, 'action', l.action, 'text', l.text, 'originalText', l.original_text,
@@ -20,7 +20,7 @@ export async function listMonitorEvents(opts: { withdrawn?: boolean } = {}) {
   return { events };
 }
 
-export async function listMonitorPosts(opts: { filter?: "relevant" | "review" | "pending" | "all"; page?: number }) {
+export async function listMonitorPosts(opts: { filter?: "relevant" | "review" | "pending" | "all"; page?: number }): Promise<BeforeJson<AdminMonitorPosts>> {
   const page = Math.max(1, opts.page ?? 1);
   const filter = opts.filter ?? "relevant";
   const where =
@@ -28,7 +28,7 @@ export async function listMonitorPosts(opts: { filter?: "relevant" | "review" | 
     : filter === "review" ? sql`(p.recognition->>'needsReview')::boolean IS TRUE AND (p.recognition->>'reviewed')::boolean IS NOT TRUE`
     : filter === "relevant" ? sql`(p.recognition->>'relevant')::boolean IS TRUE`
     : sql`true`;
-  const rows = await sql`
+  const rows = await sql<BeforeJson<AdminMonitorPosts["rows"][number]>[]>`
     SELECT p.id, p.published_at, p.text, p.url, p.translation, p.processed_at, p.receipt_id, p.origin,
            p.recognition->'propositions' AS propositions, (p.recognition->>'needsReview')::boolean AS needs_review,
            p.recognition->'held' AS held, (p.recognition->>'reviewed')::boolean AS reviewed, (p.recognition->>'skipped')::boolean AS skipped,
@@ -101,23 +101,29 @@ export async function updateMonitorEvent(id: string, input: { patch: unknown; re
     if (patch.scopeLabel !== undefined) Object.assign(presentation, { scopeLabel: patch.scopeLabel, scopeKnown: !!patch.scopeLabel });
     if (patch.audienceZh !== undefined) presentation.audienceZh = patch.audienceZh;
     if (patch.productsZh !== undefined) presentation.productsZh = patch.productsZh;
-    if (patch.status === "confirmed") presentation.inProgress = false;
-    const confirming = patch.status === "confirmed" && before.status !== "confirmed";
+    if (patch.type !== undefined) presentation.kindExplicit = true;
+    if (patch.status !== undefined) presentation.inProgress = false;
+    const reopening = patch.status === "announced" && before.status === "confirmed";
+    if (reopening) Object.assign(patch, { confirmedAt: null, occurredOn: null, confirmationBasis: null });
+    const estimate = (patch.status ?? before.status) === "confirmed" ? null
+      : schedule !== undefined || reopening ? estimateFor({ schedule: schedule === undefined ? before.schedule as Schedule | null : schedule, announcedAt: before.created_at as Date })
+        : before.estimate;
     const [after] = await tx`
       UPDATE monitor_events SET
         type = coalesce(${patch.type ?? null}, type),
         label = CASE WHEN ${patch.type ?? null}::text IS NULL THEN label WHEN ${patch.type ?? null} = 'reset_credit' THEN '发重置卡' ELSE '全员重置' END,
+        display_label = CASE WHEN ${patch.type ?? null}::text IS NULL THEN display_label WHEN ${patch.type ?? null} = 'reset_credit' THEN '重置卡发放' ELSE '额度重置' END,
         status = coalesce(${patch.status ?? null}, status),
         confirmed_at = CASE WHEN ${patch.confirmedAt !== undefined} THEN ${patch.confirmedAt ?? null}::timestamptz ELSE confirmed_at END,
         occurred_on = CASE WHEN ${patch.occurredOn !== undefined} THEN ${patch.occurredOn ?? null}::date ELSE occurred_on END,
         confirmation_basis = CASE WHEN ${patch.confirmationBasis !== undefined} THEN ${patch.confirmationBasis ?? null} ELSE confirmation_basis END,
         schedule = CASE WHEN ${schedule !== undefined} THEN ${schedule ? tx.json(schedule as never) : null}::jsonb ELSE schedule END,
-        estimate = CASE WHEN ${confirming || patch.status === "confirmed"} THEN NULL ELSE estimate END,
+        estimate = ${estimate ? tx.json(estimate as never) : null},
         scope = coalesce(${patch.scope ?? null}, scope),
         presentation = coalesce(presentation, '{}'::jsonb) || ${tx.json(presentation as never)},
         updated_at = now()
       WHERE id = ${id} RETURNING *`;
-    await audit(actor, "monitor.update", `monitor-event:${id}`, input.reason, pick(before, patch), pick(after!, patch));
+    await audit(actor, "monitor.update", `monitor-event:${id}`, input.reason, pick(before, patch), pick(after!, patch), { db: tx });
     return after;
   });
 }
@@ -137,7 +143,10 @@ function pick(row: Record<string, unknown>, patch: Record<string, unknown>) {
 export async function reviewReceipt(id: string, input: { occurredOn?: string | null; reason: string; version: string }, actor: string) {
   const day = input.occurredOn || null;
   if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("occurredOn must be YYYY-MM-DD");
-  const patch = { status: "confirmed", confirmationBasis: "receipt_review", ...(day ? { occurredOn: day } : {}) };
+  // The version check below also covers this read: an account check never downgrades official evidence.
+  const [event] = await sql`SELECT confirmation_basis FROM monitor_events WHERE id = ${id}`;
+  const patch = { status: "confirmed", confirmationBasis: event?.confirmation_basis === "source_post" ? "source_post" : "receipt_review",
+    ...(input.occurredOn !== undefined ? { occurredOn: day } : {}) };
   return updateMonitorEvent(id, { patch, reason: input.reason, version: input.version }, actor);
 }
 
@@ -147,7 +156,7 @@ export async function setWithdrawn(id: string, input: { withdrawn: boolean; reas
     const before = await lockEvent(tx, id, input.version);
     if (!before) return null;
     const [after] = await tx`UPDATE monitor_events SET withdrawn = ${input.withdrawn}, updated_at = now() WHERE id = ${id} RETURNING *`;
-    await audit(actor, input.withdrawn ? "monitor.withdraw" : "monitor.restore", `monitor-event:${id}`, input.reason, { withdrawn: before.withdrawn }, { withdrawn: input.withdrawn });
+    await audit(actor, input.withdrawn ? "monitor.withdraw" : "monitor.restore", `monitor-event:${id}`, input.reason, { withdrawn: before.withdrawn }, { withdrawn: input.withdrawn }, { db: tx });
     return after;
   });
 }
@@ -158,6 +167,7 @@ export async function relinkPost(input: { postId: string; fromEventId: string; t
   return sql.begin(async (tx) => {
     const [link] = await tx`SELECT * FROM monitor_event_posts WHERE event_id = ${input.fromEventId} AND post_id = ${input.postId} FOR UPDATE`;
     if (!link) throw new Conflict("这条帖子不在原事件里");
+    if (input.fromEventId === input.toEventId) return { moved: false };
     if (input.toEventId) {
       const [to] = await tx`SELECT id FROM monitor_events WHERE id = ${input.toEventId}`;
       if (!to) throw new Error(`event ${input.toEventId} not found`);
@@ -167,8 +177,11 @@ export async function relinkPost(input: { postId: string; fromEventId: string; t
         ON CONFLICT (event_id, post_id) DO NOTHING`;
     }
     await tx`DELETE FROM monitor_event_posts WHERE event_id = ${input.fromEventId} AND post_id = ${input.postId}`;
+    await tx`UPDATE monitor_posts SET activity = jsonb_set(activity, '{eventIds}',
+      coalesce((SELECT jsonb_agg(event_id ORDER BY event_id) FROM monitor_event_posts WHERE post_id = ${input.postId}), '[]'::jsonb))
+      WHERE id = ${input.postId} AND activity IS NOT NULL`;
     await tx`UPDATE monitor_events SET updated_at = now() WHERE id IN ${tx([input.fromEventId, input.toEventId].filter((x): x is string => !!x))}`;
-    await audit(actor, "monitor.relink", `monitor-post:${input.postId}`, input.reason, { event: input.fromEventId }, { event: input.toEventId });
+    await audit(actor, "monitor.relink", `monitor-post:${input.postId}`, input.reason, { event: input.fromEventId }, { event: input.toEventId }, { db: tx });
     return { moved: true };
   });
 }

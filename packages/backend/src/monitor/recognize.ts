@@ -1,10 +1,10 @@
+import { SITE } from "@aihot/industry/site";
 // Recognition of Tibo's posts: the model translates and states what the post claims; code checks
 // the boundaries (kinds, actions, times, relations) independent of wording.
 import { z } from "zod";
 import { modelFor } from "../editorial/models.ts";
 import { chatJson } from "../providers/llm.ts";
 import { pacificParts } from "./time.ts";
-import { SITE } from "@aihot/industry/site";
 
 export const RECOGNIZE_PROMPT_VERSION = "tibo-reset-2026-09-26.5";
 
@@ -58,10 +58,10 @@ const PropositionSchema = z.object({
   kind: z.enum(["direct_reset", "reset_credit"]),
   kindExplicit: z.boolean().catch(false),
   action: z.enum(["announce", "progress", "confirm", "amend", "withdraw"]),
-  real: z.boolean().catch(false),
-  count: z.number().int().min(1).max(5).catch(1),
+  real: z.boolean(),
+  count: z.number().int().min(1).max(5).default(1),
   relatesTo: z.string().nullable().catch(null),
-  excerpt: z.string().catch(""),
+  excerpt: z.string(),
   excerptZh: z.string().catch(""),
   statedTime: z
     .object({
@@ -87,12 +87,12 @@ const PropositionSchema = z.object({
 });
 
 export const RecognitionSchema = z.object({
-  relevant: z.boolean().catch(false),
+  relevant: z.boolean(),
   translationZh: z.string().nullable().catch(null),
   contextZh: z.array(z.object({ id: z.string(), textZh: z.string() })).catch([]),
   outage: z.enum(["outage", "recovery"]).nullable().catch(null),
-  needsReview: z.boolean().catch(false),
-  propositions: z.array(PropositionSchema).catch([]),
+  needsReview: z.boolean(),
+  propositions: z.array(PropositionSchema),
 });
 
 export type Recognition = z.infer<typeof RecognitionSchema> & { model: string; promptVersion: string; receiptId: number };

@@ -1,9 +1,10 @@
+import { listedCondition, selectedCondition } from "./scope.ts";
 // v1 items and the selected sync (snapshot + changes), read from the same public read layer.
 import type { PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { sql, type Db } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
 import { newShortId } from "../lib/ids.ts";
-import { categoryCondition, API_ITEM_COLUMNS, API_ITEM_FROM, listedCondition, selectedCondition, type ApiItemRow } from "./items.ts";
+import { categoryCondition, API_ITEM_COLUMNS, API_ITEM_FROM, type ApiItemRow } from "./items.ts";
 import { publicMatchCondition, searchTerms, withSearchCapacity } from "./pool.ts";
 import { v1Payload, type V1ItemPayload } from "./publish.ts";
 
@@ -41,12 +42,12 @@ export async function v1Items(query: V1ItemsQuery, now = new Date()): Promise<V1
   let after: { a: number; i: string } | null = null;
   if (query.cursor) {
     const c = decodeCursor<{ a: number; i: string; c: string }>("it3", query.cursor);
-    if (c.c !== binding || typeof c.a !== "number" || typeof c.i !== "string") throw new InvalidCursorError("cursor does not belong to this query");
+    if (c.c !== binding || !Number.isSafeInteger(c.a) || !Number.isFinite(new Date(c.a).getTime()) || typeof c.i !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(c.i)) throw new InvalidCursorError("cursor does not belong to this query");
     // The rolling window slid past the anchor: tell the client instead of returning an empty page.
     if (c.a < windowStart.getTime()) throw new InvalidCursorError("the rolling window moved past this cursor");
     after = { a: c.a, i: c.i };
   }
-  const scope = query.mode === "selected" ? selectedCondition(now) : sql`${listedCondition(now)} AND p.eligible`;
+  const scope = query.mode === "selected" ? selectedCondition(now) : sql`${listedCondition(now)}`;
   const terms = query.q ? searchTerms(query.q) : [];
 
   const run = (db: Db) => db<(ApiItemRow & { sort_at: Date })[]>`
@@ -82,6 +83,7 @@ export async function v1Items(query: V1ItemsQuery, now = new Date()): Promise<V1
 
 export class SnapshotRequiredError extends Error {}
 
+const isWatermark = (value: number) => Number.isSafeInteger(value) && value >= 0;
 const SYNC_PREFIX = "ax1"; // any other watermark answers 409
 
 let epochCache: string | null = null;
@@ -130,10 +132,24 @@ export async function selectedSnapshot(q: SnapshotQuery, now = new Date()) {
   let w: number;
   let afterId = "";
   let asOf: string;
-  if (q.page) {
-    const p = decodeCursor<{ k: string; e: string; w: number; f: string; a: string; t: string }>(SYNC_PREFIX, q.page);
-    if (p.k !== "page" || p.e !== epoch || (p.f !== "default" && p.f !== "minimal") ||
-        (q.fields !== undefined && p.f !== q.fields) || typeof p.w !== "number") throw new InvalidCursorError("page token does not match this snapshot");
+  if (q.page !== null) {
+    // A page token that is broken, empty or from another snapshot (a rebuilt ledger) cannot continue
+    // this snapshot: the client starts it over (409 snapshot_required).
+    let p: { k: string; e: string; w: number; f: string; a: string; t: string };
+    try {
+      p = decodeCursor(SYNC_PREFIX, q.page);
+    } catch {
+      throw new SnapshotRequiredError("unreadable snapshot page token");
+    }
+    if (p.k !== "page" || p.e !== epoch || (p.f !== "default" && p.f !== "minimal") || !isWatermark(p.w)
+      || typeof p.a !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(p.a)
+      || typeof p.t !== "string" || !Number.isFinite(Date.parse(p.t))) {
+      throw new SnapshotRequiredError("page token does not match this snapshot");
+    }
+    // Tokens are opaque, not signed: a supplied watermark must never bypass the release gate.
+    if (p.w > await effectiveWatermark(now)) throw new SnapshotRequiredError("page watermark is ahead of released entries");
+    // A readable token asked for with another projection is the request's mistake, not a lost snapshot.
+    if (q.fields !== undefined && p.f !== q.fields) throw new InvalidCursorError("page token belongs to another projection");
     // Only the first page defaults to full fields; continuations inherit their original projection.
     fields = p.f;
     w = p.w;
@@ -179,7 +195,7 @@ export async function selectedChanges(q: { cursor: string; limit: number }, now 
   } catch {
     throw new SnapshotRequiredError("unknown watermark");
   }
-  if (c.k !== "sync" || c.e !== epoch || typeof c.w !== "number" || (c.f !== "default" && c.f !== "minimal")) {
+  if (c.k !== "sync" || c.e !== epoch || !isWatermark(c.w) || (c.f !== "default" && c.f !== "minimal")) {
     throw new SnapshotRequiredError("watermark from another ledger epoch or format");
   }
   const w = await effectiveWatermark(now);
@@ -187,10 +203,14 @@ export async function selectedChanges(q: { cursor: string; limit: number }, now 
     const [max] = await sql<{ m: number }[]>`SELECT coalesce(max(seq), 0) AS m FROM selected_ledger`;
     if (c.w > Number(max?.m ?? 0)) throw new SnapshotRequiredError("watermark is ahead of this ledger");
   }
+  // An offline client's old watermark must not redistribute content withdrawn since the upsert.
+  // Keep every sequence (as a removal) so even a one-entry page advances without exposing it.
   const rows = await sql<{ seq: number; article_id: string; op: "upsert" | "remove"; changed_at: Date; payload: V1ItemPayload | null }[]>`
-    SELECT seq, article_id, op, changed_at, ${ledgerPayload(c.f === "minimal")} AS payload FROM selected_ledger
-    WHERE seq > ${c.w} AND seq <= ${w}
-    ORDER BY seq LIMIT ${q.limit + 1}`;
+    SELECT l.seq, l.article_id, CASE WHEN p.article_id IS NULL THEN 'remove' ELSE l.op END AS op, l.changed_at,
+      CASE WHEN p.article_id IS NOT NULL THEN ${ledgerPayload(c.f === "minimal", sql`l.payload`)} END AS payload
+    FROM selected_ledger l LEFT JOIN publications p ON p.article_id = l.article_id AND ${listedCondition(now)}
+    WHERE l.seq > ${c.w} AND l.seq <= ${w}
+    ORDER BY l.seq LIMIT ${q.limit + 1}`;
   const page = rows.slice(0, q.limit);
   const hasMore = rows.length > q.limit;
   const nextW = page.length ? page[page.length - 1]!.seq : Math.max(c.w, 0);

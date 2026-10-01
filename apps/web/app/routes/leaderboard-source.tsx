@@ -140,7 +140,10 @@ export default function LeaderboardSourcePage() {
                       <span className="block text-[11.5px] text-ink-4">{r.provider ?? "—"}</span>
                     </td>
                     <td className="mono px-3 py-3.5 text-[15px] font-medium text-ink">{r.display}</td>
-                    <td className="px-4 py-3.5 text-[12.5px] text-ink-3 lg:px-[22px]">{r.configurationLabel ?? "—"}</td>
+                    <td className="px-4 py-3.5 text-[12.5px] text-ink-3 lg:px-[22px]">
+                      {r.configurationLabel ?? "—"}
+                      {r.excluded && <span className="mt-0.5 block text-[11.5px] text-amber-ink">未计入：{r.excluded}</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

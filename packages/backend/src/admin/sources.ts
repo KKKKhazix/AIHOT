@@ -1,8 +1,12 @@
 // Source administration (F18): list, detail, preview (fetch without storing), edit, create with
 // duplicate checks, pause/resume and manual collection. Every change is audited.
 import { z } from "zod";
-import { sql } from "../db.ts";
+import type { AdminSource, AdminSourceCreated, AdminSourceDetail, AdminSourcePreview, AdminSourceRow, AdminSources, BeforeJson } from "@aihot/contracts/admin";
+import { audit, auditHistory, Conflict } from "../audit.ts";
+import { sql, type Db } from "../db.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
+import { invalidateStoryInputs } from "../events/derived-content.ts";
+import { resumeSourceArticles } from "../jobs/content.ts";
 import { republishKey } from "../jobs/publication.ts";
 import { normalizeUrl } from "../lib/url.ts";
 import { fetchJsonList } from "../sources/json-list.ts";
@@ -11,11 +15,7 @@ import { assertSupportedConfig } from "../sources/config-keys.ts";
 import type { SourceRow } from "../sources/types.ts";
 import { fetchWebList } from "../sources/web-list.ts";
 import { fetchXSearch } from "../sources/x.ts";
-import { audit } from "./auth.ts";
 
-export class Conflict extends Error {
-  code = "conflict";
-}
 
 export interface SourceListFilters {
   q?: string;
@@ -26,21 +26,25 @@ export interface SourceListFilters {
   page?: number;
 }
 
-export async function listSources(f: SourceListFilters) {
+export async function listSources(f: SourceListFilters): Promise<BeforeJson<AdminSources>> {
   const page = Math.max(1, f.page ?? 1);
   const q = f.q?.trim() ? `%${f.q.trim()}%` : null;
-  const rows = await sql`
+  const rows = await sql<BeforeJson<AdminSourceRow>[]>`
     SELECT s.id, s.name, s.kind, s.tier, s.participation_mode, s.enabled, s.health, s.fail_count, s.interval_minutes,
            s.last_ok_at, s.last_fetch_at, s.last_error, s.first_party, s.next_fetch_at,
            (SELECT count(*)::int FROM articles a WHERE a.source_id = s.id AND a.discovered_at > now() - interval '7 days') AS items_7d,
-           (SELECT count(*)::int FROM publications p WHERE p.source_id = s.id AND p.selected AND p.discovered_at > now() - interval '30 days') AS selected_30d
+           coalesce(selected.n, 0) AS selected_30d
     FROM sources s
+    LEFT JOIN (
+      SELECT source_id, count(*)::int AS n FROM publications
+      WHERE selected AND discovered_at > now() - interval '30 days' GROUP BY source_id
+    ) selected ON selected.source_id = s.id
     WHERE (${q}::text IS NULL OR s.name ILIKE ${q} OR s.id ILIKE ${q} OR s.config::text ILIKE ${q})
       AND (${f.kind ?? null}::text IS NULL OR s.kind = ${f.kind ?? null})
       AND (${f.health ?? null}::text IS NULL OR s.health = ${f.health ?? null})
       AND (${f.mode ?? null}::text IS NULL OR s.participation_mode = ${f.mode ?? null})
       AND (${f.enabled ?? null}::text IS NULL OR s.enabled = (${f.enabled ?? null} = 'true'))
-    ORDER BY s.enabled DESC, CASE s.health WHEN 'failing' THEN 0 WHEN 'degraded' THEN 1 ELSE 2 END, s.name
+    ORDER BY s.enabled DESC, CASE s.health WHEN 'failing' THEN 0 WHEN 'degraded' THEN 1 ELSE 2 END, s.name, s.id
     LIMIT 100 OFFSET ${(page - 1) * 100}`;
   const [totals] = await sql<{ total: number; enabled: number; failing: number; degraded: number }[]>`
     SELECT count(*)::int AS total, count(*) FILTER (WHERE enabled)::int AS enabled,
@@ -49,30 +53,35 @@ export async function listSources(f: SourceListFilters) {
   return { page, rows, totals };
 }
 
-export async function sourceDetail(id: string) {
-  const [source] = await sql`SELECT * FROM sources WHERE id = ${id}`;
+export async function sourceDetail(id: string): Promise<BeforeJson<AdminSourceDetail> | null> {
+  const [source] = await sql<BeforeJson<AdminSource>[]>`SELECT * FROM sources WHERE id = ${id}`;
   if (!source) return null;
-  const runs = await sql`SELECT id, started_at, finished_at, status, found_count, new_count, error, detail FROM fetch_runs WHERE source_id = ${id} ORDER BY started_at DESC LIMIT 30`;
-  const items = await sql`
+  const runs = await sql<BeforeJson<AdminSourceDetail["runs"][number]>[]>`SELECT id, started_at, finished_at, status, found_count, new_count, error, detail FROM fetch_runs WHERE source_id = ${id} ORDER BY started_at DESC LIMIT 30`;
+  const items = await sql<BeforeJson<AdminSourceDetail["items"][number]>[]>`
     SELECT a.id, a.title, a.url, a.discovered_at, a.published_at, a.processing_state, p.selected, p.visibility, p.title AS title_zh
     FROM articles a LEFT JOIN publications p ON p.article_id = a.id WHERE a.source_id = ${id} ORDER BY a.discovered_at DESC LIMIT 30`;
-  const [stats] = await sql`
+  const [stats] = await sql<AdminSourceDetail["stats"][]>`
     SELECT count(*)::int AS total, count(*) FILTER (WHERE a.discovered_at > now() - interval '7 days')::int AS last7d,
            (SELECT count(*)::int FROM publications p WHERE p.source_id = ${id} AND p.selected) AS selected
     FROM articles a WHERE a.source_id = ${id}`;
-  const history = await sql`SELECT created_at, actor, action, reason, before, after FROM audit_log WHERE subject = ${`source:${id}`} ORDER BY created_at DESC LIMIT 20`;
+  const history = await auditHistory(`source:${id}`);
   const [republish] = await sql<{ value: Record<string, unknown> }[]>`SELECT value FROM settings WHERE key = ${republishKey(id)}`;
-  return { source, runs, items, stats, history, republish: republish?.value ?? null };
+  return { source, runs, items, stats: stats!, history, republish: republish?.value ?? null };
 }
 
-/** Fetches a source (saved or draft) and returns what it would collect, without storing anything. */
-export async function previewSource(draft: Pick<SourceRow, "id" | "kind" | "config"> & Partial<SourceRow>) {
+/** A stored source fetched now without storing anything; null when there is no such source. */
+export async function previewStoredSource(id: string): Promise<BeforeJson<AdminSourcePreview> | null> {
+  const [source] = await sql<SourceRow[]>`SELECT * FROM sources WHERE id = ${id}`;
+  return source ? previewSource(source) : null;
+}
+
+export async function previewSource(draft: Pick<SourceRow, "id" | "kind" | "config"> & Partial<SourceRow>): Promise<BeforeJson<AdminSourcePreview>> {
   const source = { name: draft.id, enabled: true, cursor: null, tier: "T2", participation_mode: "editorial", ...draft } as SourceRow;
   assertSupportedConfig(source.kind, source.config);
   const started = Date.now();
   let candidates;
   if (source.kind === "rss") candidates = (await fetchRss(source, { force: true })).candidates;
-  else if (source.kind === "web_list") candidates = await fetchWebList(source);
+  else if (source.kind === "web_list") candidates = await fetchWebList(source, { preview: true });
   else if (source.kind === "json_list") candidates = await fetchJsonList(source);
   else if (source.kind === "x_search") candidates = (await fetchXSearch(source)).candidates;
   else throw new Error(`preview is not available for ${source.kind} sources`);
@@ -104,10 +113,19 @@ const EDITABLE = z
 export async function updateSource(id: string, input: { patch: unknown; version: string; reason?: string }, actor: string) {
   const patch = EDITABLE.parse(input.patch);
   return sql.begin(async (tx) => {
+    // Creation and address edits share the lock: checking then inserting must not race.
+    if (patch.config) await tx`SELECT pg_advisory_xact_lock(hashtext('admin-source-identity'))`;
     const [before] = await tx`SELECT * FROM sources WHERE id = ${id} FOR UPDATE`;
     if (!before) return null;
     if (new Date(before.updated_at as Date).toISOString() !== input.version) throw new Conflict("信源已被其他操作修改，请刷新后再改");
-    if (patch.config) assertSupportedConfig(before.kind as SourceRow["kind"], patch.config);
+    if (patch.config) {
+      assertSupportedConfig(before.kind as SourceRow["kind"], patch.config);
+      // A changed address must not be one another source already collects from. (Sources that share a
+      // feed on purpose, with different filters, keep editing their other settings.)
+      const moved = sourceIdentity(String(before.kind), patch.config) !== sourceIdentity(String(before.kind), before.config as Record<string, unknown>);
+      const dup = moved ? await findDuplicateSource(String(before.kind), patch.config, id, tx) : null;
+      if (dup) throw new Conflict(`与已有信源重复：${dup.name}（${dup.id}）`);
+    }
     const keys = Object.keys(patch) as Array<keyof typeof patch>;
     if (!keys.length) return before;
     const values = Object.fromEntries(keys.map((k) => [k, k === "config" ? tx.json(patch.config as never) : patch[k]]));
@@ -115,7 +133,14 @@ export async function updateSource(id: string, input: { patch: unknown; version:
       health = CASE WHEN ${patch.enabled ?? null}::boolean IS FALSE THEN 'paused' WHEN ${patch.enabled ?? null}::boolean IS TRUE AND health = 'paused' THEN 'unknown' ELSE health END,
       next_fetch_at = CASE WHEN ${patch.enabled ?? null}::boolean IS TRUE THEN now() ELSE next_fetch_at END
       WHERE id = ${id} RETURNING *`;
-    await audit(actor, "source.update", `source:${id}`, input.reason ?? null, Object.fromEntries(keys.map((k) => [k, before[k]])), patch);
+    if (before.participation_mode !== "editorial" && after!.participation_mode === "editorial") {
+      await resumeSourceArticles(id, tx);
+    }
+    if (before.participation_mode === "editorial" && after!.participation_mode !== "editorial") {
+      const articles = await tx<{ id: string }[]>`SELECT id FROM articles WHERE source_id = ${id}`;
+      await invalidateStoryInputs(tx, articles.map((row) => row.id), new Date());
+    }
+    await audit(actor, "source.update", `source:${id}`, input.reason ?? null, Object.fromEntries(keys.map((k) => [k, before[k]])), patch, { db: tx });
     // What public exits show for this source's articles is derived from these fields: re-derive them
     // all (in the worker) so a revoked licence or an isolated source stops on every exit.
     if (keys.some((k) => PUBLICATION_FIELDS.includes(k) && JSON.stringify(before[k]) !== JSON.stringify(patch[k]))) {
@@ -128,7 +153,7 @@ export async function updateSource(id: string, input: { patch: unknown; version:
 }
 
 /** Source fields the public projection reads (publication/rules.ts and the v1 payload). */
-const PUBLICATION_FIELDS: string[] = ["participation_mode", "site_fulltext", "syndicate_fulltext", "tier", "name", "first_party"];
+const PUBLICATION_FIELDS: string[] = ["participation_mode", "site_fulltext", "syndicate_fulltext", "tier", "name", "first_party", "owner_entity_id"];
 
 const CreateSchema = z
   .object({
@@ -153,6 +178,11 @@ export function sourceIdentity(kind: string, config: Record<string, unknown>): s
     const m = /from:([A-Za-z0-9_]{1,15})/.exec(String(config.query ?? ""));
     return m ? `x:${m[1]!.toLowerCase()}` : null;
   }
+  // A WeChat account is one account whichever id names it .
+  if (kind === "mp_account") {
+    const id = String(config.ghid ?? config.wxid ?? "").trim().toLowerCase();
+    return id ? `mp:${id}` : null;
+  }
   if (!raw) return null;
   try {
     return normalizeUrl(String(raw).replace(/^https:\/\/r\.jina\.ai\//, "")) ?? String(raw);
@@ -161,26 +191,29 @@ export function sourceIdentity(kind: string, config: Record<string, unknown>): s
   }
 }
 
-export async function findDuplicateSource(kind: string, config: Record<string, unknown>) {
+export async function findDuplicateSource(kind: string, config: Record<string, unknown>, exceptId?: string, db: Db = sql) {
   const identity = sourceIdentity(kind, config);
   if (!identity) return null;
-  const rows = await sql<{ id: string; kind: string; config: Record<string, unknown>; name: string }[]>`SELECT id, kind, config, name FROM sources WHERE kind = ${kind}`;
-  return rows.find((r) => sourceIdentity(r.kind, r.config) === identity) ?? null;
+  const rows = await db<{ id: string; kind: string; config: Record<string, unknown>; name: string }[]>`SELECT id, kind, config, name FROM sources WHERE kind = ${kind}`;
+  return rows.find((r) => r.id !== exceptId && sourceIdentity(r.kind, r.config) === identity) ?? null;
 }
 
-export async function createSource(input: unknown, actor: string) {
+export async function createSource(input: unknown, actor: string): Promise<BeforeJson<AdminSourceCreated>> {
   const s = CreateSchema.parse(input);
   assertSupportedConfig(s.kind, s.config);
-  const dup = await findDuplicateSource(s.kind, s.config);
-  if (dup) return { created: false as const, duplicate: dup };
-  const [row] = await sql`
+  return sql.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext('admin-source-identity'))`;
+    const dup = await findDuplicateSource(s.kind, s.config, undefined, tx);
+    if (dup) return { created: false as const, duplicate: dup };
+    const [row] = await tx<BeforeJson<AdminSource>[]>`
     INSERT INTO sources (id, name, kind, config, tier, participation_mode, interval_minutes, first_party, tags, site_fulltext, syndicate_fulltext, next_fetch_at)
-    VALUES (${s.id}, ${s.name}, ${s.kind}, ${sql.json(s.config as never)}, ${s.tier}, ${s.participation_mode}, ${s.interval_minutes}, ${s.first_party}, ${s.tags},
+    VALUES (${s.id}, ${s.name}, ${s.kind}, ${tx.json(s.config as never)}, ${s.tier}, ${s.participation_mode}, ${s.interval_minutes}, ${s.first_party}, ${s.tags},
             ${s.site_fulltext}, ${s.syndicate_fulltext}, now())
     ON CONFLICT (id) DO NOTHING RETURNING *`;
-  if (!row) throw new Conflict(`信源 ID ${s.id} 已存在`);
-  await audit(actor, "source.create", `source:${s.id}`, null, null, s);
-  return { created: true as const, source: row };
+    if (!row) throw new Conflict(`信源 ID ${s.id} 已存在`);
+    await audit(actor, "source.create", `source:${s.id}`, null, null, s, { db: tx });
+    return { created: true as const, source: row };
+  });
 }
 
 export async function fetchNow(id: string, actor: string) {

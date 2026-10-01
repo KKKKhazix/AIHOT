@@ -2,13 +2,8 @@
 // stable Idempotency-Key per submitted command, and a revalidation of the page's loaders on success.
 import { useCallback, useRef, useState } from "react";
 import { useRevalidator, useRouteLoaderData } from "react-router";
+import type { AdminMe } from "@aihot/contracts/admin";
 import { toast } from "./toast";
-
-export interface AdminMe {
-  name: string;
-  csrf: string;
-  dev: boolean;
-}
 
 export class AdminError extends Error {
   readonly status: number;

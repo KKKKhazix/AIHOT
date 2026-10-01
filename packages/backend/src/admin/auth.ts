@@ -3,6 +3,7 @@
 // Development may impersonate an admin with DEV_AUTH_ROLE=admin; production refuses to start with it.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { config, credential } from "../config.ts";
+import { audit } from "../audit.ts";
 import { sql } from "../db.ts";
 import { sha256 } from "../lib/ids.ts";
 
@@ -170,13 +171,6 @@ export async function sessionPrincipal(cookieHeader: string | undefined): Promis
 export async function endSession(cookieHeader: string | undefined) {
   const token = parseCookies(cookieHeader)[SESSION_COOKIE];
   if (token) await sql`DELETE FROM admin_sessions WHERE id_hash = ${sha256(token)}`;
-}
-
-/** Every manual change: who, when, what, why. */
-export async function audit(actor: string, action: string, subject: string | null, reason: string | null, before: unknown, after: unknown, requestId?: string) {
-  await sql`INSERT INTO audit_log (actor, action, subject, reason, before, after, request_id)
-            VALUES (${actor}, ${action}, ${subject}, ${reason}, ${before === null || before === undefined ? null : sql.json(before as never)},
-                    ${after === null || after === undefined ? null : sql.json(after as never)}, ${requestId ?? null})`;
 }
 
 export function actorOf(p: AdminPrincipal): string {

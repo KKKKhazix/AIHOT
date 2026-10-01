@@ -2,6 +2,7 @@
 import * as cheerio from "cheerio";
 import { sql } from "../db.ts";
 import { guardedFetch } from "../lib/http-fetch.ts";
+import { normalizeUrl } from "../lib/url.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { readable, type ExtractedBody } from "../content/extract.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
@@ -82,10 +83,18 @@ export function allowed(url: string, source: SourceRow): boolean {
   return allow.length === 0 || allow.some((p) => target.startsWith(p));
 }
 
-/** A link back to the listing page itself (skip links, in-page anchors such as #paper, #blog). */
+/** Query keys that page or filter a listing. Other keys name a post (WordPress /?p=123). */
+const LISTING_PARAMS = /^(page|paged|cat|category|categories|tag|tags|label|labels|author|authors)$/i;
+
+/** A link back to the listing page itself (skip links, in-page anchors such as #paper, #blog, ?page=2). */
 function listingItself(url: string, listing: string): boolean {
-  const bare = (x: URL) => `${x.host}${x.pathname.replace(/\/$/, "")}`;
-  return bare(new URL(url)) === bare(new URL(listing));
+  const bare = (s: string) => {
+    const x = new URL(s);
+    const query = new URL(normalizeUrl(s) ?? s).searchParams;
+    for (const key of [...query.keys()]) if (LISTING_PARAMS.test(key)) query.delete(key);
+    return `${x.host}${x.pathname.replace(/\/$/, "")}?${query}`;
+  };
+  return bare(url) === bare(listing);
 }
 
 /**

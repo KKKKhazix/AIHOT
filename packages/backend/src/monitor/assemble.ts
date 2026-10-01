@@ -1,3 +1,4 @@
+import { completeReceipt } from "../providers/receipts.ts";
 // Turns a recognized post into monitor facts: events (announce → progress → confirm, amend,
 // withdraw), the post's activity role, outage links and the hot-scanning window. Code decides what
 // a proposition may change; the model's wording never confirms anything on its own.
@@ -13,7 +14,7 @@ const HEDGED = /\b(about|around|approximately|roughly|shortly|soon|or so)\b|~|-i
 /** Words that introduce a further reset rather than repeat the one just mentioned. */
 const ANOTHER = /\b(another|again|second|one more|twice|2nd)\b/i;
 /** Tibo saying how many ("reset twice", "two resets", "3x"). Plural wording alone ("more resets coming") is one round. */
-const STATED_COUNT = /\b(twice|thrice|two|three|four|five)\b|\b[2-5]\s*(x\b|times\b|resets?\b)/i;
+const STATED_COUNT = /\b(twice|thrice)\b|\b(two|three|four|five|[2-5])\s+(?:(?:banked|manual)\s+)?(?:times|resets?)\b|\b[2-5]\s*x\b/i;
 
 const STAGE: Record<Proposition["kind"], Record<Proposition["action"], string>> = {
   direct_reset: { announce: "预告", progress: "进展", confirm: "确认完成", amend: "补充说明", withdraw: "撤回" },
@@ -31,7 +32,11 @@ interface EventRow {
 
 export interface Applied {
   eventIds: string[];
-  notify: Array<{ eventId: string; action: "announce" | "confirm"; postId: string }>;
+  /**
+   * What the post tells the content groups: a new announcement or confirmation, and for an
+   * announcement already out, a changed time or scope ("amend") or its withdrawal.
+   */
+  notify: Array<{ eventId: string; action: "announce" | "confirm" | "amend" | "withdraw"; postId: string }>;
 }
 
 /** The recognizer's words turned into a Pacific statement by code (null when nothing usable was said). */
@@ -145,12 +150,11 @@ export async function applyRecognition(postId: string, rec: Recognition): Promis
     const contextZh = new Map(rec.contextZh.map((c) => [c.id, c.textZh]));
     const context = post.context.map((c) => ({ ...c, text: (c.text as string | null) ?? contextZh.get(String(c.id)) ?? null }));
     const claimed = rec.propositions.filter((p) => p.real && p.excerpt.trim());
-    // Held for a person instead of applied: a quote that is not in the post, and a confirmation the
-    // recognizer itself was unsure of (an uncertain "it has landed" must not reach readers as done).
-    const held = claimed.filter((p) => !quotedInPost(p.excerpt, post.text) || (rec.needsReview && p.action === "confirm"));
+    // An uncertain claim, including an announcement or withdrawal, cannot change public facts.
+    const held = claimed.filter((p) => !quotedInPost(p.excerpt, post.text) || rec.needsReview);
     const accepted = claimed
       .filter((p) => !held.includes(p))
-      // Several rounds only when Tibo states the number.
+      // Several rounds only when Tibo states the number (product owner, 2026-09-27).
       .map((p) => (p.count > 1 && !STATED_COUNT.test(p.excerpt) ? { ...p, count: 1 } : p));
     const applied: Applied = { eventIds: [], notify: [] };
     // Events this post itself created, by kind: a later sentence repeating the same reset joins it.
@@ -172,6 +176,7 @@ export async function applyRecognition(postId: string, rec: Recognition): Promis
             const schedule = scheduleFrom(stated);
             const estimate = estimateFor({ schedule, announcedAt: postAt, model: p.expectedLanding });
             await tx`UPDATE monitor_events SET schedule = ${tx.json(schedule as never)}, estimate = ${tx.json(estimate as never)}, updated_at = ${postAt} WHERE id = ${eventId}`;
+            if (schedule.label !== target.schedule?.label) applied.notify.push({ eventId, action: "amend", postId });
           }
         } else {
           eventId = await createEvent(tx, p, postId, index, postAt, "announced");
@@ -239,15 +244,21 @@ export async function applyRecognition(postId: string, rec: Recognition): Promis
         if (p.scope.audienceSource || p.scope.plans?.length) Object.assign(patch, presentationOf(p));
         delete patch.reportedAt;
         await tx`UPDATE monitor_events SET presentation = coalesce(presentation, '{}'::jsonb) || ${tx.json(patch as never)}, updated_at = ${postAt} WHERE id = ${eventId}`;
+        const scopeChanged = "scopeLabel" in patch && patch.scopeLabel !== (target.presentation?.scopeLabel ?? null);
+        let timeChanged = false;
         const stated = usableTime(p, postAt);
         if (stated && target.status === "announced") {
           const schedule = scheduleFrom(stated);
+          timeChanged = schedule.label !== target.schedule?.label;
           await tx`UPDATE monitor_events SET schedule = ${tx.json(schedule as never)}, estimate = ${tx.json(estimateFor({ schedule, announcedAt: postAt, model: p.expectedLanding }) as never)} WHERE id = ${eventId}`;
         }
+        // Readers who were told of the announcement hear of a new time or a different audience.
+        if (target.status === "announced" && (timeChanged || scopeChanged)) applied.notify.push({ eventId, action: "amend", postId });
       } else {
         if (!target) continue;
         eventId = target.id;
         await tx`UPDATE monitor_events SET withdrawn = true, updated_at = ${postAt} WHERE id = ${eventId}`;
+        if (target.status === "announced") applied.notify.push({ eventId, action: "withdraw", postId });
       }
       await link(tx, eventId, postId, p);
       if (!applied.eventIds.includes(eventId)) applied.eventIds.push(eventId);
@@ -256,7 +267,7 @@ export async function applyRecognition(postId: string, rec: Recognition): Promis
     const primary = accepted.find((p) => p.action !== "progress")?.action ?? null;
     const activity = applied.eventIds.length
       ? { kind: "event_update", action: primary, statusChanged: true, eventIds: applied.eventIds }
-      : rec.relevant
+      : rec.relevant && held.length === 0
         ? { kind: "related", action: null, statusChanged: false, eventIds: rec.propositions.map((p) => p.relatesTo).filter((x): x is string => !!x) }
         : null;
 
@@ -289,6 +300,7 @@ export async function applyRecognition(postId: string, rec: Recognition): Promis
       await tx`INSERT INTO monitor_state (key, value) VALUES ('hot', ${tx.json({ until: new Date(postAt.getTime() + HOT_WINDOW_MS).toISOString() })})
                ON CONFLICT (key) DO UPDATE SET value = CASE WHEN (monitor_state.value->>'until')::timestamptz > (EXCLUDED.value->>'until')::timestamptz THEN monitor_state.value ELSE EXCLUDED.value END, updated_at = now()`;
     }
+    await completeReceipt(tx, rec.receiptId);
     return applied;
   });
 }

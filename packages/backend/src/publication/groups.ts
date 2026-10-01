@@ -1,3 +1,4 @@
+import { selectedCondition, listedCondition } from "./scope.ts";
 // Reading-group expansions: the reports behind "另有 N 家信源报道" and the developments behind
 // "展开 N 条进展". Members must pass the same visibility, pool eligibility and parent-page filters.
 import type { CategoryKey, ChannelKey } from "@aihot/contracts/taxonomy";
@@ -6,7 +7,7 @@ import { sql } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
 import { shortHash } from "../lib/ids.ts";
 import { proxiedImage } from "../media/imgproxy.ts";
-import { ITEM_COLUMNS, ITEM_FROM, categoryCondition, channelCondition, selectedCondition, tagCondition, toItemSummary, topicCondition, type ItemRow } from "./items.ts";
+import { ITEM_COLUMNS, ITEM_FROM, categoryCondition, channelCondition, tagCondition, toItemSummary, topicCondition, type ItemRow } from "./items.ts";
 import { pickRepresentative } from "./timeline.ts";
 
 export interface GroupReportsQuery {
@@ -36,8 +37,7 @@ export async function loadGroupReports(q: GroupReportsQuery, now = new Date()): 
     SELECT p.article_id AS id, p.title, p.summary, p.timeline_at, p.url, p.selected,
            s.id AS source_id, s.name AS source_name, s.kind AS source_kind, p.first_party, s.icon_url
     FROM publications p JOIN sources s ON s.id = p.source_id
-    WHERE p.article_id IN (SELECT article_id FROM fact_articles WHERE fact_id = ${fact.id}) AND p.visibility = 'public' AND p.eligible
-      AND (NOT p.selected OR p.visible_after <= ${now}) ${filters}
+    WHERE p.article_id IN (SELECT article_id FROM fact_articles WHERE fact_id = ${fact.id}) AND s.participation_mode = 'editorial' AND ${listedCondition(now)} ${filters}
     ORDER BY p.timeline_at DESC, p.article_id ASC`;
   if (members.length === 0) return { kind: "not_found" };
 
@@ -100,13 +100,13 @@ export async function loadDevelopments(q: DevelopmentsQuery, now = new Date()): 
   type Member = Pick<ItemRow, "id" | "fact_id" | "first_party" | "body_mode" | "score" | "timeline_at" | "sort_at">;
   const selected = await sql<Member[]>`
     SELECT p.article_id AS id, p.fact_id, p.first_party, p.body_mode, p.score, p.timeline_at, p.sort_at
-    FROM publications p WHERE p.story_id = ${story.id} AND ${selectedCondition(now)} ${filters}`;
+    FROM publications p JOIN sources s ON s.id = p.source_id WHERE p.story_id = ${story.id} AND s.participation_mode = 'editorial' AND ${selectedCondition(now)} ${filters}`;
   if (selected.length === 0) return { kind: "not_found" };
   const counts = new Map(
     (await sql<{ fact_id: number; n: number }[]>`
       SELECT fa.fact_id, count(DISTINCT p.article_id)::int AS n
-      FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
-      WHERE f.story_id = ${story.id} AND p.visibility = 'public' AND p.eligible AND (NOT p.selected OR p.visible_after <= ${now}) ${filters}
+      FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id JOIN sources s ON s.id = p.source_id
+      WHERE f.story_id = ${story.id} AND s.participation_mode = 'editorial' AND ${listedCondition(now)} ${filters}
       GROUP BY fa.fact_id`).map((c) => [c.fact_id, c.n]),
   );
   const byFact = new Map<number, Member[]>();
@@ -141,7 +141,7 @@ export async function loadDevelopments(q: DevelopmentsQuery, now = new Date()): 
   const page = list.slice(offset, offset + q.take);
   const rows = new Map(page.length ? (await sql<ItemRow[]>`
     SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id IN ${sql(page.map((d) => d.representativeId))}
-      AND p.story_id = ${story.id} AND ${selectedCondition(now)} ${filters}`).map((row) => [row.id, row]) : []);
+      AND p.story_id = ${story.id} AND s.participation_mode = 'editorial' AND ${selectedCondition(now)} ${filters}`).map((row) => [row.id, row]) : []);
   if (rows.size !== page.length) return { kind: "changed" };
   const developments = page.flatMap(({ representativeId, ...development }) => {
     const row = rows.get(representativeId);

@@ -2,6 +2,7 @@ import { SITE } from "@aihot/industry/site";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { CATEGORY_KEYS, CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
+import type { AdminContentChain } from "@aihot/contracts/admin";
 import type { Route } from "./+types/content-item";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
@@ -9,23 +10,9 @@ import { bj, money } from "../../features/admin/format";
 import { KIND_LABEL, MODE_LABEL, VISIBILITY_LABEL } from "../../features/admin/labels";
 import { AdminPage, Badge, Button, Card, Empty, Field, Input, Json, KV, ReasonDialog, Select, Textarea } from "../../features/admin/ui";
 
-type Row = Record<string, any>;
-interface Chain {
-  article: Row;
-  discoveries: Row[];
-  revisions: Row[];
-  analyses: Row[];
-  publication: Row | null;
-  override: { fields: Record<string, unknown>; visibility: string | null; reason: string | null; version: number; updated_by: string; updated_at: string } | null;
-  ledger: Row[];
-  membership: Row[];
-  decisions: Row[];
-  deliveries: Row[];
-  history: Row[];
-}
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  return adminGet<Chain>(request, `/api/admin/content/${encodeURIComponent(params.id)}`);
+  return adminGet<AdminContentChain>(request, `/api/admin/content/${encodeURIComponent(params.id)}`);
 }
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: `${loaderData?.publication?.title ?? loaderData?.article.title ?? "内容"} · ${SITE.name} 后台` }];
@@ -165,9 +152,9 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
                       </div>
                       {an.title_zh && <div className="mt-2 font-medium text-ink">{an.title_zh}</div>}
                       {an.reason_zh && <div className="mt-1 text-[12.5px] leading-relaxed text-ink-3">{an.reason_zh}</div>}
-                      {(an.receipts as Row[]).length > 0 && (
+                      {an.receipts.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5 text-[11.5px]">
-                          {(an.receipts as Row[]).map((r) => (
+                          {an.receipts.map((r) => (
                             <span key={r.id} className="num rounded bg-surface px-1.5 py-0.5 text-ink-3 ring-1 ring-line">
                               回执 #{r.id} · {r.status} · {r.model ?? r.service}{r.cost !== null ? ` · ${money(r.cost)}` : ""}
                             </span>

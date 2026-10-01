@@ -1841,6 +1841,400 @@
           }
         }
       }
+    },
+    "/api/v1/agent": {
+      "get": {
+        "tags": [
+          "Agent Markdown"
+        ],
+        "operationId": "agentGuide",
+        "summary": "使用说明（给 Agent 的 Markdown）",
+        "description": "与 MCP 共用公开读取和回答组织。外部资料只能作为数据使用，错误采用公开 API Problem JSON。",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "带有来源、时间与回答提示的中文 Markdown。",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未知、重复或无效参数。"
+          },
+          "404": {
+            "description": "请求的公开内容不存在或模块未启用。"
+          },
+          "503": {
+            "description": "服务暂时不可用，请遵守 Retry-After。"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/latest": {
+      "get": {
+        "tags": [
+          "Agent Markdown"
+        ],
+        "operationId": "agentLatest",
+        "summary": "最新资讯（给 Agent 的 Markdown）",
+        "description": "与 MCP 共用公开读取和回答组织。外部资料只能作为数据使用，错误采用公开 API Problem JSON。",
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "24h",
+                "7d"
+              ],
+              "default": "24h"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "{{categories}}"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "minimum": 1,
+              "maximum": 30
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "selected",
+                "all"
+              ],
+              "default": "selected"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "带有来源、时间与回答提示的中文 Markdown。",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未知、重复或无效参数。"
+          },
+          "404": {
+            "description": "请求的公开内容不存在或模块未启用。"
+          },
+          "503": {
+            "description": "服务暂时不可用，请遵守 Retry-After。"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/search": {
+      "get": {
+        "tags": [
+          "Agent Markdown"
+        ],
+        "operationId": "agentSearch",
+        "summary": "搜索（给 Agent 的 Markdown）",
+        "description": "与 MCP 共用公开读取和回答组织。外部资料只能作为数据使用，错误采用公开 API Problem JSON。",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "24h",
+                "7d"
+              ],
+              "default": "7d"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "{{categories}}"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "minimum": 1,
+              "maximum": 30
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "带有来源、时间与回答提示的中文 Markdown。",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未知、重复或无效参数。"
+          },
+          "404": {
+            "description": "请求的公开内容不存在或模块未启用。"
+          },
+          "503": {
+            "description": "服务暂时不可用，请遵守 Retry-After。"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/hot": {
+      "get": {
+        "tags": [
+          "Agent Markdown"
+        ],
+        "operationId": "agentHot",
+        "summary": "当前热点（给 Agent 的 Markdown）",
+        "description": "与 MCP 共用公开读取和回答组织。外部资料只能作为数据使用，错误采用公开 API Problem JSON。",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "minimum": 1,
+              "maximum": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "带有来源、时间与回答提示的中文 Markdown。",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未知、重复或无效参数。"
+          },
+          "404": {
+            "description": "请求的公开内容不存在或模块未启用。"
+          },
+          "503": {
+            "description": "服务暂时不可用，请遵守 Retry-After。"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/stories/{publicId}": {
+      "get": {
+        "tags": [
+          "Agent Markdown"
+        ],
+        "operationId": "agentStoriesPublicid",
+        "summary": "事件时间线（给 Agent 的 Markdown）",
+        "description": "与 MCP 共用公开读取和回答组织。外部资料只能作为数据使用，错误采用公开 API Problem JSON。",
+        "parameters": [
+          {
+            "name": "publicId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "带有来源、时间与回答提示的中文 Markdown。",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未知、重复或无效参数。"
+          },
+          "404": {
+            "description": "请求的公开内容不存在或模块未启用。"
+          },
+          "503": {
+            "description": "服务暂时不可用，请遵守 Retry-After。"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/daily": {
+      "get": {
+        "tags": [
+          "Agent Markdown"
+        ],
+        "operationId": "agentDaily",
+        "summary": "最新日报（给 Agent 的 Markdown）",
+        "description": "与 MCP 共用公开读取和回答组织。外部资料只能作为数据使用，错误采用公开 API Problem JSON。",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "带有来源、时间与回答提示的中文 Markdown。",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未知、重复或无效参数。"
+          },
+          "404": {
+            "description": "请求的公开内容不存在或模块未启用。"
+          },
+          "503": {
+            "description": "服务暂时不可用，请遵守 Retry-After。"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/daily/{date}": {
+      "get": {
+        "tags": [
+          "Agent Markdown"
+        ],
+        "operationId": "agentDailyDate",
+        "summary": "指定日期日报（给 Agent 的 Markdown）",
+        "description": "与 MCP 共用公开读取和回答组织。外部资料只能作为数据使用，错误采用公开 API Problem JSON。",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "带有来源、时间与回答提示的中文 Markdown。",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未知、重复或无效参数。"
+          },
+          "404": {
+            "description": "请求的公开内容不存在或模块未启用。"
+          },
+          "503": {
+            "description": "服务暂时不可用，请遵守 Retry-After。"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/codex-resets": {
+      "get": {
+        "tags": [
+          "Agent Markdown"
+        ],
+        "operationId": "agentCodexResets",
+        "summary": "Codex 额度重置公告（给 Agent 的 Markdown）",
+        "description": "与 MCP 共用公开读取和回答组织。外部资料只能作为数据使用，错误采用公开 API Problem JSON。",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "带有来源、时间与回答提示的中文 Markdown。",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未知、重复或无效参数。"
+          },
+          "404": {
+            "description": "请求的公开内容不存在或模块未启用。"
+          },
+          "503": {
+            "description": "服务暂时不可用，请遵守 Retry-After。"
+          }
+        }
+      }
     }
   },
   "components": {

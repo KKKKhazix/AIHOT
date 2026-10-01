@@ -1,5 +1,6 @@
 // Web list pages: HTML with selectors, Markdown through Jina Reader, and Docusaurus changelogs.
 import * as cheerio from "cheerio";
+import { sql } from "../db.ts";
 import { guardedFetch } from "../lib/http-fetch.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { readable, type ExtractedBody } from "../content/extract.ts";
@@ -111,13 +112,22 @@ function absolute(href: string | undefined, base: string): string | null {
   }
 }
 
-async function fetchListingText(source: SourceRow): Promise<{ text: string; viaJina: boolean; base: string }> {
+async function fetchListingText(source: SourceRow): Promise<{ text: string; viaJina: boolean; base: string; round?: string }> {
   const url = String(source.config.url ?? "");
   if (!url) throw new FetchError("url missing");
   if (url.startsWith(JINA_PREFIX)) {
     const target = url.slice(JINA_PREFIX.length);
-    const page = await jinaRead(target, { purpose: "source_listing", subject: `source:${source.id}`, cacheToleranceSeconds: source.config.cacheToleranceSeconds, perRead: true });
-    return { text: page.markdown, viaJina: true, base: source.config.baseUrl ?? target };
+    // One paid read per round. The round is saved on the source before the request and cleared once the
+    // material is stored, so a fetch that ended with the outcome unknown (timeout after sending, a restart)
+    // comes back to the same receipt instead of paying again; ops.recover releases it once.
+    const pending = source.cursor?.jinaListingRound;
+    const round = typeof pending === "string" ? pending : new Date().toISOString();
+    if (round !== pending) await sql`UPDATE sources SET cursor = coalesce(cursor, '{}'::jsonb) || jsonb_build_object('jinaListingRound', ${round}::text) WHERE id = ${source.id}`;
+    // A listing parsed with selectors asks Jina for the rendered HTML (a site our resolver cannot reach
+    // still gets its dates and titles from the markup); otherwise Jina's Markdown.
+    const format = source.config.parseMode === "html" ? "html" : undefined;
+    const page = await jinaRead(target, { purpose: "source_listing", subject: `source:${source.id}`, cacheToleranceSeconds: source.config.cacheToleranceSeconds, round, format });
+    return { text: page.markdown, viaJina: true, base: source.config.baseUrl ?? target, round };
   }
   const res = await guardedFetch(url, { headers: { accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8" }, timeoutMs: 25_000 });
   if (res.status !== 200) throw new FetchError(`HTTP ${res.status}`, res.status);
@@ -137,7 +147,9 @@ export function fromMarkdown(md: string, base: string, source: SourceRow): Candi
     /^[\s>#*+_|-]*(?:\d+[.)]\s*)?[\s*_]*$/.test(text.slice(text.lastIndexOf("\n", at - 1) + 1, at).replace(/\[\]\([^)]*\)/g, ""));
   for (const m of text.matchAll(/\[([^\]]{6,1000})\]\((https?:\/\/[^)\s]+|\/[^)\s]*)(?:\s+"([^"]*)")?\)/g)) {
     const url = absolute(m[2], base);
-    if (!url || seen.has(url) || !allowed(url, source) || navigationLink(url, listing)) continue;
+    if (!url || seen.has(url) || !allowed(url, source)) continue;
+    const section = source.config.preserveUrlFragment === true && new URL(url).hash.length > 1 && listingItself(url, listing);
+    if (!section && navigationLink(url, listing)) continue;
     if (source.config.linksStartLine === true && !startsLine(m.index!)) continue;
     const label = collapseWhitespace(m[1]!.replace(/[*_`#]/g, ""));
     // A title attribute the card text already contains is the clean title, without dates and blurbs.
@@ -302,16 +314,26 @@ async function fromMimoHome(html: string, base: string, source: SourceRow): Prom
   throw new FetchError("mimo_home: no Blog list in the homepage's chunks");
 }
 
-export async function fetchWebList(source: SourceRow): Promise<Candidate[]> {
-  const { text, viaJina, base } = await fetchListingText(source);
+export async function fetchWebList(source: SourceRow, opts: { preview?: boolean } = {}): Promise<Candidate[]> {
+  const { text, viaJina, base, round } = await fetchListingText(source);
   const mode = source.config.adapter === "mimo_home" ? "mimo_home" : source.config.parseMode ?? (viaJina ? "markdown" : "html");
-  let out: Candidate[];
-  if (mode === "mimo_home") out = await fromMimoHome(text, base, source);
-  else if (mode === "markdown") out = fromMarkdown(text, base, source);
-  else if (mode === "docusaurus_changelog") out = fromDocusaurusChangelog(text, base, source);
-  else out = fromHtml(text, base, source);
-  if (out.length === 0) throw new FetchError(`no items matched (${mode})`);
-  return out;
+  try {
+    let out: Candidate[];
+    if (mode === "mimo_home") out = await fromMimoHome(text, base, source);
+    else if (mode === "markdown") out = fromMarkdown(text, base, source);
+    else if (mode === "docusaurus_changelog") out = fromDocusaurusChangelog(text, base, source);
+    else out = fromHtml(text, base, source);
+    if (out.length === 0) throw new FetchError(`no items matched (${mode})`);
+    // A preview has no material commit; a successfully parsed page finishes its round here.
+    if (round && opts.preview) await sql`UPDATE sources SET cursor = cursor - 'jinaListingRound'
+      WHERE id = ${source.id} AND cursor->>'jinaListingRound' = ${round}`;
+    return out;
+  } catch (error) {
+    // An unusable rendering needs a fresh read; a valid one stays reusable until collectSource commits.
+    if (round) await sql`UPDATE sources SET cursor = cursor - 'jinaListingRound'
+      WHERE id = ${source.id} AND cursor->>'jinaListingRound' = ${round}`;
+    throw error;
+  }
 }
 
 export interface DetailNeed {

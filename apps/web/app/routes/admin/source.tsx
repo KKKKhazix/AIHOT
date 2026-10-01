@@ -1,6 +1,7 @@
 import { SITE } from "@aihot/industry/site";
 import { useState } from "react";
 import { Link } from "react-router";
+import type { AdminSource, AdminSourceDetail, AdminSourcePreview } from "@aihot/contracts/admin";
 import type { Route } from "./+types/source";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
@@ -8,62 +9,20 @@ import { bj, duration, num } from "../../features/admin/format";
 import { HEALTH_LABEL, KIND_LABEL, MODE_LABEL, TIER_LABEL, VISIBILITY_LABEL } from "../../features/admin/labels";
 import { AdminPage, Badge, Button, Card, DataTable, Dot, Empty, Field, healthTone, Input, Json, KV, ReasonDialog, Select, Stat, Textarea, Time } from "../../features/admin/ui";
 
-interface Source {
-  id: string;
-  name: string;
-  kind: string;
-  config: Record<string, unknown>;
-  tags: string[];
-  first_party: boolean;
-  owner_entity_id: string | null;
-  tier: string;
-  participation_mode: string;
-  signal_group_id: string | null;
-  interval_minutes: number;
-  site_fulltext: boolean;
-  syndicate_fulltext: boolean;
-  enabled: boolean;
-  health: string;
-  fail_count: number;
-  last_fetch_at: string | null;
-  last_ok_at: string | null;
-  last_error: string | null;
-  cursor: Record<string, unknown> | null;
-  next_fetch_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
 
 /** X runs: pages read, and older stretches still to read (backlog) or given up (dropped). */
-interface RunDetail {
-  pages?: number;
-  backlog?: number;
-  dropped?: number;
-}
 
-interface Detail {
-  source: Source;
-  runs: Array<{ id: number; started_at: string; finished_at: string | null; status: string; found_count: number | null; new_count: number | null; error: string | null; detail: RunDetail | null }>;
-  items: Array<{ id: string; title: string; url: string; discovered_at: string; published_at: string | null; processing_state: string; selected: boolean | null; visibility: string | null; title_zh: string | null }>;
-  stats: { total: number; last7d: number; selected: number };
-  history: Array<{ created_at: string; actor: string; action: string; reason: string | null; before: unknown; after: unknown }>;
-}
 
-interface Preview {
-  ms: number;
-  count: number;
-  items: Array<{ title: string; url: string; publishedAt: string | null; excerpt: string }>;
-}
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  return adminGet<Detail>(request, `/api/admin/sources/${encodeURIComponent(params.id)}`);
+  return adminGet<AdminSourceDetail>(request, `/api/admin/sources/${encodeURIComponent(params.id)}`);
 }
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: `${loaderData?.source.name ?? "信源"} · ${SITE.name} 后台` }];
 
-type Draft = Pick<Source, "name" | "interval_minutes" | "tier" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext"> & { tags: string; config: string };
+type Draft = Pick<AdminSource, "name" | "interval_minutes" | "tier" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext"> & { tags: string; config: string };
 
-function draftOf(s: Source): Draft {
+function draftOf(s: AdminSource): Draft {
   return {
     name: s.name,
     interval_minutes: s.interval_minutes,
@@ -84,7 +43,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
   const { run, pending } = useAdminAction();
   const [draft, setDraft] = useState<Draft>(() => draftOf(s));
   const [draftFor, setDraftFor] = useState(s.updated_at);
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const [preview, setPreview] = useState<AdminSourcePreview | null>(null);
   const [dialog, setDialog] = useState<null | "save" | "toggle">(null);
   const [configError, setConfigError] = useState<string | null>(null);
   if (draftFor !== s.updated_at) {
@@ -142,7 +101,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
           <Button
             busy={pending === "preview"}
             onClick={async () => {
-              const r = await run<Preview>("POST", `${base}/preview`, {}, { label: "preview", revalidate: false });
+              const r = await run<AdminSourcePreview>("POST", `${base}/preview`, {}, { label: "preview", revalidate: false });
               if (r) setPreview(r);
             }}
           >
@@ -351,7 +310,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
 }
 
 /** Field names that differ from the saved source (for the confirmation text). */
-function patchPreview(draft: Draft, s: Source): Record<string, true> {
+function patchPreview(draft: Draft, s: AdminSource): Record<string, true> {
   const out: Record<string, true> = {};
   const saved = draftOf(s);
   for (const k of Object.keys(draft) as Array<keyof Draft>) {

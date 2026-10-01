@@ -1,6 +1,6 @@
 // Time windows for reset announcements. Tibo speaks in Pacific time ("6pm PST" means Pacific local
 // time, daylight saving included); the site shows Beijing time. The schedule restates his words; the
-// estimate is the site's own landing window and is always labelled as such.
+// estimate is AIHOT's landing window and is always labelled as such.
 
 const PACIFIC = "America/Los_Angeles";
 const HOUR = 3600_000;
@@ -75,7 +75,7 @@ export function scheduleFrom(stated: StatedTime): Schedule {
     return { precision: "approximate", from: start.toISOString(), through: start.toISOString(), label: `北京时间约 ${md(start)} ${hm(start)}` };
   }
   // exact / window: a stated clock time lands within the hour.
-  const end = stated.through ? pacificToUtc(stated.date, stated.through) : new Date(start.getTime() + HOUR);
+  const end = stated.through ? pacificToUtc(stated.through < (stated.from ?? "18:00") ? addPacificDays(stated.date, 1) : stated.date, stated.through) : new Date(start.getTime() + HOUR);
   return { precision: stated.precision === "exact" ? "window" : stated.precision, from: start.toISOString(), through: end.toISOString(), label: `北京时间预计 ${beijingRange(start, end)}` };
 }
 
@@ -98,7 +98,7 @@ function estimate(from: Date, through: Date, basis: EstimateBasis, reason: strin
 }
 
 /**
- * The site's landing window for an unconfirmed announcement. A model window is accepted only when it
+ * AIHOT's landing window for an unconfirmed announcement. A model window is accepted only when it
  * is well-formed and does not contradict the stated time; otherwise the stated time (plus a
  * one-to-two-hour allowance) or his usual timing is used.
  */
@@ -111,18 +111,28 @@ export function estimateFor(opts: { schedule: Schedule | null; announcedAt: Date
     };
     const a = parse(model.earliestPacific);
     const b = parse(model.latestPacific);
-    const sane = a && b && b > a && b.getTime() - a.getTime() <= 36 * HOUR && b.getTime() > announcedAt.getTime() - HOUR;
-    const consistent = !schedule || (b! >= new Date(schedule.from) && a! <= new Date(new Date(schedule.through).getTime() + 12 * HOUR));
+    const sane = a && b && b > a && b.getTime() - a.getTime() <= 36 * HOUR && a >= announcedAt;
+    const consistent = !schedule || (a && b && b >= new Date(schedule.from) && a <= new Date(new Date(schedule.through).getTime() + 12 * HOUR)
+      && (schedule.precision === "deadline" || a >= new Date(schedule.from)));
     if (sane && consistent) return estimate(a!, b!, "model", `模型推算：${model.note}`);
   }
   if (schedule && schedule.precision === "date") {
     const day = pacificParts(new Date(schedule.from)).date;
     return estimate(pacificToUtc(day, USUAL_FROM), pacificToUtc(day, USUAL_TO), "source_day", "Tibo 只给了日期，按他以往的习惯落在当天太平洋时间傍晚。");
   }
+  if (schedule && schedule.precision === "deadline") {
+    // "Within the hour", "by 8pm": any time from the announcement (at most a day ahead) until a little
+    // after the deadline, not a window that only starts at the deadline (legacy estimate).
+    const deadline = new Date(schedule.through).getTime();
+    const from = Math.min(Math.max(announcedAt.getTime(), deadline - 24 * HOUR), deadline);
+    return estimate(new Date(from), new Date(deadline + HOUR), "source", "按原帖给出的截止时间换算成北京时间，并预留一点延迟。");
+  }
   if (schedule) {
-    const from = new Date(schedule.from);
+    // Around a time: from half an hour before it (not before the post); otherwise from the stated start.
+    const start = new Date(schedule.from).getTime();
+    const from = schedule.precision === "approximate" ? Math.max(announcedAt.getTime(), start - HOUR / 2) : start;
     const through = new Date(new Date(schedule.through).getTime() + 2 * HOUR);
-    return estimate(from, through, "source", "按原帖时间换算成北京时间，并预留一两个小时：他的确认帖通常比说的时间晚一点。");
+    return estimate(new Date(from), through, "source", "按原帖时间换算成北京时间，并预留一两个小时：他的确认帖通常比说的时间晚一点。");
   }
   // No time given: the next usual evening after the announcement.
   const p = pacificParts(announcedAt);
@@ -163,8 +173,11 @@ export function resolveStatedTime(w: StatedWords, postAt: Date): StatedTime | nu
     return { precision: "window", date: day, from, through: end! };
   }
   if (w.clock) {
-    // A single clock time ("landing 2:30pm", "by 8pm PST") is shown as the hour after it.
-    return { precision: w.clockThrough ? "window" : "exact", date: day, from: w.clock, through: w.clockThrough };
+    if (w.clockThrough) return { precision: "window", date: day, from: w.clock, through: w.clockThrough };
+    // "by 8pm" stays a deadline and "around 2:30pm" approximate (the legacy schedule kept both); a plain
+    // clock time ("landing 2:30pm") is shown as the hour after it.
+    const precision = w.precision === "deadline" || w.precision === "approximate" ? w.precision : "exact";
+    return { precision, date: day, from: w.clock, through: null };
   }
   if (w.precision === "date" && w.dayOffset !== null) return { precision: "date", date: day, from: null, through: null };
   return null;

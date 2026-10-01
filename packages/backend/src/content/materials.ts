@@ -130,6 +130,10 @@ export async function upsertMaterial(m: MaterialInput, db: Db = sql): Promise<Ma
 }
 
 async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
+  m = { ...m,
+    publishedAt: m.publishedAt && Number.isFinite(m.publishedAt.getTime()) ? m.publishedAt : null,
+    sourceUpdatedAt: m.sourceUpdatedAt && Number.isFinite(m.sourceUpdatedAt.getTime()) ? m.sourceUpdatedAt : null,
+  };
   const identityKey = identityKeyFor(m);
   const discoveredAt = m.discoveredAt ?? new Date();
   const title = collapseWhitespace(m.title).slice(0, 1000) || m.url;
@@ -196,7 +200,8 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
       body_status = CASE WHEN ${m.bodyText ?? null}::text IS NULL THEN body_status ELSE ${m.bodyStatus ?? "ok"} END,
       media = CASE WHEN ${m.media ? db.json(m.media as never) : null}::jsonb IS NULL THEN media ELSE ${m.media ? db.json(m.media as never) : null}::jsonb END,
       x_post = coalesce(${m.xPost ? db.json(m.xPost as never) : null}, x_post),
-      revision = revision + 1, content_hash = ${next}, processing_state = 'new', updated_at = now()
+      revision = revision + 1, content_hash = ${next}, processing_state = 'new',
+      processing_attempts = 0, processing_retry_at = NULL, processing_error = NULL, processing_queued_at = NULL, updated_at = now()
     WHERE id = ${existing!.id}
     RETURNING revision`;
   await db`INSERT INTO article_revisions (article_id, revision, content_hash, title, body_text)

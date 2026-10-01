@@ -4,7 +4,7 @@ import { selectedCondition, pendingReleaseCondition, listedCondition } from "./s
 // development's first appearance, so a new development brings it back up while a representative swap
 // never moves it; the representative is the first-party pick of the story's initiating fact.
 import type { GroupInfo, TimelineCard, TimelineFilters, TimelineResponse } from "@aihot/contracts/site";
-import { beijingDate } from "@aihot/contracts/time";
+import { beijingDate, beijingMidnight } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
 import {
@@ -93,6 +93,26 @@ async function queryGroupedAnchors(q: TimelineQuery, now: Date) {
       SELECT gk, max(sort_at) AS anchor_at FROM base GROUP BY gk ORDER BY anchor_at DESC, gk COLLATE "C" DESC`
   ).map((r) => ({ gk: r.gk, anchor: r.anchor_at.getTime() }));
   return rows;
+}
+
+/** Counts requested Beijing days over anchors already sorted newest first. */
+export function countTimelineDays(grouped: readonly { anchor: number }[], days: ReadonlySet<string>): Record<string, number> {
+  const firstBelow = (bound: number) => {
+    let lo = 0, hi = grouped.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (grouped[mid]!.anchor >= bound) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  const counts: Record<string, number> = {};
+  for (const day of days) {
+    const start = beijingMidnight(day).getTime();
+    const count = firstBelow(start) - firstBelow(start + 86_400_000);
+    if (count) counts[day] = count;
+  }
+  return counts;
 }
 
 export async function loadTimeline(q: TimelineQuery): Promise<Omit<TimelineResponse, "hot" | "generatedAt">> {
@@ -187,13 +207,7 @@ export async function loadTimeline(q: TimelineQuery): Promise<Omit<TimelineRespo
 
   // Day header counts for the days on this page, over the full grouped set.
   const days = new Set(page.map((g) => beijingDate(g.anchor_at)));
-  const dayCounts: Record<string, number> = {};
-  if (days.size) {
-    for (const g of grouped) {
-      const day = beijingDate(g.anchor);
-      if (days.has(day)) dayCounts[day] = (dayCounts[day] ?? 0) + 1;
-    }
-  }
+  const dayCounts = countTimelineDays(grouped, days);
 
   const refreshAt = await refreshAtRead;
   const last = page[page.length - 1];

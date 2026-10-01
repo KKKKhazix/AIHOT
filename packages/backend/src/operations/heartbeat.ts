@@ -4,8 +4,16 @@ import { sql } from "../db.ts";
 
 const startedAt = new Date().toISOString();
 
+export type Heartbeat = {
+  pid: number;
+  host: string;
+  release: string;
+  startedAt: string;
+  at: string;
+};
+
 export async function beat(role: string, detail: Record<string, unknown> = {}) {
-  const value = { ...detail, pid: process.pid, host: hostname(), release: process.env.AIHOT_RELEASE ?? "dev", startedAt, at: new Date().toISOString() };
+  const value: Heartbeat = { ...detail, pid: process.pid, host: hostname(), release: process.env.AIHOT_RELEASE ?? "dev", startedAt, at: new Date().toISOString() };
   await sql`INSERT INTO settings (key, value, updated_by) VALUES (${`heartbeat.${role}`}, ${sql.json(value)}, ${role})
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`;
 }

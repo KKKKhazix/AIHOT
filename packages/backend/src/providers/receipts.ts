@@ -4,10 +4,11 @@
 // 2. Before calling, a placeholder row and an attempt row are persisted; budgets count attempts.
 // 3. The raw response is saved before any business write; recovery reuses a received response.
 // 4. A request whose outcome is unknown (timeout after sending, crash mid-flight) is not re-sent by the
-//    caller. ops.recover releases it once after 30 minutes (admin/runs.ts), so a lost answer costs at
-//    most one repeat; after that it waits for the admin.
+//    caller. ops.recover releases it once after 30 minutes (operations/recover.ts), so a lost answer
+//    costs at most one repeat; after that it waits for the admin.
 import { sql, type Db } from "../db.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
 
 export class BudgetExceededError extends Error {
   readonly service: string;
@@ -114,8 +115,11 @@ export async function paidRequest(req: ReceiptRequest, call: () => Promise<CallO
     await tx`SELECT pg_advisory_xact_lock(hashtext(${"budget:" + req.service}))`;
     const [existing] = await tx<ReceiptRow[]>`
       SELECT id, status, response, created_at, updated_at FROM receipts WHERE logical_key = ${logicalKey} FOR UPDATE`;
+    if (existing?.status === "received" || existing?.status === "completed") return { kind: "reuse" as const, row: existing };
+    // Finish business writes from saved answers during shutdown, but never reserve or send the
+    // next paid page/batch. An answer already in flight still saves below, without this check.
+    shutdownSignal.signal.throwIfAborted();
     if (existing) {
-      if (existing.status === "received" || existing.status === "completed") return { kind: "reuse" as const, row: existing };
       if (existing.status === "pending") {
         if (Date.now() - existing.updated_at.getTime() < PENDING_STALE_MS) return { kind: "busy" as const, row: existing };
         await markUnknown(tx, existing.id, "placeholder went stale without a recorded result");
@@ -201,9 +205,29 @@ async function markUnknown(tx: Db, receiptId: number, reason: string) {
  * they are released like any other unknown outcome even when nothing retries them.
  */
 export async function markStalePendingReceipts(): Promise<number> {
-  const stale = await sql<{ id: number }[]>`SELECT id FROM receipts WHERE status = 'pending' AND updated_at < ${new Date(Date.now() - PENDING_STALE_MS)}`;
-  for (const r of stale) await sql.begin((tx) => markUnknown(tx, r.id, "placeholder went stale without a recorded result"));
-  return stale.length;
+  const reason = "placeholder went stale without a recorded result";
+  return sql.begin(async (tx) => {
+    // Recheck status and age when the row lock is acquired: a response may commit while we wait.
+    const stale = await tx<{ id: number }[]>`
+      UPDATE receipts SET status = 'unknown', error = ${reason}, updated_at = now()
+      WHERE status = 'pending' AND updated_at < ${new Date(Date.now() - PENDING_STALE_MS)} RETURNING id`;
+    if (stale.length) {
+      await tx`UPDATE receipt_attempts SET status = 'unknown', error = ${reason}, finished_at = now()
+               WHERE receipt_id IN ${tx(stale.map((r) => r.id))} AND status = 'pending'`;
+    }
+    return stale.length;
+  });
+}
+
+/**
+ * Releases an unknown receipt: marked failed, so the next attempt of its request calls again (who
+ * releases and when: operations/recover.ts). Null when the receipt is not, or no longer, unknown.
+ */
+export async function releaseUnknownReceipt(db: Db, id: number, error: string): Promise<{ subject: string | null; purpose: string } | null> {
+  const [released] = await db<{ subject: string | null; purpose: string }[]>`
+    UPDATE receipts SET status = 'failed', error = ${error}, updated_at = now() WHERE id = ${id} AND status = 'unknown' RETURNING subject, purpose`;
+  if (released) await db`UPDATE receipt_attempts SET status = 'failed', error = ${error} WHERE receipt_id = ${id} AND status = 'unknown'`;
+  return released ?? null;
 }
 
 export async function completeReceipt(db: Db, receiptId: number): Promise<void> {

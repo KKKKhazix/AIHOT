@@ -43,8 +43,8 @@ function toDate(v: unknown, unit: string | undefined): Date | null {
   if (v === null || v === undefined || v === "") return null;
   if (unit === "epoch_ms" || unit === "epoch_s") {
     try {
-      const d = new Date(Number(v) * (unit === "epoch_s" ? 1000 : 1));
-      return Number.isFinite(d.getTime()) ? d : null;
+      const date = new Date(Number(v) * (unit === "epoch_s" ? 1000 : 1));
+      return Number.isFinite(date.getTime()) ? date : null;
     } catch {
       return null;
     }

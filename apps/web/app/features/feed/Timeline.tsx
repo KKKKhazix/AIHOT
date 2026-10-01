@@ -143,6 +143,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
       pageRequest.current?.abort();
       pageRequest.current = null;
       setLoadingMore(false);
+      setLoadError(false);
       const snap = readSnapshot<ListState>(historyKey);
       if (snap && snap.data.cards.length > 0) {
         setState(snap.data);
@@ -212,7 +213,8 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
       if (res.status === 400) {
         // Cursor no longer fits: start over from the head.
         const head = await fetch(`/api/site/timeline?${key}`, { signal: controller.signal });
-        if (head.ok && current()) setState(fromResponse((await head.json()) as TimelineResponse));
+        if (!head.ok) throw new Error(String(head.status));
+        if (current()) setState(fromResponse((await head.json()) as TimelineResponse));
         return;
       }
       if (!res.ok) throw new Error(String(res.status));

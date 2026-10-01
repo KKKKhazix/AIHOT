@@ -294,12 +294,13 @@ export function ReasonDialog({
     if (!open) return;
     setReason("");
     const t = setTimeout(() => ref.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
-    return () => {
-      clearTimeout(t);
-      window.removeEventListener("keydown", onKey);
-    };
+    return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
   return (
     <AnimatePresence>

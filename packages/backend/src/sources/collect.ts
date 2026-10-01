@@ -2,14 +2,15 @@
 // A failed fetch never advances the success cursor; the source's health reflects consecutive failures.
 import { sql } from "../db.ts";
 import { identityKeyFor, upsertMaterial } from "../content/materials.ts";
-import { enqueue, QUEUES } from "../jobs/queue.ts";
+import { identityKeyForUrl } from "../lib/url.ts";
+import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
 import { queueProcessing } from "../jobs/content.ts";
 import { BudgetExceededError } from "../providers/receipts.ts";
 import { fetchRss } from "./rss.ts";
 import { allowed, fetchDetail, fetchWebList, type DetailNeed } from "./web-list.ts";
 import { unsupportedConfig } from "./config-keys.ts";
 import { fetchJsonList } from "./json-list.ts";
-import { fetchXSearch, planXShards, readXSearch, shardHandle, shardQuery, SHARDABLE_SQL, tweetToCandidate, type XBacklog, type XRead } from "./x.ts";
+import { fetchXSearch, planXShards, readXSearch, shardHandle, shardQuery, SHARDABLE_SQL, tweetToCandidate, type XBacklog } from "./x.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
 
 export interface CollectResult {
@@ -21,7 +22,6 @@ export interface CollectResult {
   error?: string;
 }
 
-const MAX_ITEMS_PER_RUN = 60;
 
 export function noiseFiltered(c: Candidate, source: SourceRow): boolean {
   const f = source.config.ingestNoiseFilter;
@@ -50,11 +50,10 @@ async function loadSource(id: string): Promise<SourceRow | null> {
   return s ?? null;
 }
 
-/** Titles of the articles already stored under these URLs. */
-async function storedTitles(urls: string[]): Promise<Map<string, string>> {
-  if (urls.length === 0) return new Map();
-  const rows = await sql<{ url: string; title: string }[]>`SELECT url, title FROM articles WHERE url IN ${sql(urls)}`;
-  return new Map(rows.map((r) => [r.url, r.title]));
+async function storedTitles(identities: string[]): Promise<Map<string, string>> {
+  if (identities.length === 0) return new Map();
+  const rows = await sql<{ identity_key: string; title: string }[]>`SELECT identity_key, title FROM articles WHERE identity_key = ANY(${identities}::text[])`;
+  return new Map(rows.map((r) => [r.identity_key, r.title]));
 }
 
 const DAY_MS = 86_400_000;
@@ -64,14 +63,8 @@ const needsTitle = (title: string) => title.length > 100 || /^(read more|learn m
 async function store(sourceId: string, candidates: Candidate[], backfill: string | null): Promise<{ created: number; revised: number }> {
   let created = 0;
   let revised = 0;
-  const seen = new Set<string>();
   for (const c of candidates) {
     const material = { ...c, sourceId, via: "fetch" as const, backfill };
-    // A listing that names one article twice (a featured card and its list entry, a feed repeating an
-    // item) stores its first entry only; the later ones would otherwise revise it on every fetch.
-    const key = identityKeyFor(material);
-    if (seen.has(key)) continue;
-    seen.add(key);
     const res = await upsertMaterial(material);
     if (res.created) created += 1;
     if (res.revised) revised += 1;
@@ -125,27 +118,34 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     found = candidates.length;
     candidates = candidates.filter((c) => allowed(c.url, source)).map((c) => rewriteUrl(c, source)).filter((c) => !noiseFiltered(c, source));
     if (source.config.sortByPublishedAt) candidates.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
-
+    // Deduplicate before enrichment and limits: URL aliases must neither buy duplicate detail reads
+    // nor crowd other articles out of the window. Use exactly the identity the material will store.
+    const unique = new Map<string, Candidate>();
+    for (const c of candidates) {
+      const identityKey = c.identityKey
+        ?? (source.config.preserveUrlFragment === true ? identityKeyForUrl(c.url, { keepFragment: true }) : null)
+        ?? identityKeyFor({ ...c, sourceId, via: "fetch" });
+      if (!unique.has(identityKey)) unique.set(identityKey, { ...c, identityKey });
+    }
+    candidates = [...unique.values()];
     // First import of a new source: bounded, and archived by source time (never "today", never pushed).
     const backfillLimit = Number(source.config._aihot?.initialBackfillLimit ?? 30);
     const backfillMonths = Number(source.config._aihot?.initialBackfillMonths ?? 12);
     if (firstImport) {
       const cutoff = Date.now() - backfillMonths * 30 * 86400000;
-      candidates = candidates.filter((c) => !c.publishedAt || c.publishedAt.getTime() >= cutoff).slice(0, backfillLimit);
-    } else if (source.kind !== "x_search") {
-      // X keeps every post it read: its watermark already covers them, so a cut here would lose them.
-      candidates = candidates.slice(0, MAX_ITEMS_PER_RUN);
+      candidates = candidates.filter((c) => !c.publishedAt || !Number.isFinite(c.publishedAt.getTime()) || c.publishedAt.getTime() >= cutoff).slice(0, backfillLimit);
     }
+    // Process all candidates already returned before advancing the success cursor.
 
     // Detail pages only for material we have not seen (bounded per run), and only for what the listing lacks.
     const d = source.config.detail;
-    const known = await storedTitles(candidates.map((c) => c.url));
+    const known = d ? await storedTitles(candidates.map((c) => c.identityKey!)) : new Map<string, string>();
     const detailBudget = Number(d?.maxFetches ?? 0);
     let detailUsed = 0;
     for (const c of candidates) {
       // Listing dates the source marks unreliable are dropped; the detail page's rule decides.
       if (d?.publishedAtAuthoritative === true) c.publishedAt = null;
-      const stored = known.get(c.url);
+      const stored = known.get(c.identityKey!);
       if (stored !== undefined) {
         // The title came from the detail page: the listing's own rendering must not revise it back.
         if (d?.titleSelector || d?.titleRegex) c.title = stored;
@@ -181,6 +181,8 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
 
     ({ created, revised } = await store(sourceId, candidates, firstImport ? "first-import" : null));
 
+    // A Jina listing round that was pending when this run started has been received by now.
+    delete nextCursor.jinaListingRound;
     if (firstImport) nextCursor.initializedAt = new Date().toISOString();
     nextCursor.lastOkAt = new Date().toISOString();
     await sql`
@@ -192,6 +194,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
                 detail = ${detail ? sql.json(detail as never) : null} WHERE id = ${run!.id}`;
     return { sourceId, status: "ok", found, created, revised };
   } catch (error) {
+    if (shutdownSignal.signal.aborted) throw error;
     const message = String(error instanceof Error ? error.message : error).slice(0, 1000);
     const budget = error instanceof BudgetExceededError;
     await sql`
@@ -239,26 +242,57 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
   const members = (
     await sql<SourceRow[]>`
       SELECT id, name, kind, config, tier, participation_mode, first_party, interval_minutes, enabled, cursor, fail_count
-      FROM sources WHERE id IN ${sql(sourceIds)}`
-  ).filter((m) => m.enabled && shardHandle(m));
+      FROM sources WHERE id = ANY(${sourceIds}::text[])`
+  ).filter((m) => m.enabled && shardHandle(m)).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   if (members.length === 0) return { key, status: "skipped", accounts: 0, found: 0, created: 0 };
   const minutes = shardMinutes(members[0]!.participation_mode);
-  const runs = new Map<string, number>();
-  for (const m of members) runs.set(m.id, (await sql<{ id: number }[]>`INSERT INTO fetch_runs (source_id) VALUES (${m.id}) RETURNING id`)[0]!.id);
-
-  const since = members.map(coveredTo).reduce((a, b) => (b < a ? b : a));
-  const backlog: XBacklog[] = [];
-  const stretches = new Set<string>();
-  for (const m of members) {
-    for (const b of (Array.isArray(m.cursor?.xBacklog) ? m.cursor.xBacklog : []) as XBacklog[]) {
-      if (!stretches.has(`${b.query} ${b.next}`)) backlog.push(b);
-      stretches.add(`${b.query} ${b.next}`);
-    }
-  }
-  let read: XRead;
+  const runs = new Map((await sql<{ id: number; source_id: string }[]>`
+    INSERT INTO fetch_runs ${sql(members.map(m => ({ source_id: m.id })), "source_id")} RETURNING id, source_id`
+  ).map(r => [r.source_id, r.id]));
+  let found = 0;
+  let created = 0;
   try {
-    read = await readXSearch(shardQuery(members.map((m) => shardHandle(m)!)), { lastId: String(since), backlog, subject: `x-shard:${key}` });
+    const since = members.map(coveredTo).reduce((a, b) => (b < a ? b : a));
+    const backlog: XBacklog[] = [];
+    const stretches = new Set<string>();
+    for (const m of members) {
+      for (const b of (Array.isArray(m.cursor?.xBacklog) ? m.cursor.xBacklog : []) as XBacklog[]) {
+        if (!stretches.has(`${b.query} ${b.next}`)) backlog.push(b);
+        stretches.add(`${b.query} ${b.next}`);
+      }
+    }
+    const read = await readXSearch(shardQuery(members.map((m) => shardHandle(m)!)), { lastId: String(since), backlog, subject: `x-shard:${key}` });
+    const detail = { shard: key, accounts: members.length, pages: read.pages, truncated: read.truncated, backlog: read.backlog.length, backlogPages: read.backlogPages, dropped: read.dropped };
+    const counts = new Map<string, { found: number; created: number }>();
+    for (const m of members) {
+      const handle = shardHandle(m)!.toLowerCase();
+      const mine = read.tweets.filter((t) => t.user.screen_name.toLowerCase() === handle);
+      const stored = await store(m.id, mine.map(tweetToCandidate).map((c) => rewriteUrl(c, m)).filter((c) => !noiseFiltered(c, m)), null);
+      found += mine.length;
+      created += stored.created;
+      counts.set(m.id, { found: mine.length, created: stored.created });
+    }
+    // Only a fully stored search advances coverage. A failed write can replay every paid page;
+    // material already committed is idempotent, and no member is left half-finished.
+    await sql.begin(async tx => {
+      for (const m of members) {
+        const own = String(m.cursor!.lastTweetId);
+        const cursor: Record<string, unknown> = { ...m.cursor, lastTweetId: read.lastId && BigInt(read.lastId) > BigInt(own) ? read.lastId : own, lastOkAt: new Date().toISOString() };
+        if (read.backlog.length) cursor.xBacklog = read.backlog;
+        else delete cursor.xBacklog;
+        await tx`
+          UPDATE sources SET last_fetch_at = now(), last_ok_at = now(), fail_count = 0, last_error = NULL,
+            health = 'ok', cursor = ${tx.json(cursor as never)}, interval_minutes = ${minutes}, updated_at = now(),
+            next_fetch_at = now() + make_interval(mins => ${minutes})
+          WHERE id = ${m.id}`;
+        const count = counts.get(m.id)!;
+        await tx`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${count.found}, new_count = ${count.created},
+                    detail = ${tx.json(detail as never)} WHERE id = ${runs.get(m.id)!}`;
+      }
+    });
+    return { key, status: "ok", accounts: members.length, found, created };
   } catch (error) {
+    if (shutdownSignal.signal.aborted) throw error;
     const message = String(error instanceof Error ? error.message : error).slice(0, 1000);
     const budget = error instanceof BudgetExceededError;
     for (const m of members) {
@@ -272,31 +306,8 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
         WHERE id = ${m.id}`;
       await sql`UPDATE fetch_runs SET status = 'failed', finished_at = now(), error = ${message}, detail = ${sql.json({ shard: key, accounts: members.length })} WHERE id = ${runs.get(m.id)!}`;
     }
-    return { key, status: "failed", accounts: members.length, found: 0, created: 0, error: message };
+    return { key, status: "failed", accounts: members.length, found, created, error: message };
   }
-
-  const detail = { shard: key, accounts: members.length, pages: read.pages, truncated: read.truncated, backlog: read.backlog.length, backlogPages: read.backlogPages, dropped: read.dropped };
-  let found = 0;
-  let created = 0;
-  for (const m of members) {
-    const handle = shardHandle(m)!.toLowerCase();
-    const mine = read.tweets.filter((t) => t.user.screen_name.toLowerCase() === handle);
-    const stored = await store(m.id, mine.map(tweetToCandidate).map((c) => rewriteUrl(c, m)).filter((c) => !noiseFiltered(c, m)), null);
-    found += mine.length;
-    created += stored.created;
-    const own = String(m.cursor!.lastTweetId);
-    const cursor: Record<string, unknown> = { ...m.cursor, lastTweetId: read.lastId && BigInt(read.lastId) > BigInt(own) ? read.lastId : own, lastOkAt: new Date().toISOString() };
-    if (read.backlog.length) cursor.xBacklog = read.backlog;
-    else delete cursor.xBacklog;
-    await sql`
-      UPDATE sources SET last_fetch_at = now(), last_ok_at = now(), fail_count = 0, last_error = NULL,
-        health = 'ok', cursor = ${sql.json(cursor as never)}, interval_minutes = ${minutes}, updated_at = now(),
-        next_fetch_at = now() + make_interval(mins => ${minutes})
-      WHERE id = ${m.id}`;
-    await sql`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${mine.length}, new_count = ${stored.created},
-                detail = ${sql.json(detail as never)} WHERE id = ${runs.get(m.id)!}`;
-  }
-  return { key, status: "ok", accounts: members.length, found, created };
 }
 
 /** X accounts read by shard: a plain query and a watermark (the first fetch of an account is its own). */

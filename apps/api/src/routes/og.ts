@@ -126,12 +126,13 @@ export function registerOg(app: FastifyInstance) {
     if (found.kind !== "found") return notFound(reply);
     const s = await loadStoryDetail(found.storyId);
     if (!s) return notFound(reply);
+    reply.header("X-Accel-Expires", ARTICLE_IMAGE_ORIGIN_SECONDS);
     return send(req, reply, {
       kicker: s.whyHot.rank ? `热点第 ${s.whyHot.rank} · 事件` : "事件",
       title: s.title,
       subtitle: s.latest ?? s.digest,
       meta: `${s.sourceCount} 个来源 · ${s.reportCount} 篇报道`,
       accent: s.whyHot.rank ? "hot" : "teal",
-    }, 3600);
+    }, 3600, ARTICLE_IMAGE_CACHE);
   });
 }

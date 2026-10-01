@@ -10,7 +10,7 @@ import { closeDb, sql } from "@aihot/backend/db";
 import { chatJson, ModelOutputError } from "@aihot/backend/providers/llm";
 import { embeddingsAvailable } from "@aihot/backend/providers/embeddings";
 import { BudgetExceededError, paidRequest, ReceiptUnknownError } from "@aihot/backend/providers/receipts";
-import { autoReleaseUnknownReceipts, releaseReceipt } from "@aihot/backend/admin/runs";
+import { autoReleaseUnknownReceipts, releaseReceipt } from "@aihot/backend/operations/recover";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 

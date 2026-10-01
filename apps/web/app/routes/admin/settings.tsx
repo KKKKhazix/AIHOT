@@ -1,5 +1,6 @@
 import { SITE } from "@aihot/industry/site";
 import { useRef, useState } from "react";
+import type { AdminSettings } from "@aihot/contracts/admin";
 import type { Route } from "./+types/settings";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
@@ -7,24 +8,19 @@ import { bj, num } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, DataTable, Input, ReasonDialog } from "../../features/admin/ui";
 import { toast } from "../../features/admin/toast";
 
-interface Settings {
-  contact: { wechatQr: string; feishuQr: string };
-  targets: Array<{ key: string; purpose: string; kind: string; enabled: boolean; enabled_at: string | null; config_ref: string | null; note: string | null; deliveries_7d: number; last_sent_at: string | null }>;
-  budgets: Array<{ service: string; per_minute: number; per_hour: number; per_day: number; note: string | null; updated_at: string; used_day: number; used_hour: number }>;
-}
 
 export async function loader({ request }: Route.LoaderArgs) {
-  return adminGet<Settings>(request, "/api/admin/settings");
+  return adminGet<AdminSettings>(request, "/api/admin/settings");
 }
 
 export const meta: Route.MetaFunction = () => [{ title: `设置 · ${SITE.name} 后台` }];
 
-function QrSlot({ slot, label, src }: { slot: "wechatQr" | "feishuQr"; label: string; src: string }) {
+function QrSlot({ slot, label, src }: { slot: "wechatQr" | "feishuQr"; label: string; src: string | null }) {
   const { run, pending } = useAdminAction();
   const input = useRef<HTMLInputElement>(null);
   return (
     <div className="flex items-center gap-4">
-      <img src={src} alt={label} className="size-28 rounded-card bg-white object-contain p-1.5 ring-1 ring-line" />
+      {src ? <img src={src} alt={label} className="size-28 rounded-card bg-white object-contain p-1.5 ring-1 ring-line" /> : <div className="flex size-28 shrink-0 items-center justify-center rounded-card bg-surface text-sm text-ink-4 ring-1 ring-line">未设置</div>}
       <div>
         <div className="text-[14px] font-medium text-ink">{label}</div>
         <div className="mt-0.5 break-all font-mono text-[11.5px] text-ink-4">{src}</div>
@@ -53,7 +49,7 @@ function QrSlot({ slot, label, src }: { slot: "wechatQr" | "feishuQr"; label: st
   );
 }
 
-function BudgetRow({ b }: { b: Settings["budgets"][number] }) {
+function BudgetRow({ b }: { b: AdminSettings["budgets"][number] }) {
   const { run, pending } = useAdminAction();
   const [v, setV] = useState({ perMinute: b.per_minute, perHour: b.per_hour, perDay: b.per_day });
   const [open, setOpen] = useState(false);
@@ -83,7 +79,7 @@ function BudgetRow({ b }: { b: Settings["budgets"][number] }) {
   );
 }
 
-function TargetToggle({ t }: { t: Settings["targets"][number] }) {
+function TargetToggle({ t }: { t: AdminSettings["targets"][number] }) {
   const { run, pending } = useAdminAction();
   const [open, setOpen] = useState(false);
   return (

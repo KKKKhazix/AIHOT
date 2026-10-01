@@ -184,7 +184,7 @@ export async function forwardFeedbackToFeishu(id: number): Promise<"sent" | "dis
 }
 
 /** Custom-bot webhook for content groups (selected cards, reset pushes). */
-export async function postWebhook(url: string, card: unknown): Promise<{ ok: boolean; status: number; body: string }> {
+export async function postWebhook(url: string, card: unknown): Promise<{ status: "sent" | "failed" | "unknown"; body: string }> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -192,12 +192,14 @@ export async function postWebhook(url: string, card: unknown): Promise<{ ok: boo
     signal: AbortSignal.timeout(15_000),
   });
   const body = await res.text();
-  let ok = res.ok;
+  // A successful HTTP transport is not an acknowledgement: proxies can return HTML or empty JSON.
+  let status: "sent" | "failed" | "unknown" = res.status >= 400 && res.status < 500 ? "failed" : "unknown";
   try {
-    const json = JSON.parse(body) as { code?: number; StatusCode?: number };
-    ok = ok && (json.code === 0 || json.StatusCode === 0);
+    const json = JSON.parse(body) as { code?: number; StatusCode?: number } | null;
+    const code = json?.code ?? json?.StatusCode;
+    if (res.ok && typeof code === "number") status = code === 0 ? "sent" : "failed";
   } catch {
     // non-JSON body
   }
-  return { ok, status: res.status, body: body.slice(0, 500) };
+  return { status, body: body.slice(0, 500) };
 }

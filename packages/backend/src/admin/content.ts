@@ -11,6 +11,7 @@ import { normalizeUrl } from "../lib/url.ts";
 import { publishArticle } from "../publication/publish.ts";
 
 import { computeHotRanking } from "../events/hot.ts";
+import { invalidateStoryInputs, lockStoryMembership } from "../events/derived-content.ts";
 import { mergeStoryInto } from "../events/merge.ts";
 import { latestHotRanking } from "../events/hot-read.ts";
 import { audit } from "./auth.ts";
@@ -142,11 +143,6 @@ export async function overrideFields(id: string, input: { fields: unknown; clear
     RETURNING version`;
   if (!written.count) throw new Conflict(STALE);
   const published = await publishArticle(id);
-  // A corrected title or summary reaches the event summary: rewrite the digest of its story.
-  if (published?.changed) {
-    const [st] = await sql<{ story_id: number | null }[]>`SELECT story_id FROM publications WHERE article_id = ${id}`;
-    if (st?.story_id) await enqueue(QUEUES.digest, { storyId: st.story_id, afterCorrection: true }, { singletonKey: `story:${st.story_id}:correction` });
-  }
   await audit(actor, "content.override", `content:${id}`, input.reason, before.fields, next);
   return published;
 }
@@ -184,6 +180,7 @@ export async function detachFromFact(id: string, reason: string, actor: string) 
   const { facts, stories } = await sql.begin(async (tx) => {
     // The grouping job writes under the same lock and reads this decision again before it does.
     await tx`SELECT 1 FROM articles WHERE id = ${id} FOR UPDATE`;
+    await lockStoryMembership(tx);
     const removed = await tx<{ fact_id: number }[]>`DELETE FROM fact_articles WHERE article_id = ${id} RETURNING fact_id`;
     const factIds = removed.map((r) => r.fact_id);
     const storyRows = factIds.length ? await tx<{ story_id: number }[]>`SELECT DISTINCT story_id FROM facts WHERE id = ANY(${factIds}) AND story_id IS NOT NULL` : [];
@@ -192,6 +189,8 @@ export async function detachFromFact(id: string, reason: string, actor: string) 
     await tx`INSERT INTO grouping_overrides (article_id, reason, actor) VALUES (${id}, ${reason}, ${actor})
              ON CONFLICT (article_id) DO UPDATE SET reason = EXCLUDED.reason, actor = EXCLUDED.actor, created_at = now()`;
     await tx`UPDATE articles SET grouped_at = now() WHERE id = ${id}`;
+    // 删除后按原fact范围回退，不能依赖旧综述一定记录过输入。
+    await invalidateStoryInputs(tx, [], new Date(), factIds);
     return { facts: factIds, stories: storyIds };
   });
   await publishArticle(id);
@@ -200,7 +199,6 @@ export async function detachFromFact(id: string, reason: string, actor: string) 
     const others = await sql<{ article_id: string }[]>`SELECT DISTINCT article_id FROM fact_articles WHERE fact_id = ANY(${facts})`;
     for (const o of others) await publishArticle(o.article_id);
   }
-  for (const storyId of stories) await enqueue(QUEUES.digest, { storyId }, { singletonKey: `story:${storyId}` });
   await audit(actor, "content.detach", `content:${id}`, reason, { facts, stories }, null);
   return { detached: facts.length };
 }

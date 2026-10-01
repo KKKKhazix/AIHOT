@@ -45,6 +45,8 @@ docker compose --profile https up -d --build
 
 ### 更新
 
+首次升级包含 `0040_story_digest_context.sql` 的版本时，必须先按下面的“事件文字安全修复升级”执行协调停机，不能直接滚动更新。其余更新：
+
 ```bash
 git pull
 docker compose up -d --build
@@ -61,6 +63,29 @@ docker compose exec -T db pg_dump -U aihot aihot | gzip > myhot-$(date +%F).sql.
 ```
 
 数据都在三个 Docker 卷里：`db`（数据库）、`data`（上传的图片、图片缓存、本地备份）、`caddy`（证书）。`docker compose down` 不会删除它们；`docker compose down -v` 会。
+
+### 事件文字安全修复升级
+
+`0040_story_digest_context.sql` 会把已失效报道的事件文字回退为剩余公开报道，并把原文保留在私有审计。新增列虽然兼容旧表结构，旧 API/worker 却没有新的同步失效和写回校验：旧任务可能在修复后写回过期文字，旧进程也可能继续返回内存缓存。因此这次升级不支持新旧应用混跑。
+
+1. 按上节备份数据库并确认可恢复。安排维护窗口，在入口暂停读写流量；盘点连接此数据库的全部 API、worker 和网页实例，包括其他主机、手动任务与进程守护器。
+2. 拉取目标版本并构建镜像。停止所有旧应用实例，给在途任务留出正常退出时间；本仓库 worker 的退出预算为 195 秒，Compose 停止等待使用 210 秒。确认没有残留旧进程或自动拉起的旧副本后才迁移，数据库保持运行。
+3. 用新镜像执行迁移。迁移成功后只启动同一版本的新 API、worker 和网页，确认健康检查、事件页面及剩余合法报道正常，再恢复入口流量。迁移失败时保持维护状态并排查，不带着旧写入进程重试。
+
+单机 Compose 的核心命令如下；入口维护、备份和其他主机的停机需按自己的部署完成：
+
+```bash
+git pull
+docker compose build
+docker compose stop -t 210 web api worker
+# 确认全部旧实例已经退出，且 db 正常运行后再执行迁移
+docker compose run --rm --no-deps setup node scripts/migrate.ts
+docker compose up -d --no-deps --force-recreate api worker web
+```
+
+不用 Docker 时，也要先通过 systemd/pm2 等停止并确认所有旧进程退出，在目标版本目录执行 `node --env-file=.env scripts/migrate.ts`，成功后再启动这一版本的三个进程。不要只停 worker 而保留旧 API，也不要用 `down -v` 删除数据卷。
+
+安全保证针对完成协调升级后的源站读取；重启应用会清除旧进程缓存，但已经发给浏览器、CDN 或其他消费者的副本不能由数据库迁移收回。按自己的缓存清理流程处理可控副本，其余需等待已有缓存期限结束；不能把源站更新等同于所有外部副本即时撤回。
 
 ### 看日志
 

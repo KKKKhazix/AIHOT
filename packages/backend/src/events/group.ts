@@ -22,6 +22,7 @@ import { BudgetExceededError, ReceiptBusyError, completeReceipt } from "../provi
 import { embeddingsAvailable, ensureEmbeddings } from "../providers/embeddings.ts";
 import { isHistorical, STALE_ON_DISCOVERY_MS } from "../content/materials.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
+import { invalidateStoryInputs, lockStoryMembership } from "./derived-content.ts";
 import { publishArticle } from "../publication/publish.ts";
 import { mergeStoryInto } from "./merge.ts";
 import {
@@ -44,6 +45,7 @@ const SIGNAL_TOP_FACTS = 4;
 
 interface ArticleRow {
   id: string;
+  revision: number;
   title: string;
   url: string;
   published_at: Date | null;
@@ -93,8 +95,8 @@ const trusted = (alias: string) =>
 const rootFactOf = (story: ReturnType<typeof sql> | number) => sql`(
   SELECT y.id FROM facts y
   JOIN fact_articles z ON z.fact_id = y.id AND z.role IN ('primary', 'report') AND ${trusted("z")}
-  JOIN publications q ON q.article_id = z.article_id
-  WHERE y.story_id = ${story}
+  JOIN publications q ON q.article_id = z.article_id JOIN sources qs ON qs.id=q.source_id
+  WHERE y.story_id = ${story} AND q.visibility='public' AND qs.participation_mode='editorial'
   ORDER BY coalesce(q.published_at, q.discovered_at), y.id
   LIMIT 1)`;
 
@@ -106,7 +108,8 @@ async function recallPool(withWaiting = false): Promise<PoolRow[]> {
     JOIN facts f ON f.id = fa.fact_id
     JOIN stories st ON st.id = f.story_id AND st.merged_into IS NULL
     JOIN articles a ON a.id = fa.article_id
-    WHERE fa.role IN ('primary', 'report') AND ${withWaiting ? sql`true` : trusted("fa")} AND a.discovered_at > now() - make_interval(days => ${RECALL_DAYS})`;
+    JOIN publications p ON p.article_id=a.id JOIN sources s ON s.id=a.source_id
+    WHERE p.visibility='public' AND s.participation_mode='editorial' AND fa.role IN ('primary', 'report') AND ${withWaiting ? sql`true` : trusted("fa")} AND a.discovered_at > now() - make_interval(days => ${RECALL_DAYS})`;
 }
 
 /** The public title and summary of reports (the analysis when a report has no publication yet). */
@@ -114,10 +117,10 @@ async function reportTexts(ids: string[]): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
   const rows = await sql<{ id: string; title: string; summary: string | null }[]>`
     SELECT a.id, coalesce(p.title, an.title_zh, a.title) AS title, coalesce(p.summary, an.summary_zh, '') AS summary
-    FROM articles a
+    FROM articles a JOIN sources s ON s.id=a.source_id
     LEFT JOIN publications p ON p.article_id = a.id
     LEFT JOIN LATERAL (SELECT title_zh, summary_zh FROM analyses x WHERE x.article_id = a.id ORDER BY input_revision DESC, id DESC LIMIT 1) an ON true
-    WHERE a.id = ANY(${ids})`;
+    WHERE a.id = ANY(${ids}) AND coalesce(p.visibility,'public')='public' AND s.participation_mode='editorial'`;
   return new Map(rows.map((r) => [r.id, reportText(r.title, r.summary)]));
 }
 
@@ -251,7 +254,8 @@ async function candidateViews(recalled: Recalled[]): Promise<CandidateView[]> {
     JOIN facts f ON f.id = fa.fact_id
     JOIN publications p ON p.article_id = fa.article_id
     JOIN sources s ON s.id = p.source_id
-    WHERE fa.fact_id = ANY(${recalled.map((r) => r.factId)}) AND fa.role IN ('primary', 'report') AND ${trusted("fa")}
+    WHERE p.visibility='public' AND s.participation_mode='editorial'
+      AND fa.fact_id = ANY(${recalled.map((r) => r.factId)}) AND fa.role IN ('primary', 'report') AND ${trusted("fa")}
     ORDER BY fa.fact_id, (fa.role = 'primary') DESC, p.timeline_at ASC`;
   const byFact = new Map(rows.map((r) => [Number(r.fact_id), r]));
   return recalled.flatMap((r) => {
@@ -362,11 +366,14 @@ async function currentMembership(articleId: string): Promise<{ factId: number; s
 async function resetAutomatic(articleId: string): Promise<number[]> {
   return sql.begin(async (tx) => {
     await tx`SELECT 1 FROM articles WHERE id = ${articleId} FOR UPDATE`;
+    await lockStoryMembership(tx);
     const left = await tx<{ story_id: number }[]>`
       SELECT DISTINCT f.story_id FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id
       WHERE fa.article_id = ${articleId} AND NOT fa.manual AND fa.role IN ('primary', 'report') AND f.story_id IS NOT NULL`;
-    await tx`DELETE FROM fact_articles WHERE article_id = ${articleId} AND NOT manual`;
+    const removed = await tx<{ fact_id: number }[]>`DELETE FROM fact_articles WHERE article_id = ${articleId} AND NOT manual RETURNING fact_id`;
     await tx`DELETE FROM story_signals WHERE article_id = ${articleId}`;
+    // 仅失效实际移走的自动归属，保留人工归属及其合法文字。
+    await invalidateStoryInputs(tx, [], new Date(), removed.map(r => r.fact_id));
     return left.map((r) => Number(r.story_id));
   });
 }
@@ -398,14 +405,16 @@ async function relatedPosts(a: ArticleRow): Promise<{ sameUrl: PoolRow | null; r
     SELECT fa.article_id, fa.fact_id, f.story_id, f.title AS fact_title
     FROM articles b JOIN fact_articles fa ON fa.article_id = b.id AND fa.role IN ('primary', 'report')
     JOIN facts f ON f.id = fa.fact_id JOIN stories st ON st.id = f.story_id AND st.merged_into IS NULL
-    WHERE b.url = ${a.url} AND b.id <> ${a.id} AND ${trusted("fa")} ORDER BY fa.created_at LIMIT 1`;
+    JOIN publications p ON p.article_id=b.id JOIN sources s ON s.id=b.source_id
+    WHERE p.visibility='public' AND s.participation_mode='editorial' AND b.url = ${a.url} AND b.id <> ${a.id} AND ${trusted("fa")} ORDER BY fa.created_at LIMIT 1`;
   const ids = [a.x_post?.replyTo ?? null, a.x_post?.quoted?.url ? (/\/status\/(\d+)/.exec(a.x_post.quoted.url)?.[1] ?? null) : null].filter((x): x is string => !!x);
   const referenced = ids.length
     ? await sql<PoolRow[]>`
         SELECT fa.article_id, fa.fact_id, f.story_id, f.title AS fact_title
         FROM articles b JOIN fact_articles fa ON fa.article_id = b.id AND fa.role IN ('primary', 'report')
         JOIN facts f ON f.id = fa.fact_id JOIN stories st ON st.id = f.story_id AND st.merged_into IS NULL
-        WHERE b.identity_key = ANY(${ids.map((id) => `x:${id}`)}) AND b.id <> ${a.id} AND ${trusted("fa")}`
+        JOIN publications p ON p.article_id=b.id JOIN sources s ON s.id=b.source_id
+        WHERE p.visibility='public' AND s.participation_mode='editorial' AND b.identity_key = ANY(${ids.map((id) => `x:${id}`)}) AND b.id <> ${a.id} AND ${trusted("fa")}`
     : [];
   return { sameUrl: sameUrl ?? null, referenced };
 }
@@ -437,7 +446,7 @@ async function storyRoot(storyId: number): Promise<StoryRoot | null> {
     JOIN fact_articles fa ON fa.fact_id = f.id AND fa.role IN ('primary', 'report') AND ${trusted("fa")}
     JOIN publications p ON p.article_id = fa.article_id
     JOIN sources s ON s.id = p.source_id
-    WHERE f.id = ${rootFactOf(storyId)}
+    WHERE f.id = ${rootFactOf(storyId)} AND p.visibility='public' AND s.participation_mode='editorial'
     ORDER BY (fa.role = 'primary') DESC, p.timeline_at ASC
     LIMIT 1`;
   if (!row) return null;
@@ -604,7 +613,7 @@ export async function groupArticle(articleId: string, opts: GroupOptions = {}): 
 
 async function decide(articleId: string, opts: GroupOptions): Promise<GroupResult> {
   const [a] = await sql<ArticleRow[]>`
-    SELECT a.id, a.title, a.url, a.published_at, a.discovered_at, a.grouped_at, a.body_text, a.x_post, a.backfill,
+    SELECT a.id, a.revision, a.title, a.url, a.published_at, a.discovered_at, a.grouped_at, a.body_text, a.x_post, a.backfill,
            s.id AS source_id, s.name AS source_name, s.signal_group_id, s.first_party, s.participation_mode,
            EXISTS (SELECT 1 FROM regroup_pending rp WHERE rp.article_id = a.id) AS regroup_pending
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId}`;
@@ -628,7 +637,11 @@ async function decide(articleId: string, opts: GroupOptions): Promise<GroupResul
     return { verdict: "historical" };
   }
 
+  if (a.participation_mode === "isolated") return { verdict: "skipped" };
   if (opts.signalOnly || a.participation_mode !== "editorial") return groupSignal(a, source, observedAt);
+  const [publication] = await sql<{ title: string; summary: string | null; visibility: string }[]>`
+    SELECT title,summary,visibility FROM publications WHERE article_id=${articleId}`;
+  if (publication && publication.visibility !== "public") return { verdict: "standalone" };
 
   const kept = await currentMembership(articleId);
   if (kept) {
@@ -637,17 +650,20 @@ async function decide(articleId: string, opts: GroupOptions): Promise<GroupResul
     return { verdict: "kept", factId: kept.factId, storyId: kept.storyId };
   }
 
-  const [an] = await sql<{ relevance: string | null; title_zh: string | null; summary_zh: string | null; output: Record<string, any> | null }[]>`
-    SELECT relevance, title_zh, summary_zh, output FROM analyses WHERE article_id = ${articleId} ORDER BY input_revision DESC, id DESC LIMIT 1`;
-  const frame = (an?.output?.fact ?? null) as Record<string, any> | null;
+  const [an] = await sql<{ id: number; relevance: string | null; title_zh: string | null; summary_zh: string | null; output: Record<string, any> | null }[]>`
+    SELECT id, relevance, title_zh, summary_zh, output FROM analyses WHERE article_id = ${articleId} ORDER BY input_revision DESC, id DESC LIMIT 1`;
+  // 人工更正优先；旧analysis的事件框架不能把被改掉的主张重新带回来。
+  const corrected = !!publication && (publication.title !== an?.title_zh || publication.summary !== an?.summary_zh);
+  const frame = (corrected ? null : an?.output?.fact ?? null) as Record<string, any> | null;
   if (!an || an.relevance !== "pass") {
     await markGrouped(articleId);
     await publishArticle(articleId);
     return { verdict: "standalone" };
   }
-  const title = an.title_zh || a.title;
+  const title = publication?.title || an.title_zh || a.title;
+  const summary = publication ? publication.summary : an.summary_zh;
   const query: ReportView = {
-    title, source: a.source_name, firstParty: a.first_party, at: observedAt, summary: an.summary_zh,
+    title, source: a.source_name, firstParty: a.first_party, at: observedAt, summary,
     frame: frame ? { subject: frame.subject, action: frame.action, object: frame.object, occurredAt: frame.occurredAt } : null,
   };
   const newTitle = String(frame?.title || title).slice(0, 60);
@@ -666,7 +682,7 @@ async function decide(articleId: string, opts: GroupOptions): Promise<GroupResul
     storyId = sameUrl.story_id;
   } else {
     try {
-      cands = await candidateViews(await recallFacts(articleId, reportText(title, an.summary_zh), RECALL_MIN_COSINE, RECALL_TOP_FACTS, referenced));
+      cands = await candidateViews(await recallFacts(articleId, reportText(title, summary), RECALL_MIN_COSINE, RECALL_TOP_FACTS, referenced));
       if (cands.length) {
         const judged = await judgeBatch(articleId, query, cands);
         verdicts = judged.verdicts;
@@ -722,6 +738,17 @@ async function decide(articleId: string, opts: GroupOptions): Promise<GroupResul
       await tx`UPDATE articles SET grouped_at = coalesce(grouped_at, now()) WHERE id = ${articleId}`;
       return { manual: late, factId: null, storyId: null };
     }
+    await lockStoryMembership(tx);
+    const [current] = await tx<{ revision: number; mode: string; title: string | null; summary: string | null; visibility: string; analysis_id: number | null }[]>`
+      SELECT a.revision,s.participation_mode AS mode,p.title,p.summary,coalesce(o.visibility,p.visibility,'public') AS visibility,
+        (SELECT id FROM analyses WHERE article_id=a.id ORDER BY input_revision DESC,id DESC LIMIT 1) AS analysis_id
+      FROM articles a JOIN sources s ON s.id=a.source_id LEFT JOIN publications p ON p.article_id=a.id
+      LEFT JOIN editorial_overrides o ON o.article_id=a.id WHERE a.id=${articleId}`;
+    // 与撤回共用article锁，来源隔离/合并共用成员锁；晚到模型不得创建旧文字副本。
+    if (!current || current.mode !== "editorial" || current.visibility !== "public" || current.revision !== a.revision ||
+        current.analysis_id !== an.id || current.title !== (publication?.title ?? null) || current.summary !== (publication?.summary ?? null)) {
+      return { manual: null, factId: null, storyId: null };
+    }
     const story = storyId ?? (await createStory(tx, newTitle, observedAt));
     const fact = factId ?? (await createFact(tx, story, newTitle, frame, observedAt));
     const [hasPrimary] = await tx<{ n: number }[]>`SELECT count(*) AS n FROM fact_articles WHERE fact_id = ${fact} AND role = 'primary'`;
@@ -735,6 +762,7 @@ async function decide(articleId: string, opts: GroupOptions): Promise<GroupResul
   for (const id of receipts) await completeReceipt(sql, id);
   await publishArticle(articleId);
   if (written.manual) return { verdict: "manual", factId: written.manual.factId };
+  if (!written.storyId || !written.factId) return { verdict: "standalone" };
   const result: GroupResult = { verdict, factId: written.factId!, storyId: written.storyId! };
 
   // Other stories this report is firmly tied to: one story may have grown two roots. Best effort:
@@ -763,7 +791,7 @@ async function decide(articleId: string, opts: GroupOptions): Promise<GroupResul
   // A new fact may be what discussion posts of the last hours were about before any report came.
   if (verdict === "new-story" || verdict === "new-fact-in-story") {
     try {
-      result.rematched = await rematchSignals(articleId, reportText(title, an.summary_zh));
+      result.rematched = await rematchSignals(articleId, reportText(title, summary));
     } catch (error) {
       result.rematchError = String(error).slice(0, 300);
     }

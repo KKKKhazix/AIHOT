@@ -1,5 +1,6 @@
 // Source administration (F18): list, detail, preview (fetch without storing), edit, create with
 // duplicate checks, pause/resume and manual collection. Every change is audited.
+import { invalidateStoryInputs } from "../events/derived-content.ts";
 import { z } from "zod";
 import { sql } from "../db.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
@@ -115,6 +116,10 @@ export async function updateSource(id: string, input: { patch: unknown; version:
       health = CASE WHEN ${patch.enabled ?? null}::boolean IS FALSE THEN 'paused' WHEN ${patch.enabled ?? null}::boolean IS TRUE AND health = 'paused' THEN 'unknown' ELSE health END,
       next_fetch_at = CASE WHEN ${patch.enabled ?? null}::boolean IS TRUE THEN now() ELSE next_fetch_at END
       WHERE id = ${id} RETURNING *`;
+    if (before.participation_mode === "editorial" && patch.participation_mode && patch.participation_mode !== "editorial") {
+      const articles = await tx<{ id: string }[]>`SELECT id FROM articles WHERE source_id=${id}`;
+      await invalidateStoryInputs(tx, articles.map(a => a.id));
+    }
     await audit(actor, "source.update", `source:${id}`, input.reason ?? null, Object.fromEntries(keys.map((k) => [k, before[k]])), patch);
     // What public exits show for this source's articles is derived from these fields: re-derive them
     // all (in the worker) so a revoked licence or an isolated source stops on every exit.

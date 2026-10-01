@@ -157,7 +157,7 @@ export function buildMcpServer(): McpServer {
       annotations: ANNOTATIONS,
     },
     safe(T.hot, async (args: z.infer<typeof HOT_INPUT>) => {
-      const all = await recent("hot", () => v1HotTopics());
+      const all = await v1HotTopics();
       const items = all.items.slice(0, args.limit);
       const lines = [`${SITE.name} 当前热点（${items.length} 个）`, ""];
       for (const t of items) {

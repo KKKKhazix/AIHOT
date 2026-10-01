@@ -61,8 +61,9 @@ export async function unavailableIds(ids: string[]): Promise<Set<string>> {
 
 /** Directory/feed metadata only: citation summaries and full report prose stay in the detail read. */
 export async function reportIndexRows(kind: ReportKind, limit: number) {
-  return sql<{ key: string; content: Record<string, any>; generated_at: Date }[]>`
-    SELECT key, generated_at, jsonb_build_object(
+  // 先按完整的同类现存刊物编号，再裁剪导航；历史补刊和删除会改变后续期号。
+  return sql<{ key: string; issue_number: number; content: Record<string, any>; generated_at: Date }[]>`
+    SELECT key, generated_at, (row_number() OVER (ORDER BY key ASC))::int AS issue_number, jsonb_build_object(
       'lead', content->'lead', 'headline', content->'headline', 'title', content->'title',
       CASE WHEN kind = 'daily' THEN 'sections' ELSE 'themes' END,
       jsonb_build_array(jsonb_build_object(CASE WHEN kind = 'daily' THEN 'items' ELSE 'storyRefs' END,
@@ -196,7 +197,10 @@ async function neighbors(kind: ReportKind, key: string): Promise<{ prev: string 
 }
 
 export async function loadReport(kind: ReportKind, key: string): Promise<ReportDetail | null> {
-  const [r] = await sql<ReportRow[]>`SELECT kind, key, window_start, window_end, content, generated_at, revision FROM reports WHERE kind = ${kind} AND key = ${key}`;
+  const [r] = await sql<(ReportRow & { issue_number: number })[]>`
+    SELECT r.kind, r.key, r.window_start, r.window_end, r.content, r.generated_at, r.revision,
+      (SELECT count(*)::int FROM reports earlier WHERE earlier.kind = r.kind AND earlier.key <= r.key) AS issue_number
+    FROM reports r WHERE r.kind = ${kind} AND r.key = ${key}`;
   if (!r) return null;
   const c = r.content;
   const rawItems: Array<Record<string, any>> = [
@@ -232,6 +236,7 @@ export async function loadReport(kind: ReportKind, key: string): Promise<ReportD
   return {
     kind,
     key,
+    issueNumber: r.issue_number,
     title,
     windowStart: r.window_start.toISOString(),
     windowEnd: r.window_end.toISOString(),
@@ -279,6 +284,7 @@ export async function listReports(kind: ReportKind, limit = INDEX_LIMIT): Promis
     const items = kind === "daily" ? (r.content.sections ?? []).flatMap((s: any) => s.items ?? []) : (r.content.themes ?? []).flatMap((t: any) => t.storyRefs ?? []);
     return {
       key: r.key,
+      issueNumber: r.issue_number,
       title: reportHeadline(r.content, shape, gone),
       generatedAt: r.generated_at.toISOString(),
       count: items.length,
@@ -356,7 +362,7 @@ export { siteUrl };
 
 export function reportNavigation(kind: ReportKind, index: ReportIndexEntry[], key: string): ReportNavigationEntry[] {
   const at = index.findIndex((e) => e.key === key);
-  return index.map((entry, n) => ({ key: entry.key,
+  return index.map((entry, n) => ({ key: entry.key, issueNumber: entry.issueNumber,
     ...(kind !== "daily" || entry.key.slice(0, 7) === key.slice(0, 7) || n < 3 || Math.abs(n - at) <= 1 ? { title: entry.title } : {}),
   }));
 }
@@ -366,5 +372,5 @@ export async function loadReportNavigation(kind: ReportKind, key: string) {
 }
 
 export async function loadReportMonth(kind: ReportKind, month: string) {
-  return (await listReports(kind)).filter((e) => e.key.startsWith(month)).map(({ key, title }) => ({ key, title }));
+  return (await listReports(kind)).filter((e) => e.key.startsWith(month)).map(({ key, title, issueNumber }) => ({ key, title, issueNumber }));
 }

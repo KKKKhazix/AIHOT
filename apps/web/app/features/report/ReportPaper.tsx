@@ -17,7 +17,7 @@ import { SourceAvatar } from "../../components/ui/SourceAvatar";
 import { Halftone } from "./Halftone";
 import { Nameplate } from "./Nameplate";
 import { IssueDots } from "./IssueDots";
-import { EDITION, KIND_LABEL, MOTTO, dateLine, dateMark, headline, issueNumber, metricItems, neighbourLabel, reportPath, shortDay } from "./format";
+import { EDITION, KIND_LABEL, MOTTO, dateLine, dateMark, headline, metricItems, neighbourLabel, reportPath, shortDay } from "./format";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const keyOf = (c: ReportCitation) => c.itemId ?? c.title;
@@ -25,7 +25,7 @@ const anchorOf = (c: ReportCitation) => (c.itemId ? `r-${c.itemId}` : null);
 const LINK = "inline-flex min-h-7 items-center gap-0.5 font-medium transition-colors hover:text-accent";
 
 function Masthead({ report, index }: { report: ReportDetail; index: ReportNavigationEntry[] }) {
-  const issue = issueNumber(index, report.key);
+  const issue = report.issueNumber;
   const mark = dateMark(report.kind, report.key);
   return (
     <header className="pt-5 lg:pt-0">
@@ -56,7 +56,7 @@ function Masthead({ report, index }: { report: ReportDetail; index: ReportNaviga
             <span className="mt-2 text-[11.5px] text-ink-2">{mark.top}</span>
             <span className="text-[11.5px] text-ink-4">{mark.bottom}</span>
           </div>
-          <IssueDots kind={report.kind} reportKey={report.key} index={index} className="hidden w-[176px] border-l border-line px-4 py-4 @[760px]:block @[880px]:w-[196px]" />
+          <IssueDots kind={report.kind} reportKey={report.key} issueNumber={report.issueNumber} index={index} className="hidden w-[176px] border-l border-line px-4 py-4 @[760px]:block @[880px]:w-[196px]" />
         </div>
       </div>
 

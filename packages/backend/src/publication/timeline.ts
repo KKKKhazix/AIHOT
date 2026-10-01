@@ -59,27 +59,36 @@ async function groupPool(q: TimelineQuery, now: Date, storyIds: number[], factId
 }
 
 /**
- * The selected set grouped into cards (fact or standalone item) with their anchor times, newest
- * first. Every timeline page, day count and "new items" probe reads this list; it is kept for five
- * seconds per filter scope (a release becomes visible at most that much later).
+ * The selected set grouped into cards, newest first. Keep anchors and their release deadline
+ * together: returning old anchors with a newer deadline could cache a missing card for a minute.
  */
-const groupedCache = new Map<string, { at: number; rows: Array<{ gk: string; anchor: number }> }>();
-const groupedPending = new Map<string, Promise<Array<{ gk: string; anchor: number }>>>();
-async function groupedAnchors(q: TimelineQuery, now: Date): Promise<Array<{ gk: string; anchor: number }>> {
+interface GroupedSnapshot {
+  rows: Array<{ gk: string; anchor: number }>;
+  refreshAt: string | null;
+}
+const groupedCache = new Map<string, { at: number; data: GroupedSnapshot }>();
+const groupedPending = new Map<string, Promise<GroupedSnapshot>>();
+async function groupedAnchors(q: TimelineQuery, now: Date): Promise<GroupedSnapshot> {
   const key = binding(q);
+  const expired = (data: GroupedSnapshot) => data.refreshAt !== null && now.getTime() >= Date.parse(data.refreshAt);
   const cached = q.now ? undefined : groupedCache.get(key);
-  if (cached && Date.now() - cached.at < 5000) return cached.rows;
+  if (cached && Date.now() - cached.at < 5000 && !expired(cached.data)) return cached.data;
   const pending = q.now ? undefined : groupedPending.get(key);
-  if (pending) return pending;
-  const load = queryGroupedAnchors(q, now);
+  if (pending) {
+    const data = await pending;
+    // A reader after the release must not inherit a still-running pre-release snapshot.
+    return expired(data) ? groupedAnchors(q, now) : data;
+  }
+  const load = Promise.all([queryGroupedAnchors(q, now), nextRelease(q, now)])
+    .then(([rows, refreshAt]) => ({ rows, refreshAt }));
   if (q.now) return load;
-  groupedPending.set(key, load);
-  try {
-    const rows = await load;
+  const work = load.then((data) => {
     if (groupedCache.size >= 50) groupedCache.delete(groupedCache.keys().next().value!);
-    groupedCache.set(key, { at: Date.now(), rows });
-    return rows;
-  } finally { groupedPending.delete(key); }
+    groupedCache.set(key, { at: Date.now(), data });
+    return data;
+  }).finally(() => { groupedPending.delete(key); });
+  groupedPending.set(key, work);
+  return work;
 }
 
 async function queryGroupedAnchors(q: TimelineQuery, now: Date) {
@@ -106,10 +115,7 @@ export async function loadTimeline(q: TimelineQuery): Promise<Omit<TimelineRespo
     after = { a: c.a, g: c.g };
   }
 
-  // Independent of the page: read alongside it.
-  const refreshAtRead = nextRelease(q, now);
-  refreshAtRead.catch(() => {});
-  const grouped = await groupedAnchors(q, now);
+  const { rows: grouped, refreshAt } = await groupedAnchors(q, now);
   const start = after ? grouped.findIndex((g) => g.anchor < after!.a || (g.anchor === after!.a && g.gk < after!.g)) : 0;
   const groups: GroupRow[] = (start < 0 ? [] : grouped.slice(start, start + limit + 1)).map((g) => ({ gk: g.gk, anchor_at: new Date(g.anchor) }));
 
@@ -195,7 +201,6 @@ export async function loadTimeline(q: TimelineQuery): Promise<Omit<TimelineRespo
     }
   }
 
-  const refreshAt = await refreshAtRead;
   const last = page[page.length - 1];
   const nextCursor = hasMore && last ? encodeCursor("tl1", { a: last.anchor_at.getTime(), g: last.gk, b: bind }) : null;
   return { filters: { channel: q.channel, category: q.category, tag: q.tag, topic: q.topic ?? null }, cards, nextCursor, refreshAt, dayCounts };

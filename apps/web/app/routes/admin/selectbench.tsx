@@ -1,6 +1,7 @@
 import { SITE } from "@aihot/industry/site";
 import { useRef } from "react";
 import { Link } from "react-router";
+import type { AdminSelectBenchRuns } from "@aihot/contracts/admin";
 import type { Route } from "./+types/selectbench";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
@@ -8,21 +9,9 @@ import { bj, num, pct } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, Empty } from "../../features/admin/ui";
 import { toast } from "../../features/admin/toast";
 
-interface RunRow {
-  id: string;
-  label: string;
-  split: string | null;
-  sample_size: number;
-  prompt_version: string | null;
-  models: string[];
-  summary: Record<string, Record<string, number>>;
-  created_at: string;
-  imported_by: string | null;
-  cases: number;
-}
 
 export async function loader({ request }: Route.LoaderArgs) {
-  return adminGet<{ runs: RunRow[] }>(request, "/api/admin/selectbench");
+  return adminGet<AdminSelectBenchRuns>(request, "/api/admin/selectbench");
 }
 
 export const meta: Route.MetaFunction = () => [{ title: `SelectBench · ${SITE.name} 后台` }];

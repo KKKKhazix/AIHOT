@@ -1,10 +1,11 @@
+import { selectedCondition, pendingReleaseCondition } from "./scope.ts";
 import type { FeedItemSummary } from "@aihot/contracts/site";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REPO_ROOT } from "../config.ts";
 import { sql } from "../db.ts";
 import { cached } from "../lib/cache.ts";
-import { ITEM_COLUMNS, ITEM_FROM, selectedCondition, toFeedItemSummary, type ItemRow } from "./items.ts";
+import { ITEM_COLUMNS, ITEM_FROM, toFeedItemSummary, type ItemRow } from "./items.ts";
 
 export interface TopicRow {
   slug: string;
@@ -22,8 +23,12 @@ const topicsCache = cached(
   () => sql<TopicRow[]>`SELECT slug, name, grp, entity_id, tags, definition, related, position FROM topics ORDER BY position`,
   { freshMs: 60_000, maxStaleMs: 10 * 60_000 },
 );
-// Counts may lag by about a minute, like the public directory cache; item reads always check visibility.
-const countsCache = cached(queryTopicCounts, { freshMs: 60_000, maxStaleMs: 10 * 60_000 });
+export interface TopicCountSnapshot { counts: TopicCount[]; refreshAt: string | null }
+// 已知的发布或近期窗口截止必须同步刷新，不能继续返回后台更新中的旧统计。
+const countsCache = cached(() => queryTopicCounts(new Date()), {
+  freshMs: 60_000, maxStaleMs: 10 * 60_000,
+  expiresAt: (value) => value.refreshAt ? Date.parse(value.refreshAt) : null,
+});
 
 /**
  * The topics (stable slugs, names, definitions, related topics) come from the industry pack
@@ -70,21 +75,33 @@ export async function loadTopicTags(slug: string): Promise<string[] | null> {
 export const TOPIC_PAGE_SIZE = 20;
 
 /** Topic pages exist for every topic; only topics with enough content are listed and indexed. */
-export function topicPageCounts(): Promise<TopicCount[]> {
-  return countsCache.get();
+export async function topicPageCounts(now?: Date): Promise<TopicCount[]> {
+  return (await topicCountSnapshot(now)).counts;
+}
+
+export function topicCountSnapshot(now?: Date): Promise<TopicCountSnapshot> {
+  // 显式时间用于同一请求的计数与条目读取，不混入其他时刻的共享缓存。
+  return now ? queryTopicCounts(now) : countsCache.get();
 }
 
 /**
  * One pass over the selected set (a few thousand rows from its partial index) instead of one
  * scan per topic; a topic counts an item when their tags overlap, as `p.tags && match` does.
  */
-async function queryTopicCounts(): Promise<TopicCount[]> {
-  const [topics, items] = await Promise.all([
+async function queryTopicCounts(now: Date): Promise<TopicCountSnapshot> {
+  const [topics, items, pending] = await Promise.all([
     sql<Array<Pick<TopicRow, "slug" | "entity_id" | "tags">>>`SELECT slug, entity_id, tags FROM topics ORDER BY position`,
-    sql<{ tags: string[]; timeline_at: Date }[]>`SELECT p.tags, p.timeline_at FROM publications p WHERE p.visibility = 'public' AND p.selected`,
+    sql<{ tags: string[]; timeline_at: Date }[]>`SELECT p.tags, p.timeline_at FROM publications p WHERE ${selectedCondition(now)}`,
+    sql<{ t: Date | null }[]>`SELECT min(p.visible_after) AS t FROM publications p
+      WHERE ${pendingReleaseCondition(now)}`,
   ]);
-  const recentFrom = Date.now() - 30 * 86400_000;
-  return topics.map((t) => {
+  const recentFrom = now.getTime() - 30 * 86400_000;
+  let deadline = pending[0]?.t?.getTime() ?? Infinity;
+  for (const item of items) {
+    const expires = item.timeline_at.getTime() + 30 * 86400_000;
+    if (expires > now.getTime()) deadline = Math.min(deadline, expires);
+  }
+  const counts = topics.map((t) => {
     const match = new Set(topicMatchTags(t));
     let total = 0;
     let recent = 0;
@@ -97,6 +114,7 @@ async function queryTopicCounts(): Promise<TopicCount[]> {
     }
     return { slug: t.slug, total, recent, latest, pages: Math.max(1, Math.ceil(total / TOPIC_PAGE_SIZE)), indexable: total >= 50 || (total >= 20 && recent > 0) };
   });
+  return { counts, refreshAt: Number.isFinite(deadline) ? new Date(deadline).toISOString() : null };
 }
 
 export interface TopicSummary {
@@ -110,13 +128,18 @@ export interface TopicSummary {
   latestAt: string | null;
 }
 
-export async function listTopicSummaries(): Promise<TopicSummary[]> {
-  const topics = await listTopics();
-  const counts = new Map((await topicPageCounts()).map((c) => [c.slug, c]));
-  return topics.map((t) => {
+export async function listTopicSummaries(now?: Date): Promise<TopicSummary[]> {
+  return (await loadTopicDirectory(now)).topics;
+}
+
+export async function loadTopicDirectory(now?: Date): Promise<{ topics: TopicSummary[]; refreshAt: string | null }> {
+  const [topics, snapshot] = await Promise.all([listTopics(), topicCountSnapshot(now)]);
+  const counts = new Map(snapshot.counts.map((c) => [c.slug, c]));
+  const summaries = topics.map((t) => {
     const c = counts.get(t.slug);
     return { slug: t.slug, name: t.name, group: t.grp, definition: t.definition, total: c?.total ?? 0, recent: c?.recent ?? 0, indexable: c?.indexable ?? false, latestAt: c?.latest?.toISOString() ?? null };
   });
+  return { topics: summaries, refreshAt: snapshot.refreshAt };
 }
 
 export interface TopicPage {
@@ -124,12 +147,13 @@ export interface TopicPage {
   items: FeedItemSummary[];
   page: number;
   pageCount: number;
+  refreshAt: string | null;
 }
 
 export async function loadTopicPage(slug: string, page: number, now = new Date()): Promise<TopicPage | null> {
   const row = await loadTopic(slug);
-  if (!row || page < 1) return null;
-  const topics = await listTopicSummaries();
+  if (!row || !Number.isInteger(page) || page < 1) return null;
+  const { topics, refreshAt } = await loadTopicDirectory(now);
   const topic = topics.find((t) => t.slug === slug);
   if (!topic) return null;
   const pageCount = Math.max(1, Math.ceil(topic.total / TOPIC_PAGE_SIZE));
@@ -144,5 +168,5 @@ export async function loadTopicPage(slug: string, page: number, now = new Date()
     SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id IN (SELECT article_id FROM page)
     ORDER BY p.timeline_at DESC, p.article_id DESC`;
   const related = row.related.map((r) => topics.find((t) => t.slug === r)).filter((t): t is TopicSummary => !!t).map((t) => ({ slug: t.slug, name: t.name }));
-  return { topic: { ...topic, related }, items: rows.map(toFeedItemSummary), page, pageCount };
+  return { topic: { ...topic, related }, items: rows.map(toFeedItemSummary), page, pageCount, refreshAt };
 }

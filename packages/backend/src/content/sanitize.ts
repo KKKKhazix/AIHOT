@@ -2,6 +2,7 @@
 // External HTML is never executed; images keep their original src and are signed at read time.
 import * as cheerio from "cheerio";
 import sanitizeHtml from "sanitize-html";
+import { isTrackingImage } from "../lib/image-url.ts";
 
 const ALLOWED_TAGS = [
   "p", "br", "hr", "h2", "h3", "h4", "h5", "ul", "ol", "li", "blockquote", "pre", "code", "table", "thead", "tbody",
@@ -79,7 +80,7 @@ export function sanitizeBody(html: string, baseUrl?: string): string {
     // Empty paragraphs go in normalizeBlocks, which sees nested images: a frame only knows its direct
     // children, and a paragraph holding a linked chart (<p><a><img></a></p>) looked empty here.
     exclusiveFilter: (frame) =>
-      (frame.tag === "img" && !frame.attribs.src) ||
+      (frame.tag === "img" && (!frame.attribs.src || isTrackingImage(frame.attribs.src, frame.attribs.width, frame.attribs.height))) ||
       (frame.tag === "a" && !frame.text.trim() && !frame.mediaChildren?.length),
   });
   return normalizeBlocks(cleaned);

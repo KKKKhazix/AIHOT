@@ -2,6 +2,7 @@
 // per model and unit, board weights from the fixed budgets, eligibility, and the removal
 // scenarios used for rank stability.
 import { sql } from "../../db.ts";
+import { cloakedModel } from "../fetch/identity.ts";
 import {
   ANCHORS,
   BOARD_KEYS,
@@ -37,6 +38,8 @@ interface ScoreRow {
   raw_score: number | null;
   lower_bound: number | null;
   upper_bound: number | null;
+  configuration_key: string;
+  selected_for_product: boolean;
   metadata: Record<string, unknown>;
 }
 
@@ -96,40 +99,23 @@ export async function buildRunInputs(opts: { at?: Date; snapshotIds?: string[] }
   const snapshots = await pickSnapshots(at, opts.snapshotIds);
   const bySource = new Map(snapshots.map((s) => [s.source_key, s]));
 
-  // Representative rows of the chosen snapshots, plus verified rows from recent snapshots of the
-  // same protocol that the newest one temporarily lacks.
+  // Load recent history in one query. Excluded rows must also take their place in history: a newer
+  // explicit exclusion is a correction, not an omission that may revive an older eligible run.
+  const older = opts.snapshotIds ? [] : await sql<SnapshotRow[]>`
+    SELECT s.id, s.source_key, s.published_at, s.fetched_at, s.metadata FROM lb_snapshots s
+    JOIN lb_snapshots latest ON latest.id = ANY(${snapshots.map((s) => s.id)}) AND latest.source_key = s.source_key
+    WHERE s.fetched_at < latest.fetched_at
+      AND coalesce((s.metadata->>'lastSeenAt')::timestamptz, s.fetched_at) >= ${new Date(at.getTime() - CARRY_FORWARD_DAYS * 86400_000)}
+    ORDER BY s.fetched_at DESC`;
+  const history = [...snapshots, ...older.filter((s) => protocolOf(s.source_key, s.metadata) === protocolOf(s.source_key, bySource.get(s.source_key)!.metadata))];
   const scoreRows = await sql<ScoreRow[]>`
-    SELECT c.snapshot_id, c.metric_key, m.slug, m.name, m.released_at, c.raw_score, c.lower_bound, c.upper_bound, c.metadata
+    SELECT c.snapshot_id, c.metric_key, m.slug, m.name, m.released_at, c.raw_score, c.lower_bound, c.upper_bound,
+           c.configuration_key, c.selected_for_product, c.metadata
     FROM lb_scores c JOIN lb_models m ON m.id = c.model_id
-    WHERE c.snapshot_id = ANY(${snapshots.map((s) => s.id)}) AND c.selected_for_product AND c.raw_score IS NOT NULL`;
-  const carried: Array<ScoreRow & { snapshot: SnapshotRow }> = [];
-  if (!opts.snapshotIds) {
-    for (const snap of snapshots) {
-      const protocol = protocolOf(snap.source_key, snap.metadata);
-      // "At most the records verified in the last seven days" (public rules): measured from this run,
-      // by when each older snapshot was last seen upstream, not from when the newest one first appeared.
-      const older = await sql<SnapshotRow[]>`
-        SELECT id, source_key, published_at, fetched_at, metadata FROM lb_snapshots
-        WHERE source_key = ${snap.source_key} AND id <> ${snap.id} AND fetched_at < ${snap.fetched_at}
-          AND coalesce((metadata->>'lastSeenAt')::timestamptz, fetched_at) >= ${new Date(at.getTime() - CARRY_FORWARD_DAYS * 86400_000)}
-        ORDER BY fetched_at DESC`;
-      const same = older.filter((o) => protocolOf(o.source_key, o.metadata) === protocol);
-      if (!same.length) continue;
-      const present = new Set(scoreRows.filter((r) => r.snapshot_id === snap.id).map((r) => `${r.metric_key}:${r.slug}`));
-      const olderRows = await sql<ScoreRow[]>`
-        SELECT c.snapshot_id, c.metric_key, m.slug, m.name, m.released_at, c.raw_score, c.lower_bound, c.upper_bound, c.metadata
-        FROM lb_scores c JOIN lb_models m ON m.id = c.model_id
-        WHERE c.snapshot_id = ANY(${same.map((o) => o.id)}) AND c.selected_for_product AND c.raw_score IS NOT NULL`;
-      for (const o of same) {
-        for (const r of olderRows.filter((x) => x.snapshot_id === o.id)) {
-          const k = `${r.metric_key}:${r.slug}`;
-          if (present.has(k)) continue;
-          present.add(k);
-          carried.push({ ...r, snapshot: o });
-        }
-      }
-    }
-  }
+    WHERE c.snapshot_id = ANY(${history.map((s) => s.id)})
+    ORDER BY c.selected_for_product DESC`;
+  const rowsBySnapshot = new Map<string, ScoreRow[]>();
+  for (const row of scoreRows) (rowsBySnapshot.get(row.snapshot_id) ?? rowsBySnapshot.set(row.snapshot_id, []).get(row.snapshot_id)!).push(row);
 
   const sourceOf = new Map(SCORING_SOURCES.map((s) => [s.unit, s]));
   const unitRows = new Map<string, Map<string, SignalRow>>();
@@ -140,7 +126,9 @@ export async function buildRunInputs(opts: { at?: Date; snapshotIds?: string[] }
     const src = sourceOf.get(r.metric_key);
     if (!src) return;
     if (!unitRows.has(r.metric_key)) unitRows.set(r.metric_key, new Map());
-    const configuration = String(r.metadata.configurationIdentity ?? "");
+    // The representative configuration as stored with the row (imported legacy rows also carry it as
+    // metadata.configurationIdentity, always equal to the key).
+    const configuration = r.configuration_key;
     unitRows.get(r.metric_key)!.set(r.slug, { score: r.raw_score!, modelSlug: r.slug, lowerBound: r.lower_bound, upperBound: r.upper_bound, configuration });
     names.set(r.slug, r.name);
     released.set(r.slug, r.released_at);
@@ -157,9 +145,17 @@ export async function buildRunInputs(opts: { at?: Date; snapshotIds?: string[] }
       configurationPolicy: CONFIGURATION_POLICY,
     };
   };
-  const snapById = new Map(snapshots.map((s) => [s.id, s]));
-  for (const r of scoreRows) addRow(r, snapById.get(r.snapshot_id)!, false);
-  for (const r of carried) addRow(r, r.snapshot, true);
+  const present = new Set<string>();
+  for (const snap of history) {
+    for (const row of rowsBySnapshot.get(snap.id) ?? []) {
+      const key = `${snap.source_key}:${row.metric_key}:${row.slug}`;
+      if (present.has(key)) continue;
+      present.add(key);
+      if (row.selected_for_product && row.raw_score !== null && !cloakedModel(row.slug, row.name)) {
+        addRow(row, snap, snap.id !== bySource.get(snap.source_key)!.id);
+      }
+    }
+  }
 
   const cutoff = new Date(at);
   cutoff.setUTCMonth(cutoff.getUTCMonth() - RELEASE_WINDOW_MONTHS);

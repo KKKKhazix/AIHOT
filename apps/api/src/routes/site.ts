@@ -10,12 +10,12 @@ import { loadTimeline } from "@aihot/backend/publication/timeline";
 import { loadStoryFollowups } from "@aihot/backend/publication/followups";
 import { loadDevelopments, loadGroupReports } from "@aihot/backend/publication/groups";
 import { loadTopicTags } from "@aihot/backend/publication/topics";
-import { loadHotStrip } from "@aihot/backend/events/hot-read";
+import { loadHotStrip } from "@aihot/backend/publication/hot";
 import { loadChangelog, siteMeta } from "@aihot/backend/site/meta";
 import { loadContact, loadMakerAvatar } from "@aihot/backend/site/contact";
 import { loadSiteStats } from "@aihot/backend/site/stats";
 import { itemAvailability } from "@aihot/backend/publication/availability";
-import { listTopicSummaries, loadTopicPage } from "@aihot/backend/publication/topics";
+import { loadTopicDirectory, loadTopicPage } from "@aihot/backend/publication/topics";
 import { registerFeedback } from "./feedback.ts";
 
 import { loadHot, loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
@@ -37,7 +37,7 @@ export function cacheUntil(reply: FastifyReply, defaultSeconds: number, refreshA
   if (refreshAt) seconds = Math.max(0, Math.min(seconds, Math.floor((Date.parse(refreshAt) - now) / 1000)));
   reply.header("Cache-Control", seconds > 0 ? `public, max-age=${seconds}, s-maxage=${seconds}` : "no-cache");
   reply.header("X-Accel-Expires", `@${Math.floor(now / 1000) + seconds}`);
-  return `public, max-age=${seconds}, s-maxage=${seconds}`;
+  return seconds > 0 ? `public, max-age=${seconds}, s-maxage=${seconds}` : "no-cache";
 }
 
 export function siteHandler(fn: Handler): Handler {
@@ -175,15 +175,16 @@ export function registerSite(app: FastifyInstance) {
   }));
 
   app.get("/api/site/topics", siteHandler(async (req, reply) => {
-    return sendJsonWithEtag(req, reply, { topics: await listTopicSummaries() }, { etagPrefix: "topics", cacheControl: "public, max-age=300, s-maxage=300" });
+    const data = await loadTopicDirectory();
+    return sendJsonWithEtag(req, reply, data, { etagPrefix: "topics", cacheControl: cacheUntil(reply, 300, data.refreshAt) });
   }));
 
   app.get("/api/site/topics/:slug", siteHandler(async (req, reply) => {
     const slug = (req.params as { slug: string }).slug;
     const page = Number(looseQuery(req).page ?? 1);
     const data = Number.isInteger(page) ? await loadTopicPage(slug, page) : null;
-    if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "topic page not found", cacheControl: "public, max-age=60" });
-    return sendJsonWithEtag(req, reply, data, { etagPrefix: "topic", cacheControl: "public, max-age=60, s-maxage=60" });
+    if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "topic page not found", cacheControl: "no-store" });
+    return sendJsonWithEtag(req, reply, data, { etagPrefix: "topic", cacheControl: cacheUntil(reply, 60, data.refreshAt) });
   }));
 
   registerFeedback(app);

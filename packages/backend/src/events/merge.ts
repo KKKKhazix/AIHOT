@@ -1,8 +1,9 @@
 // Merging stories: facts and heat evidence move into the surviving story, and the old
 // public id keeps answering as an alias. Editors merge from the admin; grouping merges when two
 // stories turn out to be one (consolidate in group.ts).
+import { lockStoryMembership } from "./derived-content.ts";
 import { sql } from "../db.ts";
-import { audit } from "../admin/auth.ts";
+import { audit } from "../audit.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { publishArticle } from "../publication/publish.ts";
 
@@ -10,6 +11,8 @@ import { publishArticle } from "../publication/publish.ts";
 export async function mergeStoryInto(fromId: number, intoId: number, reason: string, actor: string): Promise<{ moved: number } | null> {
   if (fromId === intoId) throw new Error("cannot merge a story into itself");
   const articles = await sql.begin(async (tx) => {
+    await lockStoryMembership(tx);
+    await tx`SELECT id FROM stories WHERE id=ANY(${[fromId, intoId]}::bigint[]) ORDER BY id FOR UPDATE`;
     const [from] = await tx<{ public_id: string; merged_into: number | null }[]>`SELECT public_id, merged_into FROM stories WHERE id = ${fromId} FOR UPDATE`;
     const [into] = await tx<{ merged_into: number | null }[]>`SELECT merged_into FROM stories WHERE id = ${intoId} FOR UPDATE`;
     if (!from || !into || from.merged_into || into.merged_into) return null;

@@ -1,6 +1,6 @@
 // Image fetch, resize and cache, shared by the signed image proxy and the vision analysis: a (mode, url)
 // is fetched once through the egress route and both get the same file.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
@@ -15,7 +15,13 @@ const ORIGINAL_MAX_BYTES = 32 * 1024 * 1024;
 const ORIGINAL_MAX_ENTRIES = 32;
 const recentOriginals = new Map<string, { value: GuardedResponse; until: number }>();
 let originalBytes = 0;
-const inflight = new Map<string, Promise<{ body: Buffer; type: string }>>();
+export interface PreparedImage {
+  body: Buffer;
+  type: string;
+  /** A GIF awaiting background conversion must not hide its replacement behind a multi-day cache. */
+  pendingAnimation?: boolean;
+}
+const inflight = new Map<string, Promise<PreparedImage>>();
 const originals = new Map<string, Promise<GuardedResponse>>();
 const failures = new Map<string, { until: number; error: unknown }>();
 
@@ -116,7 +122,7 @@ export function decodeIco(buf: Buffer): Buffer | { raw: Buffer; width: number; h
 
 
 /** The cached rendition of an image for a mode, fetched and resized on first use. */
-export function produceImage(url: string, mode: string): Promise<{ body: Buffer; type: string }> {
+export function produceImage(url: string, mode: string): Promise<PreparedImage> {
   const key = `${mode}|${url}`;
   let job = inflight.get(key);
   if (!job) {
@@ -131,11 +137,21 @@ function cacheFile(url: string, mode: string): string {
   return path.join(CACHE_DIR, key.slice(0, 2), key);
 }
 
-async function produce(url: string, mode: string): Promise<{ body: Buffer; type: string }> {
+async function cachedImage(file: string, body: Buffer, type: string): Promise<PreparedImage> {
+  if (type !== "image/gif") return { body, type };
+  const prepared = await readFile(`${file}.prepared`).then(() => true, () => false);
+  if (prepared) return { body, type };
+  const meta = await sharp(body, { animated: true, limitInputPixels: false }).metadata();
+  const pixels = (meta.width ?? 0) * (meta.pageHeight ?? 0) * (meta.pages ?? 1);
+  // Unsupported large animations are kept as-is; shortening their cache would only add traffic.
+  return { body, type, ...(pixels > 0 && pixels <= ANIMATION_MAX_PIXELS ? { pendingAnimation: true } : {}) };
+}
+
+async function produce(url: string, mode: string): Promise<PreparedImage> {
   const file = cacheFile(url, mode);
   try {
     const [body, meta] = await Promise.all([readFile(file), readFile(`${file}.type`, "utf8")]);
-    return { body, type: meta };
+    return cachedImage(file, body, meta);
   } catch {
     // not cached
   }
@@ -144,7 +160,7 @@ async function produce(url: string, mode: string): Promise<{ body: Buffer; type:
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, image.body);
   await writeFile(`${file}.type`, image.type);
-  return image;
+  return cachedImage(file, image.body, image.type);
 }
 
 /** Most frames × pixels an animation may have to be re-encoded (all frames are decoded at once). */
@@ -160,6 +176,7 @@ export async function convertAnimated(url: string, mode: string): Promise<number
   const file = cacheFile(url, mode);
   const [body, type] = await Promise.all([readFile(file).catch(() => null), readFile(`${file}.type`, "utf8").catch(() => null)]);
   if (!body || type !== "image/gif") return 0;
+  if (await readFile(`${file}.prepared`).then(() => true, () => false)) return 0;
   const meta = await sharp(body, { animated: true, limitInputPixels: false }).metadata();
   const frames = meta.pages ?? 1;
   if (!meta.width || !meta.pageHeight || meta.width * meta.pageHeight * frames > ANIMATION_MAX_PIXELS) return 0;
@@ -167,27 +184,41 @@ export async function convertAnimated(url: string, mode: string): Promise<number
   const webp = await sharp(body, { animated: true, limitInputPixels: ANIMATION_MAX_PIXELS })
     .resize({ width, withoutEnlargement: true })
     .webp({ quality: 80, effort: 4, loop: meta.loop ?? 0, ...(meta.delay ? { delay: meta.delay } : {}) })
-    .toBuffer();
-  if (webp.length > body.length * 0.85) return 0;
-  const tmp = `${file}.${process.pid}.tmp`;
+    .toBuffer().catch(() => null);
+  if (!webp || webp.length > body.length * 0.85) {
+    // Preparation finished, but this GIF cannot be converted or the original is smaller.
+    // Keep it normally cached instead of repeatedly queueing the same immutable source.
+    await writeFile(`${file}.prepared`, "original");
+    return 0;
+  }
+  // A deploy can briefly overlap worker processes; neither may rename the other's temp files.
+  const tmp = `${file}.${randomUUID()}.tmp`;
   await writeFile(tmp, webp);
-  await writeFile(`${file}.type.tmp`, "image/webp");
+  await writeFile(`${tmp}.type`, "image/webp");
   await rename(tmp, file);
-  await rename(`${file}.type.tmp`, `${file}.type`);
+  await rename(`${tmp}.type`, `${file}.type`);
   return body.length - webp.length;
 }
 
 /** Deterministic output for a signed rendition: the request's Accept header never changes the bytes. */
 export async function resizeImage(body: Buffer, upstreamType: string, mode: string): Promise<{ body: Buffer; type: string }> {
   const ico = decodeIco(body);
-  if (!upstreamType.startsWith("image/") && !ico) throw new Error("upstream is not an image");
-  const type = ico ? "image/png" : upstreamType.split(";")[0]!;
+  const suppliedType = upstreamType.split(";")[0]!.trim().toLowerCase();
+  // Google Storage serves some real WebP images as generic binary. Decode their metadata before
+  // accepting them; a missing MIME type must not turn HTML/error pages into successful images.
+  const binary = suppliedType === "application/octet-stream" || suppliedType === "binary/octet-stream" || suppliedType === "";
+  if (!suppliedType.startsWith("image/") && !ico && !binary) throw new Error("upstream is not an image");
+  let type = ico ? "image/png" : suppliedType;
   if (/icon$/.test(type) && !ico) throw new Error("unreadable icon");
   const avatar = mode === "avatar" || mode.startsWith("avatar-");
   const width = IMAGE_WIDTHS[mode as keyof typeof IMAGE_WIDTHS] ?? 1600;
   const raw = ico && !Buffer.isBuffer(ico) ? { raw: { width: ico.width, height: ico.height, channels: 4 as const } } : {};
   const input = ico && !Buffer.isBuffer(ico) ? ico.raw : ico ?? body;
   const meta = await sharp(input, { ...raw, failOn: "none" }).metadata();
+  if (binary && !ico) {
+    if (!meta.mediaType?.startsWith("image/")) throw new Error("upstream is not an image");
+    type = meta.mediaType;
+  }
   // A large animation can be hundreds of frames: do not silently replace it with a still or decode
   // all its frames on an HTTP request. Keep frame timing, loop count and transparency unchanged.
   if ((meta.pages ?? 1) > 1 || type === "image/gif") return { body, type };

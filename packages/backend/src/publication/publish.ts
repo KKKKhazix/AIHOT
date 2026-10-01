@@ -1,6 +1,7 @@
 // Publishing: derive the public projection of one article from its material, the latest judgement,
 // manual overrides and grouping, then record selected-set changes in the sync ledger.
 // Rebuilding only re-reads stored results; it never calls a model.
+import { invalidateStoryInputs } from "../events/derived-content.ts";
 import { SITE } from "@aihot/industry/site";
 import { toPublicApiCategory } from "@aihot/contracts/taxonomy";
 import { config } from "../config.ts";
@@ -329,7 +330,19 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
       (previous!.visibility === "public" && visibility !== "public") ||
       (previous!.selected && !selected) ||
       (previous!.body_mode === "full" && bodyMode !== "full"));
+  // 全文许可和精选排序不是摘要撤回；只在事件输入的权限或文字变化时同步失效。
+  if (previous && (previous.visibility === "public" || visibility === "public") &&
+      (previous.visibility !== visibility || previous.eligible !== eligible || previous.title !== next.title || previous.summary !== summary)) {
+    await invalidateStoryInputs(tx, [articleId], now);
+  }
   return { articleId, changed, selected, visibility, ledger, reduced };
+}
+
+/** The search-index decision and resulting projection share the editor's transaction. */
+export async function setSeoDecision(tx: Tx, articleId: string, indexed: boolean): Promise<PublishResult | null> {
+  await tx`UPDATE publications SET seo_indexed_at = CASE WHEN ${indexed} THEN coalesce(seo_indexed_at, now()) ELSE NULL END,
+              seo_excluded_at = CASE WHEN ${indexed} THEN NULL ELSE now() END WHERE article_id = ${articleId}`;
+  return publishArticleTx(tx, articleId);
 }
 
 /**

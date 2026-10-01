@@ -31,6 +31,13 @@ export function embeddingsAvailable(): boolean {
   return config.modelCallsEnabled && !!(credential("models", "EMBEDDING_API_KEY") ?? credential("models", "DASHSCOPE_API_KEY")) && process.env.EMBEDDINGS_ENABLED !== "false";
 }
 
+/** 默认维度由提供方决定；显式维度必须匹配，所有坐标都必须是有限数值。 */
+export function compatibleEmbedding(vector: unknown): vector is number[] {
+  if (!Array.isArray(vector) || vector.length === 0 || (EMBEDDING_DIMS > 0 && vector.length !== EMBEDDING_DIMS)) return false;
+  for (const value of vector) if (!Number.isFinite(value)) return false;
+  return true;
+}
+
 async function embedBatch(texts: string[], subject: string): Promise<number[][]> {
   if (!config.modelCallsEnabled) throw new Error("Model calls are disabled (MODEL_CALLS_ENABLED=false)");
   const base = own ? credential("models", "EMBEDDING_BASE_URL") ?? "https://api.openai.com/v1" : credential("models", "DASHSCOPE_BASE_URL") ?? "https://dashscope.aliyuncs.com/compatible-mode/v1";
@@ -51,8 +58,17 @@ async function embedBatch(texts: string[], subject: string): Promise<number[][]>
       return { response: json, usage: json.usage ?? null, cost: null };
     },
   );
-  const data = (receipt.response as { data: Array<{ embedding: number[]; index: number }> }).data;
-  return [...data].sort((a, b) => a.index - b.index).map((d) => d.embedding);
+  const data = (receipt.response as { data?: Array<{ embedding: unknown; index: number }> } | null)?.data;
+  if (!Array.isArray(data) || data.length !== texts.length) throw new Error("Invalid embedding response: batch size mismatch");
+  // 整批校验后再返回，避免部分写入；坏回执仍可复用，不另发付费请求。
+  const vectors: number[][] = [];
+  for (const d of data) {
+    if (!d || !Number.isInteger(d.index) || d.index < 0 || d.index >= texts.length || vectors[d.index] || !compatibleEmbedding(d.embedding)) {
+      throw new Error("Invalid embedding response: incompatible vector or index");
+    }
+    vectors[d.index] = d.embedding;
+  }
+  return vectors;
 }
 
 /** Returns stored embeddings, computing and storing the missing ones. */
@@ -64,7 +80,7 @@ export async function ensureEmbeddings(kind: "fact" | "article" | "story", items
   const uncached = items.filter((item) => {
     const hit = kind === "fact" ? factVectors.get(item.id) : undefined;
     if (!hit) return true;
-    if (hit.textHash !== hashes.get(item.id) || hit.expiresAt <= now) {
+    if (hit.textHash !== hashes.get(item.id) || hit.expiresAt <= now || !compatibleEmbedding(hit.vector)) {
       factVectors.delete(item.id);
       return true;
     }
@@ -79,7 +95,7 @@ export async function ensureEmbeddings(kind: "fact" | "article" | "story", items
   const have = new Map(rows.map((r) => [r.ref_id, r]));
   const missing = uncached.filter((i) => {
     const h = have.get(i.id);
-    if (h && h.text_hash === hashes.get(i.id)) {
+    if (h && h.text_hash === hashes.get(i.id) && compatibleEmbedding(h.vector)) {
       out.set(i.id, h.vector);
       if (kind === "fact") cacheFact(i.id, h.text_hash, h.vector);
       return false;
@@ -102,12 +118,15 @@ export async function ensureEmbeddings(kind: "fact" | "article" | "story", items
   return out;
 }
 
-export function cosine(a: number[], b: number[]): number {
+export function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
+  if (a.length === 0 || a.length !== b.length) return 0;
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) {
+    if (!Number.isFinite(a[i]) || !Number.isFinite(b[i])) return 0;
     dot += a[i]! * b[i]!;
     na += a[i]! * a[i]!;
     nb += b[i]! * b[i]!;
   }
-  return na && nb ? dot / Math.sqrt(na * nb) : 0;
+  const score = na && nb ? dot / Math.sqrt(na * nb) : 0;
+  return Number.isFinite(score) ? score : 0;
 }

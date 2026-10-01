@@ -18,7 +18,7 @@ import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle, republishSource } from "@aihot/backend/publication/publish";
 import { computeHotRanking } from "@aihot/backend/events/hot";
-import { latestHotRanking } from "@aihot/backend/events/hot-read";
+import { latestHotRanking } from "@aihot/backend/publication/hot";
 import { effectiveWatermark } from "@aihot/backend/publication/v1";
 import { buildApp } from "../apps/api/src/app.ts";
 
@@ -167,10 +167,15 @@ test("a withdrawn item leaves the hot board and the hot APIs at once, not at the
   const [story] = await sql<{ id: number }[]>`
     INSERT INTO stories (public_id, title, first_report_at, latest_at) VALUES (${randomUUID()}, ${`HOT-${T}`}, now() - interval '2 hours', now()) RETURNING id`;
   const [fact] = await sql<{ id: number }[]>`INSERT INTO facts (public_id, story_id, title) VALUES (${`fact-${T}`}, ${story!.id}, ${`HOT-${T}`}) RETURNING id`;
-  for (const id of [await article(), await article()]) {
+  const secondSource = `${SOURCE}-hot-b`;
+  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, site_fulltext, syndicate_fulltext, next_fetch_at)
+            VALUES (${secondSource}, 'Test independent source', 'rss', 'T1', 'editorial', true, true, '2100-01-01')`;
+  for (const [index, id] of [await article(), await article()].entries()) {
+    const sourceId = index === 0 ? SOURCE : secondSource;
+    await sql`UPDATE articles SET source_id = ${sourceId} WHERE id = ${id}`;
     await sql`INSERT INTO fact_articles (fact_id, article_id, role) VALUES (${fact!.id}, ${id}, 'report')`;
     await sql`INSERT INTO story_signals (story_id, article_id, participant_key, source_id, kind, observed_at)
-              VALUES (${story!.id}, ${id}, ${`participant-${id}`}, ${SOURCE}, 'editorial', now() - interval '1 hour')`;
+              VALUES (${story!.id}, ${id}, ${`participant-${id}`}, ${sourceId}, 'editorial', now() - interval '1 hour')`;
     await publishArticle(id, released());
   }
   await computeHotRanking();
@@ -383,4 +388,45 @@ test("minimal sync projection preserves snapshot fields, pagination bindings and
   await setVisibility(id, { visibility: 'withdrawn', reason: 'sync test', version: 0 }, 'test');
   const removed = await getChanges(minimalChanges.cursor);
   assert.ok(removed.changes.some((c: any) => c.op === 'remove' && c.id === id));
+});
+
+// Failure cases: an offline client resumes before a withdrawal; a one-entry page must not send the
+// old content and wait for a later remove; both field projections and legacy clients must advance.
+test('historical sync never redistributes withdrawn content, even on a one-entry page', async () => {
+  for (const visibility of ['withdrawn', 'summary-only'] as const) {
+    for (const fields of ['minimal', 'default']) {
+      const start = JSON.parse((await get(`/api/v1/selected/snapshot?fields=${fields}`)).body).cursor;
+      const id = await article();
+      await publishArticle(id, released());
+      await setVisibility(id, { visibility, reason: 'test offline sync', version: 0 }, 'test');
+      for (const [prefix, limit] of [['v1', 'limit']]) {
+        const response = await get(`/api/${prefix}/selected/changes?${limit}=1&cursor=${encodeURIComponent(start)}`);
+        assert.equal(response.status, 200);
+        const page = JSON.parse(response.body);
+        assert.equal(page.changes[0].op, 'remove', `${prefix} ${fields} ${visibility}`);
+        assert.equal(page.changes[0].id, id);
+        assert.equal(page.changes[0].item, undefined);
+        assert.notEqual(page.cursor, start, 'redacting a historical upsert must still advance');
+        assert.equal(page.hasMore, true, 'the later removal is still resumable');
+      }
+    }
+  }
+});
+
+test('event neighbors disappear when their last readable evidence is withdrawn or still gated', async () => {
+  const id = await article();
+  const neighborId = await article();
+  await publishArticle(id, released());
+  await publishArticle(neighborId, released());
+  const current = await storyFor(id);
+  const neighbor = await storyFor(neighborId);
+  await sql`INSERT INTO story_links (story_id, other_id, relation)
+    SELECT s.id, n.id, 'related' FROM stories s, stories n WHERE s.public_id = ${current} AND n.public_id = ${neighbor}`;
+  const exits = [`/api/site/stories/${current}`, `/api/v1/stories/${current}`, `/api/v1/agent/stories/${current}`];
+  for (const url of exits) assert.ok((await get(url)).body.includes(neighbor), 'public neighbor is linked');
+  for (const gated of [true, false]) {
+    await sql`UPDATE publications SET visible_after = now() + interval '1 hour', visibility = ${gated ? 'public' : 'withdrawn'} WHERE article_id = ${neighborId}`;
+    assert.equal((await get(`/api/v1/stories/${neighbor}`)).status, 404);
+    for (const url of exits) assert.ok(!(await get(url)).body.includes(neighbor), `${url} must not advertise an unreadable neighbor`);
+  }
 });

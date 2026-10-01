@@ -78,6 +78,7 @@ export async function mpArticle(articleUrl: string, opts: { subject: string; ide
     { service: "dajiala", purpose: "mp_article", subject: opts.subject, identity: { article: opts.identity }, requestSummary: { url: articleUrl } },
     async () => {
       const res = await guardedFetch(`${url}/fbmain/monitor/v3/article_detail?${new URLSearchParams({ url: articleUrl, key, mode: "1", verifycode: "" })}`, {
+        redirectPolicy: "same-origin",
         headers: { accept: "application/json" },
         timeoutMs: 30_000,
         maxBytes: 8 * 1024 * 1024,

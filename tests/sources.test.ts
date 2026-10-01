@@ -104,6 +104,25 @@ test("anchors into the listing page itself are navigation, not posts", () => {
   assert.deepEqual(out.map((c) => c.url), ["https://example.org/blog/mimo-v2-6-tool-call"]);
 });
 
+test("posts addressed by a query on the listing's path are posts, its pages and filters are not", () => {
+  // WordPress plain permalinks: every post is /?p=N on the listing's own path.
+  const links: [string, string][] = [
+    ["/?p=123", "First research announcement"], ["/?p=456&lang=en", "Second research announcement"],
+    ["/?utm_source=nav", "Home with tracking"], ["/?paged=2", "Older posts page"], ["/?cat=3", "Research category"], ["/#about", "About this site"],
+  ];
+  const html = links.map(([href, text]) => `<a href="${href}">${text}</a>`).join("");
+  const md = links.map(([href, text]) => `[${text}](https://example.org${href})`).join("\n\n");
+  const posts = ["https://example.org/?p=123", "https://example.org/?p=456&lang=en"];
+  assert.deepEqual(fromHtml(html, "https://example.org/", source({ url: "https://example.org/" })).map((c) => c.url), posts);
+  assert.deepEqual(fromMarkdown(md, "https://example.org/", source({ url: "https://r.jina.ai/https://example.org/" })).map((c) => c.url), posts);
+  // The listing's own query in another order, with tracking and a page number, is still the listing.
+  const filtered = source({ url: "https://example.org/news?lang=en&kind=ai" });
+  const out = fromHtml('<a href="/news?kind=ai&lang=en&utm_medium=x&page=2">Next page of news</a><a href="/news?kind=ai&lang=en&id=7">A news post</a>', "https://example.org/", filtered);
+  assert.deepEqual(out.map((c) => c.url), ["https://example.org/news?kind=ai&lang=en&id=7"]);
+  // Hosts still compare as written: www is another host.
+  assert.equal(fromHtml('<a href="https://www.example.org/">Home on www</a>', "https://example.org/", source({ url: "https://example.org/" })).length, 1);
+});
+
 test("promotions a feed rotates inside its posts are left out of the body", () => {
   // Microsoft Research's feed puts a different podcast or product promotion into each post on every load.
   const promo = (label: string, name: string) =>

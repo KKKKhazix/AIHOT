@@ -71,3 +71,13 @@ export function toBeijingIso(instant: Date | string | number): string {
   const d = new Date(new Date(instant).getTime() + OFFSET_MS);
   return `${d.toISOString().slice(0, 19)}+08:00`;
 }
+
+/** First and last calendar dates of a real YYYY-MM month. */
+export function monthRange(label: string): { start: string; end: string } | null {
+  if (!/^\d{4}-\d{2}$/.test(label) || !isValidDate(`${label}-01`)) return null;
+  const month = Number(label.slice(5));
+  const end = new Date(`${label}-01T00:00:00Z`);
+  end.setUTCMonth(month);
+  end.setUTCDate(0);
+  return { start: `${label}-01`, end: end.toISOString().slice(0, 10) };
+}

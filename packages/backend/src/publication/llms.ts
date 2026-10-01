@@ -18,7 +18,7 @@ export async function loadLlmsAvailability() {
 
 export const PUBLIC_VERSIONS = {
   mcp: "2.0.0",
-  v1OpenApi: "2.0.0",
+  v1OpenApi: "2.1.0",
 };
 
 export function llmsTxt(opts: { hasDailies: boolean; hasWeekly: boolean; hasMonthly: boolean; hasLeaderboard: boolean }): string {
@@ -46,6 +46,14 @@ export function llmsTxt(opts: { hasDailies: boolean; hasWeekly: boolean; hasMont
   if (opts.hasDailies) {
     lines.push(`- [公开 API v1 · 最新${daily}](${u("/api/v1/dailies/latest")}): 最新一期结构化${daily}`);
     lines.push(`- [公开 API v1 · ${daily}列表](${u("/api/v1/dailies")}): 历史${daily}索引；指定日期使用 /api/v1/dailies/{YYYY-MM-DD}`);
+  }
+  if (opts.hasWeekly) {
+    lines.push(`- [公开 API v1 · 最新周报](${u("/api/v1/weeklies/latest")}): 最新一期结构化周报`);
+    lines.push(`- [公开 API v1 · 周报列表](${u("/api/v1/weeklies")}): 历史周报索引；指定周使用 /api/v1/weeklies/{YYYY-Www}`);
+  }
+  if (opts.hasMonthly) {
+    lines.push(`- [公开 API v1 · 最新月报](${u("/api/v1/monthlies/latest")}): 最新一期结构化月报`);
+    lines.push(`- [公开 API v1 · 月报列表](${u("/api/v1/monthlies")}): 历史月报索引；指定月使用 /api/v1/monthlies/{YYYY-MM}`);
   }
   lines.push(`- [公开 API v1 · 当前全部精选](${u("/api/v1/selected/snapshot")}): 首次完整快照；后续使用响应 cursor 调 selected/changes`);
   lines.push(`- [公开 API v1 · 精选增量](${u("/api/v1/selected/changes")}): 只返回新增、修改和撤选`);

@@ -44,6 +44,8 @@ export interface GuardedFetchOptions {
   maxBytes?: number;
   /** Follow redirects manually so every hop passes the SSRF guard. */
   maxRedirects?: number;
+  /** URL 可能含凭据时显式限制为原始来源；不能放宽自动识别的敏感请求。 */
+  redirectPolicy?: "same-origin";
   /** "egress" by default; see EgressRoute. */
   route?: EgressRoute;
 }
@@ -70,20 +72,34 @@ export async function guardedFetch(input: string, opts: GuardedFetchOptions = {}
   let url = await check(input);
   const maxRedirects = opts.maxRedirects ?? 5;
   const maxBytes = opts.maxBytes ?? 8 * 1024 * 1024;
+  const headers = new Headers({ "user-agent": DEFAULT_UA, "accept-language": "zh-CN,zh;q=0.9,en;q=0.8", ...(opts.headers ?? {}) });
+  const publicHeaders = new Set(["accept", "accept-language", "accept-encoding", "user-agent", "cache-control", "if-modified-since", "if-none-match", "range", "if-range"]);
+  // 未知自定义头和请求体可能携带凭据，整个跳转链都保留最初的来源边界。
+  const originBound = opts.redirectPolicy === "same-origin" || opts.body !== undefined || Object.keys(opts.headers ?? {}).some((name) => !publicHeaders.has(name.toLowerCase()));
+  const initialOrigin = url.origin;
+  let method = (opts.method ?? "GET").toUpperCase();
+  let requestBody = opts.body;
   for (let hop = 0; ; hop++) {
     const res = await undiciFetch(url, {
-      method: opts.method ?? "GET",
-      headers: { "user-agent": DEFAULT_UA, "accept-language": "zh-CN,zh;q=0.9,en;q=0.8", ...(opts.headers ?? {}) },
-      body: opts.body,
+      method,
+      headers,
+      body: requestBody,
       redirect: "manual",
       dispatcher: dispatcherFor(proxied(url, route)),
       signal,
     });
-    if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
+    if ([301, 302, 303, 307, 308].includes(res.status) && res.headers.get("location")) {
       // Release the connection even when the next URL is refused or the redirect limit is reached.
       await res.body?.cancel();
-      if (hop >= maxRedirects) throw new Error(`Too many redirects for ${input}`);
-      url = await check(new URL(res.headers.get("location")!, url).toString());
+      if (hop >= maxRedirects) throw new Error("Too many redirects");
+      const next = new URL(res.headers.get("location")!, url);
+      if (originBound && next.origin !== initialOrigin) throw new Error("Blocked cross-origin redirect for a protected request");
+      url = await check(next.toString());
+      if (((res.status === 301 || res.status === 302) && method === "POST") || (res.status === 303 && method !== "GET" && method !== "HEAD")) {
+        method = "GET";
+        requestBody = undefined;
+        for (const name of ["content-encoding", "content-language", "content-location", "content-type", "content-length"]) headers.delete(name);
+      }
       continue;
     }
     const chunks: Buffer[] = [];

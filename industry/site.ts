@@ -75,3 +75,9 @@ export const ABOUT = {
 export function withSubject(noun: string): string {
   return /[A-Za-z0-9]$/.test(SITE.subject) ? `${SITE.subject} ${noun}` : `${SITE.subject}${noun}`;
 }
+
+/** “按主题看 AI”“往期 AI 日报”这类说法：行业词接在中文后面，英文词前加空格，中文词不加；noun 照 withSubject 接上。 */
+export function subjectAfter(text: string, noun?: string): string {
+  const gap = /^[A-Za-z0-9]/.test(SITE.subject) ? " " : "";
+  return `${text}${gap}${noun ? withSubject(noun) : SITE.subject}`;
+}

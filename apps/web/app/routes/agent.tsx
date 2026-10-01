@@ -187,6 +187,8 @@ function ApiTab({ base }: { base: string }) {
     ["/api/v1/dailies", `${withSubject("日报")}日期索引`],
     ["/api/v1/dailies/latest", `最新${withSubject("日报")}`],
     ["/api/v1/dailies/{date}", `指定日期的${withSubject("日报")}`],
+    ["/api/v1/weeklies", "周报索引；/latest 或 /{YYYY-Www} 读取一期"],
+    ["/api/v1/monthlies", "月报索引；/latest 或 /{YYYY-MM} 读取一期"],
     ["/api/v1/selected/snapshot", "当前全部精选；首次完整同步（分页）"],
     ["/api/v1/selected/changes", "精选的新增、修改和撤选；之后只取变化"],
   ];

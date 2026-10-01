@@ -31,6 +31,47 @@ function secret(): string {
   return s;
 }
 
+interface FeishuClaims {
+  appId: string;
+  unionId: string | null;
+  email: string | null;
+}
+
+interface SessionAuth {
+  method: "password" | "feishu";
+  binding: string;
+  claims: FeishuClaims | null;
+}
+
+function sessionBinding(method: SessionAuth["method"], identity: unknown, key: string): string {
+  return createHmac("sha256", key).update(JSON.stringify(["admin-session-v1", method, identity])).digest("hex");
+}
+
+function validClaims(value: unknown): value is FeishuClaims {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const c = value as Record<string, unknown>;
+  return Object.keys(c).length === 3 && typeof c.appId === "string" && c.appId.length > 0 &&
+    (c.unionId === null || (typeof c.unionId === "string" && c.unionId.length > 0)) &&
+    (c.email === null || (typeof c.email === "string" && c.email.length > 0 && c.email === c.email.toLowerCase()));
+}
+
+function sessionAuthorized(row: { auth_method: string | null; auth_binding: string | null; auth_claims: unknown }): boolean {
+  const key = credential("auth", "SESSION_SECRET");
+  if (!key || !row.auth_binding || !/^[0-9a-f]{64}$/.test(row.auth_binding)) return false;
+  let binding: string;
+  if (row.auth_method === "password") {
+    if (!config.adminPassword || config.adminPassword.length < 12 || row.auth_claims !== null) return false;
+    binding = sessionBinding("password", config.adminPassword, key);
+  } else if (row.auth_method === "feishu") {
+    const c = row.auth_claims;
+    if (!validClaims(c) || !feishuLoginConfigured() || c.appId !== credential("integrations", "FEISHU_LOGIN_APP_ID")) return false;
+    if (!(c.unionId && config.adminUnionIds.includes(c.unionId)) && !(c.email && config.adminEmails.includes(c.email))) return false;
+    // jsonb 不保留键顺序，按登录时的固定顺序重建，且不使用可变用户资料替代原声明。
+    binding = sessionBinding("feishu", { appId: c.appId, unionId: c.unionId, email: c.email }, key);
+  } else return false;
+  return timingSafeEqual(Buffer.from(binding, "hex"), Buffer.from(row.auth_binding, "hex"));
+}
+
 function sign(value: string): string {
   return `${value}.${createHmac("sha256", secret()).update(value).digest("base64url")}`;
 }
@@ -89,7 +130,7 @@ interface FeishuUser {
   name?: string;
 }
 
-async function feishuUser(code: string): Promise<FeishuUser> {
+async function feishuUser(code: string): Promise<{ user: FeishuUser; appId: string }> {
   const appId = credential("integrations", "FEISHU_LOGIN_APP_ID");
   const appSecret = credential("integrations", "FEISHU_LOGIN_APP_SECRET");
   if (!appId || !appSecret) throw new Error("Feishu login app is not configured");
@@ -105,15 +146,16 @@ async function feishuUser(code: string): Promise<FeishuUser> {
     headers: { authorization: `Bearer ${token.access_token}` },
     signal: AbortSignal.timeout(15_000),
   });
-  return (await userRes.json()) as FeishuUser;
+  return { user: (await userRes.json()) as FeishuUser, appId };
 }
 
 export class LoginRejected extends Error {}
 
-async function createSession(userId: number, userAgent: string | undefined): Promise<string> {
+async function createSession(userId: number, userAgent: string | undefined, auth: SessionAuth): Promise<string> {
   const token = randomBytes(32).toString("base64url");
-  await sql`INSERT INTO admin_sessions (id_hash, user_id, csrf_token, expires_at, user_agent)
-            VALUES (${sha256(token)}, ${userId}, ${randomBytes(18).toString("base64url")}, ${new Date(Date.now() + SESSION_DAYS * 86400_000)}, ${userAgent?.slice(0, 300) ?? null})`;
+  await sql`INSERT INTO admin_sessions (id_hash, user_id, csrf_token, expires_at, user_agent, auth_method, auth_binding, auth_claims)
+            VALUES (${sha256(token)}, ${userId}, ${randomBytes(18).toString("base64url")}, ${new Date(Date.now() + SESSION_DAYS * 86400_000)}, ${userAgent?.slice(0, 300) ?? null},
+                    ${auth.method}, ${auth.binding}, ${auth.claims ? sql.json(auth.claims as never) : null})`;
   return token;
 }
 
@@ -123,18 +165,24 @@ export async function completeLogin(code: string, state: string, stateCookie: st
   const given = unsign(state);
   if (!expected || !given || expected !== given) throw new LoginRejected("登录状态已失效，请重新登录");
   const returnTo = given.split("|")[1] ?? "/admin";
-  const u = await feishuUser(code);
-  const email = (u.enterprise_email ?? u.email ?? "").toLowerCase() || null;
-  const allowed = (u.union_id && config.adminUnionIds.includes(u.union_id)) || (email && config.adminEmails.includes(email));
+  // 固定本次认证用过的密钥和应用，不能在异步认证或落库后换绑成新配置。
+  const loginKey = secret();
+  const { user: u, appId } = await feishuUser(code);
+  const emailClaim = u.enterprise_email ?? u.email;
+  const email = typeof emailClaim === "string" ? emailClaim.toLowerCase() || null : null;
+  const unionId = typeof u.union_id === "string" ? u.union_id || null : null;
+  const claims: FeishuClaims = { appId, unionId, email };
+  const auth: SessionAuth = { method: "feishu", claims, binding: sessionBinding("feishu", claims, loginKey) };
+  const allowed = (unionId && config.adminUnionIds.includes(unionId)) || (email && config.adminEmails.includes(email));
   if (!allowed) throw new LoginRejected("这个飞书账号没有后台权限");
   const [existing] = await sql<{ id: number }[]>`
-    SELECT id FROM admin_users WHERE (${u.union_id ?? null}::text IS NOT NULL AND feishu_union_id = ${u.union_id ?? null}) OR (${email}::text IS NOT NULL AND email = ${email}) LIMIT 1`;
+    SELECT id FROM admin_users WHERE (${unionId}::text IS NOT NULL AND feishu_union_id = ${unionId}) OR (${email}::text IS NOT NULL AND email = ${email}) LIMIT 1`;
   const [user] = existing
-    ? await sql<{ id: number }[]>`UPDATE admin_users SET feishu_union_id = coalesce(feishu_union_id, ${u.union_id ?? null}), email = coalesce(email, ${email}),
+    ? await sql<{ id: number }[]>`UPDATE admin_users SET feishu_union_id = coalesce(feishu_union_id, ${unionId}), email = coalesce(email, ${email}),
         display_name = coalesce(${u.name ?? null}, display_name), last_login_at = now() WHERE id = ${existing.id} RETURNING id`
-    : await sql<{ id: number }[]>`INSERT INTO admin_users (feishu_union_id, email, display_name, last_login_at) VALUES (${u.union_id ?? null}, ${email}, ${u.name ?? null}, now()) RETURNING id`;
-  const token = await createSession(user!.id, userAgent);
-  await audit(`admin:${user!.id}`, "auth.login", null, null, null, { union_id: u.union_id ?? null });
+    : await sql<{ id: number }[]>`INSERT INTO admin_users (feishu_union_id, email, display_name, last_login_at) VALUES (${unionId}, ${email}, ${u.name ?? null}, now()) RETURNING id`;
+  const token = await createSession(user!.id, userAgent, auth);
+  await audit(`admin:${user!.id}`, "auth.login", null, null, null, { union_id: unionId });
   return { token, returnTo, userId: user!.id };
 }
 
@@ -148,10 +196,11 @@ export async function passwordLogin(password: string, returnTo: string, userAgen
   const given = createHmac("sha256", "admin-password").update(password).digest();
   const wanted = createHmac("sha256", "admin-password").update(expected).digest();
   if (!timingSafeEqual(given, wanted)) throw new LoginRejected("密码不对");
+  const auth: SessionAuth = { method: "password", claims: null, binding: sessionBinding("password", expected, secret()) };
   const [user] = await sql<{ id: number }[]>`
     INSERT INTO admin_users (email, display_name, last_login_at) VALUES (${PASSWORD_ADMIN}, '管理员', now())
     ON CONFLICT (email) DO UPDATE SET last_login_at = now() RETURNING id`;
-  const token = await createSession(user!.id, userAgent);
+  const token = await createSession(user!.id, userAgent, auth);
   await audit(`admin:${user!.id}`, "auth.login", null, null, null, { method: "password" });
   return { token, returnTo: safeReturn(returnTo), userId: user!.id };
 }
@@ -159,10 +208,16 @@ export async function passwordLogin(password: string, returnTo: string, userAgen
 export async function sessionPrincipal(cookieHeader: string | undefined): Promise<AdminPrincipal | null> {
   const token = parseCookies(cookieHeader)[SESSION_COOKIE];
   if (token) {
-    const [row] = await sql<{ user_id: number; csrf_token: string; name: string | null; email: string | null }[]>`
-      SELECT s.user_id, s.csrf_token, u.display_name AS name, u.email FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
-      WHERE s.id_hash = ${sha256(token)} AND s.expires_at > now()`;
-    if (row) return { userId: row.user_id, name: row.name ?? row.email ?? `admin:${row.user_id}`, csrf: row.csrf_token, dev: false };
+    const hash = sha256(token);
+    const [row] = await sql<{ user_id: number; csrf_token: string; name: string | null; email: string | null; auth_method: string | null; auth_binding: string | null; auth_claims: unknown }[]>`
+      SELECT s.user_id, s.csrf_token, s.auth_method, s.auth_binding, s.auth_claims, u.display_name AS name, u.email
+      FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
+      WHERE s.id_hash = ${hash} AND s.expires_at > now()`;
+    if (row) {
+      if (sessionAuthorized(row)) return { userId: row.user_id, name: row.name ?? row.email ?? `admin:${row.user_id}`, csrf: row.csrf_token, dev: false };
+      // 已观察到失效的会话永久退出，之后恢复旧配置也不会重新授权这张 Cookie。
+      await sql`DELETE FROM admin_sessions WHERE id_hash = ${hash}`;
+    }
   }
   if (config.devAdmin && config.environmentName !== "production") return { userId: null, name: config.devAdmin.displayName, csrf: "dev", dev: true };
   return null;

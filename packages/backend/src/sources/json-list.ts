@@ -42,8 +42,12 @@ export function renderTemplate(template: string, item: unknown): string | null {
 function toDate(v: unknown, unit: string | undefined): Date | null {
   if (v === null || v === undefined || v === "") return null;
   if (unit === "epoch_ms" || unit === "epoch_s") {
-    const date = new Date(Number(v) * (unit === "epoch_s" ? 1000 : 1));
-    return Number.isFinite(date.getTime()) ? date : null;
+    try {
+      const date = new Date(Number(v) * (unit === "epoch_s" ? 1000 : 1));
+      return Number.isFinite(date.getTime()) ? date : null;
+    } catch {
+      return null;
+    }
   }
   // 20260922: a calendar day at UTC midnight (some list APIs give dates as yyyymmdd).
   if (unit === "yyyymmdd") {
@@ -139,6 +143,7 @@ export async function fetchJsonList(source: SourceRow): Promise<Candidate[]> {
     if (token) headers.authorization = `Bearer ${token}`;
   }
   const res = await guardedFetch(url, {
+    redirectPolicy: "same-origin",
     method: c.method ?? "GET",
     headers: c.bodyJson ? { ...headers, "content-type": "application/json" } : headers,
     body: c.bodyJson ? JSON.stringify(c.bodyJson) : undefined,

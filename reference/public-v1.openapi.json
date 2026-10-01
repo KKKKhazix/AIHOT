@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "{{siteName}} Public API",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "description": "Anonymous, read-only API for clients and Agents. No API key is required.\n\nPicking an endpoint: show recent or today's items -> /api/v1/items. Show what is trending right now -> /api/v1/hot-topics. Show the daily digest -> /api/v1/dailies/latest. Keep a complete local copy of the selected set -> /api/v1/selected/snapshot once, then /api/v1/selected/changes forever.\n\nHow often to poll: use each response's Cache-Control s-maxage as the minimum interval, and always send If-None-Match: an unchanged resource answers 304 with an empty body. On 429 or 503, honour Retry-After. There is no push channel (no SSE, webhooks or streaming): poll on an interval.\n\nTitles and summaries are generated from third-party sources; the original is always linked in links.original.",
     "termsOfService": "{{siteUrl}}/terms"
   },
@@ -2235,6 +2235,1066 @@
           }
         }
       }
+    },
+    "/api/v1/weeklies": {
+      "get": {
+        "operationId": "weeklies",
+        "summary": "List weekly-report archive entries",
+        "description": "Published weekly reports, newest first. Weekly issues are produced after a complete ISO week, so clients should prefer conditional requests instead of frequent polling.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ActorUserAgent"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 260,
+              "default": 52
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeekliesResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/weeklies/latest": {
+      "get": {
+        "operationId": "latestWeekly",
+        "summary": "Get the latest weekly report",
+        "description": "The most recently published weekly report. Use the archive endpoint to discover immutable week keys when long-lived caches need a stable URL.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ActorUserAgent"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/weeklies/{week}": {
+      "get": {
+        "operationId": "weeklyByWeek",
+        "summary": "Get a weekly report by ISO week",
+        "description": "A published weekly report by ISO week key (YYYY-Www). Existing historical issues are stable public artifacts and may be cached according to the response headers.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ActorUserAgent"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "name": "week",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-W\\d{2}$"
+            },
+            "example": "2026-W40"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/monthlies": {
+      "get": {
+        "operationId": "monthlies",
+        "summary": "List monthly-report archive entries",
+        "description": "Published monthly reports, newest first. Monthly issues are produced after a complete calendar month, so clients should prefer conditional requests instead of frequent polling.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ActorUserAgent"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 260,
+              "default": 52
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonthliesResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/monthlies/latest": {
+      "get": {
+        "operationId": "latestMonthly",
+        "summary": "Get the latest monthly report",
+        "description": "The most recently published monthly report. Use the archive endpoint to discover immutable month keys when long-lived caches need a stable URL.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ActorUserAgent"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonthlyResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/monthlies/{month}": {
+      "get": {
+        "operationId": "monthlyByMonth",
+        "summary": "Get a monthly report by calendar month",
+        "description": "A published monthly report by calendar month key (YYYY-MM). Existing historical issues are stable public artifacts and may be cached according to the response headers.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ActorUserAgent"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "name": "month",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}$"
+            },
+            "example": "2026-10"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonthlyResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Machine-readable problem response.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Support correlation identifier for this failed request.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Minimum number of seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3956,6 +5016,480 @@
             }
           }
         ]
+      },
+      "WeeklyEntry": {
+        "type": "object",
+        "required": [
+          "week",
+          "generatedAt",
+          "headline",
+          "overview",
+          "links"
+        ],
+        "properties": {
+          "week": {
+            "type": "string",
+            "pattern": "^\\d{4}-W\\d{2}$"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "headline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overview": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "links": {
+            "type": "object",
+            "required": [
+              "aihot"
+            ],
+            "properties": {
+              "aihot": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          },
+          "attribution": {
+            "$ref": "#/components/schemas/Attribution"
+          }
+        }
+      },
+      "WeekliesResponse": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "count",
+          "items"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WeeklyEntry"
+            }
+          }
+        }
+      },
+      "WeeklyContentLinks": {
+        "type": "object",
+        "required": [
+          "aihot",
+          "original"
+        ],
+        "properties": {
+          "aihot": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "original": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "WeeklyItem": {
+        "type": "object",
+        "required": [
+          "title",
+          "summary",
+          "source",
+          "publishedAt",
+          "links"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "links": {
+            "$ref": "#/components/schemas/WeeklyContentLinks"
+          },
+          "attribution": {
+            "$ref": "#/components/schemas/Attribution"
+          }
+        }
+      },
+      "WeeklyTheme": {
+        "type": "object",
+        "required": [
+          "heading",
+          "summary",
+          "items"
+        ],
+        "properties": {
+          "heading": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WeeklyItem"
+            }
+          }
+        }
+      },
+      "WeeklyReport": {
+        "type": "object",
+        "required": [
+          "week",
+          "generatedAt",
+          "windowStart",
+          "windowEnd",
+          "links",
+          "title",
+          "headline",
+          "overview",
+          "themes"
+        ],
+        "properties": {
+          "week": {
+            "type": "string",
+            "pattern": "^\\d{4}-W\\d{2}$"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowStart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowEnd": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "links": {
+            "type": "object",
+            "required": [
+              "aihot"
+            ],
+            "properties": {
+              "aihot": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          },
+          "attribution": {
+            "$ref": "#/components/schemas/Attribution"
+          },
+          "title": {
+            "type": "string"
+          },
+          "headline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overview": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "themes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WeeklyTheme"
+            }
+          }
+        }
+      },
+      "WeeklyResponse": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "report"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "report": {
+            "$ref": "#/components/schemas/WeeklyReport"
+          }
+        }
+      },
+      "MonthlyEntry": {
+        "type": "object",
+        "required": [
+          "month",
+          "generatedAt",
+          "headline",
+          "overview",
+          "links"
+        ],
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}$"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "headline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overview": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "links": {
+            "type": "object",
+            "required": [
+              "aihot"
+            ],
+            "properties": {
+              "aihot": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          },
+          "attribution": {
+            "$ref": "#/components/schemas/Attribution"
+          }
+        }
+      },
+      "MonthliesResponse": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "count",
+          "items"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonthlyEntry"
+            }
+          }
+        }
+      },
+      "MonthlyContentLinks": {
+        "type": "object",
+        "required": [
+          "aihot",
+          "original"
+        ],
+        "properties": {
+          "aihot": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "original": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "MonthlyItem": {
+        "type": "object",
+        "required": [
+          "title",
+          "summary",
+          "source",
+          "publishedAt",
+          "links"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "links": {
+            "$ref": "#/components/schemas/MonthlyContentLinks"
+          },
+          "attribution": {
+            "$ref": "#/components/schemas/Attribution"
+          }
+        }
+      },
+      "MonthlyTheme": {
+        "type": "object",
+        "required": [
+          "heading",
+          "summary",
+          "items"
+        ],
+        "properties": {
+          "heading": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonthlyItem"
+            }
+          }
+        }
+      },
+      "MonthlyReport": {
+        "type": "object",
+        "required": [
+          "month",
+          "generatedAt",
+          "windowStart",
+          "windowEnd",
+          "links",
+          "title",
+          "headline",
+          "overview",
+          "themes"
+        ],
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}$"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowStart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowEnd": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "links": {
+            "type": "object",
+            "required": [
+              "aihot"
+            ],
+            "properties": {
+              "aihot": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          },
+          "attribution": {
+            "$ref": "#/components/schemas/Attribution"
+          },
+          "title": {
+            "type": "string"
+          },
+          "headline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overview": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "themes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonthlyTheme"
+            }
+          }
+        }
+      },
+      "MonthlyResponse": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "report"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "report": {
+            "$ref": "#/components/schemas/MonthlyReport"
+          }
+        }
       }
     }
   }

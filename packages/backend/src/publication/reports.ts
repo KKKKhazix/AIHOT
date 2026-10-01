@@ -317,6 +317,63 @@ export async function v1Dailies(limit: number) {
   return { schemaVersion: 1 as const, count: items.length, items };
 }
 
+export async function v1Periods(kind: "weekly" | "monthly", limit: number) {
+  const index = await reportIndex(kind);
+  const rows = index.rows.slice(0, limit);
+  const gone = index.gone;
+  const items = rows.map((r) => {
+    const url = siteUrl(`/${kind}/${r.key}`);
+    return {
+      ...(kind === "weekly" ? { week: r.key } : { month: r.key }),
+      generatedAt: r.generated_at.toISOString(),
+      headline: reportHeadline(r.content, "periodic", gone),
+      overview: r.content.overview ?? null,
+      links: { aihot: url },
+      attribution: attribution(url),
+    };
+  });
+  return { schemaVersion: 1 as const, count: items.length, items };
+}
+
+export async function v1Period(kind: "weekly" | "monthly", key: string | "latest") {
+  const [r] = key === "latest"
+    ? await sql<ReportRow[]>`SELECT kind, key, window_start, window_end, content, generated_at, revision FROM reports WHERE kind = ${kind} ORDER BY key DESC LIMIT 1`
+    : await sql<ReportRow[]>`SELECT kind, key, window_start, window_end, content, generated_at, revision FROM reports WHERE kind = ${kind} AND key = ${key}`;
+  if (!r) return null;
+  const c = r.content;
+  const raw = (c.themes ?? []).flatMap((theme: any) => theme.storyRefs ?? []);
+  const avail = await availability([...new Set(raw.map((item: any) => item.itemId).filter(Boolean))] as string[]);
+  const ok = (item: any) => !item.itemId || (avail.get(item.itemId)?.available ?? true);
+  const links = (item: any) => ({ aihot: item.itemId ? itemUrl(item.itemId) : null, original: String(item.sourceUrl ?? "") });
+  const url = siteUrl(`/${kind}/${r.key}`);
+  return {
+    schemaVersion: 1 as const,
+    report: {
+      ...(kind === "weekly" ? { week: r.key } : { month: r.key }),
+      generatedAt: r.generated_at.toISOString(),
+      windowStart: r.window_start.toISOString(),
+      windowEnd: r.window_end.toISOString(),
+      links: { aihot: url },
+      attribution: attribution(url),
+      title: String(c.title ?? `${SITE.name} ${kind === "weekly" ? "周报" : "月报"} · ${r.key}`),
+      headline: reportHeadline(c, "periodic", new Set([...avail].filter(([, value]) => !value.available).map(([id]) => id))),
+      overview: c.overview ?? null,
+      themes: (c.themes ?? []).map((theme: any) => ({
+        heading: String(theme.heading ?? ""),
+        summary: String(theme.summary ?? ""),
+        items: (theme.storyRefs ?? []).filter(ok).map((item: any) => ({
+          title: String(item.title ?? ""),
+          summary: String(item.summary ?? ""),
+          source: { name: String(item.sourceName ?? "") },
+          publishedAt: item.publishedAt ? String(item.publishedAt) : null,
+          links: links(item),
+          attribution: attribution(item.itemId ? itemUrl(item.itemId) : url),
+        })),
+      })).filter((theme: { items: unknown[] }) => theme.items.length > 0),
+    },
+  };
+}
+
 export async function v1Daily(date: string | "latest") {
   const [r] = date === "latest"
     ? await sql<ReportRow[]>`SELECT kind, key, window_start, window_end, content, generated_at, revision FROM reports WHERE kind = 'daily' ORDER BY key DESC LIMIT 1`

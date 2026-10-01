@@ -4,7 +4,7 @@
 // waiting behind an unreleased item leaves new snapshots at once, and snapshots answer conditional requests.
 import { config } from "@aihot/backend/config";
 import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
-import { beijingDate } from "@aihot/contracts/time";
+import { beijingDate, isoWeekLabel } from "@aihot/contracts/time";
 import { ogEtag } from "../apps/api/src/og/render.ts";
 import { posterEtag } from "../apps/api/src/og/poster.ts";
 import { tag } from "./setup.ts";
@@ -26,6 +26,8 @@ const T = tag();
 const SOURCE = `test-publication-${T}`;
 const BODY = `FULLTEXT-${T} `.repeat(40);
 const REPORT_KEY = `2099-12-${String(10 + Math.floor(Math.random() * 19))}`;
+const WEEKLY_KEY = isoWeekLabel(REPORT_KEY);
+const MONTHLY_KEY = REPORT_KEY.slice(0, 7);
 const app = await buildApp();
 
 before(async () => {
@@ -35,7 +37,7 @@ before(async () => {
             VALUES (${SOURCE}, 'Test publication', 'rss', 'T1', 'editorial', true, true, '2100-01-01')`;
 });
 after(async () => {
-  await sql`DELETE FROM reports WHERE kind = 'daily' AND key = ${REPORT_KEY}`;
+  await sql`DELETE FROM reports WHERE (kind = 'daily' AND key = ${REPORT_KEY}) OR (kind = 'weekly' AND key = ${WEEKLY_KEY}) OR (kind = 'monthly' AND key = ${MONTHLY_KEY})`;
   await app.close();
   await stopBoss();
   await closeDb();
@@ -141,6 +143,98 @@ test("a withdrawn item leaves every report exit", async () => {
     assert.ok(res.body.includes(REPORT_KEY), `${url} lists the report`);
     assert.ok(!res.body.includes(`LEAD-${T}`), `${url} headlines the withdrawn title`);
   }
+});
+
+test("weekly v1 exposes published issues with stable lookup, caching and withdrawal filtering", async () => {
+  const id = await article();
+  await publishArticle(id, released());
+  const content = {
+    overview: `OVERVIEW-${T}`,
+    themes: [{
+      heading: "模型",
+      summary: `THEME-${T}`,
+      storyRefs: [{
+        itemId: id,
+        title: `WEEKLY-LEAD-${T}`,
+        summary: `WEEKLY-QUOTED-${T}`,
+        sourceUrl: `https://example.com/weekly-original-${T}`,
+        sourceName: "Test",
+        publishedAt: new Date().toISOString(),
+      }],
+    }],
+    storyOrder: [id],
+  };
+  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at, origin)
+            VALUES ('weekly', ${WEEKLY_KEY}, now() - interval '7 days', now(), ${sql.json(content as never)}, now(), 'manual')
+            ON CONFLICT (kind, key) DO UPDATE SET content = EXCLUDED.content, generated_at = EXCLUDED.generated_at`;
+
+  const list = await get("/api/v1/weeklies?limit=1");
+  assert.equal(list.status, 200);
+  assert.ok(list.body.includes(WEEKLY_KEY) && list.body.includes(`WEEKLY-LEAD-${T}`));
+
+  const detail = await get(`/api/v1/weeklies/${WEEKLY_KEY}`);
+  assert.equal(detail.status, 200);
+  assert.ok(detail.body.includes(`WEEKLY-QUOTED-${T}`) && detail.body.includes(`weekly-original-${T}`));
+  assert.ok(detail.etag);
+  assert.equal((await get(`/api/v1/weeklies/${WEEKLY_KEY}`, { "if-none-match": detail.etag! })).status, 304);
+
+  const latest = await get("/api/v1/weeklies/latest");
+  assert.equal(latest.status, 200);
+  assert.ok(latest.body.includes(WEEKLY_KEY));
+
+  assert.equal((await get("/api/v1/weeklies/2099-W00")).status, 400);
+  assert.equal((await get("/api/v1/weeklies/2098-W01")).status, 404);
+
+  await setVisibility(id, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
+  const withdrawn = await get(`/api/v1/weeklies/${WEEKLY_KEY}`);
+  assert.equal(withdrawn.status, 200);
+  assert.ok(!withdrawn.body.includes(`WEEKLY-QUOTED-${T}`) && !withdrawn.body.includes(`WEEKLY-LEAD-${T}`) && !withdrawn.body.includes(`weekly-original-${T}`));
+});
+
+test("monthly v1 exposes published issues with stable lookup, caching and withdrawal filtering", async () => {
+  const id = await article();
+  await publishArticle(id, released());
+  const content = {
+    overview: `OVERVIEW-${T}`,
+    themes: [{
+      heading: "模型",
+      summary: `THEME-${T}`,
+      storyRefs: [{
+        itemId: id,
+        title: `MONTHLY-LEAD-${T}`,
+        summary: `MONTHLY-QUOTED-${T}`,
+        sourceUrl: `https://example.com/monthly-original-${T}`,
+        sourceName: "Test",
+        publishedAt: new Date().toISOString(),
+      }],
+    }],
+    storyOrder: [id],
+  };
+  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at, origin)
+            VALUES ('monthly', ${MONTHLY_KEY}, now() - interval '7 days', now(), ${sql.json(content as never)}, now(), 'manual')
+            ON CONFLICT (kind, key) DO UPDATE SET content = EXCLUDED.content, generated_at = EXCLUDED.generated_at`;
+
+  const list = await get("/api/v1/monthlies?limit=1");
+  assert.equal(list.status, 200);
+  assert.ok(list.body.includes(MONTHLY_KEY) && list.body.includes(`MONTHLY-LEAD-${T}`));
+
+  const detail = await get(`/api/v1/monthlies/${MONTHLY_KEY}`);
+  assert.equal(detail.status, 200);
+  assert.ok(detail.body.includes(`MONTHLY-QUOTED-${T}`) && detail.body.includes(`monthly-original-${T}`));
+  assert.ok(detail.etag);
+  assert.equal((await get(`/api/v1/monthlies/${MONTHLY_KEY}`, { "if-none-match": detail.etag! })).status, 304);
+
+  const latest = await get("/api/v1/monthlies/latest");
+  assert.equal(latest.status, 200);
+  assert.ok(latest.body.includes(MONTHLY_KEY));
+
+  assert.equal((await get("/api/v1/monthlies/2099-13")).status, 400);
+  assert.equal((await get("/api/v1/monthlies/2098-01")).status, 404);
+
+  await setVisibility(id, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
+  const withdrawn = await get(`/api/v1/monthlies/${MONTHLY_KEY}`);
+  assert.equal(withdrawn.status, 200);
+  assert.ok(!withdrawn.body.includes(`MONTHLY-QUOTED-${T}`) && !withdrawn.body.includes(`MONTHLY-LEAD-${T}`) && !withdrawn.body.includes(`monthly-original-${T}`));
 });
 
 test("a withdrawal takes down only the stories citing it, including secondary memberships", async () => {

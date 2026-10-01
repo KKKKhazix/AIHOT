@@ -92,9 +92,9 @@ let openApi: string | null = null;
 async function openApiJson(): Promise<string> {
   if (openApi) return openApi;
   const raw = (await readFile(path.join(REF, "public-v1.openapi.json"), "utf8"))
-    .replaceAll("{{siteName}}", SITE.name)
-    .replaceAll("{{siteUrl}}", config.siteUrl)
-    .replaceAll("{{categoryList}}", CATEGORY_KEYS.join(", "));
+    .replaceAll("{{siteName}}", JSON.stringify(SITE.name).slice(1, -1))
+    .replaceAll("{{siteUrl}}", JSON.stringify(config.siteUrl).slice(1, -1))
+    .replaceAll("{{categoryList}}", JSON.stringify(CATEGORY_KEYS.join(", ")).slice(1, -1));
   const doc = JSON.parse(raw) as { paths: Record<string, unknown>; components?: { parameters?: Record<string, { schema?: { enum?: string[] } }> } };
   // Categories follow the industry pack.
   const walk = (node: unknown) => {

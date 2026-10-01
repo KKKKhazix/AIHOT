@@ -19,6 +19,12 @@ export const V1_CACHE_CONTROL = {
   dailies: "public, max-age=60, s-maxage=60, stale-while-revalidate=300",
   latestDaily: "public, max-age=60, s-maxage=60, stale-while-revalidate=300",
   dailyByDate: "public, max-age=300, s-maxage=300, stale-while-revalidate=3600",
+  weeklies: "public, max-age=300, s-maxage=300, stale-while-revalidate=1800",
+  latestWeekly: "public, max-age=300, s-maxage=300, stale-while-revalidate=1800",
+  weeklyByWeek: "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
+  monthlies: "public, max-age=300, s-maxage=300, stale-while-revalidate=1800",
+  latestMonthly: "public, max-age=300, s-maxage=300, stale-while-revalidate=1800",
+  monthlyByMonth: "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
   selectedSnapshot: "public, max-age=300, s-maxage=300, stale-while-revalidate=900",
   selectedChanges: "public, max-age=60, s-maxage=60, stale-while-revalidate=60",
 } as const;

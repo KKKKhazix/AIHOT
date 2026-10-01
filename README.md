@@ -126,7 +126,7 @@ docker compose up -d --build
 
 ## 把它改成你的行业
 
-部署后打开 `/agent`，可以复制 MCP、RSS、API 或 Markdown 的接入方式。只支持网页读取的 Agent 可从 `/api/v1/agent` 查看发现说明，再读取精选、搜索、热点、事件和日报的 Markdown；结构化数据仍用 `/api/v1/`，接口契约在 `/openapi-v1.json`。这些出口共同遵循文章撤回与全文许可，站名、链接和分类取自你的行业配置。
+部署后打开 `/agent`，可以复制 MCP、RSS、API 或 Markdown 的接入方式。只支持网页读取的 Agent 可从 `/api/v1/agent` 查看发现说明，再读取精选、搜索、热点、事件和日报的 Markdown；周报与月报的结构化 JSON 分别从 `/api/v1/weeklies`、`/api/v1/monthlies` 发现，追加 `/latest` 或一期的 ISO 周/月键即可读取。结构化数据用 `/api/v1/`，接口契约在 `/openapi-v1.json`。这些出口共同遵循文章撤回与全文许可，站名、链接和分类取自你的行业配置。
 
 最省事的办法：打开你的 Agent（Claude Code、Codex 都可以），把这个仓库交给它，然后说：
 

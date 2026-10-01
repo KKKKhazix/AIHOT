@@ -39,6 +39,8 @@ export interface LbPrice {
   cached: number | null;
   officialUrl: string | null;
   verifiedOn: string | null;
+  /** Why a checked model has no prices, e.g. the vendor sells no paid API for it. */
+  note: string | null;
 }
 
 export interface LbFx {
@@ -109,6 +111,8 @@ export interface LbBoardResponse {
   entries: LbBoardEntry[];
   /** Additional ranked models needed by the filters, each subset still capped at 30. */
   filterEntries: LbBoardEntry[];
+  /** Category boards: overall top-10 models not on this board yet, with how many of its evaluations have them. */
+  pending: Array<{ model: LbModelRef; sources: number }>;
 }
 
 export type LbScoreFormat = "percent" | "fraction" | "number";
@@ -171,12 +175,16 @@ export interface LbComparison {
 
 export interface LbModelDetail {
   run: LbRunInfo;
-  model: LbModelRef & { contextWindowTokens: number | null };
+  /** The model no longer qualifies for a public board; this is its last published result. */
+  historical: boolean;
+  model: LbModelRef & { contextWindowTokens: number | null; weightsUrl: string | null };
   price: LbPrice | null;
   overall: { rank: number | null; score: number | null; onBoard: boolean; confidence: LbConfidence | null; stability: LbStability | null };
   categories: LbCategoryResult[];
   metricCount: number;
   evidence: LbEvidenceGroup[];
+  /** Scored evaluations that did publish this model, but only in runs the rules exclude. */
+  excluded: Array<{ key: string; name: string; reason: string }>;
   unmeasured: Array<{ key: string; name: string }>;
   comparisons: LbComparison[];
 }
@@ -212,6 +220,8 @@ export interface LbSourceRow {
   display: string;
   configurationLabel: string | null;
   modelSlug: string | null;
+  /** Why the model's result here does not count, when no run of it can represent the model. */
+  excluded: string | null;
 }
 
 export interface LbSourceDetail {

@@ -1,40 +1,18 @@
 import { SITE } from "@aihot/industry/site";
 import { useState } from "react";
 import { Link } from "react-router";
+import type { AdminModels } from "@aihot/contracts/admin";
 import type { Route } from "./+types/models";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { bj, money, num } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, DataTable, Empty, Field, FilterChips, ReasonDialog, Select } from "../../features/admin/ui";
 
-interface Usage {
-  purpose: string;
-  model: string | null;
-  promptVersion: string | null;
-  calls: number;
-  ok: number;
-  failed: number;
-  unknown: number;
-  p50: number | null;
-  p95: number | null;
-  tokensIn: number;
-  tokensOut: number;
-  actualCost: number | null;
-  currency: string | null;
-  estimate: { amount: number; currency: string } | null;
-}
 
-interface Models {
-  days: number;
-  capabilities: Array<{ key: string; label: string; env: string; defaultModel: string; vision: boolean; current: { model: string; source: "admin" | "env" | "default" }; usage: Usage[] }>;
-  choices: Array<{ key: string; service: string; vision: boolean }>;
-  history: Array<{ at: string; actor: string; subject: string; reason: string | null; before: { model: string; source: string } | null; after: { model: string; source: string } | null }>;
-  benches: Array<{ id: string; label: string; sample_size: number; prompt_version: string | null; models: string[]; created_at: string }>;
-}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const days = new URL(request.url).searchParams.get("days") ?? "7";
-  return adminGet<Models>(request, `/api/admin/models?days=${encodeURIComponent(days)}`);
+  return adminGet<AdminModels>(request, `/api/admin/models?days=${encodeURIComponent(days)}`);
 }
 
 export const meta: Route.MetaFunction = () => [{ title: `模型与评测 · ${SITE.name} 后台` }];
@@ -44,7 +22,7 @@ const secs = (ms: number | null) => (ms == null ? "—" : ms >= 10_000 ? `${Math
 
 export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
   const { run, pending } = useAdminAction();
-  const [target, setTarget] = useState<Models["capabilities"][number] | null>(null);
+  const [target, setTarget] = useState<AdminModels["capabilities"][number] | null>(null);
   const [choice, setChoice] = useState<string>("");
   const labelOf = (key: string) => m.capabilities.find((c) => `capability:${c.key}` === key)?.label ?? key;
 

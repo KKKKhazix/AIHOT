@@ -1,5 +1,7 @@
 // Signed image proxy. Unsigned, badly signed or expired requests are 403 without any upstream fetch.
 import type { FastifyInstance } from "fastify";
+import { createHash } from "node:crypto";
+import { enqueue, QUEUES } from "@aihot/backend/jobs/queue";
 import { produceImage } from "@aihot/backend/media/images";
 import { verifyProxyRequest } from "@aihot/backend/media/imgproxy";
 import { looseQuery } from "../http/respond.ts";
@@ -23,16 +25,27 @@ export function registerMedia(app: FastifyInstance) {
       return reply.code(403).header("Cache-Control", "no-store").type("text/plain; charset=utf-8").send("Forbidden");
     }
     try {
-      const { body, type } = await produceImage(verdict.url, verdict.mode);
-      const maxAge = Math.max(60, Math.min(7 * 86400, Number(q.exp) - Math.floor(Date.now() / 1000)));
+      const { body, type, pendingAnimation } = await produceImage(verdict.url, verdict.mode);
+      let queued = false;
+      if (pendingAnimation) {
+        try {
+          // Readers can arrive before selection, so article preparation alone is insufficient.
+          // A null id means a job with this singleton key is already queued.
+          const key = createHash("sha256").update(`${verdict.mode}|${verdict.url}`).digest("hex");
+          await enqueue(QUEUES.prepareMedia, { url: verdict.url, mode: verdict.mode }, { singletonKey: `rendition:${key}` });
+          queued = true;
+        } catch (error) {
+          req.log.warn({ err: String(error) }, "img-proxy preparation enqueue failed");
+        }
+      }
+      const maxAge = Math.max(1, Math.min(pendingAnimation ? 60 : 7 * 86400, Number(q.exp) - Math.floor(Date.now() / 1000)));
       return reply
         .header("Content-Type", type)
-        .header("Cache-Control", `public, max-age=${maxAge}, s-maxage=${maxAge}`)
+        .header("Cache-Control", pendingAnimation && !queued ? "no-store" : `public, max-age=${maxAge}, s-maxage=${maxAge}`)
         .header("X-Content-Type-Options", "nosniff")
         .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
         .send(body);
     } catch (error) {
-
       req.log.warn({ err: String(error), host: new URL(verdict.url).hostname }, "img-proxy upstream failed");
       return reply.code(502).header("Cache-Control", "public, max-age=300").type("text/plain; charset=utf-8").send("Upstream image unavailable");
     }

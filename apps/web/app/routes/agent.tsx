@@ -19,12 +19,14 @@ export function headers() {
 const MCP_VERSION = "2.0.0";
 /** The machine-readable entry points, with what each one is for. */
 const RESOURCES: Array<[label: string, href: string, note: string]> = [
+  ["Agent Markdown", "/api/v1/agent", "给 Agent 的使用说明与答案"],
   ["llms.txt", "/llms.txt", "给大模型读的站点说明"],
   ["MCP Server", "/api/mcp", "MCP 客户端的连接地址"],
   ["OpenAPI 3.1", "/openapi-v1.json", "REST API v1 的完整定义"],
 ];
 
 const TABS = [
+  { key: "markdown", label: "Agent Markdown" },
   { key: "mcp", label: "MCP" },
   { key: "rss", label: "RSS" },
   { key: "api", label: "REST API" },
@@ -47,7 +49,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export function meta({ loaderData }: Route.MetaArgs) {
   // Only the tab is part of the address (mcp is the default and not written).
   const path = listPath("/agent", { tab: loaderData && loaderData.tab !== "mcp" ? loaderData.tab : null });
-  return pageMeta({ title: "Agent 接入", description: `让 Agent 直接使用 ${SITE.name}：MCP、RSS、REST API v1，匿名只读。`, path, image: "/og/pages/agent.png" });
+  return pageMeta({ title: "Agent 接入", description: `让 Agent 直接使用 ${SITE.name}：Markdown、MCP、RSS、REST API v1，匿名只读。`, path, image: "/og/pages/agent.png" });
 }
 
 function Section({ title, children, id }: { title: string; children: ReactNode; id?: string }) {
@@ -71,6 +73,30 @@ function Bullets({ items }: { items: ReactNode[] }) {
 
 function Mono({ children }: { children: ReactNode }) {
   return <code className="mono rounded-mark bg-bg-sunk px-1.5 py-0.5 text-[0.88em] text-ink">{children}</code>;
+}
+
+function MarkdownTab({ base }: { base: string }) {
+  const guide = `${base}/api/v1/agent`;
+  const prompt = `请先读取 ${guide} 的使用说明，再根据里面提供的地址，帮我看看过去 24 小时 ${SITE.subject} 行业最重要的动态，附上来源和阅读链接。`;
+  return <>
+    <h2 className="text-[20px] font-bold text-ink">给 Agent 一个地址，就能开始阅读</h2>
+    <p className="mt-2 text-[14.5px] leading-relaxed text-ink-3">适合能读取网页的 Agent。使用说明列出最新资讯、搜索、热点、事件与日报；答案附来源、时间和阅读链接，能力更新也会出现在同一个说明地址。</p>
+    <div className="mt-6 flex items-center gap-2 rounded-card border border-line bg-surface p-3">
+      <a href="/api/v1/agent" className="min-w-0 flex-1 truncate font-mono text-[13px] text-accent">{guide}</a>
+      <CopyButton text={guide} className="!text-ink-3" />
+    </div>
+    <Section title="复制这句话给你的 Agent">
+      <div className="rounded-card border border-line bg-surface p-4"><p>{prompt}</p><CopyButton text={prompt} label="复制提问" className="mt-3" /></div>
+    </Section>
+    <Section title="可直接读取的内容">
+      <Bullets items={[
+        "最新资讯与搜索：过去 24 小时或最近 7 天，可按分类筛选。",
+        "当前热点：按榜单顺序阅读，再顺着返回的事件地址查看来龙去脉。",
+        `${withSubject("日报")}：最新一期或指定日期的固定刊物。`,
+        "资料来自外部信源，重要事实仍请回原文核对。",
+      ]} />
+    </Section>
+  </>;
 }
 
 function McpTab({ base }: { base: string }) {
@@ -245,7 +271,7 @@ export default function AgentPage() {
     <ReadingLayout aside={aside}>
       <header>
         <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">让 Agent 直接使用 {SITE.name}</h1>
-        <p className="mt-1.5 text-[13px] text-ink-3">三条接入路径都是匿名只读、无需 API Key：MCP、RSS、REST API v1。</p>
+        <p className="mt-1.5 text-[13px] text-ink-3">四种接入方式都是匿名只读、无需 API Key：Agent Markdown、MCP、RSS、REST API v1。</p>
         <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
           <span className={pill}>匿名只读</span>
           <span className={`${pill} mono`}>API v1</span>
@@ -270,6 +296,7 @@ export default function AgentPage() {
       </div>
 
       <div className="mt-7" role="tabpanel">
+        {tab === "markdown" && <MarkdownTab base={base} />}
         {tab === "mcp" && <McpTab base={base} />}
         {tab === "rss" && <RssTab base={base} />}
         {tab === "api" && <ApiTab base={base} />}

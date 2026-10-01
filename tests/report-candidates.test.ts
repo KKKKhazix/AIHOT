@@ -167,6 +167,8 @@ test("daily composition waits for a pre-cutoff release to commit instead of losi
     commit.open();
     await publication;
     await report;
+    // Keep the next issue non-empty while checking that the earlier release is not repeated.
+    await selected("next-period", "2020-01-04T00:01:00Z", "2020-01-04T00:02:00Z");
     await composeDaily("2020-01-05");
     const reports = await sql<{ key: string; content: { sections: Array<{ items: Array<{ itemId: string }> }> } }[]>`
       SELECT key, content FROM reports WHERE kind = 'daily' AND key IN ('2020-01-04', '2020-01-05')`;

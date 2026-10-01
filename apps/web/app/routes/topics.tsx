@@ -1,5 +1,6 @@
-import { Link, useLoaderData } from "react-router";
-import { apiGet } from "../lib/api.server";
+import { data as withHeaders, Link, useLoaderData } from "react-router";
+import type { Route } from "./+types/topics";
+import { apiGet, releaseBoundCache } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
 
 interface TopicSummary {
@@ -14,15 +15,17 @@ interface TopicSummary {
 }
 
 export async function loader({ request }: { request: Request }) {
-  return apiGet<{ topics: TopicSummary[] }>("/api/site/topics", { signal: request.signal });
+  const upstream = new Headers();
+  const data = await apiGet<{ topics: TopicSummary[]; refreshAt: string | null }>("/api/site/topics", { signal: request.signal, responseHeaders: upstream });
+  return withHeaders(data, { headers: releaseBoundCache(data.refreshAt, 300, Date.now(), upstream) });
 }
 
 export function meta() {
   return pageMeta({ title: "主题", description: "按公司与模型、技术方向、内容形态聚合的 AI 主题页：OpenAI、Anthropic、Agent、多模态、论文与教程等 38 个方向。", path: "/topics", image: "/og/pages/topics.png" });
 }
 
-export function headers() {
-  return { "Cache-Control": "public, max-age=0, s-maxage=300, stale-while-revalidate=600" };
+export function headers({ loaderHeaders }: Route.HeadersArgs) {
+  return loaderHeaders;
 }
 
 const GROUPS = [

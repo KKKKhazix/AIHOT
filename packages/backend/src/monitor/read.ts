@@ -1,12 +1,12 @@
+import { siteUrl } from "../publication/links.ts";
 // Codex reset monitor read layer: the v1 codex-resets snapshot and the /codex-reset page read the
 // same events. Announcement, in-progress, confirmation and "should have landed" stay distinct;
 // passing an announced time never turns into a confirmation.
 import { addDays, beijingDate, beijingMidnight } from "@aihot/contracts/time";
 import type { CodexCalendarMark, CodexResetMonitor, CodexResetPageData, CodexResetsSnapshot } from "@aihot/contracts/monitor";
-import { sql } from "../db.ts";
+import { sql, type Db } from "../db.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { proxiedImage } from "../media/imgproxy.ts";
-import { siteUrl } from "../publication/links.ts";
 
 export const MONITOR_PAGE_URL = siteUrl("/codex-reset");
 /** After the estimated window passes: "expired_unconfirmed" first, then "likely_completed". */
@@ -63,14 +63,17 @@ interface LinkRow {
 
 export type PresentationStatus = "announced" | "in_progress" | "confirmed" | "expired_unconfirmed" | "likely_completed";
 
+/**
+ * The window decides first (as the legacy page did): an announcement whose estimated window has passed
+ * reads as late, then as likely landed, even if Tibo once said it was under way; "in progress" only
+ * holds while the window is still open.
+ */
 export function presentationStatus(e: Pick<EventRow, "status" | "estimate" | "schedule" | "presentation">, now: number): PresentationStatus {
   if (e.status === "confirmed") return "confirmed";
-  if (e.presentation?.inProgress) return "in_progress";
   const window = e.estimate ?? e.schedule;
-  if (!window) return "announced";
-  const through = Date.parse(window.through);
-  if (now < through) return "announced";
-  return now < through + LIKELY_COMPLETED_AFTER_MS ? "expired_unconfirmed" : "likely_completed";
+  const through = window ? Date.parse(window.through) : null;
+  if (through !== null && now >= through) return now < through + LIKELY_COMPLETED_AFTER_MS ? "expired_unconfirmed" : "likely_completed";
+  return e.presentation?.inProgress ? "in_progress" : "announced";
 }
 
 /**
@@ -89,29 +92,33 @@ export function eventTitle(type: EventRow["type"], status: EventRow["status"], s
   return credit ? "Tibo 预告将发放重置卡" : "Tibo 预告将重置额度";
 }
 
-/** The Beijing day an event belongs to on the calendar. */
-export function eventDay(e: Pick<EventRow, "occurred_on" | "confirmed_at" | "estimate" | "schedule" | "created_at">): string {
-  if (e.occurred_on) return e.occurred_on.toISOString().slice(0, 10);
-  if (e.confirmed_at) return beijingDate(e.confirmed_at);
-  const window = e.estimate ?? e.schedule;
-  if (window) return beijingDate(window.from);
-  return beijingDate(e.created_at);
+async function loadHealth(db: Db = sql) {
+  const state = new Map((await db<{ key: string; value: any }[]>`
+    SELECT key, value FROM monitor_state WHERE key IN ('watermarks', 'history', 'held', 'cursor')`).map((r) => [r.key, r.value]));
+  const [counts] = await db<{ pending: number; review: number }[]>`
+    SELECT count(*) FILTER (WHERE processed_at IS NULL) AS pending,
+           count(*) FILTER (WHERE recognition->>'needsReview' = 'true' AND coalesce(recognition->>'reviewed', 'false') <> 'true') AS review
+    FROM monitor_posts`;
+  return { state, counts: counts ?? { pending: 0, review: 0 } };
 }
 
-async function loadAll() {
-  const events = await sql<EventRow[]>`
-    SELECT id, type, status, title, scope, label, display_label, schedule, estimate, presentation, confirmed_at, occurred_on, confirmation_basis, created_at, updated_at
-    FROM monitor_events WHERE NOT withdrawn ORDER BY updated_at DESC, id ASC`;
-  const links = await sql<LinkRow[]>`SELECT event_id, post_id, stage, text, original_text FROM monitor_event_posts`;
-  const posts = await sql<PostRow[]>`
-    SELECT id, published_at, text, translation, url, context, activity, outage FROM monitor_posts
-    WHERE activity IS NOT NULL OR outage IS NOT NULL OR id IN (SELECT post_id FROM monitor_event_posts)`;
-  const state = new Map((await sql<{ key: string; value: any }[]>`SELECT key, value FROM monitor_state`).map((r) => [r.key, r.value]));
-  const [counts] = await sql<{ pending: number; review: number }[]>`
-    SELECT count(*) FILTER (WHERE processed_at IS NULL) AS pending,
-           count(*) FILTER (WHERE recognition->>'needsReview' = 'true') AS review
-    FROM monitor_posts`;
-  return { events, links, posts: new Map(posts.map((p) => [p.id, p])), state, counts: counts ?? { pending: 0, review: 0 } };
+async function loadAll(now: number, from?: number) {
+  // Events, links and posts must describe one committed state, including during admin corrections.
+  return sql.begin("isolation level repeatable read read only", async (db) => {
+    const allEvents = await db<EventRow[]>`
+      SELECT id, type, status, title, scope, label, display_label, schedule, estimate, presentation, confirmed_at, occurred_on, confirmation_basis, created_at, updated_at
+      FROM monitor_events WHERE NOT withdrawn ORDER BY updated_at DESC, id ASC`;
+    const events = from === undefined ? allEvents : allEvents.filter((e) => e.updated_at.getTime() >= from
+      || (e.presentation && ["announced", "in_progress", "expired_unconfirmed"].includes(presentationStatus(e, now))));
+    const links = await db<LinkRow[]>`SELECT event_id, post_id, stage, text, original_text FROM monitor_event_posts
+      WHERE ${from === undefined ? db`true` : db`event_id = ANY(${events.map((e) => e.id)}::text[])`}`;
+    const posts = await db<PostRow[]>`
+      SELECT id, published_at, text, translation, url, context, activity, outage FROM monitor_posts
+      WHERE (activity IS NOT NULL AND ${from === undefined ? db`true` : db`published_at >= ${new Date(from)}`})
+        OR (outage IS NOT NULL AND ${from === undefined ? db`true` : db`published_at >= ${new Date(now - OUTAGE_VISIBLE_MS)}`})
+        OR id = ANY(${links.map((l) => l.post_id)}::text[])`;
+    return { events, links, posts: new Map(posts.map((p) => [p.id, p])), ...await loadHealth(db) };
+  });
 }
 
 function eventJson(e: EventRow, links: LinkRow[], posts: Map<string, PostRow>, now: number) {
@@ -130,7 +137,6 @@ function eventJson(e: EventRow, links: LinkRow[], posts: Map<string, PostRow>, n
       }
     : null;
   const eventPosts = links
-    .filter((l) => l.event_id === e.id)
     .map((l) => ({ l, post: posts.get(l.post_id) }))
     .filter((x): x is { l: LinkRow; post: PostRow } => !!x.post)
     .sort((a, b) => b.post.published_at.getTime() - a.post.published_at.getTime() || (a.l.post_id < b.l.post_id ? 1 : -1))
@@ -173,15 +179,18 @@ function contextJson(context: PostRow["context"]) {
   return context.map((c) => ({ id: c.id, author: c.author, relation: c.relation, text: c.text, originalText: c.originalText, url: c.url }));
 }
 
-export type CodexResetEventJson = ReturnType<typeof eventJson>;
 
 function monitorJson(state: Map<string, any>, counts: { pending: number; review: number }, now: number) {
   const w = state.get("watermarks") as { lastAttemptAt?: string; lastCollectedAt?: string; lastVerifiedAt?: string } | undefined;
   if (!w) return null;
   const verified = w.lastVerifiedAt ? Date.parse(w.lastVerifiedAt) : NaN;
-  const held = Number(state.get("held")?.count ?? 0);
+  const held = Number(state.get("held")?.count ?? 0) + (state.get("cursor")?.backlog?.length ?? 0);
   const age = now - verified;
-  const status: CodexResetMonitor["status"] = !Number.isFinite(verified) ? "unknown" : age <= 40 * 60_000 ? "healthy" : age <= 3 * 3600_000 ? "delayed" : "attention";
+  // Unresolved work outranks a fresh check (legacy presentResetMonitor): a held window or a post
+  // waiting for a person needs attention, a post not yet processed means the picture is delayed.
+  const status: CodexResetMonitor["status"] = !Number.isFinite(verified) ? "unknown"
+    : held > 0 || Number(counts.review) > 0 || age > 3 * 3600_000 ? "attention"
+      : Number(counts.pending) > 0 || age > 40 * 60_000 ? "delayed" : "healthy";
   return {
     status,
     lastAttemptAt: bjIso(w.lastAttemptAt),
@@ -202,27 +211,27 @@ export const RECENT_DAYS = 7;
  * month; this one carries what a poller acts on in a few KB.
  */
 export async function codexResetsRecent(now = Date.now()): Promise<CodexResetsSnapshot> {
-  const full = await codexResetsSnapshot(now);
   // Whole Beijing days, so the answer (and its ETag) only changes when the content does.
   const from = beijingMidnight(addDays(beijingDate(now), -RECENT_DAYS)).getTime();
-  const open = new Set(["announced", "in_progress", "expired_unconfirmed"]);
-  const since = (at: string | null) => at !== null && Date.parse(at) >= from;
-  const events = full.events.filter((e) => since(e.updatedAt) || (e.presentation && open.has(e.presentation.status)));
-  return {
-    ...full,
-    historyFrom: bjIso(new Date(Math.max(from, full.historyFrom ? Date.parse(full.historyFrom) : from))),
-    count: events.length,
-    events,
-    activities: full.activities.filter((a) => since(a.publishedAt)),
-  };
+  return snapshot(now, from);
 }
 
 /** The complete public snapshot served at GET /api/v1/codex-resets. */
 export async function codexResetsSnapshot(now = Date.now()): Promise<CodexResetsSnapshot> {
-  const { events, links, posts, state, counts } = await loadAll();
-  const eventJsons = events.map((e) => eventJson(e, links, posts, now));
+  return snapshot(now);
+}
+
+async function snapshot(now: number, from?: number): Promise<CodexResetsSnapshot> {
+  const { events, links, posts, state, counts } = await loadAll(now, from);
+  const linksByEvent = new Map<string, LinkRow[]>();
+  for (const link of links) {
+    const group = linksByEvent.get(link.event_id) ?? [];
+    group.push(link);
+    linksByEvent.set(link.event_id, group);
+  }
+  const eventJsons = events.map((e) => eventJson(e, linksByEvent.get(e.id) ?? [], posts, now));
   const activities = [...posts.values()]
-    .filter((p) => p.activity)
+    .filter((p) => p.activity && (from === undefined || p.published_at.getTime() >= from))
     .sort((a, b) => b.published_at.getTime() - a.published_at.getTime())
     .map((p) => ({
       id: p.id,
@@ -256,7 +265,7 @@ export async function codexResetsSnapshot(now = Date.now()): Promise<CodexResets
     timezone: "Asia/Shanghai" as const,
     today: beijingDate(now),
     checkedAt: monitor?.lastVerifiedAt ?? null,
-    historyFrom: bjIso(state.get("history")?.from ?? "2026-06-12T00:00:00+08:00"),
+    historyFrom: bjIso(new Date(Math.max(from ?? -Infinity, Date.parse(state.get("history")?.from ?? "2026-06-12T00:00:00+08:00")))),
     count: eventJsons.length,
     events: eventJsons,
     activities,
@@ -267,8 +276,9 @@ export async function codexResetsSnapshot(now = Date.now()): Promise<CodexResets
 
 type CalendarMark = CodexCalendarMark;
 
-function versionHash(events: Array<[string, string | null, PresentationStatus | undefined]>, outage: string | null): string {
-  return sha256(stableJson({ events, outage })).slice(0, 16);
+function versionHash(events: Array<[string, string | null, PresentationStatus | undefined]>, outage: string | null, monitor: CodexResetMonitor | null): string {
+  const health = monitor && [monitor.status, monitor.pendingCount, monitor.reviewCount, monitor.heldWindowCount];
+  return sha256(stableJson({ events, outage, health })).slice(0, 16);
 }
 
 /** Everything /codex-reset renders, derived from the same snapshot as v1. */
@@ -286,17 +296,28 @@ export async function codexResetPage(now = Date.now()): Promise<CodexResetPageDa
   const since = addDays(today, -90);
   const landed = marks.filter((m) => m.state !== "pending");
   const inWindow = landed.filter((m) => m.date > since && m.date <= today);
-  const resetDays = [...new Set(landed.filter((m) => m.type === "direct_reset").map((m) => m.date))].sort();
-  const recentResetDays = resetDays.filter((d) => d > since);
-  const intervals = recentResetDays.slice(1).map((d, i) => Math.round((Date.parse(d) - Date.parse(recentResetDays[i]!)) / 86400_000));
-  const sorted = [...intervals].sort((a, b) => a - b);
-  const median = sorted.length ? (sorted.length % 2 ? sorted[(sorted.length - 1) / 2]! : (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2) : null;
+  const resetDays = [...new Set(landed.filter((m) => m.type === "direct_reset" && m.state === "confirmed" && m.date <= today).map((m) => m.date))].sort();
+  // The interval is between rounds, not between calendar days (legacy resetStats): each reset at the
+  // moment it landed (confirmation, verified day at noon, or the estimate's start when only likely),
+  // two resets on one day are two rounds, and the median keeps one decimal.
+  const landedAt = (e: (typeof snap.events)[number]) => {
+    const st = e.presentation?.status ?? (e.status === "confirmed" ? "confirmed" : "announced");
+    if (st === "confirmed") return Date.parse(e.occurredOn ? `${e.occurredOn}T12:00:00+08:00` : (e.confirmedAt ?? e.createdAt!));
+    const from = (e.estimate ?? e.schedule)?.from;
+    return st === "likely_completed" && from ? Date.parse(from) : null;
+  };
+  const sinceMs = now - 90 * 86400_000;
+  const rounds = snap.events.filter((e) => e.type === "direct_reset").map(landedAt).filter((t): t is number => t !== null && t <= now && t >= sinceMs).sort((a, b) => a - b);
+  const intervals = rounds.slice(1).map((t, i) => (t - rounds[i]!) / 86400_000).sort((a, b) => a - b);
+  const mid = Math.floor(intervals.length / 2);
+  const median = intervals.length ? Math.round((intervals.length % 2 ? intervals[mid]! : (intervals[mid - 1]! + intervals[mid]!) / 2) * 10) / 10 : null;
   const pending = snap.events.find((e) => e.presentation && ["announced", "in_progress", "expired_unconfirmed"].includes(e.presentation.status));
   // Tibo's current X avatar, from his latest collected post.
   const [author] = await sql<{ avatar: string | null }[]>`
     SELECT x_post->>'avatarUrl' AS avatar FROM articles
     WHERE source_id = 'x-account-thsottiaux' AND x_post ? 'avatarUrl' ORDER BY discovered_at DESC LIMIT 1`;
-  const lastLanded = snap.events.find((e) => e.presentation?.status === "confirmed" || e.presentation?.status === "likely_completed");
+  const lastLanded = snap.events.filter((e) => landedAt(e) !== null)
+    .sort((a, b) => landedAt(b)! - landedAt(a)!)[0];
   return {
     ...snap,
     current: pending ?? null,
@@ -306,13 +327,13 @@ export async function codexResetPage(now = Date.now()): Promise<CodexResetPageDa
       resets90: inWindow.filter((m) => m.type === "direct_reset").length,
       credits90: inWindow.filter((m) => m.type === "reset_credit").length,
       medianIntervalDays: median,
-      lastResetDate: resetDays.filter((d) => landed.some((m) => m.date === d && m.state === "confirmed")).at(-1) ?? null,
+      lastResetDate: resetDays.at(-1) ?? null,
     },
     calendar: marks,
     confirmMinutes: snap.events
       .filter((e) => e.type === "direct_reset" && e.confirmedAt && e.confirmationBasis === "source_post")
       .map((e) => Number(e.confirmedAt!.slice(11, 13)) * 60 + Number(e.confirmedAt!.slice(14, 16))),
-    version: versionHash(snap.events.map((e) => [e.id, e.updatedAt, e.presentation?.status]), snap.outage?.postId ?? null),
+    version: versionHash(snap.events.map((e) => [e.id, e.updatedAt, e.presentation?.status]), snap.outage ? `${snap.outage.postId}${snap.outage.recoveredAt ? `:${new Date(snap.outage.recoveredAt).toISOString()}` : ""}` : null, snap.monitor),
   };
 }
 
@@ -320,16 +341,17 @@ export async function codexResetPage(now = Date.now()): Promise<CodexResetPageDa
 export async function codexResetVersion(now = Date.now()) {
   // Keep clock-driven transitions in the hash, without loading posts, citations, calendars or avatars.
   type VersionEvent = Pick<EventRow, "id" | "updated_at" | "status" | "estimate" | "schedule" | "presentation">;
-  const [events, [outage], [state]] = await Promise.all([
+  const [events, [outage], health] = await Promise.all([
     sql<VersionEvent[]>`SELECT id, updated_at, status, estimate, schedule, presentation
       FROM monitor_events WHERE NOT withdrawn ORDER BY updated_at DESC, id ASC`,
-    sql<{ id: string }[]>`SELECT id FROM monitor_posts WHERE outage IS NOT NULL AND outage <> 'null'::jsonb
+    sql<{ id: string }[]>`SELECT id || coalesce(':' || (outage->>'recoveredAt'), '') AS id FROM monitor_posts WHERE outage IS NOT NULL AND outage <> 'null'::jsonb
       AND published_at >= ${new Date(now - OUTAGE_VISIBLE_MS)} ORDER BY published_at DESC, id COLLATE "C" ASC LIMIT 1`,
-    sql<{ verified: string | null }[]>`SELECT value->>'lastVerifiedAt' AS verified FROM monitor_state WHERE key = 'watermarks'`,
+    loadHealth(),
   ]);
+  const monitor = monitorJson(health.state, health.counts, now);
   return {
-    version: versionHash(events.map((e) => [e.id, bjIso(e.updated_at), e.presentation ? presentationStatus(e, now) : undefined]), outage?.id ?? null),
-    checkedAt: bjIso(state?.verified),
+    version: versionHash(events.map((e) => [e.id, bjIso(e.updated_at), e.presentation ? presentationStatus(e, now) : undefined]), outage?.id ?? null, monitor),
+    checkedAt: monitor?.lastVerifiedAt ?? null,
     today: beijingDate(now),
   };
 }

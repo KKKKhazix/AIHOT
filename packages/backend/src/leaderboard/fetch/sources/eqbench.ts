@@ -3,6 +3,7 @@
 import { guardedFetch } from "../../../lib/http-fetch.ts";
 import { configurationOf } from "../configuration.ts";
 import { headCommit } from "../github.ts";
+import { parseCsv } from "../csv.ts";
 import type { FetchResult, Fetcher, ParsedRow } from "../types.ts";
 
 const BOARDS = [
@@ -13,10 +14,10 @@ const BOARDS = [
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 /** First template literal holding a CSV that starts with model_name. */
-function leaderboardCsv(js: string): string[][] {
+function leaderboardCsv(js: string): Array<Record<string, string>> {
   const m = /`\s*(model_name,[^`]+)`/.exec(js);
   if (!m) throw new Error("eqbench: leaderboard CSV not found");
-  return m[1]!.trim().split(/\r?\n/).map((l) => l.split(","));
+  return parseCsv(m[1]!);
 }
 
 export const eqbench: Fetcher = {
@@ -27,14 +28,14 @@ export const eqbench: Fetcher = {
     for (const b of BOARDS) {
       const res = await guardedFetch(`https://eqbench.com/${b.file}`, { timeoutMs: 30_000, maxBytes: 16 * 1024 * 1024 });
       if (res.status !== 200) throw new Error(`eqbench ${b.file} HTTP ${res.status}`);
-      const [header, ...lines] = leaderboardCsv(res.text());
-      const col = header!.indexOf(b.column);
-      if (col < 0) throw new Error(`eqbench ${b.file}: column ${b.column} missing`);
+      const lines = leaderboardCsv(res.text());
+      if (!lines[0] || !(b.column in lines[0])) throw new Error(`eqbench ${b.file}: column ${b.column} missing`);
       const rows: ParsedRow[] = [];
       for (const line of lines) {
-        const name = line[0]!.replace(/^\*/, "").trim();
-        const score = Number(line[col]);
-        if (!name || !Number.isFinite(score)) continue;
+        const name = line.model_name?.replace(/^\*/, "").trim();
+        const value = line[b.column]?.trim();
+        const score = Number(value);
+        if (!name || !value || !Number.isFinite(score)) continue;
         rows.push({
           sourceModelName: name,
           keyName: slug(name),

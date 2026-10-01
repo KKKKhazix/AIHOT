@@ -3,31 +3,14 @@ import { useState } from "react";
 import { Link, useFetcher } from "react-router";
 import { useEffect } from "react";
 import type { Route } from "./+types/runs";
+import type { AdminDeliveryIssue, AdminReceiptIssue, AdminRuns } from "@aihot/contracts/admin";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { ago, bj, duration, num } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, DataTable, Dot, Empty, Field, Json, ReasonDialog, Select, Stat, Time } from "../../features/admin/ui";
 
-type Row = Record<string, any>;
-interface Runs {
-  checkedAt: string;
-  processes: Array<{ role: string; pid: number; host: string; release: string; startedAt: string; at: string; alive: boolean }>;
-  jobs: Row[];
-  timeline: Row[];
-  queues: Array<{ name: string; state: string; n: number; oldest: string }>;
-  failedJobs: Row[];
-  lagging: Row[];
-  receipts: { counts: Record<string, number>; issues: Row[] };
-  deliveries: Row[];
-  errors: Row[];
-  retrying: { count: number; next: string | null };
-  ingest: Row[];
-  leaderboard: { at: string; sources: Array<{ key: string; ok: boolean; at: string; lastOkAt: string | null; changed?: boolean; rows?: number; error?: string }> } | null;
-}
-
-
 export async function loader({ request }: Route.LoaderArgs) {
-  return adminGet<Runs>(request, "/api/admin/runs");
+  return adminGet<AdminRuns>(request, "/api/admin/runs");
 }
 
 export const meta: Route.MetaFunction = () => [{ title: `运行 · ${SITE.name} 后台` }];
@@ -38,9 +21,9 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
   const refresh = useFetcher<typeof loader>();
   const r = refresh.data ?? loaderData;
   const { run, pending } = useAdminAction();
-  const [receipt, setReceipt] = useState<Row | null>(null);
+  const [receipt, setReceipt] = useState<AdminReceiptIssue | null>(null);
   const [billed, setBilled] = useState("false");
-  const [delivery, setDelivery] = useState<Row | null>(null);
+  const [delivery, setDelivery] = useState<AdminDeliveryIssue | null>(null);
   const [outcome, setOutcome] = useState<"sent" | "drop" | "resend">("sent");
   // Failure group to put back into processing ("" = every failure of the last 30 days).
   const [requeue, setRequeue] = useState<string | null>(null);

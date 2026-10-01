@@ -56,7 +56,7 @@ export default function StarredPage() {
   const doImport = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const report = importBundle(await file.text());
+      const report = await importBundle(await file.text());
       setNotice({ kind: report.readFailed ? "error" : "ok", text: `导入完成：${reportText(report)}` });
     } catch (e) {
       setNotice({ kind: "error", text: e instanceof Error ? e.message : "导入失败" });

@@ -8,9 +8,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
-import { detachFromFact } from "@aihot/backend/admin/content";
+import { detachFromFact } from "@aihot/backend/events/corrections";
 import { upsertMaterial } from "@aihot/backend/content/materials";
-import { groupArticle, linkRelatedStories } from "@aihot/backend/events/group";
+import { groupArticle } from "@aihot/backend/events/group";
+import { linkRelatedStories } from "@aihot/backend/events/consolidate";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
 

@@ -53,7 +53,7 @@ export function headers() {
 }
 
 export default function LeaderboardPage() {
-  const { board, entries, filterEntries, run } = useLoaderData<typeof loader>();
+  const { board, entries, filterEntries, pending, run } = useLoaderData<typeof loader>();
   const [filters, setFilters] = useState<string[]>([]);
   const domestic = filters.includes("domestic");
   const openWeights = filters.includes("open-weights");
@@ -89,6 +89,11 @@ export default function LeaderboardPage() {
         </div>
         {shown.length ? <BoardTable entries={shown} board={board.key} /> : <p role="status" className="border-t border-line px-5 py-10 text-center text-[14px] text-ink-3">当前榜单暂无符合条件的模型。</p>}
         <div className="border-t border-line px-4 py-3 text-[12px] leading-relaxed text-ink-4 lg:px-[22px]">
+          {!filtered && pending.length > 0 && <p className="mb-1 text-ink-3">
+            综合榜前十中暂未进入{board.name}榜：{pending.map((p, i) => <span key={p.model.slug}>
+              {i > 0 && "、"}<Link to={`/leaderboard/${p.model.slug}`} className="font-medium text-ink-2 hover:text-accent">{p.model.name}</Link>（已有 {p.sources} 项{board.name}评测）
+            </span>)}。分类榜只比较测过同类评测的模型。
+          </p>}
           <p>按多项公开评测的共同证据排名。每个榜单或筛选结果最多展示 30 个模型，筛选后保留原榜名次与分数。</p>
           {filtered && <p>国产厂商按模型开发方归属筛选，不代表所有版本均可在国内直接使用。开放权重仅收录已核验的官方权重，使用许可与部署要求请查看权重页面。</p>}
           <p>共识指数不是正确率；同分仍按共同证据确定的名次展示。</p>

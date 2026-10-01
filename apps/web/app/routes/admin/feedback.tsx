@@ -1,6 +1,7 @@
 import { SITE } from "@aihot/industry/site";
 import { useState } from "react";
 import { Form, useSearchParams } from "react-router";
+import type { AdminFeedback, AdminFeedbackRow } from "@aihot/contracts/admin";
 import type { Route } from "./+types/feedback";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
@@ -8,40 +9,17 @@ import { bj } from "../../features/admin/format";
 import { FEEDBACK_STATUS } from "../../features/admin/labels";
 import { AdminPage, Badge, Button, Card, Empty, FilterChips, Input, Pager, ReasonDialog, Select, Textarea, Time } from "../../features/admin/ui";
 
-interface Feedback {
-  id: number;
-  content: string;
-  email: string | null;
-  page_url: string | null;
-  /** local (viewable here until forwarded), feishu (in the internal chat), gone (could not be forwarded), or null. */
-  screenshot: "local" | "feishu" | "gone" | null;
-  source_hash: string;
-  status: string;
-  note: string | null;
-  forwarded_at: string | null;
-  forward_error: string | null;
-  created_at: string;
-  updated_at: string;
-  banned: boolean;
-  from_source: number;
-}
 
-interface Data {
-  page: number;
-  rows: Feedback[];
-  counts: Record<string, number>;
-  bans: Array<{ source_hash: string; reason: string | null; created_by: string | null; created_at: string }>;
-}
 
 export async function loader({ request }: Route.LoaderArgs) {
-  return adminGet<Data>(request, `/api/admin/feedback${new URL(request.url).search}`);
+  return adminGet<AdminFeedback>(request, `/api/admin/feedback${new URL(request.url).search}`);
 }
 
 export const meta: Route.MetaFunction = () => [{ title: `反馈 · ${SITE.name} 后台` }];
 
 const TONE: Record<string, "accent" | "warn" | "ok" | "muted"> = { new: "accent", triaged: "warn", replied: "ok", resolved: "ok", spam: "muted" };
 
-function FeedbackCard({ f }: { f: Feedback }) {
+function FeedbackCard({ f }: { f: AdminFeedbackRow }) {
   const { run, pending } = useAdminAction();
   const [note, setNote] = useState(f.note ?? "");
   const [dialog, setDialog] = useState<null | "ban" | "erase">(null);

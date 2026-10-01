@@ -117,6 +117,31 @@ async function queryTopicCounts(now: Date): Promise<TopicCountSnapshot> {
   return { counts, refreshAt: Number.isFinite(deadline) ? new Date(deadline).toISOString() : null };
 }
 
+/** Detail pages count only their topic, while retaining the directory's global deadlines. */
+async function queryTopicCount(slug: string, now: Date): Promise<{ count: TopicCount; refreshAt: string | null }> {
+  // Counts use fresh matching tags, as the directory does; metadata and item tags remain cached.
+  const [topic] = await sql<Array<Pick<TopicRow, "entity_id" | "tags">>>`
+    SELECT entity_id, tags FROM topics WHERE slug = ${slug}`;
+  const recentMs = 30 * 86400_000;
+  // The directory compares JavaScript Dates, which truncate PostgreSQL's sub-millisecond precision.
+  const recentStart = new Date(now.getTime() - recentMs + 1);
+  const [row] = await sql<{ total: number; recent: number; latest: Date | null; pending: Date | null; oldest_recent: Date | null }[]>`
+    SELECT count(*)::int AS total,
+      count(*) FILTER (WHERE p.timeline_at >= ${recentStart})::int AS recent,
+      max(p.timeline_at) AS latest,
+      (SELECT min(p.visible_after) FROM publications p WHERE ${pendingReleaseCondition(now)}) AS pending,
+      (SELECT min(p.timeline_at) FROM publications p
+        WHERE ${selectedCondition(now)} AND p.timeline_at >= ${recentStart}) AS oldest_recent
+    FROM publications p
+    WHERE ${selectedCondition(now)} AND p.tags && ${topic ? topicMatchTags(topic) : []}::text[]`;
+  const { total, recent, latest } = row!;
+  const deadline = Math.min(row!.pending?.getTime() ?? Infinity, row!.oldest_recent ? row!.oldest_recent.getTime() + recentMs : Infinity);
+  return {
+    count: { slug, total, recent, latest, pages: Math.max(1, Math.ceil(total / TOPIC_PAGE_SIZE)), indexable: total >= 50 || (total >= 20 && recent > 0) },
+    refreshAt: Number.isFinite(deadline) ? new Date(deadline).toISOString() : null,
+  };
+}
+
 export interface TopicSummary {
   slug: string;
   name: string;
@@ -151,12 +176,13 @@ export interface TopicPage {
 }
 
 export async function loadTopicPage(slug: string, page: number, now = new Date()): Promise<TopicPage | null> {
-  const row = await loadTopic(slug);
+  const topics = await listTopics();
+  const row = topics.find((t) => t.slug === slug);
   if (!row || !Number.isInteger(page) || page < 1) return null;
-  const { topics, refreshAt } = await loadTopicDirectory(now);
-  const topic = topics.find((t) => t.slug === slug);
-  if (!topic) return null;
-  const pageCount = Math.max(1, Math.ceil(topic.total / TOPIC_PAGE_SIZE));
+  const { count, refreshAt } = await queryTopicCount(slug, now);
+  const topic: TopicSummary = { slug: row.slug, name: row.name, group: row.grp, definition: row.definition,
+    total: count.total, recent: count.recent, indexable: count.indexable, latestAt: count.latest?.toISOString() ?? null };
+  const pageCount = count.pages;
   if (page < 1 || page > pageCount) return null;
   // Page ids from the selected set first, then the joins for those rows only.
   const rows = await sql<ItemRow[]>`
@@ -167,6 +193,6 @@ export async function loadTopicPage(slug: string, page: number, now = new Date()
       LIMIT ${TOPIC_PAGE_SIZE} OFFSET ${(page - 1) * TOPIC_PAGE_SIZE})
     SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id IN (SELECT article_id FROM page)
     ORDER BY p.timeline_at DESC, p.article_id DESC`;
-  const related = row.related.map((r) => topics.find((t) => t.slug === r)).filter((t): t is TopicSummary => !!t).map((t) => ({ slug: t.slug, name: t.name }));
+  const related = row.related.map((r) => topics.find((t) => t.slug === r)).filter((t): t is TopicRow => !!t).map((t) => ({ slug: t.slug, name: t.name }));
   return { topic: { ...topic, related }, items: rows.map(toFeedItemSummary), page, pageCount, refreshAt };
 }

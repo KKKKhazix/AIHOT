@@ -168,6 +168,21 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   // discovery only: its title and summary are its own rendering, and taking them made the article flip
   // between the two sources' versions on every fetch. Only the article's own source revises it.
   if (existing!.source_id !== m.sourceId) return unchanged;
+  // Fields this report knows and the row is still missing. A listing can learn a date after the fact:
+  // the source's date rule was added later, or the feed moved to an API that carries one. Everything
+  // below only runs when the content itself changed, so without this the row keeps published_at NULL
+  // forever and every later reader shows the discovery time instead of the publication time.
+  // Only ever fills a blank: a date already stored is never overwritten by a later report, so a feed
+  // that shifts its own dates cannot move one that is already known.
+  if (m.publishedAt || m.author || m.language) {
+    await db`UPDATE articles SET
+               published_at = coalesce(published_at, ${m.publishedAt ?? null}),
+               author = coalesce(author, ${m.author ?? null}),
+               language = coalesce(language, ${m.language ?? null}),
+               updated_at = now()
+             WHERE id = ${existing!.id}
+               AND (published_at IS NULL OR author IS NULL OR language IS NULL)`;
+  }
   // What the row will hold after this report: a listing without body keeps the stored (extracted) body.
   const bodyText = m.bodyText ?? existing!.body_text;
   const excerpt = m.excerpt ?? existing!.excerpt;

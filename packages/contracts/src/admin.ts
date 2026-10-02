@@ -385,6 +385,7 @@ export interface AdminModelUsage {
 }
 
 export interface AdminModels {
+  connection: import("./model-connection.ts").ModelConnectionView;
   days: number;
   capabilities: Array<{ key: string; label: string; env: string; defaultModel: string; vision: boolean; current: { model: string; source: "admin" | "env" | "default" }; usage: AdminModelUsage[] }>;
   choices: Array<{ key: string; service: string; vision: boolean }>;

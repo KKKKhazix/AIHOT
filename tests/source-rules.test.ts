@@ -30,6 +30,7 @@ const pages: Record<string, (base: string) => string> = {
   [`/p/b-${T}`]: () => html(`<meta name="description" content="Summary of B"><meta property="article:published_time" content="2026-01-01T00:00:00Z">`, `<article><h1>Detail heading B ${T}</h1><p>${ARTICLE_BODY}</p></article>`),
   [`/j/1-${T}`]: () => html(`<meta property="article:published_time" content="2026-09-27T01:00:00Z">`, "<p>one</p>"),
   [`/j/2-${T}`]: () => html(`<meta property="article:published_time" content="2026-09-27T02:00:00Z">`, "<p>two</p>"),
+  [`/image-${T}`]: () => html("", '<img src="/logo.png"><div class="notice"><img src="/prices.png" alt="挂牌价"><div class="share">分享</div></div><footer>联系我们</footer>'),
 };
 // Jina Reader: GET /<target URL> answers the rendering, with its header lines.
 const jina = (base: string, target: string) => {
@@ -43,7 +44,10 @@ const jina = (base: string, target: string) => {
 const server = http.createServer((req, res) => {
   const path = req.url ?? "";
   pageReads.set(path, (pageReads.get(path) ?? 0) + 1);
-  const body = path.startsWith("/http") ? jina(base, path.slice(1)) : Object.hasOwn(pages, path) ? pages[path]!(base) : null;
+  const body = path.startsWith("/http") && path.endsWith(`/rendered-${T}`)
+    ? req.headers["x-return-format"] === "html" ? pages[`/image-${T}`]!(base) : "整页菜单".repeat(200)
+    : path.startsWith("/http") && path.endsWith(`/markdown-${T}`) ? `Markdown Content:\n\n${ARTICLE_BODY}\n\n![价格表](${base}/prices.png)`
+    : path.startsWith("/http") ? jina(base, path.slice(1)) : Object.hasOwn(pages, path) ? pages[path]!(base) : null;
   res.writeHead(body === null ? 404 : 200, { "content-type": path.endsWith(".xml") ? "application/rss+xml" : "text/html; charset=utf-8" });
   res.end(body ?? "");
 });
@@ -64,6 +68,7 @@ const SOURCES = {
     },
   },
   jina: { kind: "web_list", config: { url: `https://r.jina.ai/${base}/jlist-${T}`, parseMode: "markdown", allowUrlPrefixes: [`${base}/j/`], detail: { maxFetches: 5, titleRegex: "^# (.+)$" } } },
+  image: { kind: "web_list", config: { body: { selector: ".notice", removeSelectors: [".share"] } } },
 };
 const id = (name: keyof typeof SOURCES) => `test-rules-${name}-${T}`;
 let savedJina: Array<{ per_minute: number; per_hour: number; per_day: number }> = [];
@@ -136,4 +141,51 @@ test("detail HTML supplies the ordinary extracted body once, while short pages k
   assert.deepEqual([full!.body_html, full!.body_text, full!.body_status], [expected.html, expected.text, "ok"]);
   assert.equal(await extractArticleBody(full!.id, false), "skipped");
   assert.equal(pageReads.get(`/p/b-${T}`), 1, "known listings and extraction never download the same confirmed body again");
+});
+
+test("worker re-extraction applies source body rules and replaces stale logo media", async () => {
+  const { upsertMaterial } = await import("@aihot/backend/content/materials");
+  const { articleId } = await upsertMaterial({ sourceId: id("image"), url: `${base}/image-${T}`, title: "挂牌公告", via: "fetch",
+    bodyText: "旧菜单", bodyHtml: "<p>旧菜单</p>", bodyStatus: "pending", media: [{ kind: "image", url: `${base}/logo.png` }] });
+  assert.equal(await extractArticleBody(articleId, false), "ok");
+  const [row] = await sql`SELECT body_html, body_text, body_status, media, revision FROM articles WHERE id = ${articleId}`;
+  assert.deepEqual([row!.body_text, row!.body_status, row!.revision], ["", "ok", 2]);
+  assert.doesNotMatch(row!.body_html, /logo|分享|联系|旧菜单/);
+  assert.equal(row!.media[0].url, `${base}/prices.png`);
+  const { fetchDetail } = await import("@aihot/backend/sources/web-list");
+  const detail = await fetchDetail(`${base}/image-${T}`, { config: SOURCES.image.config } as never, { date: true, title: false, summary: false, body: true });
+  assert.equal(detail.body!.html, row!.body_html, "metadata reuse follows the same rules as the worker");
+});
+
+test("Jina fallback enforces the same body container and retains Markdown images for vision", async () => {
+  const { extractFromUrl } = await import("@aihot/backend/content/extract");
+  const opts = { allowJina: true, subject: `test:${T}`, body: SOURCES.image.config.body };
+  const body = await extractFromUrl(`${base}/rendered-${T}`, opts);
+  assert.equal(body!.via, "jina");
+  assert.deepEqual(body!.images.map((image) => image.url), [`${base}/prices.png`]);
+  assert.doesNotMatch(body!.markdown, /logo|分享|联系|菜单/);
+  assert.equal(await extractFromUrl(`${base}/rendered-${T}`, { ...opts, body: { selector: ".missing" } }), null);
+  const generic = await extractFromUrl(`${base}/markdown-${T}`, { allowJina: true, subject: `test:${T}` });
+  assert.equal(generic!.images[0]!.url, `${base}/prices.png`, "generic Markdown fallback also supplies image metadata");
+});
+
+
+test("detail collection persists the selected DOM and its confirmed selector for later image rules", async () => {
+  const sourceId = `reading-detail-${T}`;
+  pages[`/reading-list-${T}`] = () => html("", `<div class="news"><a href="/image-${T}">模型服务发布最新价格公告</a></div>`);
+  await sql`INSERT INTO sources (id, name, kind, config) VALUES (${sourceId}, 'Detail reading fixture', 'web_list',
+    ${sql.json({ url: `${base}/reading-list-${T}`, itemSelector: ".news", linkSelector: "a", titleSelector: "a",
+      detail: { maxFetches: 2, publishedAtSelector: "time" }, body: { selector: ".notice", images: { keepSelectors: [".notice img"] } } })})`;
+  // Use a distinct URL from the re-extraction fixture so this entrance owns the new material.
+  pages[`/reading-image-${T}`] = pages[`/image-${T}`]!;
+  pages[`/reading-list-${T}`] = () => html("", `<div class="news"><a href="/reading-image-${T}">模型服务发布最新价格公告</a></div>`);
+  const collected = await collectSource(sourceId, { force: true });
+  assert.equal(collected.status, "ok", collected.error ?? "collection failed");
+  const [row] = await sql`SELECT body_snapshot_html, body_snapshot_selector, body_status FROM articles WHERE source_id = ${sourceId}`;
+  assert.ok(row);
+  assert.equal(row.body_status, "ok");
+  assert.equal(row.body_snapshot_selector, ".notice");
+  const { bodyBlocks } = await import("@aihot/backend/content/blocks");
+  const blocks = bodyBlocks(row.body_snapshot_html, base, { images: { keepSelectors: [".notice img"] } });
+  assert.equal(blocks.find((b) => b.kind === "image")?.rule, "keep");
 });

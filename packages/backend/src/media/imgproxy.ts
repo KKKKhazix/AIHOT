@@ -34,6 +34,8 @@ export function proxyExpiry(nowMs = Date.now(), lifetimeSeconds = LIFETIME_SECON
 export function proxiedImage(url: string | null | undefined, mode: ProxyMode, absolute = false, nowMs = Date.now(), lifetimeSeconds = LIFETIME_SECONDS): string | null {
   if (!url) return null;
   if (isTrackingImage(url)) return null;
+  const snapshot = readingSnapshotPath(url);
+  if (snapshot) return absolute ? `${config.siteUrl}${snapshot}` : snapshot;
   if (url.startsWith("data:")) return url;
   if (!/^https?:\/\//i.test(url)) return null;
   const exp = proxyExpiry(nowMs, lifetimeSeconds);
@@ -43,8 +45,15 @@ export function proxiedImage(url: string | null | undefined, mode: ProxyMode, ab
 
 /** Browser source candidates, each independently signed with the same expiry boundary. */
 export function proxiedImageSet(url: string | null | undefined, kind: ResponsiveImageKind, absolute = false, nowMs = Date.now(), lifetimeSeconds = LIFETIME_SECONDS): string | null {
+  if (url && readingSnapshotPath(url)) return null;
   if (!url || !/^https?:\/\//i.test(url) || isTrackingImage(url)) return null;
   return RESPONSIVE_MODES[kind].map((mode) => `${proxiedImage(url, mode, absolute, nowMs, lifetimeSeconds)} ${IMAGE_WIDTHS[mode]}w`).join(", ");
+}
+
+function readingSnapshotPath(url: string): string | null {
+  if (!url.startsWith(`${config.siteUrl}/`)) return null;
+  const path = url.slice(config.siteUrl.length);
+  return /^\/api\/site\/items\/[a-zA-Z0-9_-]{1,80}\/body-images\/[a-f0-9]{64}$/.test(path) ? path : null;
 }
 
 export type VerifyResult = { ok: true; url: string; mode: string } | { ok: false; reason: "missing" | "expired" | "bad-signature" | "bad-url" };

@@ -236,10 +236,10 @@ export async function groupArticle(articleId: string, opts: GroupOptions = {}): 
 
 async function decide(articleId: string, opts: GroupOptions): Promise<GroupResult> {
   const [a] = await sql<ArticleRow[]>`
-    SELECT a.id, a.revision, a.title, a.url, a.published_at, a.discovered_at, a.grouped_at, a.body_text, a.x_post, a.backfill,
+    SELECT a.id, a.revision, a.title, a.url, a.published_at, a.discovered_at, a.grouped_at, coalesce(p.body_text, a.body_text) AS body_text, coalesce(p.x_post, a.x_post) AS x_post, a.backfill,
            s.id AS source_id, s.name AS source_name, s.signal_group_id, s.first_party, s.participation_mode,
            EXISTS (SELECT 1 FROM regroup_pending rp WHERE rp.article_id = a.id) AS regroup_pending
-    FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId}`;
+    FROM articles a JOIN sources s ON s.id = a.source_id LEFT JOIN publications p ON p.article_id = a.id WHERE a.id = ${articleId}`;
   if (!a) return { verdict: "skipped" };
   const observedAt = a.published_at ?? a.discovered_at;
   const source = { id: a.source_id, signal_group_id: a.signal_group_id };
@@ -274,7 +274,10 @@ async function decide(articleId: string, opts: GroupOptions): Promise<GroupResul
   }
 
   const [an] = await sql<{ id: number; relevance: string | null; title_zh: string | null; summary_zh: string | null; output: Record<string, any> | null }[]>`
-    SELECT id, relevance, title_zh, summary_zh, output FROM analyses WHERE article_id = ${articleId} ORDER BY input_revision DESC, id DESC LIMIT 1`;
+    SELECT an.id, an.relevance, an.title_zh, an.summary_zh, an.output FROM analyses an
+    LEFT JOIN publications p ON p.article_id = an.article_id
+    WHERE an.article_id = ${articleId} AND (p.analysis_id = an.id OR p.analysis_id IS NULL)
+    ORDER BY an.input_revision DESC, an.id DESC LIMIT 1`;
   // 人工更正优先；旧analysis的事件框架不能把被改掉的主张重新带回来。
   const corrected = !!publication && (publication.title !== an?.title_zh || publication.summary !== an?.summary_zh);
   const frame = (corrected ? null : an?.output?.fact ?? null) as Record<string, any> | null;

@@ -4,6 +4,9 @@
 import { invalidateStoryInputs } from "../events/derived-content.ts";
 import { SITE } from "@aihot/industry/site";
 import { toPublicApiCategory } from "@aihot/contracts/taxonomy";
+import { loadReading, readingImages, validReading } from "../content/reading.ts";
+import { snapshotBodyImages, snapshotPostImages } from "./reading.ts";
+import { bodyReadingMode } from "../content/reading-config.ts";
 import { config } from "../config.ts";
 import { one, sql, type Tx } from "../db.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
@@ -15,6 +18,10 @@ import {
 } from "./rules.ts";
 
 interface ArticleRow {
+  revision: number;
+  reading_generation: number;
+  accepted_reading_id: number | null;
+  body_html: string | null;
   id: string;
   source_id: string;
   url: string;
@@ -31,6 +38,7 @@ interface ArticleRow {
 }
 
 interface AnalysisRow {
+  input_reading_id: number | null;
   id: number;
   relevance: string | null;
   category: string | null;
@@ -49,6 +57,12 @@ interface OverrideRow {
 }
 
 interface PublicationRow {
+  x_post: unknown;
+  analysis_id: number | null;
+  reading_id: number | null;
+  body_html: string | null;
+  body_text: string | null;
+  input_revision: number | null;
   article_id: string;
   revision: number;
   visibility: string;
@@ -101,6 +115,8 @@ export interface PublishResult {
   ledger: "upsert" | "remove" | null;
   /** Something that was public is now shown less (withdrawn, out of the pool or selection, full text revoked). */
   reduced: boolean;
+  readingChanged?: boolean;
+  silent?: boolean;
 }
 
 function pickString(override: unknown, fallback: string | null): string | null {
@@ -148,7 +164,7 @@ export async function publishArticle(articleId: string, options: PublishOptions 
 
 export async function publishArticleTx(tx: Tx, articleId: string, options: PublishOptions = {}): Promise<PublishResult | null> {
   const [article] = await tx<ArticleRow[]>`
-    SELECT id, source_id, url, title, language, published_at, discovered_at, timeline_at, backfill, body_status,
+    SELECT id, revision, reading_generation, accepted_reading_id, body_html, source_id, url, title, language, published_at, discovered_at, timeline_at, backfill, body_status,
            body_text, x_post, grouped_at
     FROM articles WHERE id = ${articleId} FOR UPDATE`;
   if (!article) return null;
@@ -159,23 +175,39 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   const [source] = await tx<SourceFacts[]>`
     SELECT id, name, kind, tier, participation_mode, first_party, site_fulltext, syndicate_fulltext FROM sources WHERE id = ${article.source_id}`;
   if (!source) return null;
-  const [analysis] = await tx<AnalysisRow[]>`
-    SELECT id, relevance, category, tags, subjects, title_zh, summary_zh, reason_zh, score, selected
-    FROM analyses WHERE article_id = ${articleId} ORDER BY input_revision DESC, id DESC LIMIT 1`;
+  const [previous] = await tx<PublicationRow[]>`SELECT * FROM publications WHERE article_id = ${articleId}`;
+  const accepted = article.accepted_reading_id ? await loadReading(article.accepted_reading_id, tx) : null;
+  const ready = validReading(article, accepted) ? accepted : null;
+  const canAdvance = bodyReadingMode() !== "active" || !!ready;
+  const [latest] = await tx<AnalysisRow[]>`
+    SELECT id, input_reading_id, relevance, category, tags, subjects, title_zh, summary_zh, reason_zh, score, selected
+    FROM analyses WHERE article_id = ${articleId} AND input_revision = ${article.revision}
+      AND input_reading_id IS NOT DISTINCT FROM ${ready?.id ?? null}::bigint
+    ORDER BY id DESC LIMIT 1`;
+  const advancing = canAdvance && !!latest;
+  const [retained] = !advancing && previous?.analysis_id ? await tx<AnalysisRow[]>`SELECT * FROM analyses WHERE id = ${previous.analysis_id}` : [];
+  const analysis = advancing ? latest : retained;
+  const evidence = advancing ? ready : previous?.reading_id ? await loadReading(previous.reading_id, tx) : null;
+  const evidenceImages = evidence && advancing ? await readingImages(evidence.id, tx) : [];
+  const bodyHtml = advancing && evidence ? snapshotBodyImages(articleId, evidence.body_html ?? "", evidence.source_blocks, evidenceImages)
+    : !previous || advancing ? article.body_html : previous.body_html;
+  const bodyText = advancing || !previous ? evidence?.body_text ?? article.body_text : previous.body_text;
+  const xPost = advancing && evidence && source.site_fulltext ? snapshotPostImages(articleId, article.x_post, evidenceImages)
+    : advancing || !previous ? article.x_post : previous.x_post;
+  const inputRevision = advancing || !previous ? article.revision : previous.input_revision;
+  const bodyStatus = evidence || (!advancing && previous?.body_html) ? "ok" : article.body_status;
   const [override] = await tx<OverrideRow[]>`SELECT fields, visibility FROM editorial_overrides WHERE article_id = ${articleId}`;
   const [membership] = await tx<{ fact_id: number; story_id: number | null }[]>`
     SELECT fa.fact_id, f.story_id FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id
     LEFT JOIN stories s ON s.id = f.story_id
     WHERE fa.article_id = ${articleId} AND fa.role IN ('primary', 'report') AND (s.id IS NULL OR s.merged_into IS NULL)
     ORDER BY (fa.role = 'primary') DESC, fa.created_at LIMIT 1`;
-  const [previous] = await tx<PublicationRow[]>`SELECT * FROM publications WHERE article_id = ${articleId}`;
-
   const f = override?.fields ?? {};
   const isChineseTitle = article.language === "zh" || /[一-鿿]/.test(article.title);
   // An X post carries its Chinese in the summary and translation; without a Chinese title its own
   // text is the title, where an article would still be a half-finished card.
   const zhTitle = analysis?.title_zh?.trim() ? analysis.title_zh : null;
-  const title = pickString(f.title, zhTitle ?? (isChineseTitle || article.x_post ? collapseWhitespace(article.title) : null));
+  const title = pickString(f.title, zhTitle ?? (!advancing && previous ? previous.title : isChineseTitle || article.x_post ? collapseWhitespace(article.title) : null));
   const summary = pickString(f.summary, analysis?.summary_zh ?? null);
   const category = pickString(f.category, analysis?.category ?? null);
   const tags = Array.isArray(f.tags) ? (f.tags as string[]) : [...new Set([...(analysis?.tags ?? []), ...(analysis?.subjects ?? []).map((s) => `entity:${s}`)])];
@@ -188,11 +220,13 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   const eligible = isPoolEligible({ participationMode: source.participation_mode, relevance, title, summary });
   const selected = isSelectable(eligible, judgedSelected, source.tier);
   const reason = selected ? pickString(f.reason, analysis?.reason_zh ?? null) : null;
-  const hasXPost = !!article.x_post;
+  const hasXPost = !!xPost;
   const channel = channelOf(source.kind, hasXPost);
-  const bodyMode = bodyModeOf(source, article.body_status, !!article.body_text && article.body_text.length > 0);
+  const hasBody = !!bodyText?.trim() || /<(img|table|video)\b/i.test(bodyHtml ?? "");
+  const bodyMode = bodyModeOf(source, bodyStatus, hasBody && (bodyReadingMode() !== "active" || advancing || previous?.body_mode === "full"));
   const syndicate = mayRedistribute(source, bodyMode);
-  const originalTitle = isChineseTitle && title === collapseWhitespace(article.title) ? null : collapseWhitespace(article.title);
+  if (evidence && bodyMode === "full") await tx`UPDATE article_readings SET published_at = coalesce(published_at, now()) WHERE id = ${evidence.id}`;
+  const originalTitle = !advancing && previous ? previous.original_title : isChineseTitle && title === collapseWhitespace(article.title) ? null : collapseWhitespace(article.title);
 
   // Release gate: first time the item met the selected conditions, released after grouping or 180 s.
   let selectedReadyAt = previous?.selected_ready_at ?? null;
@@ -233,7 +267,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   const next = {
     visibility, eligible, selected, title: title ?? collapseWhitespace(article.title), original_title: originalTitle, summary, reason,
     category, tags, score: round1(score), body_mode: bodyMode, story_id: membership?.story_id ?? null, fact_id: membership?.fact_id ?? null,
-    indexable,
+    indexable, reading_id: evidence?.id ?? null, body_hash: sha256(stableJson({ html: bodyHtml, xPost })),
   };
   const changed =
     !previous ||
@@ -243,18 +277,20 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
         original_title: previous.original_title, summary: previous.summary, reason: previous.reason, category: previous.category,
         tags: [...previous.tags].sort(), score: previous.score === null ? null : Number(previous.score), body_mode: previous.body_mode,
         story_id: previous.story_id, fact_id: previous.fact_id, indexable: previous.indexable,
+        reading_id: previous.reading_id, body_hash: sha256(stableJson({ html: previous.body_html, xPost: previous.x_post })),
       });
   const revision = previous ? previous.revision + (changed ? 1 : 0) : 1;
 
   await tx`
-    INSERT INTO publications (article_id, analysis_id, revision, visibility, eligible, selected, title, original_title, summary,
+    INSERT INTO publications (article_id, analysis_id, reading_id, body_html, body_text, x_post, input_revision, revision, visibility, eligible, selected, title, original_title, summary,
       reason, category, tags, score, source_id, channel, first_party, url, published_at, discovered_at, timeline_at, backfill,
       selected_ready_at, visible_after, body_mode, syndicate, indexable, story_id, fact_id, search_text, sort_at, updated_at)
-    VALUES (${articleId}, ${analysis?.id ?? null}, ${revision}, ${visibility}, ${eligible}, ${selected}, ${next.title},
+    VALUES (${articleId}, ${analysis?.id ?? null}, ${evidence?.id ?? null}, ${bodyHtml}, ${bodyText}, ${xPost ? tx.json(xPost as never) : null}, ${inputRevision}, ${revision}, ${visibility}, ${eligible}, ${selected}, ${next.title},
       ${originalTitle}, ${summary}, ${reason}, ${category}, ${tags}, ${next.score}, ${source.id}, ${channel}, ${source.first_party},
       ${article.url}, ${article.published_at}, ${article.discovered_at}, ${article.timeline_at}, ${article.backfill},
       ${selectedReadyAt}, ${visibleAfter}, ${bodyMode}, ${syndicate}, ${indexable}, ${next.story_id}, ${next.fact_id}, ${searchText}, ${sortAt}, now())
     ON CONFLICT (article_id) DO UPDATE SET
+      x_post = EXCLUDED.x_post, reading_id = EXCLUDED.reading_id, body_html = EXCLUDED.body_html, body_text = EXCLUDED.body_text, input_revision = EXCLUDED.input_revision,
       analysis_id = EXCLUDED.analysis_id, revision = EXCLUDED.revision, visibility = EXCLUDED.visibility,
       eligible = EXCLUDED.eligible, selected = EXCLUDED.selected, title = EXCLUDED.title, original_title = EXCLUDED.original_title,
       summary = EXCLUDED.summary, reason = EXCLUDED.reason, category = EXCLUDED.category, tags = EXCLUDED.tags,
@@ -264,7 +300,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
       visible_after = EXCLUDED.visible_after, body_mode = EXCLUDED.body_mode, syndicate = EXCLUDED.syndicate,
       indexable = EXCLUDED.indexable, story_id = EXCLUDED.story_id, fact_id = EXCLUDED.fact_id,
       search_text = EXCLUDED.search_text, sort_at = EXCLUDED.sort_at, updated_at = now()
-    WHERE (publications.analysis_id, publications.revision, publications.visibility, publications.eligible,
+    WHERE (publications.x_post, publications.reading_id, publications.body_html, publications.body_text, publications.input_revision, publications.analysis_id, publications.revision, publications.visibility, publications.eligible,
         publications.selected, publications.title, publications.original_title, publications.summary,
         publications.reason, publications.category, publications.tags, publications.score,
         publications.source_id, publications.channel, publications.first_party, publications.url,
@@ -272,7 +308,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
         publications.selected_ready_at, publications.visible_after, publications.body_mode, publications.syndicate,
         publications.indexable, publications.story_id, publications.fact_id, publications.search_text,
         publications.sort_at)
-      IS DISTINCT FROM (EXCLUDED.analysis_id, EXCLUDED.revision, EXCLUDED.visibility, EXCLUDED.eligible,
+      IS DISTINCT FROM (EXCLUDED.x_post, EXCLUDED.reading_id, EXCLUDED.body_html, EXCLUDED.body_text, EXCLUDED.input_revision, EXCLUDED.analysis_id, EXCLUDED.revision, EXCLUDED.visibility, EXCLUDED.eligible,
         EXCLUDED.selected, EXCLUDED.title, EXCLUDED.original_title, EXCLUDED.summary,
         EXCLUDED.reason, EXCLUDED.category, EXCLUDED.tags, EXCLUDED.score,
         EXCLUDED.source_id, EXCLUDED.channel, EXCLUDED.first_party, EXCLUDED.url,
@@ -283,7 +319,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
 
   // The pool search row follows eligibility; its body part only covers full text the site may show.
   if (eligible) {
-    const body = bodyMode === "full" ? (article.body_text ?? "").slice(0, 12000).toLowerCase() : "";
+    const body = bodyMode === "full" ? (bodyText ?? "").slice(0, evidence ? 60_000 : 12000).toLowerCase() : "";
     await tx`INSERT INTO pool_search (article_id, direct, body) VALUES (${articleId}, ${searchText}, ${body})
              ON CONFLICT (article_id) DO UPDATE SET direct = EXCLUDED.direct, body = EXCLUDED.body
              WHERE pool_search.direct IS DISTINCT FROM EXCLUDED.direct OR pool_search.body IS DISTINCT FROM EXCLUDED.body`;
@@ -293,7 +329,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
 
   // Content-group push: once, for an item that arrives live and becomes selected (never for imports,
   // backfill or stale-on-discovery material); it runs after the release gate opens.
-  if (selected && !previous?.selected_ready_at && !options.releasedAt && !article.backfill && visibility === "public") {
+  if (selected && !evidence?.silent && !previous?.selected_ready_at && !options.releasedAt && !article.backfill && visibility === "public") {
     const at = visibleAfter && visibleAfter > now ? visibleAfter : now;
     await enqueue(QUEUES.notifySelected, { articleId }, { singletonKey: `selected:${articleId}`, startAfter: new Date(at.getTime() + 5_000) }, tx);
     // Its images are fetched and resized now, before the release gate lets readers in.
@@ -335,7 +371,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
       (previous.visibility !== visibility || previous.eligible !== eligible || previous.title !== next.title || previous.summary !== summary)) {
     await invalidateStoryInputs(tx, [articleId], now);
   }
-  return { articleId, changed, selected, visibility, ledger, reduced };
+  return { articleId, changed, selected, visibility, ledger, reduced, readingChanged: !!previous && previous.reading_id !== (evidence?.id ?? null), silent: evidence?.silent ?? false };
 }
 
 /** The search-index decision and resulting projection share the editor's transaction. */

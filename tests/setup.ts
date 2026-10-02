@@ -29,6 +29,9 @@ for (const [name, model] of Object.entries(AIHOT_MODELS)) process.env[name] ??= 
  * A local HTTP stub standing in for a paid provider; `answer` builds every response from the request
  * (it may wait, to hold a request open while a test changes something).
  */
+let localProviders = 0;
+let previousModelCalls = false;
+
 export async function stub(answer: (hit: number, req: { url: string; body: string }) => unknown) {
   let hits = 0;
   const server = http.createServer((req, res) => {
@@ -43,8 +46,14 @@ export async function stub(answer: (hit: number, req: { url: string; body: strin
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const { config } = await import("@aihot/backend/config");
+  if (localProviders++ === 0) previousModelCalls = config.modelCallsEnabled;
+  config.modelCallsEnabled = true;
   const { port } = server.address() as { port: number };
-  return { url: `http://127.0.0.1:${port}`, hits: () => hits, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+  return { url: `http://127.0.0.1:${port}`, hits: () => hits, close: () => new Promise<void>((resolve) => server.close(() => {
+    if (--localProviders === 0) config.modelCallsEnabled = previousModelCalls;
+    resolve();
+  })) };
 }
 
 /** A stub answer with its own status (e.g. a provider's 503); anything else is a 200 JSON body. */

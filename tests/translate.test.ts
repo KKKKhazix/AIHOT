@@ -50,8 +50,8 @@ const material = (price: string) =>
     bodyHtml: `<p>The price is ${price} dollars (${T}).</p>`, bodyStatus: "ok", via: "fetch", publishedAt: new Date(), discoveredAt: new Date(Date.now() + 600_000),
   });
 
-async function detail(id: string) {
-  const res = await app.inject({ method: "GET", url: `/api/site/items/${id}` });
+async function detail(id: string, original = false) {
+  const res = await app.inject({ method: "GET", url: `/api/site/items/${id}${original ? "/original" : ""}` });
   assert.equal(res.statusCode, 200);
   return JSON.parse(res.body) as { body: { zh: string | null; original: string | null; complete: boolean } };
 }
@@ -67,7 +67,7 @@ after(async () => {
   await closeDb();
 });
 
-test("a text corrected while its translation was running is translated again, and the old translation is not shown", async () => {
+test("a corrected source retains the coherent publication until new analysis publishes, then translates the new version", async () => {
   const { articleId: id } = await material("ten");
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, reason_zh, score, selected)
             VALUES (${id}, 1, 'rule', 'pass', 'ai-models', ${`价格更新-${T}`}, '摘要', '理由', 90, true)`;
@@ -86,8 +86,15 @@ test("a text corrected while its translation was running is translated again, an
   const [attempt] = await sql<{ revision: number; outcome: string }[]>`SELECT revision, outcome FROM translation_attempts WHERE article_id = ${id}`;
   assert.deepEqual({ ...attempt }, { revision: 1, outcome: "translated" }, "the attempt is booked on the revision translated");
   const stale = await detail(id);
-  assert.equal(stale.body.zh, null, "a translation of the old wording is not shown");
-  assert.ok(stale.body.original?.includes("twenty"));
+  assert.match(stale.body.zh!, /十美元/, "the old translation still belongs to the current published snapshot");
+  assert.ok((await detail(id, true)).body.original?.includes("ten"));
+
+  await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, score, selected)
+    VALUES (${id}, 2, 'rule', 'pass', 'domestic-supply', ${`价格更新-${T}`}, '新版摘要', 90, true)`;
+  await publishArticle(id);
+  const awaiting = await detail(id);
+  assert.equal(awaiting.body.zh, null, "the old translation cannot be mixed with the new publication");
+  assert.ok(awaiting.body.original?.includes("twenty"));
 
   await translatePending({ limit: 1 });
   const [tr] = await sql<{ revision: number }[]>`SELECT revision FROM translations WHERE article_id = ${id}`;

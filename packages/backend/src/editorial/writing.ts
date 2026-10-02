@@ -76,8 +76,10 @@ export function needsShortTweetTranslation(text: string): boolean {
 const unfetchedXArticle = (a: AnalyzeInputArticle) => !!a.xPost && a.bodyStatus !== "ok" && onlyXArticleLink(String(a.xPost.text ?? ""));
 
 function materialQuality(a: AnalyzeInputArticle): string {
+  if (a.readingId) return `已确认正文和图片文字（读取版本 ${a.readingId}）`;
   if (a.xPost) return "完整正文（来自 RSS / API 自带的 content 字段）";
   if (a.bodyText) return a.source.fetchesBody ? "完整正文（抓自原始网页）" : "完整正文（来自 RSS / API 自带的 content 字段）";
+  if (a.media.some((m) => m.kind === "image")) return "正文含图片；实际可见范围以本次附带图片为准，未读取不等于未披露";
   if (a.excerpt) return "仅摘要（feed 未提供完整正文）";
   if (a.bodyStatus === "unconfirmed") return "抓取失败，仅标题可用";
   return "无有效文本";
@@ -100,7 +102,7 @@ export function renderContext(a: AnalyzeInputArticle, opts: { annotateQuoted?: b
   lines.push(`【原文链接】${a.url}`);
   lines.push(`【标题】${a.title}`);
   const quoted = a.xPost?.quoted?.text ? a.xPost.quoted : null;
-  if (quoted) {
+  if (quoted && !a.readingId) {
     const label = quoted.handle ? `@${quoted.handle}` : "原推";
     if (opts.annotateQuoted) {
       lines.push(`【引用 ${label}】（以下是作者转发/引用的**他人**内容，不是作者本人的产出）`);
@@ -110,8 +112,8 @@ export function renderContext(a: AnalyzeInputArticle, opts: { annotateQuoted?: b
     }
   }
   lines.push("");
-  lines.push(opts.annotateQuoted && quoted ? "【正文（作者自己的内容）】" : "【正文】");
-  lines.push(capBody(a.xPost ? String(a.xPost.text ?? a.title) : (a.bodyText ?? a.excerpt ?? "(无正文)")));
+  lines.push(opts.annotateQuoted && quoted && !a.readingId ? "【正文（作者自己的内容）】" : "【正文】");
+  lines.push(a.readingId ? a.bodyText ?? "" : capBody(a.xPost ? String(a.xPost.text ?? a.title) : (a.bodyText ?? a.excerpt ?? "(无正文)")));
   lines.push("");
   lines.push(`【材料质量】${materialQuality(a)}`);
   return lines.join("\n");
@@ -155,6 +157,7 @@ function publisherEntityId(url?: string): string | null {
 }
 
 export interface TranslateInput {
+  readingId?: number | null;
   title: string;
   text: string;
   sourceKind: string;
@@ -172,8 +175,9 @@ export function translateInputOf(a: AnalyzeInputArticle): TranslateInput {
   const isX = a.source.kind === "x_search" || !!a.xPost;
   const mainText = isX ? String(a.xPost?.text ?? a.title) : undefined;
   return {
+    readingId: a.readingId,
     title: a.title,
-    text: isX ? (mainText ?? "") : (a.bodyText ?? a.excerpt ?? ""),
+    text: a.readingId ? a.bodyText ?? "" : isX ? (mainText ?? "") : (a.bodyText ?? a.excerpt ?? ""),
     sourceKind: isX ? "x_search" : a.source.kind,
     sourceName: a.source.name,
     documentUrl: a.url,
@@ -262,7 +266,7 @@ function answerFirstSummaryLengthOk(summary: string, input: TranslateInput): boo
   return trimmed.length <= 200 && trimmed.length >= (rich ? 80 : 50) && sentences <= 3 && (!rich || sentences >= 2);
 }
 
-export const isShortTweetInput = (input: TranslateInput) => input.sourceKind === "x_search" && isShortTweet(input.mainText || input.title);
+export const isShortTweetInput = (input: TranslateInput) => !input.readingId && input.sourceKind === "x_search" && isShortTweet(input.mainText || input.title);
 
 /** The length rule (compacted without another call) and the identity guard, for any writing model. */
 export function finalizeCopy(input: TranslateInput, copy: { titleZh: string; summaryZh: string }) {
@@ -287,7 +291,7 @@ export function buildArticlePrompt(input: TranslateInput): string {
     sourceName: sourceName(input.sourceName),
     identity: identityPrompt(input),
     title: input.title,
-    body: input.text ? clampText(cleanArticleTextForLLM(input.text), 6000) : promptText("summarize-article-empty"),
+    body: input.text ? input.readingId ? input.text : clampText(cleanArticleTextForLLM(input.text), 6000) : promptText("summarize-article-empty"),
   });
 }
 

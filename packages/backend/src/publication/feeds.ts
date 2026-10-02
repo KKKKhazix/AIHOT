@@ -58,7 +58,7 @@ ${items.join("\n")}
 }
 
 type FeedRow = Pick<ItemRow, "id" | "title" | "summary" | "url" | "category" | "published_at" | "discovered_at" | "source_name"> &
-  Partial<Pick<ItemRow, "channel" | "x_post" | "zh_text" | "quoted_zh" | "language" | "syndicate"> & {
+  Partial<Pick<ItemRow, "channel" | "x_post" | "zh_text" | "quoted_zh" | "language" | "syndicate" | "reading_id"> & {
     body_html: string | null; tr_html: string | null; tr_complete: boolean | null;
   }>;
 
@@ -73,7 +73,7 @@ const FEED_IMAGE_SECONDS = 7 * 86400;
 function fullContent(r: FeedRow, aihot: string): string | null {
   let html: string | null = null;
   const x = r.channel === "x" ? xView({ x_post: r.x_post ?? null, zh_text: r.zh_text ?? null, quoted_zh: r.quoted_zh ?? null }) : null;
-  if (x?.text) {
+  if (x?.text && !r.reading_id) {
     html = textToHtml(x.translation ?? x.text);
     if (x.quoted?.text) {
       html += `<blockquote><p>引用 @${escapeXml(x.quoted.handle)}：</p>${textToHtml(x.quoted.translation ?? x.quoted.text)}${x.quoted.url ? `<p><a href="${escapeXml(x.quoted.url)}">${escapeXml(x.quoted.url)}</a></p>` : ""}</blockquote>`;
@@ -125,13 +125,14 @@ export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKe
       ORDER BY coalesce(p.published_at, p.discovered_at) DESC, p.article_id DESC LIMIT 50
     )
     SELECT p.article_id AS id, p.title, p.summary, p.url, p.category, p.published_at, p.discovered_at, s.name AS source_name
-      ${includeContent ? sql`, p.channel, p.syndicate, a.language, a.x_post,
+      ${includeContent ? sql`, p.channel, p.syndicate, a.language, p.x_post, p.reading_id,
         CASE WHEN p.channel = 'x' THEN tr.body_text END AS zh_text, qt.text_zh AS quoted_zh,
-        a.body_html, tr.body_html AS tr_html, tr.complete AS tr_complete` : sql``}
+        CASE WHEN p.input_revision IS NULL THEN a.body_html ELSE p.body_html END AS body_html, tr.body_html AS tr_html, tr.complete AS tr_complete` : sql``}
     FROM page JOIN publications p ON p.article_id = page.article_id JOIN sources s ON s.id = p.source_id
     ${includeContent ? sql`LEFT JOIN articles a ON a.id = p.article_id AND p.syndicate
-      LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh' AND tr.revision >= a.revision
-      LEFT JOIN quote_translations qt ON p.channel = 'x' AND qt.tweet_id = substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')` : sql``}
+      LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh' AND tr.revision >= coalesce(p.input_revision, a.revision)
+        AND tr.reading_id IS NOT DISTINCT FROM p.reading_id
+      LEFT JOIN quote_translations qt ON p.channel = 'x' AND qt.tweet_id = substring(p.x_post->'quoted'->>'url' from '/status/([0-9]+)')` : sql``}
     ORDER BY coalesce(p.published_at, p.discovered_at) DESC, p.article_id DESC`;
   let meta: { title: string; description: string; homePath: string; selfPath: string; ttl: number };
   if (category) {

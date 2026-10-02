@@ -16,6 +16,7 @@ import { loadContact, loadMakerAvatar } from "@aihot/backend/site/contact";
 import { loadSiteStats } from "@aihot/backend/site/stats";
 import { itemAvailability } from "@aihot/backend/publication/availability";
 import { loadTopicDirectory, loadTopicPage } from "@aihot/backend/publication/topics";
+import { publishedReadingImage } from "@aihot/backend/publication/reading";
 import { registerFeedback } from "./feedback.ts";
 
 import { loadHot, loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
@@ -117,6 +118,12 @@ export function registerSite(app: FastifyInstance) {
     const result = await loadItemDetail(id);
     if (result.kind === "not_found") return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found", cacheControl: "public, max-age=60" });
     return sendJsonWithEtag(req, reply, siteItemDetail(result.detail), { etagPrefix: "item", cacheControl: "public, max-age=60, s-maxage=60" });
+  }));
+  app.get("/api/site/items/:id/body-images/:hash", siteHandler(async (req, reply) => {
+    const { id, hash } = req.params as { id: string; hash: string };
+    const image = await publishedReadingImage(id, hash);
+    if (!image) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "image not found" });
+    return reply.type("image/webp").header("Cache-Control", "private, no-store").send(image);
   }));
 
   app.get("/api/site/items/:id/original", siteHandler(async (req, reply) => {

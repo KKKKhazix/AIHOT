@@ -1,7 +1,7 @@
 import { selectedCondition, listedCondition } from "./scope.ts";
 // Item detail and Markdown export, both behind the same visibility and licence rules.
 import type { ItemDetail, SiteItemDetail, OutlineEntry, StoryRef } from "@aihot/contracts/site";
-import TurndownService from "turndown";
+import { bodyToMarkdown } from "../content/markdown.ts";
 import { sql } from "../db.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { textToHtml } from "../content/sanitize.ts";
@@ -38,7 +38,9 @@ function withOutline(html: string): { html: string; outline: OutlineEntry[] } {
 
 async function loadRow(id: string): Promise<DetailRow | null> {
   const [row] = await sql<DetailRow[]>`
-    SELECT ${ITEM_COLUMNS}, a.body_html, a.body_text, a.body_status, tr.body_html AS tr_html, tr.complete AS tr_complete
+    SELECT ${ITEM_COLUMNS},
+      CASE WHEN p.input_revision IS NULL THEN a.body_html ELSE p.body_html END AS body_html,
+      CASE WHEN p.input_revision IS NULL THEN a.body_text ELSE p.body_text END AS body_text, a.body_status, tr.body_html AS tr_html, tr.complete AS tr_complete
     ${ITEM_FROM}
     WHERE p.article_id = ${id}`;
   return row ?? null;
@@ -54,6 +56,11 @@ export async function loadItemDetail(id: string, now = new Date()): Promise<Deta
 
   const summary = toItemSummary(row);
   if (row.channel === "x" && row.body_mode === "full") summary.x = xView(row, false, true);
+  if (row.reading_id && row.body_mode === "full" && summary.x) {
+    // These are already in the ordered reading, with immutable images and the quoted author.
+    summary.x.media = [];
+    summary.x.quoted = null;
+  }
   if (row.visibility === "summary-only") {
     const detail: ItemDetail = {
       ...summary,
@@ -81,7 +88,7 @@ export async function loadItemDetail(id: string, now = new Date()): Promise<Deta
 
   let body: ItemDetail["body"] = null;
   let outline: OutlineEntry[] = [];
-  if (row.channel === "x" && row.body_mode === "full") {
+  if (row.channel === "x" && row.body_mode === "full" && !row.reading_id) {
     const text = String(row.x_post?.text ?? row.body_text ?? "");
     body = {
       zh: summary.x?.translation ? textToHtml(summary.x.translation) : null,
@@ -152,8 +159,6 @@ export function markdownAvailable(row: {
   return !!row.summary || (row.body_mode === "full" && ((row.channel === "x" && !!row.x_post?.text) || !!row.body_html));
 }
 
-const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced", bulletListMarker: "-" });
-
 export async function exportMarkdown(id: string): Promise<{ filename: string; body: string } | null> {
   const row = await loadRow(id);
   if (!row || !markdownAvailable(row)) return null;
@@ -166,7 +171,7 @@ export async function exportMarkdown(id: string): Promise<{ filename: string; bo
   lines.push(`- 原文：${row.url}`, "");
   if (row.summary) lines.push("## 摘要", "", row.summary, "");
   if (row.selected && row.reason) lines.push("## 推荐理由", "", row.reason, "");
-  if (row.channel === "x" && row.body_mode === "full" && row.x_post?.text) {
+  if (row.channel === "x" && row.body_mode === "full" && row.x_post?.text && !row.reading_id) {
     lines.push("## 正文", "", String(row.x_post.text), "");
     if (row.zh_text) lines.push("## 中文译文", "", row.zh_text, "");
     const q = row.x_post.quoted as { handle?: string; text?: string; url?: string } | null | undefined;
@@ -174,8 +179,8 @@ export async function exportMarkdown(id: string): Promise<{ filename: string; bo
     if (q?.text && row.quoted_zh) lines.push("### 引用中文译文", "", ...row.quoted_zh.split("\n").map((l) => `> ${l}`), "");
   } else if (row.body_mode === "full" && row.body_html) {
     const isZh = row.language === "zh";
-    if (!isZh && row.tr_html && row.tr_complete) lines.push("## 正文 · 中文译文", "", turndown.turndown(row.tr_html), "");
-    lines.push(isZh ? "## 正文" : "## 正文 · 原文", "", turndown.turndown(row.body_html), "");
+    if (!isZh && row.tr_html && row.tr_complete) lines.push("## 正文 · 中文译文", "", bodyToMarkdown(row.tr_html, row.url), "");
+    lines.push(isZh ? "## 正文" : "## 正文 · 原文", "", bodyToMarkdown(row.body_html, row.url), "");
   }
   return { filename: `${SITE.mcpPrefix}-${row.id}.md`, body: lines.join("\n").replace(/\n{3,}/g, "\n\n") };
 }

@@ -7,6 +7,7 @@ import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { displayTags } from "./rules.ts";
 
 export interface ItemRow {
+  reading_id: number | null;
   id: string;
   revision: number;
   title: string;
@@ -54,11 +55,11 @@ export interface ItemRow {
 export const ITEM_COLUMNS = sql`
   p.article_id AS id, p.revision, p.title, p.original_title, p.summary, p.reason, p.category, p.tags, p.score,
   p.selected, p.eligible, p.channel, p.url, p.published_at, p.discovered_at, p.timeline_at, p.sort_at, p.first_party, p.visibility,
-  p.body_mode, p.syndicate, p.indexable, p.visible_after, p.backfill, p.fact_id, p.story_id,
+  p.reading_id, p.body_mode, p.syndicate, p.indexable, p.visible_after, p.backfill, p.fact_id, p.story_id,
   s.id AS source_id, s.name AS source_name, s.kind AS source_kind, s.participation_mode AS source_mode, s.icon_url AS source_icon,
-  a.x_post, a.author, a.language,
+  p.x_post, a.author, a.language,
   st.public_id::text AS story_public_id, st.title AS story_title,
-  CASE WHEN p.channel = 'x' THEN tr.body_text END AS zh_text, qt.text_zh AS quoted_zh`;
+  CASE WHEN p.channel = 'x' AND p.reading_id IS NULL THEN tr.body_text END AS zh_text, qt.text_zh AS quoted_zh`;
 
 /** Public API listings never render article bodies, X media or story metadata. */
 export type ApiItemRow = Pick<ItemRow, "id" | "title" | "original_title" | "summary" | "source_name" | "url" | "published_at" | "discovered_at" | "category" | "score" | "selected" | "reason">;
@@ -73,8 +74,9 @@ export const ITEM_FROM = sql`
   JOIN sources s ON s.id = p.source_id
   JOIN articles a ON a.id = p.article_id
   LEFT JOIN stories st ON st.id = p.story_id AND st.merged_into IS NULL
-  LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh' AND tr.revision >= a.revision
-  LEFT JOIN quote_translations qt ON p.channel = 'x' AND qt.tweet_id = substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')`;
+  LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh' AND tr.revision >= coalesce(p.input_revision, a.revision)
+    AND tr.reading_id IS NOT DISTINCT FROM p.reading_id
+  LEFT JOIN quote_translations qt ON p.channel = 'x' AND qt.tweet_id = substring(p.x_post->'quoted'->>'url' from '/status/([0-9]+)')`;
 
 export function channelCondition(channel: ChannelKey | null | undefined) {
   if (!channel || channel === "all") return sql``;

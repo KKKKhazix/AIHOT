@@ -27,6 +27,14 @@ function dropPromotions(html: string): string {
   return $.html();
 }
 
+/** Remove page furniture before sanitizing erases the attributes that identify it. */
+export function dropPageChrome(html: string, removeSelectors: string[] = []): string {
+  const $ = cheerio.load(html, null, /<html[\s>]/i.test(html));
+  $("nav, [role=navigation], [hidden], [aria-hidden=true], .navigation, .breadcrumb, .breadcrumbs, .site-header, .site-footer, .share-buttons, .related-articles, .related-posts, .cookie-banner").remove();
+  for (const selector of removeSelectors) $(selector).remove();
+  return $.html();
+}
+
 /**
  * Elements whose content is never article text: dropped with everything inside, where other unknown
  * tags are only unwrapped. A page's <template> blocks held hundreds of thousands of characters of
@@ -41,7 +49,7 @@ const DROP_WHOLE = [
 ];
 
 export function sanitizeBody(html: string, baseUrl?: string): string {
-  const cleaned = sanitizeHtml(dropPromotions(html), {
+  const cleaned = sanitizeHtml(dropPromotions(dropPageChrome(html)), {
     allowedTags: ALLOWED_TAGS,
     nonTextTags: DROP_WHOLE,
     allowedAttributes: {
@@ -130,6 +138,7 @@ const TRAILING_CHROME = [
   /^related (?:articles|posts|stories|content|reading|coverage)$/i, /^more (?:stories|articles|news)$/i, /^(?:keep reading|read next|up next)$/i,
   /^(?:you (?:might|may) also like|recommended(?: for you)?)$/i, /^(?:subscribe|sign up)\b.{0,80}$/i, /^share (?:this|on)\b.{0,40}$/i,
   /^follow us\b.{0,40}$/i, /^advertisement$/i,
+  /^(?:相关阅读|相关推荐|相关文章|热门推荐|返回顶部|返回列表|打印本页|关闭窗口|分享到|扫一扫关注|关注我们)$/,
 ];
 
 export function trimTrailingChrome(html: string): string {

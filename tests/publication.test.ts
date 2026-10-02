@@ -93,6 +93,20 @@ test("site reading sends one language while exports retain both, including after
   assert.equal((await get(`/api/site/items/${id}/original`)).status, 404);
 });
 
+test("Markdown exports retain body images and GFM tables and still obey full-text permissions", async () => {
+  const id = await article();
+  await sql`UPDATE articles SET language = 'zh', body_html = '<h2>价格</h2><table><tr><th>品种</th><th>美元</th></tr><tr><td>API</td><td>4200</td></tr></table><p><img src="https://example.org/prices.png" alt="公告原图"></p>' WHERE id = ${id}`;
+  await publishArticle(id, released());
+  const response = await get(`/items/${id}/markdown`);
+  assert.equal(response.status, 200);
+  assert.match(response.body, /\| API \| 4200 \|/);
+  assert.match(response.body, /!\[公告原图\]\(https:\/\/example.org\/prices.png\)/);
+  await sql`UPDATE publications SET body_mode = 'summary' WHERE article_id = ${id}`;
+  const summary = await get(`/items/${id}/markdown`);
+  assert.equal(summary.status, 200);
+  assert.doesNotMatch(summary.body, /4200|prices.png/);
+});
+
 test("revoking a source's licence takes its articles off every exit", async () => {
   const id = await article();
   await publishArticle(id, released());

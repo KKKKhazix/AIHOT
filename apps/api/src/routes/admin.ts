@@ -8,6 +8,7 @@ import { importSelectBenchRun, listSelectBenchRuns, selectBenchRun } from "@aiho
 import { modelsOverview, switchModel } from "@aihot/backend/admin/models";
 
 import { contentChain, overrideFields, rerun, searchContent, setSeoIndexed, setVisibility } from "@aihot/backend/admin/content";
+import { adminReadingImage, correctReading, requestReading } from "@aihot/backend/admin/readings";
 import { banSource, eraseFeedback, feedbackScreenshot, listFeedback, unbanSource, updateFeedback } from "@aihot/backend/admin/feedback";
 import { listMonitorEvents, listMonitorPosts, relinkPost, resolveMonitorPost, reviewReceipt, setWithdrawn, updateMonitorEvent } from "@aihot/backend/admin/monitor";
 import { requeueFailedArticles, runsOverview } from "@aihot/backend/admin/runs";
@@ -54,6 +55,14 @@ export function registerAdmin(app: FastifyInstance) {
   // Content and events (F19)
   app.get("/api/admin/content", adminHandler(async (req) => ({ rows: await searchContent(q(req).q ?? "") })));
   app.get("/api/admin/content/:id", adminHandler(async (req, reply) => orNotFound(req, reply, await contentChain(param(req, "id")))));
+  app.post("/api/admin/content/:id/read", adminHandler(async (req, reply, admin) =>
+    orNotFound(req, reply, await requestReading(param(req, "id"), String(req.headers["idempotency-key"] ?? ""), actorOf(admin), body(req).retry === true))));
+  app.post("/api/admin/content/:id/reading-correction", adminHandler(async (req, reply, admin) =>
+    orNotFound(req, reply, await correctReading(param(req, "id"), body(req), String(req.headers["idempotency-key"] ?? ""), actorOf(admin)))));
+  app.get("/api/admin/content/:id/readings/:readingId/images/:imageId", adminHandler(async (req, reply) => {
+    const image = await adminReadingImage(param(req, "id"), Number(param(req, "readingId")), param(req, "imageId"));
+    return image ? reply.type("image/webp").header("Cache-Control", "private, no-store").send(image) : notFound(req, reply);
+  }));
   app.post("/api/admin/content/:id/visibility", adminHandler(async (req, _reply, admin) => setVisibility(param(req, "id"), body(req) as never, actorOf(admin))));
   app.post("/api/admin/content/:id/seo", adminHandler(async (req, reply, admin) => orNotFound(req, reply, await setSeoIndexed(param(req, "id"), body(req) as never, actorOf(admin)))));
   app.post("/api/admin/content/:id/override", adminHandler(async (req, _reply, admin) => overrideFields(param(req, "id"), body(req) as never, actorOf(admin))));

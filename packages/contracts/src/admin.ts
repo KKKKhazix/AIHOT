@@ -141,6 +141,7 @@ export interface AdminContentSearch {
 
 /** The publications row of an item, as the publish step wrote it. */
 export interface AdminPublication {
+  reading_id: number | null;
   article_id: string;
   analysis_id: number | null;
   revision: number;
@@ -175,18 +176,31 @@ export interface AdminPublication {
   updated_at: Timestamp;
 }
 
+export interface AdminBodyReading {
+  id: number; input_revision: number; generation: number; mode: "shadow" | "active";
+  status: string; quality: string; model: string; prompt_version: string;
+  body_markdown: string | null; coverage: Record<string, number>; error: string | null;
+  silent: boolean; manual: boolean; created_at: Timestamp; finished_at: Timestamp | null; receipt_ids: number[];
+  images: Array<{
+    image_id: string; url: string; asset_hash: string | null; status: string; role: string | null;
+    markdown: string; reason: string | null; uncertainties: string[];
+  }>;
+}
+
 /** An item's whole chain: source → discoveries → revisions → judgements → publication → grouping → deliveries. */
 export interface AdminContentChain {
+  readings: AdminBodyReading[];
+  readingMode: "off" | "shadow" | "active";
   article: {
     id: string; source_id: string; url: string; identity_key: string; title: string; author: string | null; language: string | null;
     published_at: Timestamp | null; published_at_claim: string | null; discovered_at: Timestamp; timeline_at: Timestamp; backfill: boolean;
-    body_status: string; revision: number; processing_state: string; processing_error: string | null; grouped_at: Timestamp | null; body_chars: number | null;
+    body_status: string; revision: number; reading_generation: number; accepted_reading_id: number | null; processing_state: string; processing_error: string | null; grouped_at: Timestamp | null; body_chars: number | null;
     source_name: string; source_kind: string; tier: string; participation_mode: string; site_fulltext: boolean; syndicate_fulltext: boolean;
   };
   discoveries: Array<{ source_id: string; via: string; discovered_at: Timestamp }>;
   revisions: Array<{ revision: number; title: string; content_hash: string | null; created_at: Timestamp }>;
   analyses: Array<{
-    id: number; origin: string; model: string | null; prompt_version: string | null; input_revision: number; relevance: string | null; category: string | null;
+    id: number; origin: string; model: string | null; prompt_version: string | null; input_revision: number; input_reading_id: number | null; relevance: string | null; category: string | null;
     score: number | null; selected: boolean | null; title_zh: string | null; reason_zh: string | null; created_at: Timestamp;
     receipts: Array<{ id: number; status: string; service: string; model: string | null; cost: number | null; at: Timestamp }>;
   }>;

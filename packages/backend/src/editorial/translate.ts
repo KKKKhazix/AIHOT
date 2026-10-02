@@ -41,6 +41,7 @@ export interface TranslateResult {
   status: "translated" | "partial" | "skipped";
   /** The article revision this result is about: the one read and translated, not a later one. */
   revision?: number;
+  readingId?: number | null;
   segments?: number;
   reason?: string;
 }
@@ -155,21 +156,21 @@ export function unshield(translated: string, s: Shielded): string | null {
 }
 
 export async function translateArticle(articleId: string): Promise<TranslateResult> {
-  const [row] = await sql<{ revision: number; channel: string; language: string | null; body_html: string | null; body_text: string | null; x_post: { text?: string } | null; title: string; selected: boolean; body_mode: string; visibility: string }[]>`
-    SELECT a.revision, p.channel, a.language, a.body_html, a.body_text, a.x_post, p.title, p.selected, p.body_mode, p.visibility
+  const [row] = await sql<{ revision: number; reading_id: number | null; channel: string; language: string | null; body_html: string | null; body_text: string | null; x_post: { text?: string } | null; title: string; selected: boolean; body_mode: string; visibility: string }[]>`
+    SELECT coalesce(p.input_revision, a.revision) AS revision, p.reading_id, p.channel, a.language, p.body_html, p.body_text, p.x_post, p.title, p.selected, p.body_mode, p.visibility
     FROM publications p JOIN articles a ON a.id = p.article_id WHERE p.article_id = ${articleId}`;
   if (!row) return { articleId, status: "skipped", reason: "not published" };
-  const result = (r: Omit<TranslateResult, "articleId" | "revision">): TranslateResult => ({ articleId, revision: row.revision, ...r });
+  const result = (r: Omit<TranslateResult, "articleId" | "revision">): TranslateResult => ({ articleId, revision: row.revision, readingId: row.reading_id, ...r });
   if (!row.selected || row.visibility !== "public" || row.body_mode !== "full") return result({ status: "skipped", reason: "not a selected full-text item" });
 
-  if (row.channel === "x") {
+  if (row.channel === "x" && !row.reading_id) {
     const text = String(row.x_post?.text ?? row.body_text ?? "").trim();
     const meaningful = collapseWhitespace(text.replace(/https?:\/\/\S+/g, ""));
     if (isChinese(row.language, text)) return result({ status: "skipped", reason: "already Chinese" });
     if (meaningful.length < X_MIN_CHARS) return result({ status: "skipped", reason: "short post" });
     const [t] = await translateAll(articleId, row.revision, [text], SYSTEM_POST);
     if (!t) return result({ status: "skipped", reason: "translation did not line up" });
-    await store(articleId, row.revision, row.title, textToHtml(t), t, true);
+    await store(articleId, row.revision, row.title, textToHtml(t), t, true, row.reading_id);
     return result({ status: "translated", segments: 1 });
   }
 
@@ -206,16 +207,17 @@ export async function translateArticle(articleId: string): Promise<TranslateResu
   if (!done) return result({ status: "skipped", reason: "no batch translated" });
   const complete = done === blocks.length;
   const html = sanitizeBody($.html());
-  await store(articleId, row.revision, row.title, html, cheerio.load(html, null, false).root().text().trim(), complete);
+  await store(articleId, row.revision, row.title, html, cheerio.load(html, null, false).root().text().trim(), complete, row.reading_id);
   return result({ status: complete ? "translated" : "partial", segments: done });
 }
 
-async function store(articleId: string, revision: number, title: string, html: string, text: string, complete: boolean) {
+async function store(articleId: string, revision: number, title: string, html: string, text: string, complete: boolean, readingId: number | null) {
   // Never over a translation of a later revision (a slow run finishing after a newer one).
   await sql`
-    INSERT INTO translations (article_id, lang, revision, title, body_html, body_text, complete, origin)
-    VALUES (${articleId}, 'zh', ${revision}, ${title}, ${html}, ${text}, ${complete}, 'model')
-    ON CONFLICT (article_id, lang) DO UPDATE SET revision = EXCLUDED.revision, title = EXCLUDED.title, body_html = EXCLUDED.body_html,
+    INSERT INTO translations (article_id, lang, revision, reading_id, title, body_html, body_text, complete, origin)
+    SELECT ${articleId}, 'zh', ${revision}, ${readingId}, ${title}, ${html}, ${text}, ${complete}, 'model'
+    FROM publications p WHERE p.article_id = ${articleId} AND p.input_revision = ${revision} AND p.reading_id IS NOT DISTINCT FROM ${readingId}::bigint
+    ON CONFLICT (article_id, lang) DO UPDATE SET revision = EXCLUDED.revision, reading_id = EXCLUDED.reading_id, title = EXCLUDED.title, body_html = EXCLUDED.body_html,
       body_text = EXCLUDED.body_text, complete = EXCLUDED.complete, origin = 'model', created_at = now()
     WHERE translations.origin <> 'source' AND translations.revision <= EXCLUDED.revision`;
 }
@@ -234,15 +236,15 @@ function quoteTranslatable(text: string): boolean {
 export async function translateQuotes(opts: { days?: number; limit?: number; budgetMs?: number } = {}): Promise<number> {
   const started = Date.now();
   const rows = await sql<{ tweet_id: string; text: string; text_hash: string | null; own_zh: string | null }[]>`
-    SELECT DISTINCT ON (q.tweet_id) q.tweet_id, a.x_post->'quoted'->>'text' AS text, qt.text_hash,
+    SELECT DISTINCT ON (q.tweet_id) q.tweet_id, p.x_post->'quoted'->>'text' AS text, qt.text_hash,
       (SELECT tr.body_text FROM articles o JOIN translations tr ON tr.article_id = o.id AND tr.lang = 'zh' AND tr.revision >= o.revision
        WHERE o.identity_key = 'x:' || q.tweet_id AND tr.complete AND coalesce(tr.body_text, '') <> '') AS own_zh
     FROM publications p JOIN articles a ON a.id = p.article_id
-    CROSS JOIN LATERAL (SELECT substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') AS tweet_id) q
+    CROSS JOIN LATERAL (SELECT substring(p.x_post->'quoted'->>'url' from '/status/([0-9]+)') AS tweet_id) q
     LEFT JOIN quote_translations qt ON qt.tweet_id = q.tweet_id
-    WHERE p.channel = 'x' AND p.selected AND p.visibility = 'public' AND p.body_mode = 'full'
+    WHERE p.channel = 'x' AND p.selected AND p.visibility = 'public' AND p.body_mode = 'full' AND p.reading_id IS NULL
       AND p.discovered_at > now() - make_interval(days => ${opts.days ?? 3})
-      AND q.tweet_id IS NOT NULL AND coalesce(a.x_post->'quoted'->>'text', '') <> ''
+      AND q.tweet_id IS NOT NULL AND coalesce(p.x_post->'quoted'->>'text', '') <> ''
     ORDER BY q.tweet_id, p.discovered_at DESC`;
   let stored = 0;
   for (const r of rows) {
@@ -289,10 +291,11 @@ export async function translatePending(opts: { limit?: number; budgetMs?: number
     LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh'
     WHERE p.selected AND p.visibility = 'public' AND p.body_mode = 'full' AND coalesce(a.language, '') <> 'zh'
       AND (p.discovered_at > now() - interval '3 days'
+           OR (p.reading_id IS NOT NULL AND p.updated_at > now() - interval '3 days')
            OR EXISTS (SELECT 1 FROM article_revisions r WHERE r.article_id = a.id AND r.revision = a.revision AND r.revision > 1
                       AND r.created_at > now() - interval '3 days'))
-      AND (tr.article_id IS NULL OR (tr.origin <> 'source' AND tr.revision < a.revision))
-      AND NOT EXISTS (SELECT 1 FROM translation_attempts t WHERE t.article_id = p.article_id AND t.revision = a.revision
+      AND (tr.article_id IS NULL OR (tr.origin <> 'source' AND (tr.revision < coalesce(p.input_revision, a.revision) OR tr.reading_id IS DISTINCT FROM p.reading_id)))
+      AND NOT EXISTS (SELECT 1 FROM translation_attempts t WHERE t.article_id = p.article_id AND t.revision = coalesce(p.input_revision, a.revision) AND t.reading_id IS NOT DISTINCT FROM p.reading_id
                       AND (t.outcome IN ('skipped', 'translated', 'partial') OR t.attempts >= 3))
     ORDER BY p.discovered_at DESC LIMIT ${opts.limit ?? 30}`;
   const done: TranslateResult[] = [];
@@ -303,12 +306,14 @@ export async function translatePending(opts: { limit?: number; budgetMs?: number
     // The attempt is recorded against the revision actually read: when the text was revised while the
     // model was answering, the new revision still has no attempt and is translated on the next run.
     let revision: number | null = null;
+    let readingId: number | null = null;
     try {
       const result = await translateArticle(r.article_id);
       done.push(result);
       outcome = result.status;
       reason = result.reason ?? null;
       revision = result.revision ?? null;
+      readingId = result.readingId ?? null;
     } catch (error) {
       // A deploy stops between paid fragments, never aborts a sent request. Received answers stay
       // in receipts and are reused next run; do not mark an interrupted article terminal/partial.
@@ -321,11 +326,11 @@ export async function translatePending(opts: { limit?: number; budgetMs?: number
       reason = message.slice(0, 300);
     }
     await sql`
-      INSERT INTO translation_attempts (article_id, revision, attempts, outcome, reason)
-      SELECT ${r.article_id}, coalesce(${revision}::int, a.revision), 1, ${outcome}, ${reason} FROM articles a WHERE a.id = ${r.article_id}
+      INSERT INTO translation_attempts (article_id, revision, reading_id, attempts, outcome, reason)
+      SELECT ${r.article_id}, coalesce(${revision}::int, a.revision), ${readingId}, 1, ${outcome}, ${reason} FROM articles a WHERE a.id = ${r.article_id}
       ON CONFLICT (article_id) DO UPDATE SET
-        attempts = CASE WHEN translation_attempts.revision = EXCLUDED.revision THEN translation_attempts.attempts + 1 ELSE 1 END,
-        revision = EXCLUDED.revision, outcome = EXCLUDED.outcome, reason = EXCLUDED.reason, updated_at = now()`;
+        attempts = CASE WHEN translation_attempts.revision = EXCLUDED.revision AND translation_attempts.reading_id IS NOT DISTINCT FROM EXCLUDED.reading_id THEN translation_attempts.attempts + 1 ELSE 1 END,
+        revision = EXCLUDED.revision, reading_id = EXCLUDED.reading_id, outcome = EXCLUDED.outcome, reason = EXCLUDED.reason, updated_at = now()`;
   }
   const budgetMs = opts.budgetMs ?? 4 * 60_000;
   let quotes = 0;

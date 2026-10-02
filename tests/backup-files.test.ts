@@ -213,3 +213,13 @@ test("local retention keeps three dump/archive pairs without deleting source att
   assert.deepEqual((await readdir(path.join(config.dataDir, "backups"))).sort(), [2, 3, 4].flatMap(day => [`aihot-2026110${day}0400.dump`, `aihot-files-2026110${day}0400.tar.gz`]).sort());
   assert.deepEqual(await readFile(path.join(config.dataDir, "feedback-screenshots/retained.png")), PNG);
 });
+
+
+test("body evidence originals and display snapshots are included in file backups", async () => {
+  await save("body-assets/aa/synthetic.original", Buffer.from("synthetic original evidence"));
+  await save("body-assets/aa/synthetic.webp", PNG);
+  await runBackup(NOW);
+  const { data } = await extractSavedFiles();
+  assert.equal(await readFile(path.join(data, "body-assets/aa/synthetic.original"), "utf8"), "synthetic original evidence");
+  assert.deepEqual(await readFile(path.join(data, "body-assets/aa/synthetic.webp")), PNG);
+});

@@ -9,6 +9,7 @@
 //      topics and the event grouping need; it runs beside the scoring.
 // Material with only a title or a feed summary has its article page fetched before it is judged.
 import { z } from "zod";
+import { needsBodyReading } from "../content/reading.ts";
 import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { CATEGORIES } from "@aihot/industry/taxonomy";
 import { SELECTION } from "@aihot/industry/selection";
@@ -17,7 +18,7 @@ import { chatJson, MODELS, ModelOutputError, type ContentPart } from "../provide
 import { completeReceipt, ProviderRejectedError, ReceiptUnknownError } from "../providers/receipts.ts";
 import { collapseWhitespace } from "../lib/text.ts";
 import { modelFor } from "./models.ts";
-import { buildMaterial, firstImagePart, loadAnalyzeInput, type AnalyzeInputArticle } from "./input.ts";
+import { buildMaterial, bodyImageParts, bodyImageUrls, loadAnalyzeInput, type AnalyzeInputArticle } from "./input.ts";
 import { pageFetchable } from "../content/extract.ts";
 import { shutdownSignal } from "../jobs/queue.ts";
 import {
@@ -31,11 +32,11 @@ import { promptText, promptVersion } from "./prompts.ts";
 export { buildMaterial, loadAnalyzeInput, type AnalyzeInputArticle };
 
 export const PROMPT_VERSIONS = {
-  prefilter: promptVersion("prefilter"),
-  score: promptVersion("selection-score"),
-  understand: promptVersion("understand"),
-  summarize: promptVersion("summarize-article", "summarize-article-empty", "summarize-short-post", "summarize-short-post-quoted", "summarize-long-post", "summarize-long-post-quoted", "identity-context"),
-  structure: promptVersion("structure"),
+  prefilter: promptVersion("prefilter", "body-images"),
+  score: promptVersion("selection-score", "body-images"),
+  understand: promptVersion("understand", "body-images"),
+  summarize: promptVersion("summarize-article", "summarize-article-empty", "summarize-short-post", "summarize-short-post-quoted", "summarize-long-post", "summarize-long-post-quoted", "identity-context", "body-images"),
+  structure: promptVersion("structure", "body-images"),
 } as const;
 /** Every step's prompt, as stored on each judgement. */
 export const SELECTION_PROMPT_VERSION = [PROMPT_VERSIONS.prefilter, PROMPT_VERSIONS.score].join("+");
@@ -87,7 +88,9 @@ export function scoreInputTime(at: Date): string {
  */
 export function buildScoreInput(a: AnalyzeInputArticle): string {
   let body: string;
-  if (a.xPost) {
+  if (a.readingId) {
+    body = a.bodyText ?? "";
+  } else if (a.xPost) {
     const quoted = a.xPost.quoted?.text ? `\n\n[引用 ${a.xPost.quoted.handle ? `@${a.xPost.quoted.handle}` : "原推文"}]：${a.xPost.quoted.text}` : "";
     body = `${String(a.xPost.text ?? "").trim()}${quoted}`.trim();
   } else {
@@ -99,7 +102,7 @@ export function buildScoreInput(a: AnalyzeInputArticle): string {
     "请按系统规则评估以下单篇材料所代表的事件。只输出 attentionScore。",
     `【发布时间（北京时间）】\n${at ? scoreInputTime(at) : ""}`,
     `【标题】\n${a.title.trim()}`,
-    `【完整正文】\n${body.length > MAX_BODY_CHARS ? body.slice(0, MAX_BODY_CHARS) : body}`,
+    `【完整正文】\n${!a.readingId && body.length > MAX_BODY_CHARS ? body.slice(0, MAX_BODY_CHARS) : body}`,
   ].join("\n\n");
 }
 
@@ -182,7 +185,7 @@ export function waitsForPage(a: AnalyzeInputArticle): boolean {
   return a.bodyStatus === "pending" && !a.bodyText && !a.xPost && pageFetchable(a.url, a.source.kind);
 }
 
-type StepOpts = { attemptTag?: string; scoreModel?: string };
+type StepOpts = { attemptTag?: string; scoreModel?: string; images?: () => Promise<ContentPart[]> };
 type ReceiptObserver = (receiptId: number) => void;
 export class AnalysisInterruptedError extends Error {}
 
@@ -196,8 +199,20 @@ function checkAnalysisRunning() {
 const subjectOf = (a: AnalyzeInputArticle) => `article:${a.id}@${a.revision}`;
 const tagged = (attemptTag: string | undefined, step: string) => [attemptTag, step].filter(Boolean).join(":") || undefined;
 
+async function imagesFor(model: string, opts: StepOpts): Promise<ContentPart[]> {
+  return MODELS[model]?.vision === true && opts.images ? opts.images() : [];
+}
+
+function withImages(a: AnalyzeInputArticle, text: string, images: ContentPart[]): string | ContentPart[] {
+  if (a.readingId) return `${text}\n\n正文读取版本：${a.readingId}。正文包含已读取的图片文字；事实以这些证据为准。`;
+  const total = bodyImageUrls(a).length;
+  const content = total ? `${text}\n\n${promptText("body-images", { total: String(total), attached: String(images.length) })}` : text;
+  return images.length ? [{ type: "text", text: content }, ...images] : content;
+}
+
 async function runPrefilter(a: AnalyzeInputArticle, opts: StepOpts): Promise<AnalysisRun["prefilter"]> {
   const model = await modelFor("prefilter");
+  const images = await imagesFor(model, { ...opts, images: opts.images ?? (() => bodyImageParts(a)) });
   checkAnalysisRunning();
   const res = await chatJson({
     model,
@@ -205,14 +220,14 @@ async function runPrefilter(a: AnalyzeInputArticle, opts: StepOpts): Promise<Ana
     subject: subjectOf(a),
     promptVersion: PROMPT_VERSIONS.prefilter,
     system: PREFILTER_SYSTEM,
-    user: prefilterUser(a),
+    user: withImages(a, prefilterUser(a), images),
     schema: PrefilterSchema,
     temperature: 0,
     maxTokens: 512,
     attemptTag: opts.attemptTag,
   });
   // A BLOCK without material to back it counts as UNKNOWN (which goes on).
-  const label = res.data.label === "BLOCK" && missingEvidence(a) ? "UNKNOWN" : res.data.label;
+  const label = res.data.label === "BLOCK" && missingEvidence(a) && !images.length ? "UNKNOWN" : res.data.label;
   return { label, reason: res.data.reason, model: res.model, receiptId: res.receiptId, reused: res.reused };
 }
 
@@ -241,7 +256,7 @@ async function runScores(
 ): Promise<NonNullable<AnalysisRun["scores"]>> {
   const model = opts.scoreModel ?? (await modelFor("score"));
   const call = scoreCall(model);
-  const input = buildScoreInput(a);
+  const input = withImages(a, buildScoreInput(a), await imagesFor(model, { ...opts, images: opts.images ?? (() => bodyImageParts(a)) }));
   const values: number[] = [];
   const receiptIds: number[] = [];
   let reused = true;
@@ -289,7 +304,7 @@ async function runStructure(a: AnalyzeInputArticle, opts: StepOpts): Promise<Non
     subject: subjectOf(a),
     promptVersion: PROMPT_VERSIONS.structure,
     system: STRUCTURE_SYSTEM,
-    user: buildMaterial(a),
+    user: withImages(a, buildMaterial(a), await imagesFor(model, opts)),
     schema: StructureSchema,
     temperature: 0.2,
     maxTokens: 800,
@@ -303,30 +318,19 @@ async function runStructure(a: AnalyzeInputArticle, opts: StepOpts): Promise<Non
 async function runUnderstand(a: AnalyzeInputArticle, opts: StepOpts): Promise<AnalysisRun["writing"]> {
   const model = await modelFor("understand");
   const text = understandUser(a);
-  const call = (image: ContentPart | null) => {
-    checkAnalysisRunning();
-    return chatJson({
-      model, purpose: "understand_article", subject: subjectOf(a), promptVersion: PROMPT_VERSIONS.understand, system: UNDERSTAND_SYSTEM,
-      user: image ? [{ type: "text", text }, image] : text, schema: UnderstandSchema, temperature: 0.2, maxTokens: 16_384,
-      timeoutMs: 180_000, attemptTag: tagged(opts.attemptTag, "understand"),
-    });
-  };
-  // A model that is known not to read images gets the text only.
-  const image = MODELS[model]?.vision === false ? null : await firstImagePart(a);
-  let res: Awaited<ReturnType<typeof call>>;
-  try {
-    res = await call(image);
-  } catch (error) {
+  const images = await imagesFor(model, opts);
+  if (missingEvidence(a) && !images.length) return null;
+  checkAnalysisRunning();
+  const res = await chatJson({
+    model, purpose: "understand_article", subject: subjectOf(a), promptVersion: PROMPT_VERSIONS.understand, system: UNDERSTAND_SYSTEM,
+    user: withImages(a, text, images), schema: UnderstandSchema, temperature: 0.2, maxTokens: 16_384,
+    timeoutMs: 180_000, attemptTag: tagged(opts.attemptTag, "understand"),
+  }).catch((error) => {
     if (isContentFilter(error)) return null;
-    // The model refused the image (download, format): the text is written without it.
-    if (!image || !(error instanceof ProviderRejectedError) || error.retryable) throw error;
-    try {
-      res = await call(null);
-    } catch (retryError) {
-      if (isContentFilter(retryError)) return null;
-      throw retryError;
-    }
-  }
+    // A rejected picture is a failed analysis, never an invisible fallback to a title-only summary.
+    throw error;
+  });
+  if (!res) return null;
   const d = res.data;
   const copy = finalizeCopy(translateInputOf(a), { titleZh: d.titleZh, summaryZh: d.summaryZh });
   return {
@@ -338,15 +342,17 @@ async function runUnderstand(a: AnalyzeInputArticle, opts: StepOpts): Promise<An
 
 /** The title/summary prompts (articles, long and short posts). */
 async function runSummarize(a: AnalyzeInputArticle, opts: StepOpts): Promise<NonNullable<AnalysisRun["writing"]>> {
-  const t = translateInputOf(a);
-  const isX = t.sourceKind === "x_search";
+  const model = await modelFor("summarize");
+  const images = await imagesFor(model, opts);
+  const original = translateInputOf(a);
+  const t = images.length && !original.text.trim() ? { ...original, text: "正文见随附图片。请读取图片中的内容。" } : original;
+  const isX = !t.readingId && t.sourceKind === "x_search";
   const short = isShortTweetInput(t);
   const main = collapseWhitespace(t.mainText || t.title);
   const plain = { reasonZh: null, tags: null, receiptIds: [] as number[], reused: true };
   // A short post already in Chinese is its own copy, and too little text is not written up from a title.
-  if (short && !needsShortTweetTranslation(main)) return { kind: "verbatim", model: null, titleZh: main, summaryZh: main, ...plain };
-  if (!short && t.text.trim().length < 20) return { kind: "none", model: null, titleZh: looksZh(t.title) ? t.title : "", summaryZh: "", ...plain };
-  const model = await modelFor("summarize");
+  if (short && !images.length && !needsShortTweetTranslation(main)) return { kind: "verbatim", model: null, titleZh: main, summaryZh: main, ...plain };
+  if (!short && t.text.trim().length < 20 && !images.length) return { kind: "none", model: null, titleZh: looksZh(t.title) ? t.title : "", summaryZh: "", ...plain };
   checkAnalysisRunning();
   const res = await chatJson({
     model,
@@ -354,7 +360,7 @@ async function runSummarize(a: AnalyzeInputArticle, opts: StepOpts): Promise<Non
     subject: subjectOf(a),
     promptVersion: PROMPT_VERSIONS.summarize,
     system: "",
-    user: short ? buildShortTweetPrompt(t) : isX ? buildLongTweetPrompt(t) : buildArticlePrompt(t),
+    user: withImages(a, short ? buildShortTweetPrompt(t) : isX ? buildLongTweetPrompt(t) : buildArticlePrompt(t), images),
     schema: SummarizeSchema,
     json: false,
     parse: parseTranslateOutput,
@@ -378,6 +384,8 @@ async function runSummarize(a: AnalyzeInputArticle, opts: StepOpts): Promise<Non
  */
 export async function runAnalysis(a: AnalyzeInputArticle, opts: StepOpts & { stages?: "selection" | "all" } = {}): Promise<AnalysisRun> {
   checkAnalysisRunning();
+  let imageJob: Promise<ContentPart[]> | undefined;
+  opts = { ...opts, images: () => imageJob ??= bodyImageParts(a) };
   const prefilter = await runSelectionPrefilter(a, opts);
   // UNKNOWN is let through (its material is as complete as it will get); BLOCK stops here.
   if (prefilter.label === "BLOCK") return { prefilter, scores: null, writing: null, structure: null };
@@ -446,6 +454,7 @@ export interface AnalyzeResult {
   stale: boolean;
   /** The article page is to be fetched first; nothing was committed. */
   needsBody?: boolean;
+  needsReading?: boolean;
   output: ReturnType<typeof normalizeAnalysis> | null;
   receiptIds: number[];
   reused: boolean;
@@ -460,6 +469,7 @@ export async function analyzeArticle(articleId: string, opts: StepOpts = {}): Pr
   if (!input) return null;
   // Its page first; extraction queues the analysis again (normally the queue already routed it there).
   if (waitsForPage(input)) return { analysisId: null, stale: false, needsBody: true, output: null, receiptIds: [], reused: true };
+  if (await needsBodyReading(articleId)) return { analysisId: null, stale: false, needsReading: true, output: null, receiptIds: [], reused: true };
   const run = await runAnalysis(input, opts);
   const out = normalizeAnalysis(run);
   const receiptIds = [
@@ -474,12 +484,13 @@ export async function analyzeArticle(articleId: string, opts: StepOpts = {}): Pr
     fact: out.fact,
   };
   const committed = await sql.begin(async (tx) => {
-    const [current] = await tx<{ revision: number }[]>`SELECT revision FROM articles WHERE id = ${articleId} FOR UPDATE`;
-    const stale = !current || current.revision !== input.revision;
+    const [current] = await tx<{ revision: number; reading_generation: number; accepted_reading_id: number | null }[]>`SELECT revision, reading_generation, accepted_reading_id FROM articles WHERE id = ${articleId} FOR UPDATE`;
+    const stale = !current || current.revision !== input.revision || current.reading_generation !== (input.readingGeneration ?? 0) ||
+      (!!input.readingId && current.accepted_reading_id !== input.readingId);
     const [row] = await tx<{ id: number }[]>`
-      INSERT INTO analyses (article_id, input_revision, origin, model, prompt_version, receipt_ids, relevance, category, tags,
+      INSERT INTO analyses (article_id, input_revision, input_reading_id, origin, model, prompt_version, receipt_ids, relevance, category, tags,
         subjects, title_zh, summary_zh, reason_zh, score, selected, output)
-      VALUES (${articleId}, ${input.revision}, 'model', ${w?.model ?? run.prefilter.model}, ${ANALYZE_PROMPT_VERSION}, ${receiptIds},
+      VALUES (${articleId}, ${input.revision}, ${input.readingId ?? null}, 'model', ${w?.model ?? run.prefilter.model}, ${ANALYZE_PROMPT_VERSION}, ${receiptIds},
         ${out.relevance}, ${out.category}, ${out.tags}, ${out.subjects}, ${out.titleZh}, ${out.summaryZh}, ${out.reasonZh},
         ${out.score}, ${out.selected}, ${tx.json(detail as never)})
       RETURNING id`;

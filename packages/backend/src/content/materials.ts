@@ -1,7 +1,9 @@
 // The single entrance for new material from every channel (collectors, external reports, imports).
 // It owns identity, revisions and the timeline rule, so no entrance can bypass them.
 import { sql, type Db } from "../db.ts";
-import { newArticleId, sha256 } from "../lib/ids.ts";
+import * as cheerio from "cheerio";
+import { sanitizeBody } from "./sanitize.ts";
+import { newArticleId, sha256, stableJson } from "../lib/ids.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
 import { collapseWhitespace } from "../lib/text.ts";
 
@@ -38,6 +40,9 @@ export interface MaterialInput {
   excerpt?: string | null;
   bodyHtml?: string | null;
   bodyText?: string | null;
+  /** Internal extraction evidence, before sanitization removes selector attributes. */
+  bodySnapshotHtml?: string | null;
+  bodySnapshotSelector?: string | null;
   bodyStatus?: "pending" | "ok" | "unconfirmed" | "none";
   media?: MediaItem[];
   xPost?: XPostData | null;
@@ -93,8 +98,19 @@ export function isHistorical(a: { backfill: boolean; published_at: Date | null; 
 }
 
 /** Identity of stored content: the revision changes exactly when this does. */
-export function contentHash(c: { title: string; bodyText?: string | null; excerpt?: string | null }): string {
-  return sha256([collapseWhitespace(c.title), collapseWhitespace(c.bodyText ?? ""), collapseWhitespace(c.excerpt ?? "")].join("\u0001"));
+type ContentIdentity = { title: string; bodyText?: string | null; excerpt?: string | null; bodyHtml?: string | null; media?: MediaItem[]; xPost?: XPostData | null };
+function mediaHash(c: Pick<ContentIdentity, "bodyHtml" | "media" | "xPost">): string {
+  const $ = cheerio.load(sanitizeBody(c.bodyHtml ?? ""), null, false);
+  $("*").contents().filter((_, node) => node.type === "text").remove();
+  const media = [...(c.media ?? []), ...(c.xPost?.media ?? []), ...(c.xPost?.quoted?.media ?? [])].map((m) => ({ kind: m.kind, url: m.url, alt: m.alt ?? "" }));
+  const x = c.xPost;
+  const context = x ? { handle: x.handle, text: x.text,
+    quoted: x.quoted ? { handle: x.quoted.handle, text: x.quoted.text, url: x.quoted.url } : null } : null;
+  return sha256(stableJson({ structure: $.html(), media, context }));
+}
+export function contentHash(c: ContentIdentity): string {
+  return "v2:" + sha256([collapseWhitespace(c.title), collapseWhitespace(c.bodyText ?? ""),
+    collapseWhitespace(cheerio.load(c.bodyHtml ?? "").text()), collapseWhitespace(c.excerpt ?? ""), mediaHash(c)].join("\u0001"));
 }
 
 const LOST = "\uFFFD";
@@ -140,14 +156,15 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
 
   const t = decideTimeline(m.publishedAt, discoveredAt, m.backfill);
   const newId = m.id ?? newArticleId();
-  const hash = contentHash({ title, bodyText: m.bodyText, excerpt: m.excerpt });
+  const hash = contentHash({ ...m, title });
   const [inserted] = await db<{ id: string }[]>`
     INSERT INTO articles (id, source_id, identity_key, url, title, author, language, published_at, published_at_claim,
       discovered_at, source_updated_at, timeline_at, backfill, backfill_reason, revision, content_hash, excerpt,
-      body_text, body_html, body_status, media, x_post, raw)
+      body_text, body_html, body_snapshot_html, body_snapshot_selector, body_status, media, x_post, raw)
     VALUES (${newId}, ${m.sourceId}, ${identityKey}, ${m.url}, ${title}, ${m.author ?? null}, ${m.language ?? null},
       ${t.publishedAt}, ${m.publishedAt ?? null}, ${discoveredAt}, ${m.sourceUpdatedAt ?? null}, ${t.timelineAt},
       ${t.backfill}, ${t.backfillReason}, 1, ${hash}, ${m.excerpt ?? null}, ${m.bodyText ?? null}, ${m.bodyHtml ?? null},
+      ${m.bodySnapshotHtml ?? m.bodyHtml ?? null}, ${m.bodySnapshotSelector ?? null},
       ${m.bodyStatus ?? (m.bodyText ? "ok" : "pending")}, ${db.json((m.media ?? []) as never)},
       ${m.xPost ? db.json(m.xPost as never) : null}, ${m.raw === undefined ? null : db.json(m.raw as never)})
     ON CONFLICT (identity_key) DO NOTHING RETURNING id`;
@@ -159,8 +176,8 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
     return { articleId: newId, created: true, revised: false, backfill: t.backfill };
   }
 
-  const [existing] = await db<{ id: string; source_id: string; revision: number; content_hash: string | null; backfill: boolean; title: string; body_text: string | null; excerpt: string | null }[]>`
-    SELECT id, source_id, revision, content_hash, backfill, title, body_text, excerpt FROM articles WHERE identity_key = ${identityKey} FOR UPDATE`;
+  const [existing] = await db<{ id: string; source_id: string; revision: number; content_hash: string | null; backfill: boolean; title: string; body_text: string | null; excerpt: string | null; body_html: string | null; media: MediaItem[]; x_post: XPostData | null }[]>`
+    SELECT id, source_id, revision, content_hash, backfill, title, body_text, excerpt, body_html, media, x_post FROM articles WHERE identity_key = ${identityKey} FOR UPDATE`;
   await db`INSERT INTO article_discoveries (article_id, source_id, via, discovered_at)
            VALUES (${existing!.id}, ${m.sourceId}, ${m.via}, ${discoveredAt}) ON CONFLICT DO NOTHING`;
   const unchanged: MaterialResult = { articleId: existing!.id, created: false, revised: false, backfill: existing!.backfill };
@@ -171,7 +188,15 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   // What the row will hold after this report: a listing without body keeps the stored (extracted) body.
   const bodyText = m.bodyText ?? existing!.body_text;
   const excerpt = m.excerpt ?? existing!.excerpt;
-  const next = contentHash({ title, bodyText, excerpt });
+  const visual = { bodyHtml: m.bodyHtml ?? existing!.body_html, media: m.media ?? existing!.media, xPost: m.xPost ?? existing!.x_post };
+  const previousVisual = { bodyHtml: existing!.body_html, media: existing!.media, xPost: existing!.x_post };
+  const next = contentHash({ title, bodyText, excerpt, ...visual });
+  if (existing!.content_hash && !existing!.content_hash.startsWith("v2:") &&
+      next === contentHash({ title: existing!.title, bodyText: existing!.body_text, excerpt: existing!.excerpt, ...previousVisual })) {
+    await db`UPDATE articles SET content_hash = ${next} WHERE id = ${existing!.id}`;
+    await db`UPDATE article_revisions SET content_hash = ${next} WHERE article_id = ${existing!.id} AND revision = ${existing!.revision}`;
+    return unchanged;
+  }
   if (existing!.content_hash === next) return unchanged;
   if (existing!.content_hash === null) {
     // Imported history carries no hash of this form (its collectors normalised differently): the
@@ -190,13 +215,16 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   const [seen] = await db`SELECT 1 FROM article_revisions WHERE article_id = ${existing!.id} AND content_hash = ${next} LIMIT 1`;
   if (seen) return unchanged;
   // Nor is the stored version with other characters lost in transit, or with them restored.
-  if (sameBarringLoss(existing!.title, title) && sameBarringLoss(existing!.body_text, bodyText) && sameBarringLoss(existing!.excerpt, excerpt)) return unchanged;
+  if (mediaHash(visual) === mediaHash(previousVisual) && sameBarringLoss(existing!.title, title) && sameBarringLoss(existing!.body_text, bodyText) &&
+      sameBarringLoss(cheerio.load(existing!.body_html ?? "").text(), cheerio.load(visual.bodyHtml ?? "").text()) && sameBarringLoss(existing!.excerpt, excerpt)) return unchanged;
 
   const [row] = await db<{ revision: number }[]>`
     UPDATE articles SET
       title = ${title}, author = coalesce(${m.author ?? null}, author), language = coalesce(${m.language ?? null}, language),
       source_updated_at = ${m.sourceUpdatedAt ?? null}, excerpt = coalesce(${m.excerpt ?? null}, excerpt),
       body_text = coalesce(${m.bodyText ?? null}, body_text), body_html = coalesce(${m.bodyHtml ?? null}, body_html),
+      body_snapshot_html = CASE WHEN ${m.bodyHtml ?? null}::text IS NULL THEN body_snapshot_html ELSE ${m.bodySnapshotHtml ?? m.bodyHtml ?? null} END,
+      body_snapshot_selector = CASE WHEN ${m.bodyHtml ?? null}::text IS NULL THEN body_snapshot_selector ELSE ${m.bodySnapshotSelector ?? null} END,
       body_status = CASE WHEN ${m.bodyText ?? null}::text IS NULL THEN body_status ELSE ${m.bodyStatus ?? "ok"} END,
       media = CASE WHEN ${m.media ? db.json(m.media as never) : null}::jsonb IS NULL THEN media ELSE ${m.media ? db.json(m.media as never) : null}::jsonb END,
       x_post = coalesce(${m.xPost ? db.json(m.xPost as never) : null}, x_post),

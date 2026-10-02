@@ -88,7 +88,7 @@ export async function runBackup(now = new Date()) {
   // tried once more and otherwise reported: the database dump still ships, but the run fails.
   const kept: string[] = [];
   // 尚未转发的反馈截图仍由数据库的 local: 引用，恢复时必须和上传文件一起保留。
-  for (const d of ["uploads", "feedback-screenshots"]) if (await stat(path.join(config.dataDir, d)).then((i) => i.isDirectory(), () => false)) kept.push(d);
+  for (const d of ["uploads", "feedback-screenshots", "body-assets"]) if (await stat(path.join(config.dataDir, d)).then((i) => i.isDirectory(), () => false)) kept.push(d);
   let filesError: string | null = null;
   if (!kept.length) await run("tar", ["-czf", files, "-T", "/dev/null"]);
   else {

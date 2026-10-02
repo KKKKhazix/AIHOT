@@ -14,6 +14,9 @@ import { requestRegroup } from "../events/corrections.ts";
 import { computeHotRanking, storedHotRanking } from "../events/hot.ts";
 import { audit, auditHistory, Conflict } from "../audit.ts";
 
+import { articleReadings } from "./readings.ts";
+import { bodyReadingMode } from "../content/reading-config.ts";
+
 export async function searchContent(q: string): Promise<BeforeJson<AdminContentRow>[]> {
   const term = q.trim();
   if (!term) return [];
@@ -37,7 +40,7 @@ type Chain = BeforeJson<AdminContentChain>;
 export async function contentChain(id: string): Promise<Chain | null> {
   const [article] = await sql<Chain["article"][]>`
     SELECT a.id, a.source_id, a.url, a.identity_key, a.title, a.author, a.language, a.published_at, a.published_at_claim, a.discovered_at,
-           a.timeline_at, a.backfill, a.body_status, a.revision, a.processing_state, a.processing_error, a.grouped_at, length(a.body_text) AS body_chars,
+           a.timeline_at, a.backfill, a.body_status, a.revision, a.reading_generation, a.accepted_reading_id, a.processing_state, a.processing_error, a.grouped_at, length(a.body_text) AS body_chars,
            s.name AS source_name, s.kind AS source_kind, s.tier, s.participation_mode, s.site_fulltext, s.syndicate_fulltext
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${id}`;
   if (!article) return null;
@@ -45,7 +48,7 @@ export async function contentChain(id: string): Promise<Chain | null> {
     sql<Chain["discoveries"]>`SELECT source_id, via, discovered_at FROM article_discoveries WHERE article_id = ${id} ORDER BY discovered_at`,
     sql<Chain["revisions"]>`SELECT revision, title, content_hash, created_at FROM article_revisions WHERE article_id = ${id} ORDER BY revision DESC LIMIT 10`,
     sql<Chain["analyses"]>`
-      SELECT an.id, an.origin, an.model, an.prompt_version, an.input_revision, an.relevance, an.category, an.score, an.selected, an.title_zh, an.reason_zh,
+      SELECT an.id, an.origin, an.model, an.prompt_version, an.input_revision, an.input_reading_id, an.relevance, an.category, an.score, an.selected, an.title_zh, an.reason_zh,
              an.created_at,
              (SELECT coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'status', r.status, 'service', r.service, 'model', r.model, 'cost', r.cost, 'at', r.created_at) ORDER BY r.id), '[]'::jsonb)
                 FROM receipts r WHERE r.id = ANY(an.receipt_ids)) AS receipts
@@ -60,7 +63,8 @@ export async function contentChain(id: string): Promise<Chain | null> {
     sql<Chain["deliveries"]>`SELECT target_key, dedupe_key, status, attempts, response, created_at, sent_at FROM deliveries WHERE subject_id = ${id} ORDER BY created_at DESC`,
     auditHistory(`content:${id}`),
   ]);
-  return { article, discoveries, revisions, analyses, publication: publication[0] ?? null, override: override[0] ?? null, ledger, membership, decisions, deliveries, history };
+  return { article, discoveries, revisions, analyses, publication: publication[0] ?? null, override: override[0] ?? null, ledger, membership, decisions, deliveries, history,
+    readings: await articleReadings(id), readingMode: bodyReadingMode() };
 }
 
 /** Whether the current hot ranking shows the article: as an event's representative or among its reports. */

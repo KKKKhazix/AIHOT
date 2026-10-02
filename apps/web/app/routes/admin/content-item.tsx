@@ -32,7 +32,8 @@ function Step({ title, meta, children, tone = "accent", last }: { title: ReactNo
   );
 }
 
-type Dialog = null | "visibility" | "seo" | "override" | "analyze" | "extract" | "group" | "detach" | "merge";
+type Dialog = null | "visibility" | "seo" | "override" | "analyze" | "extract" | "group" | "detach" | "merge" | "read" | "retry-reading" | "correct-reading";
+const READING_LABEL: Record<string, string> = { pending: "待处理", running: "读取中", done: "已结束", failed: "失败", complete: "完整", partial: "部分完成", needs_review: "需要核对", read: "已读取", ignored: "已排除", unreadable: "未读清", shadow: "仅对照", active: "用于发布" };
 
 export default function ContentItem({ loaderData }: Route.ComponentProps) {
   const c = loaderData;
@@ -43,6 +44,8 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
   const [visibility, setVisibility] = useState<string>(p?.visibility ?? "public");
   const [fields, setFields] = useState({ title: "", summary: "", reason: "", category: "", tags: "", selected: "", silent: "" });
   const [mergeInto, setMergeInto] = useState("");
+  const [readingId, setReadingId] = useState<number | null>(null);
+  const [readingMarkdown, setReadingMarkdown] = useState("");
   const version = c.override?.version ?? 0;
   const base = `/api/admin/content/${encodeURIComponent(a.id)}`;
   const story = c.membership[0];
@@ -138,6 +141,36 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
                 <Button size="sm" onClick={() => setDialog("extract")}>重新抽取正文</Button>
               </div>
             </Step>
+            <Step title="正文与图片读取" meta={c.readingMode === "off" ? "新读取功能未启用" : READING_LABEL[c.readingMode]}>
+              <div className="mb-3 flex flex-wrap gap-2">
+                <Button size="sm" disabled={c.readingMode === "off"} onClick={() => setDialog("read")}>{c.readingMode === "shadow" ? "生成对照结果" : "重新读取正文"}</Button>
+                <Button size="sm" disabled={c.readingMode === "off" || !c.readings.length} onClick={() => setDialog("retry-reading")}>重试未完成图片</Button>
+              </div>
+              {!c.readings.length && <span className="text-ink-4">尚无读取结果。已有文章需要手动加入读取队列。</span>}
+              {c.readings.map((r, index) => (
+                <details key={r.id} open={index === 0} className="mb-3 rounded-control p-3 ring-1 ring-line">
+                  <summary className="cursor-pointer">读取 #{r.id} · {READING_LABEL[r.status] ?? r.status} · {READING_LABEL[r.quality] ?? r.quality}
+                    {r.id === p?.reading_id ? " · 当前发布" : r.mode === "shadow" ? " · 对照结果" : ""}{r.manual ? " · 人工修正" : ""}</summary>
+                  <div className="mt-2 text-[12px] text-ink-4">素材第 {r.input_revision} 版 · {bj(r.created_at, true)} · {r.model}</div>
+                  {r.error && <p className="mt-2 text-hot">{r.error}</p>}
+                  <p className="mt-2">候选图 {r.coverage?.candidates ?? 0} 张，已读取 {r.coverage?.read ?? 0} 张，已排除 {r.coverage?.ignored ?? 0} 张，未完成 {r.coverage?.unreadable ?? 0} 张。</p>
+                  {(r.images ?? []).map((img) => (
+                    <details key={img.image_id} className="mt-3 border-t border-line pt-2">
+                      <summary className="cursor-pointer">{img.image_id} · {READING_LABEL[img.status] ?? img.status}{img.reason ? ` · ${img.reason}` : ""}</summary>
+                      <div className="mt-2 grid gap-3 lg:grid-cols-2">
+                        <div>{img.asset_hash ? <a href={`${base}/readings/${r.id}/images/${encodeURIComponent(img.image_id)}`} target="_blank" rel="noreferrer">
+                          <img src={`${base}/readings/${r.id}/images/${encodeURIComponent(img.image_id)}`} alt="读取时保存的原图" loading="lazy" className="max-h-96 w-full object-contain" />
+                        </a> : <p className="text-ink-4">尚未保存可核对图片</p>}
+                          <a href={img.url} target="_blank" rel="noreferrer" className="mt-2 block break-all text-accent">查看来源图片</a></div>
+                        <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-control bg-bg-sunk p-3 text-[12px]">{img.markdown || (img.uncertainties?.length ? img.uncertainties.join("\n") : "无转录文字")}</pre>
+                      </div>
+                    </details>
+                  ))}
+                  <details className="mt-3"><summary className="cursor-pointer">查看整理后的 Markdown</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words bg-bg-sunk p-3 text-[12px]">{r.body_markdown || "尚未生成"}</pre></details>
+                  {r.body_markdown && <Button size="sm" disabled={c.readingMode !== "active" || r.input_revision !== a.revision} className="mt-3" onClick={() => { setReadingId(r.id); setReadingMarkdown(r.body_markdown ?? ""); setDialog("correct-reading"); }}>以此版本修正正文</Button>}
+                </details>
+              ))}
+            </Step>
             <Step title="模型判断" meta={`${c.analyses.length} 次`} tone={c.analyses.length ? "accent" : "muted"}>
               {c.analyses.length ? (
                 <div className="space-y-3">
@@ -148,7 +181,7 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
                         {an.selected && <Badge tone="accent">入选</Badge>}
                         <Badge tone="info">分数 {an.score}</Badge>
                         {an.category && <Badge>{CATEGORY_LABELS[an.category as keyof typeof CATEGORY_LABELS] ?? an.category}</Badge>}
-                        <span className="text-ink-4">{an.model} · {an.prompt_version} · 输入 v{an.input_revision} · {an.origin} · {bj(an.created_at)}</span>
+                        <span className="text-ink-4">{an.model} · {an.prompt_version} · 输入 v{an.input_revision}{an.input_reading_id ? ` / 读取 #${an.input_reading_id}` : ""} · {an.origin} · {bj(an.created_at)}</span>
                       </div>
                       {an.title_zh && <div className="mt-2 font-medium text-ink">{an.title_zh}</div>}
                       {an.reason_zh && <div className="mt-1 text-[12.5px] leading-relaxed text-ink-3">{an.reason_zh}</div>}
@@ -288,6 +321,15 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
         </div>
       </div>
 
+      <ReasonDialog open={dialog === "read" || dialog === "retry-reading"} title={dialog === "retry-reading" ? "重试未完成图片" : "重新读取正文"}
+        description={c.readingMode === "shadow" ? "保存图文对照结果，不改变当前发布内容。模型请求会计费并记录回执。" : "保存新的读取结果，再重新评估。未通过完整性检查时保留当前发布内容。模型请求会计费并记录回执。"}
+        requireReason={false} confirmLabel="加入队列" busy={pending === "read"} onClose={() => setDialog(null)}
+        onSubmit={async () => (await run("POST", `${base}/read`, { retry: dialog === "retry-reading" }, { label: "read", success: "已加入正文读取队列" })) !== null} />
+      <ReasonDialog open={dialog === "correct-reading"} title="修正正文" description="请对照原图核对文字、价格、单位及日期。保存为新版本后重新评估，历史记录保留；也可使用同一素材的旧版本恢复内容。"
+        confirmLabel="保存并重新评估" busy={pending === "correct-reading"} onClose={() => setDialog(null)}
+        onSubmit={async (reason) => (await run("POST", `${base}/reading-correction`, { readingId, generation: a.reading_generation, markdown: readingMarkdown, reason }, { label: "correct-reading", success: "已保存新版本并加入评估队列" })) !== null}>
+        <Field label="正文 Markdown"><Textarea rows={18} value={readingMarkdown} onChange={(e) => setReadingMarkdown(e.target.value)} /></Field>
+      </ReasonDialog>
       <ReasonDialog
         open={dialog === "seo"}
         title={p?.indexable ? "取消搜索收录" : "标记为可收录"}

@@ -67,8 +67,8 @@ async function publicState() {
 }
 
 async function receiptsFor(key: string) {
-  return sql<{ id: number; attempts: number; query: string; recorded_attempts: number }[]>`
-    SELECT r.id, r.attempts, r.request->>'query' AS query, count(a.id)::int AS recorded_attempts
+  return sql<{ id: number; attempts: number; query: string; recorded_attempts: number; status: string; completed_at: Date | null }[]>`
+    SELECT r.id, r.attempts, r.request->>'query' AS query, count(a.id)::int AS recorded_attempts, r.status, r.completed_at
     FROM receipts r LEFT JOIN receipt_attempts a ON a.receipt_id = r.id
     WHERE r.service = 'socialdata' AND r.subject = ${`x-shard:${key}`}
     GROUP BY r.id ORDER BY r.id`;
@@ -162,6 +162,46 @@ test("same shard search reuses its receipt after physical row order changes", as
   const changed = await receiptsFor(key);
   assert.equal(changed.length, 2, "a changed watermark is a distinct logical request");
   assert.deepEqual(changed.map((r) => [r.attempts, r.recorded_attempts]), [[1, 1], [1, 1]]);
+});
+
+test("paid shard pages complete only with the coverage commit and replay after a database fault", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const members = membersFor("c");
+  const ids = members.map((m) => m.id);
+  const key = `editorial:receipt-commit-${T}`;
+  t.after(() => remove(members));
+  await insert(members);
+  const start = queries.length;
+
+  await sql.unsafe(`CREATE FUNCTION pg_temp.fail_x_receipt_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.status = 'ok' THEN RAISE EXCEPTION 'intentional X coverage commit failure'; END IF;
+      RETURN NEW;
+    END $$`);
+  await sql.unsafe(`CREATE TRIGGER fail_x_receipt_commit BEFORE UPDATE ON pg_temp.fetch_runs
+    FOR EACH ROW EXECUTE FUNCTION pg_temp.fail_x_receipt_commit()`);
+  try {
+    const failed = await collectXShard(key, ids);
+    assert.equal(failed.status, "failed");
+  } finally {
+    await sql.unsafe("DROP TRIGGER fail_x_receipt_commit ON pg_temp.fetch_runs");
+    await sql.unsafe("DROP FUNCTION pg_temp.fail_x_receipt_commit()");
+  }
+
+  assert.equal(queries.length - start, 1, "the provider answered once before the coverage transaction failed");
+  const [received] = await receiptsFor(key);
+  assert.equal(received?.status, "received");
+  assert.equal(received?.completed_at, null);
+  for (const id of ids) {
+    const [row] = await sql<{ cursor: { lastTweetId: string } }[]>`SELECT cursor FROM pg_temp.sources WHERE id = ${id}`;
+    assert.equal(row!.cursor.lastTweetId, WATERMARK, "failed coverage does not advance the watermark");
+  }
+
+  assert.equal((await collectXShard(key, ids)).status, "ok");
+  assert.equal(queries.length - start, 1, "retry reuses the received page instead of paying again");
+  const [completed] = await receiptsFor(key);
+  assert.equal(completed?.status, "completed");
+  assert.ok(completed?.completed_at);
 });
 
 test("ordering preserves disabled, incompatible, missing and empty membership controls", async (t) => {

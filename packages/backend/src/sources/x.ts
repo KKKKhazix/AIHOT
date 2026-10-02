@@ -92,6 +92,8 @@ export interface XBacklog {
 
 export interface XRead {
   tweets: SdTweet[];
+  /** Paid search pages whose business effects must be committed before their receipts complete. */
+  receiptIds: number[];
   lastId: string | null;
   /** Stretches still to read, oldest first (kept in the source cursor). */
   backlog: XBacklog[];
@@ -121,6 +123,7 @@ export async function readXSearch(base: string, opts: { lastId: string | null; b
   const search = (query: string, cursor: string | null) =>
     searchTweets(query, { purpose: "source_fetch", subject: opts.subject, window, type: opts.type ?? "Latest", cursor });
   const all: SdTweet[] = [];
+  const receiptIds = new Set<number>();
   const query = lastId ? `${base} since_id:${lastId}` : base;
   let cursor: string | null = null;
   let pages = 0;
@@ -137,6 +140,7 @@ export async function readXSearch(base: string, opts: { lastId: string | null; b
       break;
     }
     pages += 1;
+    receiptIds.add(res.receiptId);
     all.push(...res.tweets);
     if (!lastId || !res.nextCursor || res.tweets.length === 0) break;
     if (pages >= MAX_PAGES) {
@@ -169,6 +173,7 @@ export async function readXSearch(base: string, opts: { lastId: string | null; b
       break;
     }
     backlogPages += 1;
+    receiptIds.add(res.receiptId);
     all.push(...res.tweets);
     if (!res.nextCursor || res.tweets.length === 0) backlog.shift();
     else stretch.next = res.nextCursor;
@@ -177,7 +182,7 @@ export async function readXSearch(base: string, opts: { lastId: string | null; b
   const seen = new Set<string>();
   const tweets = all.filter((t) => !t.retweeted_status && !seen.has(t.id_str) && !!seen.add(t.id_str));
   const maxId = tweets.reduce<string | null>((m, t) => (m === null || BigInt(t.id_str) > BigInt(m) ? t.id_str : m), lastId);
-  return { tweets, lastId: maxId, backlog, pages, truncated, backlogPages, dropped };
+  return { tweets, receiptIds: [...receiptIds], lastId: maxId, backlog, pages, truncated, backlogPages, dropped };
 }
 
 /** One account's own search (its first fetch, a query of its own, or a manual run from the admin). */

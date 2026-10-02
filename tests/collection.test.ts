@@ -78,6 +78,11 @@ test("an X search longer than one run is read to the old watermark over the next
   const [run] = await sql<{ detail: { truncated: boolean; backlog: number } }[]>`SELECT detail FROM fetch_runs WHERE source_id = ${X_SOURCE} ORDER BY id DESC LIMIT 1`;
   assert.deepEqual([run!.detail.truncated, run!.detail.backlog], [true, 1], "the admin sees the stretch still to read");
 
+  const firstReceipts = await sql<{ status: string }[]>`
+    SELECT status FROM receipts WHERE service = 'socialdata' AND purpose = 'source_fetch' AND subject = ${`source:${X_SOURCE}`} ORDER BY id`;
+  assert.ok(firstReceipts.length > 0);
+  assert.ok(firstReceipts.every((r) => r.status === "completed"), "every paid page covered by the committed cursor is completed");
+
   const second = await collectSource(X_SOURCE, { force: true });
   assert.equal(second.status, "ok");
   assert.equal(await stored(), 450, "every post between the old watermark and the newest is stored");

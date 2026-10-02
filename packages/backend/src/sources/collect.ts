@@ -5,7 +5,7 @@ import { identityKeyFor, upsertMaterial } from "../content/materials.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
 import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
 import { queueProcessing } from "../jobs/content.ts";
-import { BudgetExceededError } from "../providers/receipts.ts";
+import { BudgetExceededError, completeReceipt } from "../providers/receipts.ts";
 import { fetchRss } from "./rss.ts";
 import { allowed, fetchDetail, fetchWebList, type DetailNeed } from "./web-list.ts";
 import { unsupportedConfig } from "./config-keys.ts";
@@ -93,6 +93,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     const unsupported = unsupportedConfig(source.kind, source.config);
     if (unsupported.length) throw new FetchError(`unsupported config: ${unsupported.join(", ")}`);
     let candidates: Candidate[];
+    let paidReceiptIds: number[] = [];
     let nextCursor: Record<string, unknown> = { ...(source.cursor ?? {}) };
     let detail: Record<string, unknown> | null = null;
     if (source.kind === "rss") {
@@ -109,6 +110,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     else {
       const x = await fetchXSearch(source);
       candidates = x.candidates;
+      paidReceiptIds = x.receiptIds;
       if (x.lastId) nextCursor.lastTweetId = x.lastId;
       // A search longer than one run keeps its position for the next runs (shown in the admin).
       if (x.backlog.length) nextCursor.xBacklog = x.backlog;
@@ -185,13 +187,16 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     delete nextCursor.jinaListingRound;
     if (firstImport) nextCursor.initializedAt = new Date().toISOString();
     nextCursor.lastOkAt = new Date().toISOString();
-    await sql`
-      UPDATE sources SET last_fetch_at = now(), last_ok_at = now(), fail_count = 0, last_error = NULL,
-        health = 'ok', cursor = ${sql.json(nextCursor as never)}, updated_at = now(),
-        next_fetch_at = now() + make_interval(mins => interval_minutes)
-      WHERE id = ${sourceId}`;
-    await sql`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${found}, new_count = ${created},
-                detail = ${detail ? sql.json(detail as never) : null} WHERE id = ${run!.id}`;
+    await sql.begin(async (tx) => {
+      await tx`
+        UPDATE sources SET last_fetch_at = now(), last_ok_at = now(), fail_count = 0, last_error = NULL,
+          health = 'ok', cursor = ${tx.json(nextCursor as never)}, updated_at = now(),
+          next_fetch_at = now() + make_interval(mins => interval_minutes)
+        WHERE id = ${sourceId}`;
+      await tx`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${found}, new_count = ${created},
+                  detail = ${detail ? tx.json(detail as never) : null} WHERE id = ${run!.id}`;
+      for (const receiptId of paidReceiptIds) await completeReceipt(tx, receiptId);
+    });
     return { sourceId, status: "ok", found, created, revised };
   } catch (error) {
     if (shutdownSignal.signal.aborted) throw error;
@@ -289,6 +294,7 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
         await tx`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${count.found}, new_count = ${count.created},
                     detail = ${tx.json(detail as never)} WHERE id = ${runs.get(m.id)!}`;
       }
+      for (const receiptId of read.receiptIds) await completeReceipt(tx, receiptId);
     });
     return { key, status: "ok", accounts: members.length, found, created };
   } catch (error) {

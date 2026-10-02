@@ -178,6 +178,9 @@ export default function StoryPage() {
     }
     return out;
   }, [story.timeline, filter, order]);
+  const developments = useMemo(() => [...story.developments].sort((a, b) =>
+    order === "desc" ? Date.parse(b.firstReportAt) - Date.parse(a.firstReportAt) : Date.parse(a.firstReportAt) - Date.parse(b.firstReportAt)
+  ), [story.developments, order]);
   const newest = story.timeline.reduce<StoryReportView | null>((a, b) => (!a || Date.parse(b.publishedAt) > Date.parse(a.publishedAt) ? b : a), null);
   const overview = story.digest
     ? { label: "AI 综述", text: story.digest, note: story.digestUpdatedAt ? `AI 根据报道生成 · ${relativeTime(story.digestUpdatedAt)}更新` : "AI 根据报道生成" }
@@ -275,11 +278,16 @@ export default function StoryPage() {
           </Panel>
 
           {story.developments.length > 1 && (
-            <Panel title="事件进展" right={`${story.developments.length} 个进展`} className="order-3">
+            <Panel title="事件进展" sub={`${story.developments.length} 个进展`} className="order-3" right={
+              <Select value={order} onChange={(e) => setOrder(e.target.value as "desc" | "asc")} aria-label="事件进展排序">
+                <option value="desc">最新在前</option>
+                <option value="asc">最早在前</option>
+              </Select>
+            }>
               <ol className="relative space-y-4 pl-5 before:absolute before:bottom-2 before:left-[3px] before:top-2 before:w-px before:bg-line">
-                {story.developments.map((d, i) => (
+                {developments.map((d) => (
                   <li key={d.factId} className="relative">
-                    <span className={`absolute -left-5 top-[7px] size-[7px] rounded-full ring-4 ring-surface ${i === 0 ? "bg-accent" : "bg-line-strong"}`} aria-hidden="true" />
+                    <span className={`absolute -left-5 top-[7px] size-[7px] rounded-full ring-4 ring-surface ${d.factId === story.developments[0]?.factId ? "bg-accent" : "bg-line-strong"}`} aria-hidden="true" />
                     <div className="num text-[12px] text-ink-4">
                       {monthDayTime(d.firstReportAt)} · {d.reportCount} 篇报道
                     </div>
@@ -301,7 +309,7 @@ export default function StoryPage() {
             sub="沿着报道，了解事件的不同侧面。"
             className="order-4"
             right={
-              <Select value={order} onChange={(e) => setOrder(e.target.value as "desc" | "asc")} aria-label="排序">
+              <Select value={order} onChange={(e) => setOrder(e.target.value as "desc" | "asc")} aria-label="报道时间线排序">
                 <option value="desc">最新在前</option>
                 <option value="asc">最早在前</option>
               </Select>

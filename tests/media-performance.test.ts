@@ -240,10 +240,13 @@ test("pending animations expire at caches, then publish the prepared disk rendit
   const { registerMedia } = await import("../apps/api/src/routes/media.ts");
   const { signature } = await import("@aihot/backend/media/imgproxy");
   const { convertAnimated } = await import("@aihot/backend/media/images");
-  const { getBoss, QUEUES } = await import("@aihot/backend/jobs/queue");
+  const { ensureQueue, getBoss, QUEUES } = await import("@aihot/backend/jobs/queue");
   const boss = await getBoss();
   // Other files leave article preparation jobs in the shared throwaway database. Exercise this
   // rendition's real queue callback without claiming unrelated synthetic articles.
+  // Queues are created on first use and deleteAllJobs does not create one, so on a database where no
+  // preparation job has been enqueued yet this threw "Queue media.prepare does not exist".
+  await ensureQueue(QUEUES.prepareMedia);
   await boss.deleteAllJobs(QUEUES.prepareMedia);
   const app = Fastify();
   registerMedia(app);

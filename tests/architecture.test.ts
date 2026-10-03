@@ -18,7 +18,10 @@ function sources(dir: string): Array<{ file: string; text: string }> {
   for (const entry of readdirSync(path.join(ROOT, dir), { withFileTypes: true, recursive: true })) {
     const full = path.join(entry.parentPath, entry.name);
     if (!entry.isFile() || !/\.tsx?$/.test(entry.name) || /[/\\](node_modules|build|\.react-router)[/\\]/.test(full)) continue;
-    out.push({ file: path.relative(ROOT, full), text: readFileSync(full, "utf8") });
+    // Posix separators. The rules compare these paths against folders ("publication/") and file names
+    // ("providers/receipts.ts"), and path.relative yields backslashes on Windows, which made every
+    // owner match fail and reported compliant writes as violations.
+    out.push({ file: path.relative(ROOT, full).split(path.sep).join("/"), text: readFileSync(full, "utf8") });
   }
   return out;
 }
@@ -80,7 +83,9 @@ const OWNERS: Record<string, string> = {
 test("the tables that carry a rule are written only by the module that owns it", () => {
   const found: string[] = [];
   for (const { file, text } of sources("packages/backend/src")) {
-    const own = path.relative("packages/backend/src", file);
+    // Back to an OS path for path.relative (it does not treat "/" as a separator on Windows), then
+    // back to posix for the folder and file-name comparisons below.
+    const own = path.relative("packages/backend/src", file.split("/").join(path.sep)).split(path.sep).join("/");
     for (const [, table] of text.matchAll(/\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE)\s+([a-z_]+)\b/gi)) {
       const owner = OWNERS[table!.toLowerCase()];
       if (owner && !own.startsWith(owner)) found.push(`${file} writes ${table} (owner ${owner})`);

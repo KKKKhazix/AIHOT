@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
-import { analyzeArticle, SCORE_SYSTEM, tierThreshold } from "@aihot/backend/editorial/analyze";
+import { analyzeArticle, SCORE_SYSTEM, tierThreshold, UNDERSTAND_FLOOR } from "@aihot/backend/editorial/analyze";
 import { queueProcessing } from "@aihot/backend/jobs/content";
 import { QUEUES, stopBoss } from "@aihot/backend/jobs/queue";
 import { compactAnswerFirstSummary, enforceIdentity, parseTranslateOutput, PREFILTER_SYSTEM } from "@aihot/backend/editorial/writing";
@@ -24,10 +24,17 @@ type Step = "prefilter" | "score" | "understand" | "summarize" | "structure";
 interface Req { step: Step; marker: string; system: string; user: string; body: Record<string, any> }
 const requests: Req[] = [];
 const MARKERS = ["CLEAR", "RESCUE", "LOW", "OFFTOPIC", "BARE", "VAGUE", "THIN", "SENSITIVE", "推文"];
-const scoreAnswers: Record<string, number[]> = { CLEAR: [78, 72], RESCUE: [56, 50], LOW: [45, 40], THIN: [70, 70], SENSITIVE: [80, 80], 推文: [40, 40], BARE: [30, 34], VAGUE: [60, 62] };
+// Scores are set from the industry's T1 threshold and understand floor (60 and 50 in the AI example),
+// so each case keeps its meaning when an industry recalibrates them.
+const TH = tierThreshold("T1")!;
+const FLOOR = UNDERSTAND_FLOOR;
+const scoreAnswers: Record<string, number[]> = {
+  CLEAR: [TH + 18, TH + 12], RESCUE: [FLOOR + 6, FLOOR], LOW: [FLOOR - 5, FLOOR - 10], THIN: [TH + 10, TH + 10],
+  SENSITIVE: [TH + 20, TH + 20], 推文: [FLOOR - 10, FLOOR - 10], BARE: [FLOOR - 20, FLOOR - 16], VAGUE: [TH, TH + 2],
+};
 
 const stepOf = (system: string, user: string): Step =>
-  system.includes("宽召回的AI相关性预筛") ? "prefilter" : system.includes("事件注意力评分器") ? "score"
+  system.includes("宽召回") ? "prefilter" : system.includes("事件注意力评分器") ? "score"
   : system.includes("内容理解编辑") ? "understand" : system.includes("资料结构化助手") ? "structure"
   : user.includes("title_zh") ? "summarize" : (() => { throw new Error("unknown request"); })();
 
@@ -88,14 +95,14 @@ test("every prompt in the pack renders, and the site's name replaces AIHOT's", (
     const text = promptText(file.slice(0, -3), values);
     assert.ok(text.length > 20 && !/\{\{/.test(text), file);
   }
-  assert.ok(PREFILTER_SYSTEM.startsWith(`为${SITE.name}做宽召回的AI相关性预筛`));
+  assert.ok(PREFILTER_SYSTEM.startsWith(`为${SITE.name}做宽召回`));
 });
 
 test("a selected item: prefilter, two scores, the content understanding and the structure", async () => {
-  assert.equal(tierThreshold("T1"), 60);
+  assert.ok(FLOOR >= 20 && FLOOR + 3 < TH && TH <= 80, "the cases need scores in 0–100 and the understand floor below the T1 threshold");
   const id = await article("CLEAR");
   const res = await analyzeArticle(id);
-  assert.deepEqual([res!.output!.selected, res!.output!.score], [true, 75], "78 + 72 = 150 >= 120");
+  assert.deepEqual([res!.output!.selected, res!.output!.score], [true, TH + 15], `${TH + 18} + ${TH + 12} >= 2 × ${TH}`);
   assert.deepEqual(calls("CLEAR").sort(), ["prefilter", "score", "score", "structure", "understand"]);
   const r = await row(id);
   assert.deepEqual([r.title_zh, r.reason_zh, r.category, r.receipt_ids.length], ["理解标题 CLEAR", "理由 CLEAR", "ai-models", 5]);
@@ -114,7 +121,7 @@ test("a selected item: prefilter, two scores, the content understanding and the 
 
 test("a near-selected item is written like a selected one; below the floor it is translated", async () => {
   const near = await analyzeArticle(await article("RESCUE"));
-  assert.deepEqual([near!.output!.selected, near!.output!.reasonZh], [false, "理由 RESCUE"], "56 + 50 = 106 > 100");
+  assert.deepEqual([near!.output!.selected, near!.output!.reasonZh], [false, "理由 RESCUE"], `above the floor ${FLOOR}, below the threshold ${TH}`);
   const lowId = await article("LOW");
   const low = await analyzeArticle(lowId);
   assert.deepEqual([low!.output!.selected, low!.output!.titleZh, low!.output!.reasonZh], [false, "翻译标题 LOW", null]);
@@ -129,7 +136,7 @@ test("the prefilter's BLOCK stops everything; UNKNOWN goes on like PASS", async 
   const off = await analyzeArticle(await article("OFFTOPIC"));
   assert.deepEqual([off!.output!.relevance, off!.output!.selected], ["block", false]);
   assert.deepEqual(calls("OFFTOPIC"), ["prefilter"]);
-  // An UNKNOWN with material is judged and written like a PASS, up to 精选 (60 + 62 ≥ 2 × 60).
+  // An UNKNOWN with material is judged and written like a PASS, up to 精选 (TH + TH + 2 ≥ 2 × TH).
   const vagueId = await article("VAGUE");
   const vague = await analyzeArticle(vagueId);
   assert.deepEqual([vague!.output!.relevance, vague!.output!.selected, vague!.output!.titleZh], ["pass", true, "理解标题 VAGUE"]);
@@ -137,7 +144,7 @@ test("the prefilter's BLOCK stops everything; UNKNOWN goes on like PASS", async 
   // Nothing but a title and no page to fetch: the BLOCK counts as UNKNOWN and is scored, but the
   // translation writes nothing from a bare title, so it waits for material instead of being published.
   const bare = await analyzeArticle(await article("BARE", { bodyText: null, excerpt: null, bodyStatus: "none" }));
-  assert.deepEqual([bare!.output!.relevance, bare!.output!.selected, bare!.output!.score], ["unknown", false, 32]);
+  assert.deepEqual([bare!.output!.relevance, bare!.output!.selected, bare!.output!.score], ["unknown", false, FLOOR - 18]);
   assert.deepEqual(calls("BARE").sort(), ["prefilter", "score", "score", "structure"]);
 });
 

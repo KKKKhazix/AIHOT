@@ -8,8 +8,14 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { closeDb, sql } from "@aihot/backend/db";
 import { REPO_ROOT } from "@aihot/backend/config";
+import { tierThreshold } from "@aihot/backend/editorial/analyze";
 
 const exec = promisify(execFile);
+
+// Scores sit at the industry's T1 threshold: T1 selects, T2 only when its threshold is no higher
+// (76 against 60 in the AI example), a tier without a threshold never.
+const T1 = tierThreshold("T1")!;
+const T2_DECISION: "select" | "reject" = tierThreshold("T2")! <= T1 ? "select" : "reject";
 
 interface GoldRow {
   caseId: string;
@@ -107,23 +113,24 @@ test("default evaluation follows the production score route and shares duplicate
     const score = await stub(async () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
       return {
-        choices: [{ message: { content: JSON.stringify({ attentionScore: 70 }) } }],
+        choices: [{ message: { content: JSON.stringify({ attentionScore: T1 }) } }],
         usage: { prompt_tokens: 100, completion_tokens: 20 },
       };
     });
     t.after(async () => { await Promise.all([prefilter.close(), score.close()]); });
 
     const marker = tag();
-    const rows = [row(`${marker}-t1`, marker, "T1", "select"), row(`${marker}-t2`, marker, "T2", "reject")];
+    const rows = [row(`${marker}-t1`, marker, "T1", "select"), row(`${marker}-t2`, marker, "T2", T2_DECISION), row(`${marker}-mp`, marker, "EXCLUDE_MP", "reject")];
     const cold = await evaluate(rows, { prefilter: prefilter.url, score: score.url });
     const warm = await evaluate(rows, { prefilter: prefilter.url, score: score.url });
 
     assert.equal(cold.model, "glm-5.3-flash-selection", "no --models follows SCORE_MODEL / production routing");
     assert.deepEqual(cold.summary, warm.summary, "cold and cached evaluations keep the same coverage and metrics");
-    assert.deepEqual(cold.cases.map((item) => item.decision), ["select", "reject"], "the shared score still uses each tier's threshold");
-    assert.deepEqual([cold.summary.decisive, cold.summary.errors, cold.summary.accuracy], [2, 0, 1]);
-    assert.deepEqual([prefilter.hits(), score.hits()], [2, 2], "two per-case prefilters, two shared score calls across both runs");
-    assert.deepEqual([cold.summary.tokensIn, cold.summary.tokensOut], [220, 50], "shared score receipts count once");
+    assert.deepEqual(Object.fromEntries(cold.cases.map((item) => [item.caseId.slice(marker.length + 1), item.decision])), { t1: "select", t2: T2_DECISION, mp: "reject" },
+      "the shared score still uses each tier's threshold (cases come in the eval's seeded sample order)");
+    assert.deepEqual([cold.summary.decisive, cold.summary.errors, cold.summary.accuracy], [3, 0, 1]);
+    assert.deepEqual([prefilter.hits(), score.hits()], [3, 2], "three per-case prefilters, two shared score calls across both runs");
+    assert.deepEqual([cold.summary.tokensIn, cold.summary.tokensOut], [230, 55], "shared score receipts count once");
   });
 });
 
@@ -134,13 +141,13 @@ test("a shared unusable score fails every matching case once, then retry usage i
       usage: { prompt_tokens: 10, completion_tokens: 5 },
     }));
     const score = await stub((hit) => ({
-      choices: [{ message: { content: hit === 1 ? "not JSON" : JSON.stringify({ attentionScore: 70 }) } }],
+      choices: [{ message: { content: hit === 1 ? "not JSON" : JSON.stringify({ attentionScore: T1 }) } }],
       usage: { prompt_tokens: hit === 1 ? 100 : 300, completion_tokens: 20 },
     }));
     t.after(async () => { await Promise.all([prefilter.close(), score.close()]); });
 
     const marker = tag();
-    const rows = [row(`${marker}-t1`, marker, "T1", "select"), row(`${marker}-t2`, marker, "T2", "reject")];
+    const rows = [row(`${marker}-t1`, marker, "T1", "select"), row(`${marker}-t2`, marker, "T2", T2_DECISION)];
     const failed = await evaluate(rows, { prefilter: prefilter.url, score: score.url });
     assert.deepEqual([failed.summary.decisive, failed.summary.errors], [0, 2]);
     assert.equal(score.hits(), 1, "matching cases share the failed score result within one run");

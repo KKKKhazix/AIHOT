@@ -155,21 +155,28 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
   if (channel) {
     const items = arr(doc.rss?.channel?.item ?? doc["rdf:RDF"]?.item);
     for (const it of items) {
-      const link = text(it.link) || text(it.guid);
+      const guid = text(it.guid);
+      const enclosures = arr(it.enclosure as Record<string, string> | Array<Record<string, string>>);
+      const page = text(it.link) || (/^https?:\/\//i.test(guid) ? guid : "");
+      // Podcast episodes often have no <link> and a guid that is not an address: readers get the episode's
+      // media file instead. The identity stays the one the guid gives (as in identityKeyFor), so episodes
+      // already stored are not collected again, and a host moving its media files creates no new items.
+      const mediaFile = page ? "" : enclosures.find((e) => /^(audio|video)\//.test(e?.["@type"] ?? ""))?.["@url"] ?? "";
+      const link = page || mediaFile || guid;
       const title = collapseWhitespace(stripTags(text(it.title)));
       if (!link || !title) continue;
       const contentEncoded = text(it["content:encoded"]);
       const description = text(it.description);
       const bodyHtmlRaw = contentEncoded || (summaryIsBody ? description : "");
       const bodyHtml = bodyHtmlRaw ? sanitizeBody(bodyHtmlRaw, link) : null;
-      const enclosure = arr(it.enclosure as Record<string, string> | Array<Record<string, string>>).find((e) => /^image\//.test(e?.["@type"] ?? ""));
+      const enclosure = enclosures.find((e) => /^image\//.test(e?.["@type"] ?? ""));
       const media = [
         ...(enclosure ? [{ kind: "image" as const, url: enclosure["@url"]! }] : []),
         ...(bodyHtmlRaw ? imagesFrom(bodyHtmlRaw, link) : []),
       ];
       out.push({
         url: link,
-        ...identity(link),
+        ...(mediaFile && guid ? { identityKey: `src:${source.id}:${sha256(guid + "\u0001" + title).slice(0, 32)}` } : identity(link)),
         title,
         author: text(it["dc:creator"]) || text(it.author) || null,
         publishedAt: parseDate(text(it.pubDate) || text(it["dc:date"]) || text(it.published)),

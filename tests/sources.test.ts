@@ -35,6 +35,8 @@ const pages: Record<string, (cdn: string) => string> = {
     `<content type="html"><![CDATA[<p>${"AMD announced today that it is acquiring World Labs in an all-stock deal. ".repeat(8)}</p><p>Read the full story at The Verge.</p>]]></content></entry>` +
     `<entry><title>A whole post</title><link rel="alternate" href="https://example.org/whole"/><published>2026-09-28T10:00:00Z</published>` +
     `<content type="html"><![CDATA[<p>${"The feed carries this post whole, paragraph after paragraph. ".repeat(30)}</p>]]></content></entry></feed>`,
+  // A list API that gives a wall-clock time without a zone (a Chinese government procurement site).
+  "/naive.json": () => JSON.stringify({ result: [{ id: "a", title: "采购公告", publishDate: "2026-09-30 17:43:58" }, { id: "b", title: "Zoned", publishDate: "2026-09-30T17:43:58Z" }] }),
   // A list API that gives calendar days as yyyymmdd.
   "/days.json": () => JSON.stringify({ data: { list: [{ seq: 695, ttl: "MCFlow", day: "20260922" }, { seq: 1, ttl: "Bad day", day: "20260230" }] } }),
   // Google Developers Blog: no date in the feed or in meta tags, only in JSON-LD.
@@ -210,6 +212,12 @@ test("noise words match whatever their case", () => {
   assert.equal(noiseFiltered(c("Manus：正组建团队开发面向国内市场的产品", "与笔记本厂商合作的 Agent 产品"), source), false);
   assert.equal(noiseFiltered(c("新款笔记本开售", "首发价 4999 元"), source), true);
   assert.equal(noiseFiltered(c("iPhone 18 开售", ""), source), true);
+});
+
+test("a JSON list time without a zone is read in the source's offset", async () => {
+  const read = (extra: Record<string, unknown> = {}) => fetchJsonList({ id: "test-json", config: { url: `${site}/naive.json`, itemsPath: "result", titlePaths: ["title"], urlTemplate: "https://example.org/p/{id}", publishedAtPath: "publishDate", ...extra } } as never);
+  assert.deepEqual((await read()).map((c) => c.publishedAt?.toISOString()), ["2026-09-30T09:43:58.000Z", "2026-09-30T17:43:58.000Z"], "+08:00 by default, as list pages; a zoned time is kept");
+  assert.deepEqual((await read({ publishedAtUtcOffset: "+00:00" })).map((c) => c.publishedAt?.toISOString()), ["2026-09-30T17:43:58.000Z", "2026-09-30T17:43:58.000Z"]);
 });
 
 test("dates in yyyymmdd and in JSON-LD are read", async () => {

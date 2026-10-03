@@ -1,13 +1,12 @@
-// The four ways in (Agent Markdown, MCP, RSS, REST API), one panel each: what it is for, the steps to
-// connect, then the details folded away. Addresses are the site's configured public address (`base`).
-import { useState } from "react";
+// The ways in, one panel each: what it is for, the steps to connect, then the details folded away.
+// Addresses are the site's configured public address (`base`).
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { MCP_TOOL_NAMES as T, MCP_TOOLS } from "@aihot/contracts/mcp";
-import { CODEX_RESET_SCAN_MINUTES } from "@aihot/contracts/monitor";
-import { CATEGORY_KEYS, CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
-import { FEATURES } from "@aihot/industry/features";
-import { SITE, subjectAfter, withSubject } from "@aihot/industry/site";
+import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
+import { CATEGORIES } from "@aihot/industry/taxonomy";
+import { AGENT, POLICY, SITE, subjectAfter, withSubject } from "@aihot/industry/site";
 import { CodeBlock, CopyButton } from "../../components/CodeBlock";
 import { PillTabs } from "../../components/ui/Tabs";
 import { Address, Ask, Block, Bullets, Details, Mono, PanelHead, Step, Steps, Table, Tips } from "./parts";
@@ -15,48 +14,15 @@ import { Address, Ask, Block, Bullets, Details, Mono, PanelHead, Step, Steps, Ta
 const V = PUBLIC_INTERFACE_VERSION;
 const link = "text-accent hover:underline";
 
-export function GuidePanel({ base }: { base: string }) {
-  const guide = `${base}/api/v1/agent`;
-  const prompt = `请先读取 ${guide} 的使用说明，再根据里面提供的地址，帮我看看${subjectAfter("过去 24 小时", "行业")}最重要的动态，附上来源和阅读链接。`;
-  return (
-    <>
-      <PanelHead label={`Agent Markdown · ${V}`} title="给 Agent 一个地址，就能开始阅读">
-        适合能读取网页的 Agent。使用说明列出最新资讯、搜索、热点、事件、日报、周报和月报；答案附来源、时间和阅读链接，能力更新也会出现在同一个说明地址。
-      </PanelHead>
-      <Steps>
-        <Step n={1} title="复制使用说明的地址">
-          <Address url={guide} />
-        </Step>
-        <Step n={2} title="复制这句话给你的 Agent">
-          <Ask text={prompt} />
-        </Step>
-      </Steps>
+/** What the agent page gives every panel. */
+interface PanelProps {
+  /** The site's public address, read on the server so the page and the browser agree. */
+  base: string;
+}
 
-      <Block title="可直接读取的内容">
-        <Bullets items={[
-          "最新资讯与搜索：过去 24 小时或最近 7 天，可按分类筛选。",
-          "当前热点：按榜单顺序阅读，再顺着返回的事件地址查看来龙去脉。",
-          `${withSubject("日报")}、周报和月报：最新一期或指定的一期。`,
-          "资料来自外部信源，重要事实仍请回原文核对。",
-        ]} />
-      </Block>
-
-      <Details
-        items={[
-          {
-            title: "目前做不到的",
-            body: (
-              <Bullets items={[
-                "原生时间窗只有过去 24 小时和最近 7 天；更早的历史搜索暂不保证。",
-                ...(FEATURES.leaderboard ? ["模型榜目前只有网页。"] : []),
-                `能拿到摘要、推荐理由、站内阅读页和原文链接；单篇全文在 ${SITE.name} 阅读页看。`,
-              ]} />
-            ),
-          },
-        ]}
-      />
-    </>
-  );
+/** An address on this site as the copy buttons copy it. */
+function addressOf(props: PanelProps, path: string): string {
+  return `${props.base}${path}`;
 }
 
 const MCP_CLIENTS = [
@@ -66,8 +32,8 @@ const MCP_CLIENTS = [
   { key: "other", label: "其他客户端" },
 ] as const;
 
-export function McpPanel({ base }: { base: string }) {
-  const url = `${base}/api/mcp`;
+export function McpPanel(props: PanelProps) {
+  const url = addressOf(props, "/api/mcp");
   const name = SITE.mcpPrefix;
   const [client, setClient] = useState<string>("claude");
   return (
@@ -84,11 +50,11 @@ export function McpPanel({ base }: { base: string }) {
           {client === "claude" && <CodeBlock className="mb-0 mt-3" lang="bash" code={`claude mcp add --transport http ${name} '${url}'`} />}
           {client === "codex" && <CodeBlock className="mb-0 mt-3" lang="bash" code={`codex mcp add ${name} --url '${url}'`} />}
           {client === "json" && <CodeBlock className="mb-0 mt-3" title="Cursor、Cherry Studio 等用 JSON 配置的客户端" lang="json" code={JSON.stringify({ mcpServers: { [name]: { type: "http", url } } }, null, 2)} />}
-          {client === "other" && <p className="mt-3">在客户端的 MCP 或连接器设置里新建一项：名称填 {name}，地址填上面的网址，认证选“无”，不要填 API Key。只支持本地命令的客户端，先用它自带的远程 MCP 代理。</p>}
+          {client === "other" && <p className="mt-3">{`在客户端的 MCP 或连接器设置里新建一项：名称填 ${name}，地址填上面的网址，认证选“无”，不要填 API Key。只支持本地命令的客户端，先用它自带的远程 MCP 代理。`}</p>}
         </Step>
         <Step n={3} title="让 Agent 调一次">
           <Ask text={`请调用 ${T.latest}，告诉我过去 24 小时最重要的${subjectAfter(" 5 条", "资讯")}，并附 ${SITE.name} 链接。`} />
-          <p className="mt-2 text-[13px] text-ink-3">客户端显示调用了 {T.latest}，回答里有时间范围、中文摘要和 {new URL(base).host} 链接，就是连上了。</p>
+          <p className="mt-2 text-[13px] text-ink-3">{`客户端显示调用了 ${T.latest}，回答里有时间范围、中文摘要和 ${new URL(props.base).host} 链接，就是连上了。`}</p>
         </Step>
       </Steps>
 
@@ -98,13 +64,12 @@ export function McpPanel({ base }: { base: string }) {
           minWidth={600}
           rows={[
             [<Mono>{T.latest}</Mono>, "过去 24 小时或最近 7 天的精选、全部资讯", `${subjectAfter("今天有什么", "新闻")}？`],
-            [<Mono>{T.search}</Mono>, "按公司、产品、人物或话题搜最近 7 天", "这家公司最近发了什么？"],
+            [<Mono>{T.search}</Mono>, AGENT.search.scope, AGENT.search.ask],
             [<Mono>{T.hot}</Mono>, "当前热点榜 Top 10", "现在最热的是什么？"],
             [<Mono>{T.story}</Mono>, "一个热点事件的时间线和持续更新的综述", "这件事的来龙去脉？"],
             [<Mono>{T.daily}</Mono>, subjectAfter("最新或指定日期的", "日报"), "给我今天的日报。"],
             [<Mono>{T.weekly}</Mono>, subjectAfter("最新或指定一周的", "周报"), `${subjectAfter("这周", "圈")}有哪些大事？`],
             [<Mono>{T.monthly}</Mono>, subjectAfter("最新或指定月份的", "月报"), `${subjectAfter("9 月", "圈")}发生了什么？`],
-            ...(FEATURES.codexResetMonitor ? [[<Mono>{T.codexResets}</Mono>, "Tibo 的 Codex 额度重置与发卡，分清预告和已确认", "Codex 额度最近重置了吗？"]] : []),
           ]}
         />
       </Block>
@@ -147,11 +112,20 @@ const FEEDS = [
   { name: withSubject("月报"), path: "/feed/monthly.xml", desc: "每月 1 日 10:30（北京时间）一期：总述加按栏目分好的大事，保留最近 12 期。" },
 ];
 
-export function RssPanel({ base }: { base: string }) {
+/** The category feeds, under the names the feeds themselves use. */
+const FEED_CATEGORIES = PUBLIC_API_CATEGORY_KEYS.map((key) => {
+  const c: { label: string; feedLabel?: string } = CATEGORIES.find((x) => x.key === key)!;
+  return [key, c.feedLabel ?? c.label] as const;
+});
+
+export function RssPanel(props: PanelProps) {
+  const { base } = props;
+  const stable = "兼容主流 RSS 2.0 阅读器，也能接 n8n、Zapier 这类自动化工具。地址长期不变";
+  let lead: ReactNode = `${stable}。`;
   return (
     <>
       <PanelHead label="RSS" title="复制地址，用阅读器订阅">
-        兼容主流 RSS 2.0 阅读器，也能接 n8n、Zapier 这类自动化工具。地址长期不变。
+        {lead}
       </PanelHead>
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {FEEDS.map((f) => (
@@ -163,7 +137,7 @@ export function RssPanel({ base }: { base: string }) {
             <p className="mt-1 flex-1 text-[13px] leading-[1.7] text-ink-3">{f.desc}</p>
             <div className="mt-3 flex items-center gap-2 border-t border-line-soft pt-3">
               <code className="mono min-w-0 flex-1 truncate text-[12px] text-ink-4">{base}{f.path}</code>
-              <CopyButton text={`${base}${f.path}`} label="复制地址" className="shrink-0" />
+              <CopyButton text={addressOf(props, f.path)} label="复制地址" className="shrink-0" />
             </div>
           </div>
         ))}
@@ -173,17 +147,17 @@ export function RssPanel({ base }: { base: string }) {
         <Table
           head={["分类", "摘要", "全文"]}
           minWidth={420}
-          rows={CATEGORY_KEYS.map((slug) => [
-            <span className="font-medium text-ink">{CATEGORY_LABELS[slug]}</span>,
-            <span className="inline-flex items-center gap-2"><Mono>{`/feed/category/${slug}.xml`}</Mono><CopyButton text={`${base}/feed/category/${slug}.xml`} className="!h-6 !px-1.5" /></span>,
-            <span className="inline-flex items-center gap-2"><Mono>{`/feed/full/category/${slug}.xml`}</Mono><CopyButton text={`${base}/feed/full/category/${slug}.xml`} className="!h-6 !px-1.5" /></span>,
+          rows={FEED_CATEGORIES.map(([slug, label]) => [
+            <span className="font-medium text-ink">{label}</span>,
+            <span className="inline-flex items-center gap-2"><Mono>{`/feed/category/${slug}.xml`}</Mono><CopyButton text={addressOf(props, `/feed/category/${slug}.xml`)} className="!h-6 !px-1.5" /></span>,
+            <span className="inline-flex items-center gap-2"><Mono>{`/feed/full/category/${slug}.xml`}</Mono><CopyButton text={addressOf(props, `/feed/full/category/${slug}.xml`)} className="!h-6 !px-1.5" /></span>,
           ])}
         />
       </Block>
 
       <Block title="刷新多快合适">
         <p>阅读器会带着上次的 ETag 来问，内容没变时只回一个很小的 304，不重复下载。30 分钟刷新一次就够，更快也拿不到新的内容。</p>
-        <p className="mt-3 text-[13px] text-ink-3">条目链接指向站内阅读页，原文链接在摘要里。能匿名订阅不等于所有用途都获许可，见<Link viewTransition to="/terms" className={link}>使用规则</Link>。</p>
+        <p className="mt-3 text-[13px] text-ink-3">{`条目链接指向站内阅读页，原文链接在摘要里。能匿名订阅不等于所有用途都获许可${POLICY.terms.notes ? `：${POLICY.terms.notes.rss}` : ""}，见`}<Link viewTransition to="/terms" className={link}>{POLICY.terms.name}</Link>。</p>
       </Block>
     </>
   );
@@ -192,11 +166,12 @@ export function RssPanel({ base }: { base: string }) {
 const RECIPES = [
   { key: "latest", label: "盯最新资讯" },
   { key: "sync", label: "同步全部精选" },
-  ...(FEATURES.codexResetMonitor ? [{ key: "resets", label: "盯 Tibo 重置" }] : []),
-];
+] as const;
 
-export function ApiPanel({ base }: { base: string }) {
-  const curl = "curl --compressed";
+export function ApiPanel(props: PanelProps) {
+  const { base } = props;
+  let curl = "curl --compressed";
+  let pace = "内容多久变一次：新资讯全天陆续进来，精选每天变几次到几十次，日报每天 08:00、周报每周一 10:00、月报每月 1 日 10:30（北京时间）各一期。";
   const [recipe, setRecipe] = useState<string>("latest");
   const items = `${base}/api/v1/items?mode=selected&window=24h&limit=20`;
   return (
@@ -214,7 +189,7 @@ export function ApiPanel({ base }: { base: string }) {
             { title: "按节奏取", text: "资讯和热点最快一分钟一次；日报每天 08:00 后取一次，周报、月报出刊后取一次；往回翻页翻到已有的那条就停。" },
           ]}
         />
-        <p className="mt-3 text-[13px] leading-[1.75] text-ink-3">内容多久变一次：新资讯全天陆续进来，精选每天变几次到几十次，日报每天 08:00、周报每周一 10:00、月报每月 1 日 10:30（北京时间）各一期。</p>
+        <p className="mt-3 text-[13px] leading-[1.75] text-ink-3">{pace}</p>
       </Block>
 
       <Block title="接口一览">
@@ -238,13 +213,10 @@ export function ApiPanel({ base }: { base: string }) {
             [<Mono>/api/v1/monthlies/latest</Mono>, "最新一期月报", "每月 1 日 10:30 后一次"],
             [<Mono>{"/api/v1/monthlies/{month}"}</Mono>, "指定月份，如 2026-09", "缓存过期后使用前验证 ETag"],
             [<Mono>/api/v1/monthlies</Mono>, "月报索引", "每月一次"],
-            ...(FEATURES.codexResetMonitor ? [
-              { group: "Tibo 重置监控" },
-              [<Mono>/api/v1/codex-resets/recent</Mono>, "最近 7 天和尚未落地的预告，几 KB", `${CODEX_RESET_SCAN_MINUTES} 分钟一次`],
-              [<Mono>/api/v1/codex-resets</Mono>, "完整历史，逐月变大", "只在要看历史时"],
-            ] : []),
             { group: "给 AI 助手" },
-            [<Mono>/api/v1/agent</Mono>, "给 Agent 的使用说明，列出的地址返回整理好的中文 Markdown", "需要时"],
+            [<Mono>/api/v1/agent</Mono>, [
+              "给 Agent 的使用说明，列出的地址返回整理好的中文 Markdown",
+            ].join("；"), "需要时"],
             { group: "完整精选同步" },
             [<Mono>/api/v1/selected/snapshot</Mono>, "当前全部精选，分页一次拿全", "只在第一次"],
             [<Mono>/api/v1/selected/changes</Mono>, "之后的新增、修改和撤选", "几分钟一次"],
@@ -266,12 +238,6 @@ export function ApiPanel({ base }: { base: string }) {
             <p>每页成功写进本地后再保存新的 cursor。cursor 是流水账水位，放多久都不会过期；返回 409 <Mono>snapshot_required</Mono> 时重新取一次快照，不会悄悄漏数据。</p>
           </>
         )}
-        {recipe === "resets" && (
-          <>
-            <CodeBlock className="mb-3 mt-3" lang="bash" code={`# 每 ${CODEX_RESET_SCAN_MINUTES} 分钟一次；保存 ETag，下次带上\n${curl} -i '${base}/api/v1/codex-resets/recent'\n${curl} -i -H 'If-None-Match: <上次的 ETag>' '${base}/api/v1/codex-resets/recent'`} />
-            <p>结构和完整快照一样，只包含最近 7 天的事件和原帖，以及所有还没落地的预告。完整历史只在要看历史时读 <Mono>/api/v1/codex-resets</Mono>。</p>
-          </>
-        )}
       </Block>
 
       <Block title="出错了怎么办" id="agent-api-recovery">
@@ -285,8 +251,9 @@ export function ApiPanel({ base }: { base: string }) {
           <dt className="mono text-[13px] text-ink">5xx</dt>
           <dd>指数退避，先用上次成功的结果；公开服务不承诺 SLA。</dd>
         </dl>
-        <p className="mt-4 text-[13px] text-ink-3">能匿名调用不等于所有用途都获许可，见<Link viewTransition to="/terms" className={link}>使用规则</Link>。</p>
+        <p className="mt-4 text-[13px] text-ink-3">{`能匿名调用不等于所有用途都获许可${POLICY.terms.notes ? `：${POLICY.terms.notes.api}` : ""}，见`}<Link viewTransition to="/terms" className={link}>{POLICY.terms.name}</Link>。</p>
       </Block>
+
     </>
   );
 }

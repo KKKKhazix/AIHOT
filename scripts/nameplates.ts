@@ -1,7 +1,8 @@
 // Generates the report nameplates (industry/brand/nameplates/*.svg and index.json): the subject word
 // from industry/site.ts (in the accent) and the Chinese title, set solid in Noto Sans SC Black
-// (SIL OFL 1.1) as SVG paths, so the nameplate is one static logotype on every system. The Latin capitals are scaled to stand as tall as the Chinese
-// glyphs, both centred on one line, and the spacing is set by ink, pair by pair.
+// (SIL OFL 1.1) as SVG paths, so the nameplate is one static logotype on every system. The Latin
+// capitals are scaled to stand as tall as the Chinese glyphs, both centred on one line, and the spacing
+// is set by ink, pair by pair.
 //
 // Usage: node scripts/nameplates.ts <@fontsource/noto-sans-sc package directory>
 //   (fetch it with `npm pack @fontsource/noto-sans-sc@5.3.0` and untar; it is not a dependency)

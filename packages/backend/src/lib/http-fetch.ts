@@ -4,20 +4,27 @@ import { addAbortListener } from "node:events";
 import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
 import { config } from "../config.ts";
 import { assertPublicUrl, guardedLookup } from "./url.ts";
+import { createEgressProxy, createEgressResolver } from "./egress-proxy.ts";
 import { SITE } from "@aihot/industry/site";
 
 /**
- * Where a request leaves the host. "egress" (collection, bodies, images and leaderboard data) goes
+ * Where a request leaves the host. "egress" (collection, bodies, images and other public data) goes
  * through the egress proxy when EGRESS_PROXY_URL is set (for example a rule-based proxy that connects
  * .cn and .local names and Chinese or private addresses directly and sends the rest abroad); the names
  * and address literals such a proxy would connect directly are connected here instead, so the
- * connect-time address check still applies. "direct" is for paid APIs called straight (SocialData,
- * Dajiala) and the site's own addresses.
+ * connect-time address check still applies. A name sent through the proxy is resolved through it too
+ * (egress-proxy.ts), and the tunnel goes to the checked address. "direct" is for paid APIs called
+ * straight (SocialData, Dajiala) and the site's own addresses.
  */
 export type EgressRoute = "egress" | "direct";
 
 let proxyAgent: ProxyAgent | null = null;
 let directAgent: Agent | null = null;
+let resolveEgress: ReturnType<typeof createEgressResolver> | null = null;
+
+function egressResolver() {
+  return resolveEgress ??= createEgressResolver(config.egressProxyUrl!);
+}
 
 function proxied(url: URL, route: EgressRoute): boolean {
   if (route !== "egress" || !config.egressProxyUrl) return false;
@@ -27,7 +34,7 @@ function proxied(url: URL, route: EgressRoute): boolean {
 
 function dispatcherFor(viaProxy: boolean): Dispatcher | undefined {
   if (viaProxy) {
-    proxyAgent ??= new ProxyAgent(config.egressProxyUrl!);
+    proxyAgent ??= createEgressProxy(config.egressProxyUrl!, egressResolver());
     return proxyAgent;
   }
   if (config.allowPrivateNetworkFetch) return undefined;
@@ -59,16 +66,15 @@ export interface GuardedResponse {
 }
 
 /** How the collectors introduce themselves: the site's own crawler name and address (industry/site.ts). */
-export const DEFAULT_UA = `Mozilla/5.0 (compatible; ${SITE.crawlerName}/1.0; +${config.siteUrl}/about)`;
+export const DEFAULT_UA = `Mozilla/5.0 (compatible; ${SITE.crawlerName}; +${config.siteUrl}/about)`;
 
 export async function guardedFetch(input: string, opts: GuardedFetchOptions = {}): Promise<GuardedResponse> {
   // One budget includes DNS, every redirect and the body. Restarting it at each hop allowed a
   // nominal 20 s image request to occupy the API for minutes.
   const signal = AbortSignal.timeout(opts.timeoutMs ?? 20_000);
   const route = opts.route ?? "egress";
-  const check = (target: string) => withinDeadline(
-    assertPublicUrl(target, config.allowPrivateNetworkFetch, proxied(new URL(target), route)), signal,
-  );
+  const check = (target: string) => withinDeadline(assertPublicUrl(target, config.allowPrivateNetworkFetch,
+    proxied(new URL(target), route) ? egressResolver() : undefined), signal);
   let url = await check(input);
   const maxRedirects = opts.maxRedirects ?? 5;
   const maxBytes = opts.maxBytes ?? 8 * 1024 * 1024;

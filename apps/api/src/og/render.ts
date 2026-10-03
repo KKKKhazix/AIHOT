@@ -42,6 +42,34 @@ export const h = (type: string, style: Record<string, unknown>, children?: unkno
 /** The site's host as shown on cards. */
 export const SITE_HOST = new URL(config.siteUrl).host;
 
+/** Width over height of an SVG: its viewBox, else its width and height. */
+function aspect(svg: string): number {
+  const box = /<svg[^>]*\sviewBox="([^"]+)"/.exec(svg)?.[1]?.trim().split(/[\s,]+/).map(Number);
+  if (box?.length === 4 && box[2]! > 0 && box[3]! > 0) return box[2]! / box[3]!;
+  const width = Number.parseFloat(/<svg[^>]*\swidth="([^"]+)"/.exec(svg)?.[1] ?? "");
+  const height = Number.parseFloat(/<svg[^>]*\sheight="([^"]+)"/.exec(svg)?.[1] ?? "");
+  return width > 0 && height > 0 ? width / height : 1;
+}
+
+const wordmarks = new Map<string, Promise<{ src: string; aspect: number } | null>>();
+
+/**
+ * A wordmark of the industry pack (industry/brand/<file>, e.g. wordmark-dark.svg for the dark cards) as an
+ * image of the given height; null when the pack has none, and the card sets the name in type instead.
+ */
+export async function brandMark(file: string, height: number): Promise<Node | null> {
+  let mark = wordmarks.get(file);
+  if (!mark) {
+    mark = readFile(path.join(REPO_ROOT, "industry/brand", file), "utf8").then(
+      (svg) => ({ src: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, aspect: aspect(svg) }),
+      () => null,
+    );
+    wordmarks.set(file, mark);
+  }
+  const found = await mark;
+  return found && h("img", { height }, undefined, { src: found.src, height, width: Math.round(height * found.aspect) });
+}
+
 /** The site name as a wordmark: bold, with the accent dot the cards use. */
 export function nameMark(size: number, color: string, dot: string): Node {
   return h("div", { display: "flex", alignItems: "center" }, [
@@ -76,7 +104,7 @@ async function tree(card: OgCard): Promise<Node> {
     },
     [
       h("div", { display: "flex", alignItems: "center", justifyContent: "space-between" }, [
-        nameMark(34, "#e6eded", "#2ce2e8"),
+        (await brandMark("wordmark-dark.svg", 40)) ?? nameMark(34, "#e6eded", "#2ce2e8"),
         h("div", { display: "flex", fontSize: 24, color: "#82939a" }, SITE_HOST),
       ]),
       h("div", { display: "flex", marginTop: 56, alignItems: "center" }, [
@@ -139,7 +167,7 @@ async function render(file: string, size: { width: number; height: number }, tre
 }
 
 export function ogEtag(card: OgCard): string {
-  return createHash("sha256").update(OG_TEMPLATE_VERSION).update(SITE.name).update(SITE_HOST).update(JSON.stringify(card)).digest("hex").slice(0, 24);
+  return createHash("sha256").update(OG_TEMPLATE_VERSION).update(JSON.stringify(card)).digest("hex").slice(0, 24);
 }
 
 /** PNG bytes for a card, from the disk cache when this exact card was rendered before. */

@@ -2,6 +2,7 @@
 // items through these columns and views; which rows are public is decided by scope.ts.
 import type { CategoryKey, ChannelKey } from "@aihot/contracts/taxonomy";
 import type { FeedItemSummary, ItemSummary, MediaView, XPostView } from "@aihot/contracts/site";
+import { POLICY } from "@aihot/industry/site";
 import { sql, type Db } from "../db.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { displayTags, publicSourceName } from "./rules.ts";
@@ -128,6 +129,14 @@ export function xView(row: Pick<ItemRow, "x_post" | "zh_text"> & Partial<Pick<It
   };
 }
 
+/**
+ * Whether pages show an X post's own text and media. A site that counts them as full text shows them
+ * only where the source allows full text, as it does an article's body.
+ */
+export function showsPost(row: { channel: string; body_mode: string }): boolean {
+  return row.channel === "x" && (!POLICY.xPostIsFullText || row.body_mode === "full");
+}
+
 /** The shared public article; its X post is added as each answer shows it. */
 export function toItemSummary(row: ItemRow): ItemSummary {
   return {
@@ -153,8 +162,7 @@ export function toItemSummary(row: ItemRow): ItemSummary {
 /** Project the shared public article into the exact fields a site card renders. */
 export function toFeedItemSummary(row: ItemRow): FeedItemSummary {
   const item = toItemSummary(row);
-  // An X post's own text and media are its body: shown only where the source allows full text.
-  const x = row.channel === "x" && row.body_mode === "full" ? xView(row, true) : null;
+  const x = showsPost(row) ? xView(row, true) : null;
   return {
     id: item.id, title: item.title, summary: item.summary, reason: item.reason,
     source: item.source, publishedAt: item.publishedAt, timelineAt: item.timelineAt,

@@ -1,7 +1,7 @@
 // A hard-killed analysis must distinguish a lost paid answer from one already saved.
 // These are real processes and PostgreSQL transactions with a local model protocol substitute;
 // they do not test provider quality, machine power loss, or a browser journey.
-import { gate, stub, tag } from "./setup.ts";
+import { gate, pointModels, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -59,10 +59,7 @@ function worker(articleId: string) {
     ...process.env, TEST_ARTICLE_ID: articleId, MODEL_CALLS_ENABLED: "true", COLLECT_ENABLED: "false",
     AIHOT_CREDENTIALS_DIR: "/nonexistent-test-credentials", FEISHU_INTERNAL_ENABLED: "false",
   };
-  for (const name of ["DASHSCOPE", "ZHIPU", "DEEPSEEK", "XIAOMI_MIMO"]) {
-    env[`${name}_BASE_URL`] = `${provider.url}/v1`;
-    env[`${name}_API_KEY`] = "test-key";
-  }
+  pointModels(provider.url, ["qwen3.7-flash", "glm-5.3-flash", "deepseek-flash", "mimo-v2.6-flash"], env);
   const child = spawn(process.execPath, ["--input-type=module", "-e", script], { cwd: process.cwd(), env, stdio: ["ignore", "ignore", "pipe", "ipc"] });
   children.add(child);
   let message: WorkerMessage | undefined;

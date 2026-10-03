@@ -9,6 +9,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { config, credential } from "../config.ts";
 import { sql } from "../db.ts";
+import { screenshotsForwarded } from "./feedback.ts";
 
 const run = promisify(execFile);
 const KEEP_LOCAL = 3;
@@ -79,17 +80,19 @@ export async function runBackup(now = new Date()) {
   const dir = path.join(config.dataDir, "backups");
   await mkdir(dir, { recursive: true });
   const stamp = now.toISOString().slice(0, 16).replace(/[-:T]/g, "");
-  const dump = path.join(dir, `aihot-${stamp}.dump`);
+  // Named after the database ("news_db" → news-db-…), so two databases backed up into one store stay apart.
+  const name = sql.options.database.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const dump = path.join(dir, `${name}-${stamp}.dump`);
   await run("pg_dump", ["--format=custom", "--compress=6", "--no-owner", "--file", dump, config.databaseUrl], { maxBuffer: 16 * 1024 * 1024 });
   // Verify before shipping: the archive must list cleanly.
   await run("pg_restore", ["--list", dump], { maxBuffer: 64 * 1024 * 1024 });
-  const files = path.join(dir, `aihot-files-${stamp}.tar.gz`);
+  const files = path.join(dir, `${name}-files-${stamp}.tar.gz`);
   // An empty archive only when there is nothing to keep. A failure to read or pack existing files is
   // tried once more and otherwise reported: the database dump still ships, but the run fails.
   const kept: string[] = [];
-  // Feedback screenshots not forwarded (Feishu is optional) are still referenced by the database as local:
-  // files, so they are kept with the uploads.
-  for (const d of ["uploads", "feedback-screenshots"]) {
+  // Feedback screenshots only waiting to be forwarded are not kept (once forwarded, only the Feishu image
+  // key remains). Without the internal chat they stay here for good, referred to as local: files.
+  for (const d of screenshotsForwarded() ? ["uploads"] : ["uploads", "feedback-screenshots"]) {
     const info = await stat(path.join(config.dataDir, d)).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return null;
       throw error;
@@ -103,6 +106,7 @@ export async function runBackup(now = new Date()) {
   else {
     const pack = () => run("tar", ["-czf", files, "-C", config.dataDir, ...kept]);
     await pack().catch(() => pack()).catch((error: unknown) => {
+      // tar's own words: the message starts with the whole command line, which can fill the excerpt.
       const stderr = (error as { stderr?: unknown })?.stderr;
       filesError = String(typeof stderr === "string" && stderr.trim() ? stderr.trim() : error instanceof Error ? error.message : error).slice(0, 300);
     });
@@ -124,7 +128,7 @@ export async function runBackup(now = new Date()) {
     }
   }
   // Local copies: keep the newest few of each kind.
-  for (const kind of ["aihot-2", "aihot-files-"]) {
+  for (const kind of [`${name}-2`, `${name}-files-`]) {
     const list = (await readdir(dir)).filter((f) => f.startsWith(kind)).sort().reverse();
     for (const f of list.slice(KEEP_LOCAL)) await rm(path.join(dir, f), { force: true });
   }

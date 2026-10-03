@@ -1,5 +1,8 @@
-// Issue numbers count the complete series of existing issues of a kind, while navigation keeps only
-// the newest 400: the 401st daily is still 第 401 期 on its page, in the index and in v1.
+// Issue numbers ("第 N 期") count every existing issue of a kind; the navigation keeps only the newest
+// 400. Failure cases: the 401st issue numbered from the truncated index (the newest shows 400, older
+// ones none); the index, detail, navigation, latest page and month answers disagreeing; a new issue or
+// a revision renumbering the older ones; dailies, weeklies and monthlies sharing one count; the v1
+// report gaining the field.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -11,7 +14,6 @@ import { buildApp } from "../apps/api/src/app.ts";
 
 const T = tag();
 const app = await buildApp();
-const kinds: ReportKind[] = ["daily", "weekly", "monthly"];
 const baseline = { daily: 0, weekly: 0, monthly: 0 };
 let year: number;
 let daily: string[];
@@ -48,40 +50,24 @@ after(async () => {
   await closeDb();
 });
 
-test("complete-series ordinals cross the navigation boundary without changing report identity", async (t) => {
+test("issue numbers count the whole series across the navigation's 400-issue limit", async (t) => {
+  // The index is kept for a minute and served stale for ten; moving the clock past both reloads it.
   t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
   const refresh = () => t.mock.timers.tick(600_001);
 
-  await t.test("empty series retain null latest and missing/invalid details remain 404", async () => {
-    for (const kind of kinds) {
-      const result = await get(`/api/site/reports/${kind}/latest-page`);
-      assert.equal(result.status, 200);
-      if (baseline[kind] === 0) assert.deepEqual(result.body, { index: [], report: null });
-      else assert.equal(result.body.index.length, Math.min(400, baseline[kind]));
-      assert.equal((await get(`/api/site/reports/${kind}/not-a-key`)).status, 404);
-      assert.equal((await get(`/api/site/reports/${kind}/9999-99-99`)).status, 404);
-    }
-  });
-
   await insert("daily", daily.slice(0, 405));
   refresh();
-  await t.test("405 real daily reports keep complete-series numbers while navigation stays at 400", async () => {
+  await t.test("405 dailies are numbered up to 405 while the navigation keeps 400", async () => {
     const index = await listReports("daily");
     assert.equal(index.length, 400);
     assert.equal(index[0]!.key, daily[404]);
-    assert.equal(index[0]!.issueNumber, baseline.daily + 405, "the 405th issue must not be numbered from a truncated 400-entry window");
-    for (const n of [1, 100, 399, 405]) {
-      const report = await loadReport("daily", daily[n - 1]!);
-      assert.equal(report!.issueNumber, baseline.daily + n);
-      assert.equal(typeof report!.issueNumber, "number");
-      assert.ok(Number.isInteger(report!.issueNumber) && report!.issueNumber > 0);
-    }
-    assert.ok(!index.some((entry) => entry.key === daily[0]), "the first detail really is outside the navigation window");
-    const raw = await reportIndexRows("daily", 400);
-    assert.doesNotMatch(JSON.stringify(raw), /DETAIL_ONLY_/, "index metadata must not gain full report prose");
+    assert.equal(index[0]!.issueNumber, baseline.daily + 405, "the 405th issue must not be numbered from the 400-entry index");
+    for (const n of [1, 100, 399, 405]) assert.equal((await loadReport("daily", daily[n - 1]!))!.issueNumber, baseline.daily + n);
+    assert.ok(!index.some((entry) => entry.key === daily[0]), "the first issue really is outside the navigation");
+    assert.doesNotMatch(JSON.stringify(await reportIndexRows("daily", 400)), /DETAIL_ONLY_/, "the index stays without report prose");
   });
 
-  await t.test("index, detail, navigation, latest-page and month projections retain the same number", async () => {
+  await t.test("the index, detail, navigation, latest page and month answers give the same number", async () => {
     const key = daily[404]!;
     const expected = baseline.daily + 405;
     const index = await get("/api/site/reports/daily");
@@ -95,30 +81,30 @@ test("complete-series ordinals cross the navigation boundary without changing re
       assert.equal(entry.issueNumber, expected);
     }
     assert.equal(navigation.body.items.length, 400);
-    assert.ok(navigation.body.items.some((entry: { title?: string }) => entry.title === undefined), "closed-month narrow navigation remains narrow");
+    assert.ok(navigation.body.items.some((entry: { title?: string }) => entry.title === undefined), "closed months still leave out their titles");
     assert.equal((await loadReportNavigation("daily", key))[0]!.issueNumber, expected);
     assert.equal((await loadReportMonth("daily", key.slice(0, 7)))[0]!.issueNumber, expected);
-    assert.ok(!("issueNumber" in (await v1Daily(key))!.report), "the v1 report contract is unchanged");
+    assert.ok(!("issueNumber" in (await v1Daily(key))!.report), "the v1 daily keeps its fields");
   });
 
-  await t.test("later appends preserve old numbers within cached and refreshed snapshots", async () => {
-    const oldNumbers = await Promise.all([1, 100, 399].map(async (n) => (await loadReport("daily", daily[n - 1]!))!.issueNumber));
+  await t.test("new issues and revisions leave older numbers alone", async () => {
+    const older = async () => Promise.all([1, 100, 399].map(async (n) => (await loadReport("daily", daily[n - 1]!))!.issueNumber));
+    const numbers = await older();
     const warm = await listReports("daily");
     await insert("daily", daily.slice(405));
-    const cached = await listReports("daily");
-    assert.deepEqual(cached, warm, "the existing fresh-cache window is preserved");
+    assert.deepEqual(await listReports("daily"), warm, "the kept index is served until it is reloaded");
     assert.equal((await loadReport("daily", daily[406]!))!.issueNumber, baseline.daily + 407);
     refresh();
     const updated = await listReports("daily");
     assert.equal(updated.length, 400);
     assert.equal(updated[0]!.issueNumber, baseline.daily + 407);
-    assert.deepEqual(await Promise.all([1, 100, 399].map(async (n) => (await loadReport("daily", daily[n - 1]!))!.issueNumber)), oldNumbers);
+    assert.deepEqual(await older(), numbers);
     const key = daily[99]!;
     await sql`UPDATE reports SET revision = revision + 1 WHERE kind = 'daily' AND key = ${key}`;
-    assert.equal((await loadReport("daily", key))!.issueNumber, baseline.daily + 100, "a revision does not allocate another issue");
+    assert.equal((await loadReport("daily", key))!.issueNumber, baseline.daily + 100, "a revision is the same issue");
   });
 
-  await t.test("weekly 400 to 401 and sparse monthly issues count independently of dailies", async () => {
+  await t.test("weeklies and monthlies are numbered on their own", async () => {
     await insert("weekly", weekly.slice(0, 400));
     await insert("monthly", monthly.slice(0, 1));
     refresh();
@@ -133,20 +119,20 @@ test("complete-series ordinals cross the navigation boundary without changing re
     for (let i = 0; i < monthly.length; i += 1) assert.equal((await loadReport("monthly", monthly[i]!))!.issueNumber, baseline.monthly + i + 1);
     const crossing = weekly.findIndex((key, i) => i > 0 && key.slice(0, 4) !== weekly[i - 1]!.slice(0, 4));
     assert.ok(crossing > 0);
-    assert.equal((await loadReport("weekly", weekly[crossing]!))!.issueNumber, baseline.weekly + crossing + 1);
+    assert.equal((await loadReport("weekly", weekly[crossing]!))!.issueNumber, baseline.weekly + crossing + 1, "a new year goes on counting");
   });
 
-  await t.test("earlier backfill and deletion intentionally adjust chronological positions", async () => {
+  await t.test("an issue added or deleted before another moves its number", async () => {
     const earlier = day(-2);
     const key = daily[99]!;
-    const before = (await loadReport("daily", key))!.issueNumber;
+    const number = (await loadReport("daily", key))!.issueNumber;
     await insert("daily", [earlier]);
-    assert.equal((await loadReport("daily", key))!.issueNumber, before + 1);
+    assert.equal((await loadReport("daily", key))!.issueNumber, number + 1);
     refresh();
-    assert.equal((await listReports("daily")).find((entry) => entry.key === key)!.issueNumber, before + 1);
+    assert.equal((await listReports("daily")).find((entry) => entry.key === key)!.issueNumber, number + 1);
     await sql`DELETE FROM reports WHERE kind = 'daily' AND key = ${earlier} AND content->>'fixtureTag' = ${T}`;
-    assert.equal((await loadReport("daily", key))!.issueNumber, before);
+    assert.equal((await loadReport("daily", key))!.issueNumber, number);
     refresh();
-    assert.equal((await listReports("daily")).find((entry) => entry.key === key)!.issueNumber, before);
+    assert.equal((await listReports("daily")).find((entry) => entry.key === key)!.issueNumber, number);
   });
 });

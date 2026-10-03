@@ -22,10 +22,6 @@
       "name": "OpenAI / ChatGPT",
       "group": "company",
       "entityId": "openai",
-      "leaderboardProvider": "openai",
-      "orgNames": [
-        "OpenAI"
-      ],
       "definition": "OpenAI 的全部动态：GPT 系列模型、ChatGPT 与 Sora 产品、公司战略与人事的持续追踪。"
     },
     {
@@ -33,10 +29,6 @@
       "name": "Anthropic / Claude",
       "group": "company",
       "entityId": "anthropic",
-      "leaderboardProvider": "anthropic",
-      "orgNames": [
-        "Anthropic"
-      ],
       "definition": "Anthropic 的全部动态：Claude 系列模型、Claude Code、安全研究路线与公司进展的持续追踪。"
     },
     {
@@ -44,16 +36,8 @@
       "name": "Google / Gemini",
       "group": "company",
       "entityId": "google",
-      "leaderboardProvider": "google",
       "aliases": [
         "DeepMind"
-      ],
-      "orgNames": [
-        "Google DeepMind",
-        "Google Research",
-        "Google",
-        "DeepMind",
-        "谷歌"
       ],
       "definition": "Google 与 DeepMind 的 AI 动态：Gemini 系列、Veo 视频模型、研究成果与产品生态的持续追踪。"
     },
@@ -62,12 +46,6 @@
       "name": "DeepSeek",
       "group": "company",
       "entityId": "deepseek",
-      "leaderboardProvider": "deepseek",
-      "orgNames": [
-        "DeepSeek AI",
-        "DeepSeek",
-        "深度求索"
-      ],
       "definition": "DeepSeek（深度求索）的模型发布、开源权重、技术报告与 API 价格变化。"
     },
     {
@@ -75,17 +53,6 @@
       "name": "千问 Qwen",
       "group": "company",
       "entityId": "qwen",
-      "leaderboardProvider": "alibaba",
-      "orgNames": [
-        "通义千问",
-        "通义实验室",
-        "阿里巴巴",
-        "阿里云",
-        "阿里",
-        "Qwen Team",
-        "Qwen",
-        "Alibaba"
-      ],
       "definition": "阿里千问 Qwen 系列的开源发布与迭代：从旗舰模型到端侧小模型的全谱系动态。"
     },
     {
@@ -93,12 +60,6 @@
       "name": "Kimi / 月之暗面",
       "group": "company",
       "entityId": "kimi",
-      "leaderboardProvider": "moonshot",
-      "orgNames": [
-        "Moonshot AI",
-        "月之暗面",
-        "Kimi"
-      ],
       "definition": "月之暗面 Kimi 系列模型与产品动态：K 系列开源模型、长上下文技术与产品演进的追踪。"
     },
     {
@@ -106,11 +67,6 @@
       "name": "MiniMax",
       "group": "company",
       "entityId": "minimax",
-      "leaderboardProvider": "minimax",
-      "orgNames": [
-        "MiniMax",
-        "稀宇科技"
-      ],
       "definition": "MiniMax 的模型与产品动态：M 系列大模型、语音与多模态能力、开源与商业化进展。"
     },
     {
@@ -118,13 +74,6 @@
       "name": "智谱 GLM",
       "group": "company",
       "entityId": "zhipu",
-      "leaderboardProvider": "z-ai",
-      "orgNames": [
-        "智谱AI",
-        "智谱",
-        "Zhipu AI",
-        "Z.ai"
-      ],
       "definition": "智谱的 GLM 系列模型动态：旗舰开源发布、代码与推理能力迭代、商业化与生态进展的追踪。"
     },
     {
@@ -132,11 +81,6 @@
       "name": "xAI / Grok",
       "group": "company",
       "entityId": "xai",
-      "leaderboardProvider": "xai",
-      "orgNames": [
-        "SpaceXAI",
-        "xAI"
-      ],
       "definition": "马斯克 xAI 与 Grok 系列的全部动态：模型迭代、算力扩张与 X 平台整合的持续追踪。"
     },
     {
@@ -144,12 +88,6 @@
       "name": "Meta / Llama",
       "group": "company",
       "entityId": "meta",
-      "leaderboardProvider": "meta",
-      "orgNames": [
-        "Meta Superintelligence Labs",
-        "Meta AI",
-        "Meta"
-      ],
       "definition": "Meta 的 AI 动态：Llama 与 Muse 系列模型、超级智能实验室与 Meta AI 产品。"
     },
     {
@@ -157,13 +95,6 @@
       "name": "Microsoft / Copilot",
       "group": "company",
       "entityId": "microsoft",
-      "leaderboardProvider": "microsoft",
-      "orgNames": [
-        "Microsoft Research",
-        "Microsoft AI",
-        "Microsoft",
-        "微软"
-      ],
       "definition": "微软的 AI 布局：Copilot 全家桶、Azure AI 基础设施与 OpenAI 合作关系的持续追踪。"
     },
     {
@@ -171,12 +102,6 @@
       "name": "NVIDIA 英伟达",
       "group": "company",
       "entityId": "nvidia",
-      "leaderboardProvider": "nvidia",
-      "orgNames": [
-        "NVIDIA Research",
-        "NVIDIA",
-        "英伟达"
-      ],
       "definition": "英伟达的 AI 芯片与生态动态：GPU 新品、CUDA 生态、机器人平台与 AI 算力市场的风向。"
     },
     {
@@ -184,10 +109,6 @@
       "name": "Hugging Face",
       "group": "company",
       "entityId": "hugging-face",
-      "orgNames": [
-        "Hugging Face",
-        "HuggingFace"
-      ],
       "definition": "Hugging Face 开源社区动态：热门模型与数据集、排行榜变化与开源生态的晴雨表。"
     },
     {
@@ -195,9 +116,6 @@
       "name": "Cursor",
       "group": "company",
       "entityId": "cursor",
-      "orgNames": [
-        "Cursor"
-      ],
       "definition": "Cursor（Anysphere）的编辑器与编码 Agent 动态：产品迭代、自研模型与定价变化。"
     },
     {
@@ -205,9 +123,6 @@
       "name": "OpenRouter",
       "group": "company",
       "entityId": "openrouter",
-      "orgNames": [
-        "OpenRouter"
-      ],
       "definition": "OpenRouter 模型路由平台动态：新模型上架、用量排行与开发者选型的真实市场信号。"
     },
     {
@@ -216,11 +131,6 @@
       "group": "field",
       "tags": [
         "Agent"
-      ],
-      "chronicleTerms": [
-        "Agent",
-        "智能体",
-        "代理"
       ],
       "definition": "让模型自主规划、调用工具、完成多步任务的技术方向——从 Claude Code、Manus 到各家 Agent 框架与评测基准的全部动态。"
     },
@@ -231,17 +141,6 @@
       "tags": [
         "编码"
       ],
-      "chronicleTerms": [
-        "编码",
-        "编程",
-        "代码",
-        "程序员",
-        "Code",
-        "IDE",
-        "Copilot",
-        "Cursor",
-        "SWE"
-      ],
       "definition": "AI 写代码的一切：编码助手、Vibe Coding、代码模型评测与开发工作流变革。"
     },
     {
@@ -250,19 +149,6 @@
       "group": "field",
       "tags": [
         "推理"
-      ],
-      "chronicleTerms": [
-        "推理",
-        "思考",
-        "思维",
-        "数学",
-        "证明",
-        "猜想",
-        "难题",
-        "奥赛",
-        "IMO",
-        "Reasoning",
-        "Thinking"
       ],
       "definition": "模型推理能力的进展：思维链、推理模型、数学与逻辑基准的突破与争议。"
     },
@@ -273,19 +159,6 @@
       "tags": [
         "多模态"
       ],
-      "chronicleTerms": [
-        "多模态",
-        "全模态",
-        "视觉",
-        "看图",
-        "识图",
-        "图像理解",
-        "视频理解",
-        "音视频",
-        "Omni",
-        "VL",
-        "VLM"
-      ],
       "definition": "文本之外的能力：视觉理解、图文混合、音视频输入输出的模型与产品进展。"
     },
     {
@@ -294,15 +167,6 @@
       "group": "field",
       "tags": [
         "图像生成"
-      ],
-      "chronicleTerms": [
-        "图像",
-        "图片",
-        "生图",
-        "绘图",
-        "画",
-        "设计",
-        "Image"
       ],
       "definition": "AI 画图的最前线：文生图模型迭代、图像编辑能力与创作工具生态的全部动态。"
     },
@@ -313,12 +177,6 @@
       "tags": [
         "视频"
       ],
-      "chronicleTerms": [
-        "视频",
-        "影视",
-        "电影",
-        "Video"
-      ],
       "definition": "AI 视频生成与理解：文生视频模型、视频编辑工具与影视创作变革的追踪。"
     },
     {
@@ -327,18 +185,6 @@
       "group": "field",
       "tags": [
         "语音"
-      ],
-      "chronicleTerms": [
-        "语音",
-        "音频",
-        "声音",
-        "音乐",
-        "播客",
-        "全双工",
-        "TTS",
-        "ASR",
-        "Voice",
-        "Audio"
       ],
       "definition": "AI 语音与音频的进展：语音合成、实时对话、音乐生成与音频理解的模型与产品。"
     },
@@ -349,17 +195,6 @@
       "tags": [
         "具身智能"
       ],
-      "chronicleTerms": [
-        "具身",
-        "机器人",
-        "人形",
-        "自动驾驶",
-        "世界模型",
-        "机械臂",
-        "物理",
-        "Robot",
-        "VLA"
-      ],
       "definition": "AI 走进物理世界：人形机器人、具身基础模型与真实环境操作能力的进展追踪。"
     },
     {
@@ -368,20 +203,6 @@
       "group": "field",
       "tags": [
         "端侧"
-      ],
-      "chronicleTerms": [
-        "端侧",
-        "本地",
-        "离线",
-        "手机",
-        "边缘",
-        "设备",
-        "笔记本",
-        "iPhone",
-        "Mac",
-        "macOS",
-        "MacBook",
-        "PC"
       ],
       "definition": "跑在手机、电脑与边缘设备上的 AI：小模型、本地推理与端侧芯片的进展。"
     },
@@ -393,13 +214,6 @@
         "开源生态",
         "开源/仓库"
       ],
-      "chronicleTerms": [
-        "开源",
-        "权重",
-        "Open Source",
-        "Open-Source",
-        "Open Weight"
-      ],
       "definition": "开源模型、框架与仓库动态：权重开放、社区项目爆火、开源与闭源的力量消长。"
     },
     {
@@ -408,25 +222,6 @@
       "group": "field",
       "tags": [
         "部署/工程"
-      ],
-      "chronicleTerms": [
-        "部署",
-        "推理引擎",
-        "推理框架",
-        "推理服务",
-        "推理加速",
-        "框架",
-        "吞吐",
-        "延迟",
-        "加速",
-        "算力",
-        "集群",
-        "服务器",
-        "量化",
-        "芯片",
-        "SDK",
-        "API",
-        "GPU"
       ],
       "definition": "把模型跑起来的工程实践：推理优化、显存与成本、Serving 架构与基础设施选型。"
     },
@@ -437,14 +232,6 @@
       "tags": [
         "数据/训练"
       ],
-      "chronicleTerms": [
-        "数据",
-        "训练",
-        "微调",
-        "强化学习",
-        "合成",
-        "RL"
-      ],
       "definition": "训练侧的门道：数据集构建、合成数据、预训练与后训练方法、算力与训练成本。"
     },
     {
@@ -454,21 +241,6 @@
       "tags": [
         "安全/对齐"
       ],
-      "chronicleTerms": [
-        "安全",
-        "对齐",
-        "红队",
-        "越狱",
-        "漏洞",
-        "攻击",
-        "护栏",
-        "风险",
-        "滥用",
-        "失控",
-        "入侵",
-        "欺骗",
-        "作弊"
-      ],
       "definition": "AI 安全与对齐：越狱与防御、模型行为研究、安全评测与治理框架的进展。"
     },
     {
@@ -477,16 +249,6 @@
       "group": "field",
       "tags": [
         "MCP/工具调用"
-      ],
-      "chronicleTerms": [
-        "MCP",
-        "工具",
-        "插件",
-        "连接器",
-        "函数调用",
-        "Tool",
-        "Plugin",
-        "Connector"
       ],
       "definition": "模型连接外部世界的协议与实践：MCP 生态、function calling、工具链集成的动态。"
     },

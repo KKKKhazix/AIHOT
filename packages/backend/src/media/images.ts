@@ -75,7 +75,9 @@ function original(url: string): Promise<GuardedResponse> {
 }
 
 async function fetchOriginal(url: string): Promise<GuardedResponse> {
-  const res = await guardedFetch(url, { timeoutMs: 20_000, maxBytes: 15 * 1024 * 1024, headers: { accept: "image/avif,image/webp,image/*,*/*;q=0.8" } });
+  const res = await guardedFetch(url, {
+    timeoutMs: 20_000, maxBytes: 15 * 1024 * 1024, headers: { accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
+  });
   if (res.status !== 200) throw new Error(`upstream ${res.status}`);
   return res;
 }

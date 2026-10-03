@@ -16,57 +16,29 @@
 
 - `name`：站名。导航、标题、分享图、RSS、MCP、后台都用它。
 - `subject`：行业词。页面上“AI 日报”“全部 AI 动态”会变成“法律日报”“全部法律动态”。
-- `homeTitle`、`description`、`tagline`：首页标题、一句话介绍、侧边栏小字。
+- `homeTitle`、`topicsTitle`、`description`、`tagline`、`keywords`：首页和主题目录页的标题、一句话介绍、分享图下方的小字、给搜索引擎的关键词。
 - `mcpPrefix`：MCP 工具名前缀，比如 `lawhot` 会得到 `lawhot_get_latest`。有人接入以后不要再改。
+- `interfaceVersion`：公开接口（MCP、OpenAPI、`llms.txt`）的版本号，只升不降；改了接口里已有的字段或含义时升主版本。
 - `crawlerName`：抓取信源时报的名字，别用别人的站名。
-- `ABOUT`：关于页的大标题、四个环节的说明、作者块（可选）、版权说明。
 - `icp`：中国大陆网站的备案号，填了就显示在页脚。
+- `POLICY`：使用规则和隐私说明两页的名字和简介；`xPostIsFullText` 决定 X 帖子本身的文字算不算全文（算的话，只在信源允许全文时显示）。
+- `ABOUT`：关于页的大标题、四个环节的说明、作者块（可选）、版权说明。
+- `CARDS`：各页分享图上的文字。
+- `ALERTS`、`SOURCE_DEFAULTS`、`COMMUNITY_FEEDS`：告警里随部署而变的说法，后台新建信源时默认展不展示全文，哪些社区站信源按发帖的账号算热度。
 
 站点地址不写在这里，部署时用环境变量 `SITE_URL` 设置。
 
 ## 2. 分类、标签和主题：`industry/taxonomy.ts`、`industry/topics.json`
 
-- `CATEGORIES`：首页和“全部动态”的筛选类别。`key` 会出现在网址和接口里（`/all?category=`、`/feed/category/<key>.xml`），上线后不要改；`label` 是显示名；`section` 是日报、周报、月报里的分节（几个类别可以共用一节）；`guide` 写这一类收什么、和相邻类别的边界在哪，结构化时给模型看（总的归类原则在 `prompts/structure.md`）；`commentary: true` 标出评论类（教程、观点）：报过的事件再有这类跟进，即使是当事方自己发的，日报也只放进快讯（除非有 4 家以上信源报道）。
-- `RELEASE`：这个行业最受关注的那类发布（AI 行业是新模型），类别和标签都对上才算。日报报头的“N 个新模型”按它数（后台改了分类，已出的日报会重算），大事记也靠它认出这类发布；`unit` 是数字后面的说法。没有这样一类的行业设成 `null`，报头就不显示这个数。
+- `CATEGORIES`：首页和“全部动态”的筛选类别。`key` 会出现在网址和接口里（`/all?category=`、`/feed/category/<key>.xml`），上线后不要改；`label` 是显示名；`section` 是日报、周报、月报里的分节（几个类别可以共用一节）；`guide` 写这一类收什么、和相邻类别的边界在哪，结构化时给模型看（总的归类原则在 `prompts/structure.md`）；`commentary: true` 标出评论类（教程、观点）：报过的事件再有这类跟进，即使是当事方自己发的，日报也只放进快讯（除非有 4 家以上信源报道）；`feedLabel` 是分类 RSS 标题里的名字（不写就用 `label`）；`publicAs` 让这一类在公开接口、RSS 和 MCP 里并进另一类发布，网页上照样分开。
+- `RELEASE`：这个行业最受关注的那类发布（AI 行业是新模型），类别和标签都对上才算。日报报头的“N 个新模型”按它数（后台改了分类，已出的日报会重算）；`unit` 是数字后面的说法。没有这样一类的行业设成 `null`，报头就不显示这个数。
 - `PLAIN_TERMS`：周报月报的总述里可以直接写、不必在条目里找到出处的行业通用词（小写）。站名自动算在内。总述写了条目里没有的名字或数字就不用，见 [精选与校准](selection.md)。
 - `CATEGORY_TAGS`、`TOPIC_TAGS`、`ENTITY_TAGS`：模型打标签时只能从这里选。第一个标签必须是“分类标签”。`prompts/structure.md` 里还写着 AI 行业的标签规则（比如什么才算“模型发布”），换行业时一起改。
 - `ENTITIES`：行业里的主要公司或机构，用于“公司”类主题页。`aliases` 给结构化的模型看；`otherNames` 是公司自己的其他称呼（官方账号名、子品牌），把新闻的主体对到公司、判断标题有没有点名这家公司时也认它们。`IDENTITY_LEXICON`、`PUBLISHER_DOMAINS` 用来防止模型在标题摘要里写进原文没提到的公司，别的行业没有这个需要可以清空。
 - `ITEM_TYPES`：内容类型，和评分提示词里的权重表对应，改了要一起改提示词。
 - `topics.json`：主题目录（`/topics`）。站点启动时读取，改完重新构建（`docker compose up -d --build`）才生效。分三组：`company`（公司与机构）、`field`（方向）、`genre`（内容形态）。`slug` 上线后不要改。
-  - `company` 主题用 `entityId`（`ENTITIES` 的 id）收以这家公司为主体的报道；一篇报道的主体有几家公司时，标题里点了它的名才算。可选：`aliases`（搜索框里只搜这个词，也能找出这家公司的报道）、`orgNames`（公司公告开头的组织名，大事记的事件名里省掉）、`leaderboardProvider`（开着模型榜时，用这家厂商最好的模型的标志）。
-  - `field` 和 `genre` 主题用 `tags` 收打了这些标签的报道。`field` 主题写了 `chronicleTerms` 才有大事记，只收标题里出现这些词的进展。
-
-### 大事记：`industry/chronicle.ts`
-
-主题页的“大事记”是近 12 个月的重要进展，按规则从已经公开的精选里挑，不调用模型：公司主题是横向的编年史，方向和形态主题是竖向的时间轴。步骤在框架里（`packages/backend/src/publication/topic-chronicle.ts`），行业规则在 `chronicle.ts`：
-
-- `kinds`：节点类型。`label` 是类型名；`above` 画在公司编年史时间轴的上方一行（AI：模型）；`launch` 表示主题自己推出的东西（AI：模型、产品），公司主题只收这家公司自己发布的，其余类型算新闻，只收以这家公司为主体的；`company`、`other` 分别是公司主题、方向和形态主题收这类节点的精选分门槛（公司主题还有每月名额），不写就不收。
-- `forms`：内容形态主题各收哪些类型、每月最多几件；没列出的形态主题没有大事记，只显示精选。
-- `launchVerb`：发布动作的说法。没有事实主体的报道，看标题在发布动作之前先点名的是哪家公司。
-- `kindOf`：一篇报道在这一组主题里算哪类节点；预告、教程、只是上架到别的平台这类返回 `null`，分数再高也不算。
-- `sameEvent`、`eventName` 可选：同一周、同一类型的两个节点是不是同一件事，节点在时间轴上叫什么（“Claude Opus 5.5 发布”）。删掉就用框架的做法：只合并标题或事件名相同的，事件名取标题的第一句。
-
-换行业时先想清楚这个行业的大事分几类、哪类最重要，再改 `kinds`、`forms` 和 `kindOf`；文件里写死的 AI 说法（模型型号、托管平台的名字）换成你行业的。
-
-### 公司编年史的人工历史：`industry/chronicles/`
-
-公司主题的大事记可以接上人工整理的更早历史：一家公司一个文件 `industry/chronicles/{公司主题的 slug}.json`，可选，默认没有。
-
-```json
-{
-  "topic": "openai",
-  "through": "2023-12",
-  "events": [
-    { "date": "2015-12", "kind": "company", "title": "OpenAI 成立", "major": true },
-    { "date": "2022-11-30", "kind": "product", "title": "ChatGPT 推出", "summary": "以对话形式向公众开放试用。", "major": true, "url": "https://openai.com/index/chatgpt/" }
-  ]
-}
-```
-
-- `through`：整理到哪个月（`YYYY-MM`）。这个月和更早只显示文件里的事件，之后的月份按规则自动接上，所以文件里不能有更晚的日期。
-- `date` 写 `YYYY`、`YYYY-MM` 或 `YYYY-MM-DD`（北京时间）；`kind` 必须是 `chronicle.ts` 里的节点类型；`title` 是事件名，名字在前，最多 60 字；`summary` 可选，最多 80 字，悬停时显示；`major: true` 标出决定性的大事，标题加粗。
-- 链接最多一个：`story`（站内事件页的 id）、`item`（站内文章页的 id）或 `url`（只收 https）。
-- 文件跟着代码一起发布。格式不对时公司主题页会报错，改完先打开页面看一眼。
+  - `company` 主题用 `entityId`（`ENTITIES` 的 id）收以这家公司为主体的报道；一篇报道的主体有几家公司时，标题里点了它的名才算。可选：`aliases`（搜索框里只搜这个词，也能找出这家公司的报道）。
+  - `field` 和 `genre` 主题用 `tags` 收打了这些标签的报道。
 
 ## 3. 信源：`industry/sources.json`
 
@@ -116,36 +88,29 @@
 
 这一步决定了你的站“选得准不准”。
 
-## 6. 只对 AI 有意义的两个模块：`industry/features.ts`
-
-- `leaderboard`：模型榜（`/leaderboard`）。
-- `codexResetMonitor`：Codex 重置监控（`/codex-reset`）。
-
-别的行业把两项都设为 `false`：导航入口、定时任务、接口、MCP 工具和站点地图都会跟着关掉。手机底栏关掉模型榜后剩四个标签（精选、热点、日报、我的）；“我的”里的 Tibo 重置监控入口跟着 `codexResetMonitor`。
-
-想彻底删掉代码，删这些目录和文件并处理掉编译错误即可：`packages/backend/src/leaderboard/`、`packages/backend/src/monitor/`、`apps/web/app/features/leaderboard/`、`apps/web/app/features/monitor/`、`apps/web/app/routes/leaderboard*.tsx`、`apps/web/app/routes/codex-reset.tsx`、`apps/web/app/routes/admin/monitor.tsx`、`apps/api/src/routes/leaderboard.ts`、`scripts/lb-*.ts`、`scripts/import-leaderboard-prices.ts`、`database/seeds/lb-*.json`、`assets/model-providers/`、`assets/leaderboard-sources/`。主题页的公司标志借用了模型榜：`packages/backend/src/publication/topics.ts` 里的 `providerMark` 要去掉，`apps/web/app/features/leaderboard/BrandMark.tsx` 要留下或挪走（没有模型榜时它画公司名的首字母）。
-
-## 7. 品牌：`industry/brand/`
+## 6. 品牌：`industry/brand/`
 
 - `logo.svg`、`icon.png`（512）、`icon-192.png`、`apple-icon.png`（180）、`favicon.ico`：站点图标。
+- `Logo.tsx`：网页左上角的站名标志，默认用站名文字排出来；有自己的 Logo，把 `Wordmark` 换成你的 SVG，参数保持不变。
+- `wordmark.svg`、`wordmark-dark.svg`（可选）：分享图和海报上的字标，深色版用在深色的分享图上；没有就用站名文字。
 - `nameplates/`：日报、周报、月报页顶部的报头字（比如“AI日报”）。换了行业词以后重新生成：
   ```bash
   npm pack @fontsource/noto-sans-sc@5.3.0 && tar xzf fontsource-noto-sans-sc-5.3.0.tgz
   node scripts/nameplates.ts package
   ```
 - 关于页的二维码：在后台“设置”里上传，或者把图片放进 `industry/brand/contact/`。
-- 网页左上角的站名标志在 `apps/web/app/components/Logo.tsx`，默认用站名文字；有自己的 Logo 可以换成图片。
 
 请不要使用 AIHOT 的名字和 Logo。
 
-## 8. 页面文案：`industry/pages/`、`industry/changelog.json`
+## 7. 页面文案：`industry/pages/`、`industry/public/`、`industry/changelog.json`
 
 - `pages/terms.md`、`pages/privacy.md`：使用规则和隐私说明。**现在是模板**，上线前按你的实际情况改写，必要时请专业人士看一下。
+- `public/`：原样发布在网站根目录的文件：`robots.txt`、`manifest.webmanifest`（装到手机桌面时的名字和图标）、`openapi-v1.json`（公开 API 的说明），以及可选的 `.well-known/security.txt`（安全问题的联系方式）。文件里的 `{{siteName}}`、`{{siteUrl}}`、`{{description}}`、`{{tagline}}`、`{{locale}}`、`{{version}}` 会换成这个站的值，OpenAPI 里的 `{{categories}}`、`{{categoryList}}` 换成公开的分类；没有的文件访问时是 404。
 - `changelog.json`：更新日志。新条目写在最前面，把 `latestVersion` 改成它的日期和时间。`kind` 是“更新”“优化”“公告”“下线”之一；要读者一定看到的加 `"urgent": true`（红色，标“重要”）。
 
-## 9. 模型和部署
+## 8. 模型和部署
 
-- 模型：`.env` 里的 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`，任何 OpenAI 兼容接口都行，所有步骤默认都用它。想让某一步用别家模型，见 `.env.example`。
+- 模型：`.env` 里的 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`，任何 OpenAI 兼容接口都行，所有步骤默认都用它。`industry/models.ts` 列出具名的模型（各用自己的地址和密钥环境变量）和每一步默认用哪个；部署时还可以用环境变量（见 `.env.example`）或后台“模型”页逐步改选。
 - 部署：见 [部署](deploy.md)。
 
 ## 改完以后检查

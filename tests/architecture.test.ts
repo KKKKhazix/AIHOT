@@ -1,8 +1,8 @@
-// Architecture boundaries (docs/architecture.md) that otherwise hold only by convention, and nothing kept
-// that nothing uses. Each rule reads the source and names what breaks it. A rule changes here and in that
+// Architecture boundaries that otherwise hold only by convention, and nothing kept that nothing uses.
+// Each rule reads the source and names what breaks it. A rule changes here and in the architecture
 // document together.
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
@@ -51,8 +51,12 @@ test("packages never import the apps, and nothing below the admin imports it", (
 
 // Public routes read through the public read faces; the rest are the reader's own writes (feedback) and
 // the image proxy. Admin and ingest routes may call any backend use case.
-const PRIVATE_ROUTES = new Set(["admin.ts", "admin-auth.ts", "ingest.ts"]);
-const PUBLIC_READS = [/^publication\//, /^leaderboard\/read\.ts$/, /^monitor\/read\.ts$/, /^site\//, /^lib\//, /^config\.ts$/, /^operations\/feedback\.ts$/, /^media\//, /^jobs\/queue\.ts$/];
+const PRIVATE_ROUTES = new Set([
+  "admin.ts", "admin-auth.ts", "ingest.ts",
+]);
+const PUBLIC_READS = [
+  /^publication\//, /^site\//, /^lib\//, /^config\.ts$/, /^operations\/feedback\.ts$/, /^media\//, /^jobs\/queue\.ts$/,
+];
 
 test("public routes read content only through the public read layer", () => {
   const routes = sources("apps/api/src/routes").filter(({ file }) => !PRIVATE_ROUTES.has(path.basename(file)));
@@ -71,7 +75,7 @@ const OWNERS: Record<string, string> = {
   deliveries: "notify/",
   facts: "events/", fact_articles: "events/", stories: "events/", story_signals: "events/", story_aliases: "events/", story_links: "events/",
   story_digests: "events/", grouping_decisions: "events/", grouping_overrides: "events/",
-  audit_log: "audit.ts", lb_calibrations: "leaderboard/method/",
+  audit_log: "audit.ts",
 };
 
 test("the tables that carry a rule are written only by the module that owns it", () => {
@@ -122,29 +126,34 @@ const ENV_READ = /\b(?:process\.env|(?<!import\.meta\.)env)\.([A-Z][A-Z0-9_]+)|\
 const envReads = (files: Array<{ text: string }>) => new Set(files.flatMap(({ text }) => [...text.matchAll(ENV_READ)].map((m) => (m[1] ?? m[2] ?? m[3])!)));
 const assigned = (file: string, pattern: RegExp) => [...readFileSync(path.join(ROOT, file), "utf8").matchAll(pattern)].map((m) => m[1]!);
 
-// .env.example is the template; docker-compose.yml sets the container settings (database address, data
-// folder, hosts and ports) itself. Keys and secrets are read by name through credential(group, NAME) or a
-// model preset, so a name the code gives whole as a string counts as read, and so does one the compose
-// file or the Caddyfile substitutes (the database password, the HTTPS domain).
+// .env.example is the template. A deployment's own files, where the repository has them, set the rest
+// themselves: docker-compose.yml the container settings (database address, data folder, hosts and
+// ports), the Caddyfile the HTTPS domain. Keys and secrets are read by name through credential(group,
+// NAME) or a model preset, so a name the code gives whole as a string counts as read, and so does one a
+// deployment file substitutes (the database password, the HTTPS domain).
 const matches = (text: string, pattern: RegExp) => [...text.matchAll(pattern)].map((m) => (m[1] ?? m[2])!);
 const NAMED = /["']([A-Z][A-Z0-9_]+)["']/g;
 const SUBSTITUTED = /\$\{([A-Z][A-Z0-9_]+)|\{\$([A-Z][A-Z0-9_]+)\}/g;
+const COMPOSE = "docker-compose.yml";
+const DEPLOYMENT = [COMPOSE, "deploy/Caddyfile"].filter((file) => existsSync(path.join(ROOT, file)));
 
 test("every environment variable the code reads is listed in a template, and every listed one is read", () => {
   const listed = new Set(assigned(".env.example", /^#?\s*([A-Z][A-Z0-9_]+)=/gm));
-  const compose = new Set(assigned("docker-compose.yml", /^\s+([A-Z][A-Z0-9_]+):\s/gm));
+  const preset = new Set(DEPLOYMENT.includes(COMPOSE) ? assigned(COMPOSE, /^\s+([A-Z][A-Z0-9_]+):\s/gm) : []);
   const read = envReads(production());
-  const deployment = ["docker-compose.yml", "deploy/Caddyfile"].map((file) => readFileSync(path.join(ROOT, file), "utf8"));
   const readAnywhere = new Set([...read, ...envReads(sources("scripts")),
-    ...[...production(), ...sources("scripts")].flatMap(({ text }) => matches(text, NAMED)), ...deployment.flatMap((text) => matches(text, SUBSTITUTED))]);
-  assert.deepEqual([...read].filter((name) => !listed.has(name) && !compose.has(name)), [],
-    "list it in .env.example (or set it in docker-compose.yml), or stop reading it");
+    ...[...production(), ...sources("scripts")].flatMap(({ text }) => matches(text, NAMED)),
+    ...DEPLOYMENT.flatMap((file) => matches(readFileSync(path.join(ROOT, file), "utf8"), SUBSTITUTED))]);
+  assert.deepEqual([...read].filter((name) => !listed.has(name) && !preset.has(name)), [], "list it in an environment template, or stop reading it");
   assert.deepEqual([...listed].filter((name) => !readAnywhere.has(name)), [], "no code reads it: remove it from the template");
 });
 
 test("every field of the website's own interfaces is read by the website", () => {
   const web = words(production().filter(({ file }) => file.startsWith("apps/web/")).map(({ text }) => text).join("\n"));
-  const unread = ["packages/contracts/src/site.ts", "packages/contracts/src/leaderboard.ts"].flatMap((file) =>
+  const contracts = [
+    "packages/contracts/src/site.ts",
+  ];
+  const unread = contracts.flatMap((file) =>
     assigned(file, /^\s+(?:readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)\??:\s/gm).filter((field) => !web.has(field)).map((field) => `${file}: ${field}`));
   assert.deepEqual(unread, [], "drop the field from the contract and from the read that fills it, or show it");
 });

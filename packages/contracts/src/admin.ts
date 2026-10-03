@@ -21,7 +21,12 @@ export interface AdminMe {
 }
 
 /** Items waiting for the admin, shown on the navigation. */
-export type AdminNavCounts = Partial<Record<"feedback" | "sources" | "runs" | "monitor", number>>;
+export type AdminNavCounts = Partial<Record<
+  | "feedback"
+  | "sources"
+  | "runs",
+  number
+>>;
 
 /** One manual change (audit_log), as a history list shows it. */
 export interface AdminAuditEntry {
@@ -275,68 +280,6 @@ export interface AdminRuns {
   errors: Array<{ error: string; n: number; last: Timestamp; example: string }>;
   retrying: { count: number; next: Timestamp | null };
   ingest: Array<{ client: string; kind: string; status: string; error: string | null; summary: unknown; created_at: Timestamp }>;
-  leaderboard: { at: Timestamp; sources: Array<{ key: string; ok: boolean; at: Timestamp; lastOkAt: Timestamp | null; changed?: boolean; rows?: number; error?: string }> } | null;
-}
-
-// Reset monitor corrections
-
-export interface AdminMonitorEventPost {
-  postId: string;
-  stage: string;
-  action: string;
-  text: string;
-  originalText: string;
-  publishedAt: Timestamp;
-  url: string;
-}
-
-export interface AdminMonitorEvent {
-  id: string;
-  type: "direct_reset" | "reset_credit";
-  status: "announced" | "confirmed";
-  label: string;
-  display_label: string;
-  scope: string;
-  schedule: { precision: string; from: Timestamp; through: Timestamp; label: string } | null;
-  estimate: { label: string; basis: string } | null;
-  presentation: Record<string, any> | null;
-  confirmed_at: Timestamp | null;
-  occurred_on: Timestamp | null;
-  confirmation_basis: string | null;
-  withdrawn: boolean;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-  posts: AdminMonitorEventPost[];
-}
-
-export interface AdminMonitorEvents {
-  events: AdminMonitorEvent[];
-}
-
-export interface AdminMonitorPost {
-  id: string;
-  published_at: Timestamp;
-  text: string;
-  url: string;
-  translation: string | null;
-  processed_at: Timestamp | null;
-  receipt_id: number | null;
-  origin: string;
-  propositions: Array<Record<string, any>> | null;
-  needs_review: boolean | null;
-  held: Array<{ action: string; excerpt: string }> | null;
-  reviewed: boolean | null;
-  skipped: boolean | null;
-  failures: { count: number; since: Timestamp; error?: string } | null;
-  relevant: boolean | null;
-  outage: unknown;
-  links: Array<{ eventId: string; stage: string }>;
-}
-
-export interface AdminMonitorPosts {
-  page: number;
-  filter: string;
-  rows: AdminMonitorPost[];
 }
 
 // Settings

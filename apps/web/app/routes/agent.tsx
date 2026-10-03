@@ -6,10 +6,10 @@ import { MCP_TOOLS } from "@aihot/contracts/mcp";
 import { SITE } from "@aihot/industry/site";
 import { apiGet, edgeTtl } from "../lib/api.server";
 import { listPath, pageMeta, siteUrl } from "../lib/seo";
-import { IconArrowUpRight, IconChevronRight, IconCode, IconDoc, IconPlug, IconRss } from "../components/icons";
+import { IconArrowUpRight, IconChevronRight, IconCode, IconPlug, IconRss } from "../components/icons";
 import { Kicker } from "../components/ui/Kicker";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
-import { ApiPanel, GuidePanel, McpPanel, RssPanel } from "../features/agent/panels";
+import { ApiPanel, McpPanel, RssPanel } from "../features/agent/panels";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
@@ -21,20 +21,30 @@ export function headers() {
 
 const V = PUBLIC_INTERFACE_VERSION;
 
-/** The four ways in. The chooser's cards are the tabs: `?tab=` (markdown is the default and not written). */
-const TRACKS: Array<{ key: TrackKey; name: string; badge?: string; pitch: string; fit: string; icon: ComponentType<{ size?: number }> }> = [
-  { key: "markdown", name: "Agent Markdown", badge: "最省事", pitch: "给 Agent 一个地址，就能开始阅读", fit: "能读取网页的 Agent", icon: IconDoc },
-  { key: "mcp", name: "MCP", pitch: `填一个地址，多出 ${MCP_TOOLS.length} 个工具`, fit: "Claude 桌面版、Cursor 等远程 MCP 客户端", icon: IconPlug },
-  { key: "rss", name: "RSS", pitch: "复制地址，用阅读器订阅", fit: "Reeder、Folo、Inoreader、n8n", icon: IconRss },
-  { key: "api", name: "REST API", pitch: "匿名 GET，自己写程序取数", fit: "脚本、机器人、小程序、看板", icon: IconCode },
+/** The ways in. The chooser's cards are the tabs: `?tab=` (the first is the default and not written). */
+const TRACKS: Array<{ key: TrackKey; name: string; short: string; badge?: string; pitch: string; fit: string; icon: ComponentType<{ size?: number }> }> = [
+  { key: "mcp", name: "MCP", short: "MCP", pitch: `填一个地址，多出 ${MCP_TOOLS.length} 个工具`, fit: "Claude 桌面版、Cursor 等远程 MCP 客户端", icon: IconPlug },
+  { key: "rss", name: "RSS", short: "RSS", pitch: "复制地址，用阅读器订阅", fit: "Reeder、Folo、Inoreader、n8n", icon: IconRss },
+  { key: "api", name: "REST API", short: "API", pitch: "匿名 GET，自己写程序取数", fit: "脚本、机器人、小程序、看板", icon: IconCode },
 ];
-type TrackKey = "markdown" | "mcp" | "rss" | "api";
-const hrefOf = (key: TrackKey) => (key === "markdown" ? "/agent" : `/agent?tab=${key}`);
+type TrackKey =
+  | "mcp"
+  | "rss"
+  | "api";
+const FIRST = TRACKS[0]!.key;
+const hrefOf = (key: TrackKey) => (key === FIRST ? "/agent" : `/agent?tab=${key}`);
+/** How many ways, as the copy counts them ("四种方式"). */
+const WAYS = ["零", "一", "两", "三", "四", "五", "六"][TRACKS.length];
+
+/** What reads the agent guide. */
+const GUIDE_READERS = [
+  "Agent 读了就能查",
+];
 
 /** Machine-readable entry points, with what each one is for. */
 const RESOURCES: Array<[label: string, href: string, note: string]> = [
   ["llms.txt", "/llms.txt", "给大模型读的站点说明"],
-  ["Agent 使用说明", "/api/v1/agent", "Agent 读了就能查"],
+  ["Agent 使用说明", "/api/v1/agent", GUIDE_READERS.join("，")],
   ["OpenAPI 3.1", "/openapi-v1.json", `REST API 的完整定义 · ${V}`],
 ];
 
@@ -42,27 +52,35 @@ export async function loader({ request }: Route.LoaderArgs) {
   const tab = new URL(request.url).searchParams.get("tab");
   // Only whether the api answers, within three seconds.
   const healthy = await apiGet("/api/health", { signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]) }).then(() => true, () => false);
-  // The examples show the configured public address, the same on the server and in the browser.
-  return { tab: (TRACKS.some((t) => t.key === tab) ? tab : "markdown") as TrackKey, healthy, base: siteUrl() };
+  return {
+    tab: (TRACKS.some((t) => t.key === tab) ? tab : FIRST) as TrackKey,
+    healthy,
+    // The examples show the configured public address, the same on the server and in the browser.
+    base: siteUrl(),
+  };
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
-  const path = listPath("/agent", { tab: loaderData && loaderData.tab !== "markdown" ? loaderData.tab : null });
+  const path = listPath("/agent", { tab: loaderData && loaderData.tab !== FIRST ? loaderData.tab : null });
   return pageMeta({
     title: "Agent 接入",
-    description: `把 ${SITE.name} 接进你的 Agent：Agent Markdown、MCP、RSS、REST API 四种方式，匿名只读，无需 API Key，一分钟接好。`,
+    description: `把 ${SITE.name} 接进你的 Agent：${TRACKS.map((t) => t.name).join("、")} ${WAYS}种方式，匿名只读，无需 API Key，一分钟接好。`,
     path,
     image: "/og/pages/agent.png",
   });
 }
 
 export default function AgentPage() {
-  const { tab: initialTab, healthy, base } = useLoaderData<typeof loader>();
+  const {
+    tab: initialTab,
+    healthy,
+    base,
+  } = useLoaderData<typeof loader>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [tab, setTab] = useState<TrackKey>(initialTab);
 
-  useEffect(() => setTab((params.get("tab") as TrackKey) || "markdown"), [params]);
+  useEffect(() => setTab((params.get("tab") as TrackKey) || FIRST), [params]);
 
   const select = (key: TrackKey) => {
     setTab(key);
@@ -99,7 +117,7 @@ export default function AgentPage() {
       <AsideCard title="接入资源">
         <nav aria-label="接入资源" className="-mx-2 -mb-1">
           {RESOURCES.map(([l, h, note]) => (
-            <a key={h} href={h} className="group flex items-start gap-2 rounded-control px-2 py-2 transition-colors hover:bg-bg-sunk">
+            <a key={h} href={h} target={h.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer" className="group flex items-start gap-2 rounded-control px-2 py-2 transition-colors hover:bg-bg-sunk">
               <span className="min-w-0 flex-1">
                 <span className="block text-[13.5px] text-ink-2 group-hover:text-ink">{l}</span>
                 <span className="mt-0.5 block text-[12px] text-ink-4">{note}</span>
@@ -124,8 +142,8 @@ export default function AgentPage() {
     <ReadingLayout aside={aside}>
       <header className="lg:pt-5">
         <Kicker>AGENT 接入</Kicker>
-        <h1 data-page-title="" className="mt-4 text-[28px] font-semibold leading-[1.3] text-ink sm:text-[32px]">把 {SITE.name} 接进你的 Agent</h1>
-        <p className="mt-3 max-w-[40em] text-[15px] leading-[1.8] text-ink-3">Agent Markdown、MCP、RSS、API 四种方式读的是同一份数据：精选、热点、日报、周报和月报，按你用的工具选一种就行。全部匿名只读，不用注册，也不用 API Key。</p>
+        <h1 data-page-title="" className="mt-4 text-[28px] font-semibold leading-[1.3] text-ink sm:text-[32px]">{`把 ${SITE.name} 接进你的 Agent`}</h1>
+        <p className="mt-3 max-w-[40em] text-[15px] leading-[1.8] text-ink-3">{`${TRACKS.map((t) => t.short).join("、")} ${WAYS}种方式读的是同一份数据：精选、热点、日报、周报和月报，按你用的工具选一种就行。全部匿名只读，不用注册，也不用 API Key。`}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span className={`${chip} ${healthy ? "text-ok" : "text-hot"}`}>
             <span className={`size-1.5 rounded-full ${healthy ? "bg-ok" : "bg-hot"}`} aria-hidden="true" />
@@ -168,10 +186,21 @@ export default function AgentPage() {
       </div>
 
       <section id="agent-panel" role="tabpanel" aria-labelledby={`agent-tab-${tab}`} className="mt-9">
-        {tab === "markdown" && <GuidePanel base={base} />}
-        {tab === "mcp" && <McpPanel base={base} />}
-        {tab === "rss" && <RssPanel base={base} />}
-        {tab === "api" && <ApiPanel base={base} />}
+        {tab === "mcp" && (
+          <McpPanel
+            base={base}
+          />
+        )}
+        {tab === "rss" && (
+          <RssPanel
+            base={base}
+          />
+        )}
+        {tab === "api" && (
+          <ApiPanel
+            base={base}
+          />
+        )}
       </section>
     </ReadingLayout>
     </>

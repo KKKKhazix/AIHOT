@@ -7,7 +7,7 @@ import { queueProcessing } from "../jobs/content.ts";
 import { stripTags } from "../lib/text.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
-import { mpArticle, mpHistory, type MpArticle } from "../providers/dajiala.ts";
+import { dajialaConfigured, mpArticle, mpHistory, type MpArticle } from "../providers/dajiala.ts";
 import { BudgetExceededError, ProviderRejectedError } from "../providers/receipts.ts";
 
 const MAX_NEW_PER_CHECK = 8;
@@ -124,6 +124,8 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
 
 /** Every enabled account is checked once per its interval (the paid list call is the cost). */
 export async function scheduleMpReconcile(now = new Date()) {
+  // Without Dajiala there is nothing to check the accounts with.
+  if (!dajialaConfigured()) return { enqueued: 0 };
   const rows = await sql<{ id: string; last: string | null; interval_minutes: number }[]>`
     SELECT id, cursor->>'lastCheckedAt' AS last, interval_minutes FROM sources WHERE kind = 'mp_account' AND enabled`;
   let enqueued = 0;

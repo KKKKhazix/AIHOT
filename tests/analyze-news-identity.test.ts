@@ -1,7 +1,7 @@
 // A failed structure, which leaves the current identity unresolved, must still block the next paid
 // step: no separate writing request starts. The stub answers each step; semantic extraction is
 // checked on real samples.
-import { stub, tag } from "./setup.ts";
+import { pointModels, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { closeDb } from "@aihot/backend/db";
@@ -17,8 +17,7 @@ const provider = await stub((_hit, request) => {
   const result = step === "prefilter" ? { label: "PASS", reason: "fixture" } : step === "score" ? { attentionScore: 80 } : "invalid output";
   return { choices: [{ message: { content: typeof result === "string" ? result : JSON.stringify(result) } }] };
 });
-for (const key of ["DASHSCOPE_BASE_URL", "ZHIPU_BASE_URL", "DEEPSEEK_BASE_URL"]) process.env[key] = `${provider.url}/v1`;
-for (const key of ["DASHSCOPE_API_KEY", "ZHIPU_API_KEY", "DEEPSEEK_API_KEY"]) process.env[key] = "test-key";
+pointModels(provider.url);
 after(async () => { await provider.close(); await closeDb(); });
 
 test("an unresolved current identity does not start a separate writing request", async () => {

@@ -1,8 +1,9 @@
 // RSS feeds. GUID = article id (isPermaLink=false), <link> = the site's page, pubDate = source
 // publication time. Summary feeds never carry content:encoded; full feeds inline bodies only for
 // sources that explicitly allow redistribution. Titles come from the site's name and categories.
-import { CATEGORY_LABELS, PUBLIC_API_CATEGORY_KEYS, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
-import { SITE, withSubject } from "@aihot/industry/site";
+import { PUBLIC_API_CATEGORY_KEYS, toPublicApiCategory, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
+import { SITE, subjectAfter } from "@aihot/industry/site";
+import { CATEGORIES } from "@aihot/industry/taxonomy";
 import { config } from "../config.ts";
 import { sql } from "../db.ts";
 import { escapeXml } from "../lib/text.ts";
@@ -27,14 +28,26 @@ interface FeedMeta {
 
 const CACHE = { edgeCacheSeconds: 300, staleWhileRevalidateSeconds: 900 };
 
+/** What the all feed leaves out. */
+const LEFT_OUT = [
+  "未审内容",
+  "低相关条目",
+  "已合并重复条目",
+];
+
 const FEEDS: FeedMeta[] = [
   { id: "selected", path: "/feed.xml", title: `${SITE.name} — 精选`, description: `最新 50 条 ${SITE.name} 精选摘要，保留标题、站内阅读与原文入口；需要阅读器内全文可改订 /feed/full.xml。`, homePath: "/", pollHintMinutes: 30, ...CACHE },
   { id: "selected-full", path: "/feed/full.xml", title: `${SITE.name} — 精选全文`, description: "与精选摘要相同的最新 50 条；仅对明确允许再分发的来源内联正文，其余仍提供摘要和阅读入口。", homePath: "/", pollHintMinutes: 30, ...CACHE },
-  { id: "all", path: "/feed/all.xml", title: `${SITE.name} — 全部动态`, description: "最近 7 天公开动态，按真实发布时间倒序；不含未审内容、低相关条目和已合并的重复条目。", homePath: "/all", pollHintMinutes: 30, ...CACHE },
-  { id: "daily", path: "/feed/daily.xml", title: `${SITE.name} ${withSubject("日报")}`, description: `${SITE.name} 每天 08:00 北京时间发布的${withSubject("日报")}，保留最近 30 期。`, homePath: "/daily", pollHintMinutes: 30, ...CACHE },
-  { id: "weekly", path: "/feed/weekly.xml", title: `${SITE.name} ${withSubject("周报")}`, description: `${SITE.name} 每周一 10:00 北京时间发布的${withSubject("周报")}：从上周每天的日报里选出的大事，按栏目分好，附总述；保留最近 12 期。`, homePath: "/weekly", pollHintMinutes: 180, ...CACHE },
-  { id: "monthly", path: "/feed/monthly.xml", title: `${SITE.name} ${withSubject("月报")}`, description: `${SITE.name} 每月 1 日 10:30 北京时间发布的${withSubject("月报")}：从上个月每天的日报里选出的大事，按栏目分好，附总述；保留最近 12 期。`, homePath: "/monthly", pollHintMinutes: 360, ...CACHE },
+  { id: "all", path: "/feed/all.xml", title: `${SITE.name} — ${subjectAfter("全部", "动态")}`, description: `最近 7 天公开动态，按真实发布时间倒序；不含${LEFT_OUT.slice(0, -1).join("、")}和${LEFT_OUT.at(-1)}。`, homePath: "/all", pollHintMinutes: 30, ...CACHE },
+  { id: "daily", path: "/feed/daily.xml", title: `${SITE.name} 日报`, description: `${SITE.name} 每天 08:00 北京时间发布的精编日报，保留最近 30 期。`, homePath: "/daily", pollHintMinutes: 30, ...CACHE },
+  { id: "weekly", path: "/feed/weekly.xml", title: `${SITE.name} 周报`, description: `${SITE.name} 每周一 10:00 北京时间发布的周报：从上周每天的日报里选出的大事，按栏目分好，附总述；保留最近 12 期。`, homePath: "/weekly", pollHintMinutes: 180, ...CACHE },
+  { id: "monthly", path: "/feed/monthly.xml", title: `${SITE.name} 月报`, description: `${SITE.name} 每月 1 日 10:30 北京时间发布的月报：从上个月每天的日报里选出的大事，按栏目分好，附总述；保留最近 12 期。`, homePath: "/monthly", pollHintMinutes: 360, ...CACHE },
 ];
+
+/** A category's name in feeds (<category>, a category feed's title): its feed label, else its website label. */
+const FEED_CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
+  CATEGORIES.map((c: { key: string; label: string; feedLabel?: string }) => [c.key, c.feedLabel ?? c.label]),
+);
 
 /** A feed by its id; a category feed shares the poll hint and caching of the feed it narrows. */
 export function feedMeta(id: ItemFeedKind | ReportKind): FeedMeta {
@@ -46,8 +59,8 @@ export function feedCacheControl(id: ItemFeedKind | ReportKind): string {
   return `public, max-age=${m.edgeCacheSeconds}, s-maxage=${m.edgeCacheSeconds}, stale-while-revalidate=${m.staleWhileRevalidateSeconds}`;
 }
 
-/** RSS <author> needs an address: the site's contact, else a no-reply one on its own domain. */
-const AUTHOR = SITE.contactEmail ?? `noreply@${new URL(config.siteUrl).hostname}`;
+/** RSS <author> needs an address: a no-reply one on the site's own domain. */
+const AUTHOR = `noreply@${new URL(config.siteUrl).hostname}`;
 
 function cdata(s: string): string {
   return `<![CDATA[${s.replace(/]]>/g, "]]]]><![CDATA[>").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")}]]>`;
@@ -99,15 +112,15 @@ function fullContent(r: FeedRow, aihot: string): string | null {
     html = exportTranslation(r) ?? r.body_html;
   }
   if (!html) return null;
-  return `${proxyBodyImages(html, true, FEED_IMAGE_SECONDS)}<p>—— 本文由 ${escapeXml(SITE.name)} 聚合整理，完整版与更多动态见 <a href="${aihot}">${aihot}</a></p>`;
+  return `${proxyBodyImages(html, true, FEED_IMAGE_SECONDS)}<p>—— 本文由 ${escapeXml(SITE.name)} 聚合整理，完整版与${escapeXml(subjectAfter("更多", "动态"))}见 <a href="${aihot}">${aihot}</a></p>`;
 }
 
 function itemXml(r: FeedRow, includeContent: boolean): string {
   const aihot = itemUrl(r.id);
   const summary = r.summary ?? "";
   const description = `<p>${escapeXml(summary)}</p>\n<p>🔗 <a href="${escapeXml(r.url)}">阅读原文</a></p>\n<p>via ${escapeXml(SITE.name)} · <a href="${aihot}">${aihot}</a></p>`;
-  const label = r.category ? CATEGORY_LABELS[r.category as PublicApiCategoryKey] : undefined;
-  const category = label ? `\n      <category>${escapeXml(label)}</category>` : "";
+  const publicCategory = toPublicApiCategory(r.category);
+  const category = publicCategory ? `\n      <category>${escapeXml(FEED_CATEGORY_LABELS[publicCategory]!)}</category>` : "";
   let content = "";
   if (includeContent && r.syndicate) {
     const html = fullContent(r, aihot);
@@ -129,7 +142,9 @@ export type ItemFeedKind = "selected" | "selected-full" | "all";
 // Items are the newest by their original publish time (the pubDate shown): 50 per feed; a category
 // feed holds only its last 7 days (by original publish time).
 
-export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKey | null, now = new Date()): Promise<string> {
+export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKey | null, {
+  now = new Date(),
+} = {}): Promise<string> {
   const includeContent = kind === "selected-full";
   const scope = kind === "all"
     ? sql`${listedCondition(now)} AND coalesce(p.published_at, p.discovered_at) > ${now}::timestamptz - interval '7 days'
@@ -153,18 +168,19 @@ export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKe
   const m = feedMeta(kind);
   let meta = { title: m.title, description: m.description, homePath: m.homePath, selfPath: m.path, ttl: m.pollHintMinutes };
   if (category) {
-    const label = CATEGORY_LABELS[category] ?? category;
+    const label = FEED_CATEGORY_LABELS[category] ?? category;
     meta = {
       title: includeContent ? `${SITE.name} — ${label}全文` : `${SITE.name} — ${label}`,
       description: includeContent
         ? `${SITE.name} 每日精选「${label}」分类全文源。仅对明确允许再分发的来源内联正文。`
-        : `${SITE.name} 每日精选「${label}」分类摘要，按分类订阅、不被全量精选刷屏。`,
+        : `${SITE.name} 每日精选「${label}」${subjectAfter("分类", "动态")}摘要，按分类订阅、不被全量精选刷屏。`,
       homePath: "/",
       selfPath: includeContent ? `/feed/full/category/${category}.xml` : `/feed/category/${category}.xml`,
       ttl: m.pollHintMinutes,
     };
   }
-  return channel(meta, rows.map((r) => itemXml(r, includeContent)));
+  const items = rows.map((r) => itemXml(r, includeContent));
+  return channel(meta, items);
 }
 
 const ISSUE_NAME: Record<ReportKind, string> = { daily: "日报", weekly: "周报", monthly: "月报" };
@@ -174,7 +190,7 @@ const ISSUES_KEPT: Record<ReportKind, number> = { daily: 30, weekly: 12, monthly
 /** One issue: its headline, its lead (a weekly's or monthly's overview) and its contents, each entry linking to its page. */
 function issueXml(kind: ReportKind, r: FeedIssue): string {
   const url = kind === "daily" ? dailyUrl(r.key) : periodUrl(kind, r.key);
-  const name = `${SITE.name} ${withSubject(ISSUE_NAME[kind])}`;
+  const name = `${SITE.name} ${ISSUE_NAME[kind]}`;
   const title = r.headline ? `${name} · ${r.key} — ${r.headline}` : `${name} · ${r.key}`;
   const contents = r.sections.map((s) => `<p><strong>${escapeXml(s.label)}</strong></p>\n<ul>${s.items.map((i) => `<li><a href="${escapeXml(i.link)}">${escapeXml(i.title)}</a></li>`).join("")}</ul>`);
   const description = [`<p>${escapeXml(r.leadParagraph ?? r.headline ?? "")}</p>`, ...contents, `<p>via ${escapeXml(SITE.name)} · <a href="${url}">${url}</a></p>`].join("\n");
@@ -189,10 +205,13 @@ function issueXml(kind: ReportKind, r: FeedIssue): string {
 }
 
 /** The daily, weekly or monthly feed: one item per issue, newest first. */
-export async function reportFeed(kind: ReportKind): Promise<string> {
+export async function reportFeed(
+  kind: ReportKind,
+): Promise<string> {
   const m = feedMeta(kind);
+  const meta = { title: m.title, description: m.description, homePath: m.homePath, selfPath: m.path, ttl: m.pollHintMinutes };
   const items = (await feedIssues(kind, ISSUES_KEPT[kind])).map((r) => issueXml(kind, r));
-  return channel({ title: m.title, description: m.description, homePath: m.homePath, selfPath: m.path, ttl: m.pollHintMinutes }, items);
+  return channel(meta, items);
 }
 
 export function isFeedCategory(v: string): v is PublicApiCategoryKey {

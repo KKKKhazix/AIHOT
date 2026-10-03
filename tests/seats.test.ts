@@ -148,10 +148,15 @@ test('a sync database failure is retryable without replacing the client snapshot
   const cursor = (await get('/api/v1/selected/snapshot')).json.cursor;
   await sql`ALTER TABLE selected_ledger RENAME TO selected_ledger_unavailable`;
   try {
-    const res = await app.inject({ method: 'GET', url: `/api/v1/selected/changes?cursor=${encodeURIComponent(cursor)}` });
-    assert.deepEqual([res.statusCode, res.json().code], [503, 'temporarily_unavailable']);
-    assert.equal(res.headers['retry-after'], '30');
-    assert.equal(res.headers['cache-control'], 'no-store');
+    const urls = [
+      `/api/v1/selected/changes?cursor=${encodeURIComponent(cursor)}`,
+    ];
+    for (const url of urls) {
+      const res = await app.inject({ method: 'GET', url });
+      assert.deepEqual([res.statusCode, res.json().code], [503, 'temporarily_unavailable'], url);
+      assert.equal(res.headers['retry-after'], '30');
+      assert.equal(res.headers['cache-control'], 'no-store');
+    }
   } finally {
     await sql`ALTER TABLE selected_ledger_unavailable RENAME TO selected_ledger`;
   }

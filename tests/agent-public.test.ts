@@ -1,10 +1,9 @@
-// Failure modes: a hard-coded site name or categories, hidden modules listed in discovery, missing latest
-// timestamps and daily flashes, invalid public parameters silently widened, HTTP/MCP answers diverge.
+// Failure modes: a hard-coded site name or categories, missing latest timestamps and daily flashes,
+// invalid public parameters silently widened, HTTP/MCP answers diverge.
 import './setup.ts';
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { SITE } from '@aihot/industry/site';
-import { FEATURES } from '@aihot/industry/features';
 import { PUBLIC_API_CATEGORY_KEYS } from '@aihot/contracts/taxonomy';
 import { config } from '@aihot/backend/config';
 import { closeDb } from '@aihot/backend/db';
@@ -12,12 +11,11 @@ import { agentGuide, dailyAnswer, latestAnswer } from '@aihot/backend/publicatio
 import { buildApp } from '../apps/api/src/app.ts';
 const app = await buildApp();
 after(async () => { await app.close(); await closeDb(); });
-test('Agent discovery uses configured identity and current optional modules', async () => {
+test('Agent discovery uses the configured identity, address and categories', async () => {
   const guide = agentGuide();
   assert.ok(guide.includes(SITE.name));
   assert.ok(guide.includes(`${config.siteUrl}/api/v1/agent/latest`), 'links use the configured address');
   for (const key of PUBLIC_API_CATEGORY_KEYS) assert.ok(guide.includes(key));
-  assert.equal(guide.includes('/agent/codex-resets'), FEATURES.codexResetMonitor);
   const r = await app.inject('/api/v1/agent');
   assert.equal(r.statusCode, 200);
   assert.equal(r.body, guide);

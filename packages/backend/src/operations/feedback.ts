@@ -1,6 +1,7 @@
-// Feedback: content, optional email, page URL, one optional screenshot. The screenshot
-// goes to the internal Feishu chat and only its image key is stored. Abuse control uses an unreadable
-// source identifier (HMAC of client IP + UA family), per-source bans and a per-minute limit.
+// Feedback: content, optional email, page URL, one optional screenshot. The screenshot goes to the
+// internal Feishu chat and only its image key is stored (without that chat the file stays here). Abuse
+// control uses an unreadable source identifier (HMAC of client IP + UA family), per-source bans and a
+// per-minute limit.
 import { createHmac, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -63,7 +64,9 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
   if (email && (email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new FeedbackRejected(400, "invalid_request", "邮箱格式不正确。");
   const pageUrl = input.pageUrl?.trim().slice(0, 500) || null;
   const source = feedbackSourceHash(input.ip, input.userAgent);
-  const [banned] = await sql`SELECT 1 FROM feedback_bans WHERE source_hash = ${source}`;
+  // A ban holds under every key the source is known by.
+  const keys = [source];
+  const [banned] = await sql`SELECT 1 FROM feedback_bans WHERE source_hash IN ${sql(keys)}`;
   if (banned) throw new FeedbackRejected(403, "forbidden", "暂时无法提交反馈。");
   rateLimit(source);
 
@@ -77,7 +80,8 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
     // Feishu again and again. Decoding the whole picture settles it (a long phone capture fits the cap).
     const decodes = await sharp(input.screenshot.data, { limitInputPixels: 60_000_000, failOn: "error" }).stats().then(() => true, () => false);
     if (!decodes) throw new FeedbackRejected(400, "invalid_request", "截图无法识别，请换一张图片。");
-    // Stored locally only until it is forwarded (notify/feishu.ts); the database keeps only an identifier.
+    // Stored locally until it is forwarded (notify/feishu.ts), for good where there is no internal chat;
+    // the database keeps only an identifier.
     // Forwarding or erasing one feedback removes its file, even if another used the same picture.
     const name = `${randomUUID()}.${mime.split("/")[1]}`;
     const dir = path.join(config.dataDir, "feedback-screenshots");
@@ -91,6 +95,15 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
   const id = row!.id;
   void forwardFeedbackToFeishu(id).catch(() => {});
   return { id };
+}
+
+/**
+ * Whether screenshots wait here only until they reach the internal Feishu chat, which keeps them from
+ * then on (the database keeps just the image key). Without the chat the file here is the screenshot
+ * itself: the backups keep it and nothing expires it.
+ */
+export function screenshotsForwarded(): boolean {
+  return feishuInternalEnabled() && credential("integrations", "FEISHU_INTERNAL_CHAT_ID") !== null;
 }
 
 /**

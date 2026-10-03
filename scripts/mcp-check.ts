@@ -5,7 +5,6 @@ import { Client } from "@modelcontextprotocol/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { MCP_TOOL_NAMES as T, MCP_TOOLS } from "@aihot/contracts/mcp";
-import { FEATURES } from "@aihot/industry/features";
 import { SITE } from "@aihot/industry/site";
 
 const url = new URL(process.argv[2] ?? "http://127.0.0.1:3001/api/mcp");
@@ -35,6 +34,7 @@ async function call(
   if (expect.code && errorCode(result) !== expect.code) {
     throw new Error(`${name} expected error code ${expect.code}, got ${errorCode(result) ?? "(none)"}`);
   }
+  if (!gotError && (!text || !result.structuredContent)) throw new Error(`${name} returned no readable or no structured result`);
   return result;
 }
 
@@ -61,7 +61,6 @@ try {
   await call(T.latest, { limit: 2 });
   await call(T.search, { q: "OpenAI", limit: 2 });
   await call(T.hot, { limit: 3 });
-  if (FEATURES.codexResetMonitor) await call(T.codexResets, {});
 
   // Exercise the remaining tools without depending on seeded reports/stories.
   await call(T.daily, { date: "2026-02-30" }, { error: true, code: "invalid_request" });

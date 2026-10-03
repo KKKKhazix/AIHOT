@@ -4,6 +4,7 @@ import {
 } from "react-router";
 import type { SiteMeta } from "@aihot/contracts/site";
 import { SITE } from "@aihot/industry/site";
+import { RingMark } from "@aihot/industry/brand/Logo.tsx";
 import { useEffect, useState, type ReactNode } from "react";
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -13,7 +14,6 @@ import { PullToRefresh } from "./components/shell/PullToRefresh";
 import { usePageTransition } from "./components/shell/transitions";
 import { SearchOverlay } from "./features/search/SearchOverlay";
 import { BackToTop, NavigationProgress } from "./components/shell/Chrome";
-import { RingMark } from "./components/Logo";
 import { buttonClass } from "./components/ui/Controls";
 import { rememberPage, THEME_BOOT_SCRIPT, useThemeSync } from "./lib/local-state";
 import { apiGet } from "./lib/api.server";
@@ -28,21 +28,29 @@ export const links: Route.LinksFunction = () => [
   { rel: "alternate", type: "application/rss+xml", title: `${SITE.name} — 精选`, href: "/feed.xml" },
 ];
 
+/** The release rendering this document: once a newer one is deployed, a render error reloads the page (entry.client). */
 export async function loader({ request }: Route.LoaderArgs) {
+  const release = process.env.AIHOT_RELEASE ?? null;
   try {
-    return await apiGet<SiteMeta>("/api/site/meta", { signal: request.signal });
+    const meta = await apiGet<SiteMeta>("/api/site/meta", {
+      signal: request.signal,
+    });
+    return { ...meta, release };
   } catch {
-    return { changelogVersion: null };
+    return { changelogVersion: null, release };
   }
 }
 
 export const shouldRevalidate: ShouldRevalidateFunction = () => false;
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const site = useRouteLoaderData<typeof loader>("root");
+  const [documentRelease] = useState(site?.release ?? null);
   return (
     <html lang={SITE.locale} suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
+        {documentRelease && <meta name="aihot-release" content={documentRelease} />}
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
         <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#13191c" />
@@ -83,7 +91,9 @@ function SiteShell({ changelogVersion, children }: { changelogVersion: string | 
       {/* Phone shell (≤ 960px): each page's top bar (PhoneBar), one centred column, the tab bar below.
           Desktop: the page fills the main area up to the list width (--page-max-wide), centred beyond it. */}
       <main id="main" className="min-w-0 flex-1 pb-[calc(72px+env(safe-area-inset-bottom))] lg:px-7 lg:pb-[72px] lg:pt-6">
-        <div className="mx-auto w-full max-w-[640px] pl-[var(--gutter-l)] pr-[var(--gutter-r)] lg:max-w-[var(--page-max-wide)] lg:px-0">{children}</div>
+        <div className="mx-auto w-full max-w-[640px] pl-[var(--gutter-l)] pr-[var(--gutter-r)] lg:max-w-[var(--page-max-wide)] lg:px-0">
+          {children}
+        </div>
       </main>
       <TabBar changelogVersion={changelogVersion} />
       {interactive && <SearchOverlay />}
@@ -109,9 +119,11 @@ export default function App() {
   // The admin has its own chrome.
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return <Outlet />;
   return (
-    <SiteShell changelogVersion={meta.changelogVersion}>
-      <Outlet />
-    </SiteShell>
+    <>
+      <SiteShell changelogVersion={meta.changelogVersion}>
+        <Outlet />
+      </SiteShell>
+    </>
   );
 }
 

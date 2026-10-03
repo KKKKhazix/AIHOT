@@ -7,7 +7,7 @@ import { SITE } from "@aihot/industry/site";
 import { IconCheck, IconClose, IconFilter, IconSearch } from "../../components/icons";
 import { PillTabs } from "../../components/ui/Tabs";
 import { Sheet } from "../../components/ui/Sheet";
-import { Wordmark } from "../../components/Logo";
+import { Wordmark } from "@aihot/industry/brand/Logo.tsx";
 import { BarButton, PhoneBar } from "../../components/shell/PhoneBar";
 import { openSearch } from "../search/SearchOverlay";
 
@@ -61,7 +61,7 @@ export function FeedBar({ base, category, channel }: { base: "/" | "/all"; categ
       <PhoneBar
         leading={
           <Link to="/" aria-label={`${SITE.name} 首页`} className="flex h-11 items-center pl-2.5 pr-2 text-ink">
-            <Wordmark size={16} />
+            <Wordmark size={17} />
           </Link>
         }
         center={

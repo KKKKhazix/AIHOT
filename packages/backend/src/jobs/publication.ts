@@ -24,5 +24,4 @@ export async function registerPublicationJobs(boss: PgBoss) {
     await progress(sourceId, { status: "done", ...result, startedAt, finishedAt: new Date().toISOString() });
     return result;
   });
-
 }

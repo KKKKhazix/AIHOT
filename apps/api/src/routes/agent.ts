@@ -2,14 +2,12 @@
 // errors are the usual v1 Problem JSON. New abilities become new addresses listed in the guide, which
 // agents read without updating.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { FEATURES } from "@aihot/industry/features";
 import { PUBLIC_API_CATEGORY_KEYS, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { isValidDate } from "@aihot/contracts/time";
-import { agentGuide, codexAnswer, dailyAnswer, hotAnswer, latestAnswer, periodAnswer, searchAnswer, searchItems, storyAnswer } from "@aihot/backend/publication/agent";
+import { agentGuide, dailyAnswer, hotAnswer, latestAnswer, periodAnswer, searchAnswer, searchItems, storyAnswer } from "@aihot/backend/publication/agent";
 import { v1Items } from "@aihot/backend/publication/v1";
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
 import { dailyWithNotes, isPeriodKey, v1Period } from "@aihot/backend/publication/reports";
-import { codexResetPage } from "@aihot/backend/monitor/read";
 import { QueryError, sendProblem, sendTextWithEtag, strictQuery } from "../http/respond.ts";
 import { enumParam, intParam, publicHandler, V1_OPERATIONS } from "./v1.ts";
 
@@ -98,13 +96,6 @@ export function registerAgent(app: FastifyInstance) {
       const body = await v1Period(p.kind, key);
       if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `没有 ${key} 的${p.name}；不要换一期冒充。`, cacheControl: "public, max-age=60" });
       return markdown(req, reply, periodAnswer(body.report, p.kind, "http"), `agent-${p.kind}`, p.byKey);
-    }));
-  }
-
-  if (FEATURES.codexResetMonitor) {
-    app.get("/api/v1/agent/codex-resets", publicHandler(async (req, reply) => {
-      strictQuery(req, []);
-      return markdown(req, reply, codexAnswer(await codexResetPage()), "agent-codex", V1_OPERATIONS.codexResets.cacheControl);
     }));
   }
 }

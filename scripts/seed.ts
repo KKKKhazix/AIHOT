@@ -1,13 +1,10 @@
 // Seeds a fresh site from the industry pack: the demo sources (industry/sources.json, only the ones not
-// there yet, so admin edits are never undone) and, with the leaderboard on, its model directory (only
-// models, names and scales not there yet). Topics need no seeding: they are read from industry/topics.json.
+// there yet, so admin edits are never undone). Topics need no seeding: they are read from industry/topics.json.
 // Re-runnable:  node --env-file=.env scripts/seed.ts
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { FEATURES } from "@aihot/industry/features";
 import { REPO_ROOT } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
-import { importModelDirectory } from "@aihot/backend/leaderboard/directory";
 import { assertSupportedConfig } from "@aihot/backend/sources/config-keys";
 
 interface SeedSource {
@@ -40,8 +37,4 @@ for (const s of sources) {
   added += inserted.length;
 }
 console.log(`sources: ${added} added, ${sources.length - added} already there`);
-if (FEATURES.leaderboard) {
-  const { models, aliases, calibrations } = await importModelDirectory();
-  console.log(`leaderboard directory: ${models} models, ${aliases} names, ${calibrations} calibrations added`);
-}
 await closeDb();

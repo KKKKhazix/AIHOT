@@ -1,15 +1,20 @@
-// The open-source default: one OpenAI-compatible model (LLM_BASE_URL, LLM_API_KEY, LLM_MODEL) runs every
-// step of the analysis, with no per-step configuration.
+// The engine's own model: one OpenAI-compatible model (LLM_BASE_URL, LLM_API_KEY, LLM_MODEL) runs every
+// step of the analysis when nothing picks another one for a step.
 import { stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { analyzeArticle } from "@aihot/backend/editorial/analyze";
+import { CAPABILITIES, type Capability } from "@aihot/backend/editorial/models";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 
-// Nothing chosen per step: every capability falls back to the `default` model.
-for (const name of Object.keys(process.env)) if (/_MODEL$/.test(name) && name !== "LLM_MODEL" && name !== "EMBEDDING_MODEL") delete process.env[name];
+// Nothing chosen per step: every capability falls back to the `default` model (a step the industry pack
+// gives a model of its own is sent back to it by its environment variable).
+for (const c of Object.values(CAPABILITIES) as Capability[]) {
+  if (c.default === "default") delete process.env[c.env];
+  else process.env[c.env] = "default";
+}
 
 const T = tag();
 const SOURCE = `test-default-model-${T}`;

@@ -3,7 +3,7 @@
 // requests per page.
 import { data, redirect } from "react-router";
 
-/** Where the api listens (API_BASE_URL; Docker Compose sets it); development uses the default. */
+/** Where the api listens (API_BASE_URL, set by the deployment); development uses the default. */
 export const API_BASE_URL = process.env.API_BASE_URL || "http://127.0.0.1:3001";
 
 /** An api answer other than 2xx. A merged story answers 308 with the story it now lives in. */

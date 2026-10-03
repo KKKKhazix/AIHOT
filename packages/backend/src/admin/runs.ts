@@ -13,7 +13,20 @@ const STALE_HEARTBEAT_MS = 3 * 60_000;
 type Runs = BeforeJson<AdminRuns>;
 
 export async function runsOverview(): Promise<Runs> {
-  const [heartbeats, latest, timeline, queues, failedJobs, lagging, receipts, receiptIssues, deliveries, errors, ingest, leaderboard, grouping] = await Promise.all([
+  const [
+    heartbeats,
+    latest,
+    timeline,
+    queues,
+    failedJobs,
+    lagging,
+    receipts,
+    receiptIssues,
+    deliveries,
+    errors,
+    ingest,
+    grouping,
+  ] = await Promise.all([
     sql<{ key: string; value: Heartbeat; updated_at: Date }[]>`SELECT key, value, updated_at FROM settings WHERE key LIKE 'heartbeat.%' ORDER BY key`,
     sql<Runs["jobs"]>`
       WITH latest AS (
@@ -52,8 +65,6 @@ export async function runsOverview(): Promise<Runs> {
              (array_agg(id ORDER BY discovered_at DESC))[1] AS example
       FROM articles WHERE processing_state = 'failed' AND discovered_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 20`,
     sql<Runs["ingest"]>`SELECT client, kind, status, left(error, 200) AS error, summary, created_at FROM ingest_events ORDER BY created_at DESC LIMIT 20`,
-    sql<{ value: { at: string; sources: Record<string, { ok: boolean; at: string; lastOkAt: string | null; changed?: boolean; rows?: number; error?: string }> } }[]>`
-      SELECT value FROM settings WHERE key = 'leaderboard.fetch'`,
     waitingSelectedNews(),
   ]);
   // Articles waiting to retry after a passing provider problem (they are not failed).
@@ -79,9 +90,6 @@ export async function runsOverview(): Promise<Runs> {
     errors,
     retrying: { count: retrying?.n ?? 0, next: retrying?.next ?? null },
     ingest,
-    leaderboard: leaderboard[0]
-      ? { at: leaderboard[0].value.at, sources: Object.entries(leaderboard[0].value.sources).map(([key, v]) => ({ key, ...v })).sort((a, b) => Number(a.ok) - Number(b.ok) || a.key.localeCompare(b.key)) }
-      : null,
   };
 }
 

@@ -12,8 +12,6 @@
     "@paralleldrive/cuid2": "3.3.0",
     "cheerio": "1.2.0",
     "fast-xml-parser": "5.11.1",
-    "highs": "1.15.3",
-    "hyparquet": "1.31.1",
     "linkedom": "0.18.13",
     "marked": "18.0.14",
     "pg-boss": "12.34.0",

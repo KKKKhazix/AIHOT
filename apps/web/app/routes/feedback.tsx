@@ -6,7 +6,7 @@ import { edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
 import { KEYS, lastPage, readJson, writeRaw } from "../lib/local-state";
 import { IconCheck, IconClose, IconImage } from "../components/icons";
-import { RingMark } from "../components/Logo";
+import { RingMark } from "@aihot/industry/brand/Logo.tsx";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
@@ -27,15 +27,22 @@ interface Draft {
   pageUrl: string;
 }
 
-function readDraft(): Draft | null {
-  const value = readJson(KEYS.feedbackDraft);
+function parseDraft(value: unknown): Draft | null {
   if (!value || typeof value !== "object") return null;
   const d = value as Record<string, unknown>;
   return { content: String(d.content ?? ""), email: String(d.email ?? ""), pageUrl: String(d.pageUrl ?? "") };
 }
 
-function writeDraft(d: Draft | null) {
-  writeRaw(KEYS.feedbackDraft, d && JSON.stringify({ ...d, savedAt: new Date().toISOString() }));
+function readDraft(): Draft | null {
+  return (
+    parseDraft(readJson(KEYS.feedbackDraft))
+  );
+}
+
+/** Saves the draft in this browser, or clears it (null); false when the browser refused. */
+function writeDraft(d: Draft | null): boolean {
+  const saved = writeRaw(KEYS.feedbackDraft, d && JSON.stringify({ ...d, savedAt: new Date().toISOString() }));
+  return saved;
 }
 
 const TIPS = ["出问题的页面或文章链接", "你看到了什么，原本想做什么", "有截图更好，记得先遮盖敏感信息"];
@@ -205,7 +212,7 @@ export default function FeedbackPage() {
                 maxLength={MAX_TEXT}
                 value={draft.content}
                 onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-                placeholder="例如：我在搜索某个关键词时遇到……我原本想……"
+                placeholder={SITE.feedbackExample}
                 className={`${field} block resize-y px-4 pb-8 pt-3.5 text-[14.5px] leading-relaxed`}
               />
               <span className="mono pointer-events-none absolute bottom-3 right-4 text-[11px] text-ink-4">

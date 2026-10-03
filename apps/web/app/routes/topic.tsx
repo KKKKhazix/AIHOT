@@ -5,12 +5,10 @@ import type { TopicPage } from "@aihot/contracts/site";
 import { edgeTtl, loadOr404 } from "../lib/api.server";
 import { breadcrumbLd, pageMeta, titled, topicLd } from "../lib/seo";
 import { DayList, Pagination } from "../features/feed/DayList";
-import { BrandMark } from "../features/leaderboard/BrandMark";
-import { ChronicleBand, ChronicleRail } from "../features/topic/Chronicle";
+import { BrandMark } from "../components/BrandMark";
 import { EmptyState } from "../components/ui/Page";
 import { IconArrowLeft } from "../components/icons";
-import { beijingDate } from "@aihot/contracts/time";
-import { monthDay, monthDayTime } from "../lib/format";
+import { monthDayTime } from "../lib/format";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
@@ -30,16 +28,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   return { data };
 }
 
-/** The search snippet: when the topic last changed and its biggest recent events, then what it covers. */
+/** The search snippet: what the topic covers, after when it last changed and its biggest recent events. */
 function description(data: TopicPage): string {
-  const { topic, highlights } = data;
-  const news = highlights.slice(0, 2).map((e) => e.title.replace(/[。.]$/u, "")).join("；");
-  const text = news && topic.latest ? `${monthDay(beijingDate(topic.latest.at))}更新：${news}。${topic.definition}` : topic.definition;
+  const { topic } = data;
+  let text = topic.definition;
   return text.length > 150 ? `${text.slice(0, 149)}…` : text;
-}
-
-function hasChronicle(data: TopicPage): boolean {
-  return data.topic.group === "company" ? data.milestones.length > 0 : data.chronicle.some((month) => month.events.length > 0);
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
@@ -50,7 +43,9 @@ export function meta({ loaderData }: Route.MetaArgs) {
   const text = page > 1 ? `${topic.name}的精选归档第 ${page} 页。${topic.definition}` : description(data);
   const crumbs = breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "主题", path: "/topics" }, { name: topic.name, path: `/topics/${topic.slug}` }]);
   return pageMeta({
-    title: page > 1 ? `${topic.name} 精选 · 第 ${page} 页` : `${topic.name} 最新动态${hasChronicle(data) ? "与大事记" : ""}`,
+    title: page > 1
+      ? `${topic.name} 精选 · 第 ${page} 页`
+      : `${topic.name} 最新动态`,
     description: text,
     path,
     image: `/og/topics/${topic.slug}.png`,
@@ -63,10 +58,6 @@ export function meta({ loaderData }: Route.MetaArgs) {
             name: `${topic.name} 最新动态`,
             description: text,
             dateModified: topic.latest?.at ?? null,
-            // A company's band runs oldest first; the list puts the newest first, as the rail does.
-            events: data.milestones.length
-              ? [...data.milestones].reverse().map((ms) => ({ title: ms.title, href: ms.href }))
-              : data.chronicle.flatMap((m) => m.events.map((e) => ({ title: e.label, href: e.href }))),
           }),
           crumbs,
         ],
@@ -116,12 +107,6 @@ export default function TopicRoute() {
           )}
         </div>
       </header>
-
-      {page === 1 && hasChronicle(data) && (
-        <div key={topic.slug} className="mb-8">
-          {topic.group === "company" ? <ChronicleBand milestones={data.milestones} kinds={data.kinds} /> : <ChronicleRail months={data.chronicle} kinds={data.kinds} />}
-        </div>
-      )}
 
       <h2 className="sr-only">{page === 1 ? `${topic.name}的精选` : `精选归档 · 第 ${page} 页`}</h2>
       {items.length === 0 ? (

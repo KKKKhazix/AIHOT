@@ -1,5 +1,6 @@
 // The worker watchdog, run from the api process (the worker cannot report its own death). It keeps its
 // state in settings and sends its own alerts.
+import { ALERTS } from "@aihot/industry/site";
 import { sql } from "../db.ts";
 import { beijingStamp, formatAlert, formatRecovery, sendAlert, type Finding } from "../notify/feishu.ts";
 
@@ -19,7 +20,7 @@ const WORKER_DOWN: Finding = {
 /**
  * Runs in the api process: alerts once when the worker's heartbeat is older than half an hour, and once
  * when it recovers. The stored state moves only after the message went out, so a failed send is tried
- * again at the next check; the lock keeps two api processes from both sending.
+ * again at the next check; the lock keeps two api processes (two overlap during a deploy) from both sending.
  */
 export async function checkWorkerHeartbeat(): Promise<void> {
   await sql.begin(async (tx) => {
@@ -32,7 +33,7 @@ export async function checkWorkerHeartbeat(): Promise<void> {
     if (prior?.value.state === state) return;
     // A first check that finds the worker running only records it.
     const msg = stale
-      ? formatAlert({ ...WORKER_DOWN, detail: `worker 心跳停在 ${beijingStamp(hb.updated_at)}；看 worker 的日志（docker compose logs worker）` }, hb.updated_at, Date.now())
+      ? formatAlert({ ...WORKER_DOWN, detail: `worker 心跳停在 ${beijingStamp(hb.updated_at)}；${ALERTS.workerLogs}` }, hb.updated_at, Date.now())
       : prior && formatRecovery(WORKER_DOWN.title, new Date(prior.value.since), Date.now());
     if (msg) await sendAlert(msg.title, msg.lines);
     // "since" of a down state is the last heartbeat, so the recovery can say how long it lasted.

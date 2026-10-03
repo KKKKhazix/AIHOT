@@ -1,7 +1,7 @@
 // Public scope and sync through the real api routes: a licence revocation or a withdrawal reaches
 // every exit, reports stop quoting withdrawn items, the hot board drops a withdrawn item at once, item
-// pages follow one rule, a withdrawal next to an unresolved selection leaves new snapshots
-// at once, and snapshots answer conditional requests.
+// pages follow one rule, a withdrawal next to an unresolved selection leaves new snapshots at once, and
+// snapshots answer conditional requests.
 import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
 import { withSubject } from "@aihot/industry/site";
 import { beijingDate } from "@aihot/contracts/time";
@@ -183,12 +183,18 @@ test("a withdrawn item leaves every report exit", async () => {
   assert.ok((await get(`/api/v1/dailies/${REPORT_KEY}`)).body.includes(`QUOTED-${T}`), "the report quotes the item before");
 
   await setVisibility(id, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
-  for (const url of [`/api/v1/dailies/${REPORT_KEY}`, `/api/site/reports/daily/${REPORT_KEY}`, `/api/v1/agent/daily/${REPORT_KEY}`, "/api/v1/agent/daily"]) {
+  const reports = [
+    `/api/v1/dailies/${REPORT_KEY}`, `/api/site/reports/daily/${REPORT_KEY}`, `/api/v1/agent/daily/${REPORT_KEY}`, "/api/v1/agent/daily",
+  ];
+  for (const url of reports) {
     const res = await get(url);
     assert.equal(res.status, 200, url);
     assert.ok(!res.body.includes(`QUOTED-${T}`) && !res.body.includes(`original-${T}`), `${url} still quotes the withdrawn item`);
   }
-  for (const url of ["/api/v1/dailies"]) {
+  const lists = [
+    "/api/v1/dailies",
+  ];
+  for (const url of lists) {
     const res = await get(url);
     assert.ok(res.body.includes(REPORT_KEY), `${url} lists the report`);
     assert.ok(!res.body.includes(`LEAD-${T}`), `${url} headlines the withdrawn title`);
@@ -254,7 +260,10 @@ test("a withdrawn item leaves the hot board and the hot APIs at once, not at the
   const rep = (await latestHotRanking())!.entries.find((e) => e.storyId === story!.id)?.representativeItemId;
   assert.ok(rep, "the story is on the board with a representative item");
   // The machine exits name the item; the hot board names the event it stands for.
-  const exits = ["/api/v1/hot-topics", "/api/v1/agent/hot?limit=3"];
+  const exits = [
+    "/api/v1/hot-topics",
+    "/api/v1/agent/hot?limit=3",
+  ];
   for (const url of exits) assert.ok((await get(url)).body.includes(rep!), `${url} shows the item before`);
   assert.ok((await get("/api/site/hot")).body.includes(publicId), "/api/site/hot shows the event before");
 
@@ -302,7 +311,10 @@ test("unresolved selection does not delay a withdrawal or its sync watermark", a
   await publishArticle(y); // unresolved: no selected ledger entry yet
   await setVisibility(x, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
 
-  for (const url of ["/api/v1/selected/snapshot?fields=minimal&limit=1000"]) {
+  const snapshots = [
+    "/api/v1/selected/snapshot?fields=minimal&limit=1000",
+  ];
+  for (const url of snapshots) {
     const body = (await get(url)).body;
     assert.ok(!body.includes(x), `${url} still lists the withdrawn item`);
     assert.ok(!body.includes(y), `${url} lists an item before its release`);
@@ -319,7 +331,10 @@ test("unresolved selection does not delay a withdrawal or its sync watermark", a
 });
 
 test("snapshots answer 304 to their own ETag", async () => {
-  for (const url of ["/api/v1/selected/snapshot?fields=minimal&limit=1000"]) {
+  const snapshots = [
+    "/api/v1/selected/snapshot?fields=minimal&limit=1000",
+  ];
+  for (const url of snapshots) {
     const first = await get(url);
     assert.ok(first.etag, `${url} has an ETag`);
     assert.equal((await get(url, { "if-none-match": first.etag! })).status, 304, url);
@@ -335,7 +350,10 @@ test('historical sync never redistributes withdrawn content, even on a one-entry
       const id = await article();
       await publishArticle(id, released());
       await setVisibility(id, { visibility, reason: 'test offline sync', version: 0 }, 'test');
-      for (const [prefix, limit] of [['v1', 'limit']]) {
+      const routes = [
+        ['v1', 'limit'],
+      ];
+      for (const [prefix, limit] of routes) {
         const response = await get(`/api/${prefix}/selected/changes?${limit}=1&cursor=${encodeURIComponent(start)}`);
         assert.equal(response.status, 200);
         const page = JSON.parse(response.body);

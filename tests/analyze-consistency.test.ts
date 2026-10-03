@@ -1,6 +1,6 @@
 // Failure cases: a successful old response completes newer input; a failed business commit leaves
 // an analysis or completed receipts behind; retry buys responses already saved before that failure.
-import { gate, stub, tag } from "./setup.ts";
+import { gate, pointModels, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
@@ -24,8 +24,7 @@ const provider = await stub(async (_hit, request) => {
     : { itemType: "model_release", authorRole: "principal", tags: ["模型发布"], editorialJudgment: "模型能力提升", titleZh: "实验室发布新模型", summaryZh: "实验室发布新模型，并公布了评测结果与价格。" };
   return { choices: [{ message: { content: JSON.stringify(content) } }] };
 });
-for (const name of ["DASHSCOPE_BASE_URL", "ZHIPU_BASE_URL", "DEEPSEEK_BASE_URL"]) process.env[name] = `${provider.url}/v1`;
-for (const name of ["DASHSCOPE_API_KEY", "ZHIPU_API_KEY", "DEEPSEEK_API_KEY"]) process.env[name] = "test-key";
+pointModels(provider.url);
 before(async () => {
   await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,next_fetch_at)
     VALUES (${sourceId},'Analysis consistency','rss','T1','editorial','2100-01-01')`;

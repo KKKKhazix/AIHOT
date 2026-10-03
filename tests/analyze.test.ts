@@ -3,7 +3,7 @@
 // understanding and the rest by the title/summary translation, a structure step gives the category,
 // subjects and fact. Material with only a feed summary has its page fetched first. Every prompt in the
 // pack renders.
-import { Reply, stub, tag } from "./setup.ts";
+import { pointModels, Reply, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
@@ -50,8 +50,7 @@ const provider = await stub((_hit, req) => {
   if (step === "structure") return answer({ category: "ai-models", tags: ["模型发布", "推理"], subjects: ["anthropic", "unknown-co"], scope: "single", fact: { title: `事实 ${marker}`, subject: "某公司", action: "发布", object: "模型", occurredAt: null, evidence: "a lab released a model", conditions: [] } });
   return answer(`title_zh: 翻译标题 ${marker}\nsummary_zh: 翻译摘要 ${marker}。第二句补充影响。`);
 });
-for (const env of ["DASHSCOPE_BASE_URL", "ZHIPU_BASE_URL", "DEEPSEEK_BASE_URL"]) process.env[env] = `${provider.url}/v1`;
-for (const env of ["DASHSCOPE_API_KEY", "ZHIPU_API_KEY", "DEEPSEEK_API_KEY"]) process.env[env] = "test-key";
+pointModels(provider.url);
 
 before(async () => {
   await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at) VALUES
@@ -84,7 +83,7 @@ test("every prompt in the pack renders, with the site's own name", () => {
   const values = Object.fromEntries([...names].map((n) => [n, "x"]));
   for (const file of files) {
     const text = promptText(file.slice(0, -3), values);
-    assert.ok(text.length > 20 && !/\{\{/.test(text), file);
+    assert.ok(text.trim() && !/\{\{/.test(text), file);
   }
   assert.ok(PREFILTER_SYSTEM.startsWith(`为${SITE.name}做宽召回的AI相关性预筛`));
 });

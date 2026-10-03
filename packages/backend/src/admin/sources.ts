@@ -1,6 +1,7 @@
 // Source administration: list, detail, preview (fetch without storing), edit, create with
 // duplicate checks, pause/resume and manual collection. Every change is audited.
 import { z } from "zod";
+import { SOURCE_DEFAULTS } from "@aihot/industry/site";
 import type { AdminSource, AdminSourceCreated, AdminSourceDetail, AdminSourcePreview, AdminSourceRow, AdminSources, BeforeJson } from "@aihot/contracts/admin";
 import { audit, auditHistory, Conflict } from "../audit.ts";
 import { groupingReset } from "../content/provenance.ts";
@@ -168,7 +169,7 @@ const CreateSchema = z
     interval_minutes: z.number().int().min(1).max(1440).default(30),
     first_party: z.boolean().default(false),
     tags: z.array(z.string()).default([]),
-    site_fulltext: z.boolean().default(false),
+    site_fulltext: z.boolean().default(SOURCE_DEFAULTS.siteFulltext),
     syndicate_fulltext: z.boolean().default(false),
   })
   .strict();
@@ -216,7 +217,7 @@ export async function createSource(input: unknown, actor: string): Promise<Befor
 }
 
 export async function fetchNow(id: string, actor: string) {
-  const [s] = await sql<{ id: string; kind: string }[]>`SELECT id, kind FROM sources WHERE id = ${id}`;
+  const [s] = await sql<{ id: string; kind: string; config: { ghid?: string; wxid?: string } }[]>`SELECT id, kind, config FROM sources WHERE id = ${id}`;
   if (!s) return null;
   const jobId =
     s.kind === "mp_account"

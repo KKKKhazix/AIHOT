@@ -138,57 +138,26 @@ export function isBlockedAddress(address: string): boolean {
   return false;
 }
 
-function ipv4Internal(o: [number, number, number, number]): boolean {
-  const [a, b] = o;
-  return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
-}
-
-/**
- * True when an address reaches this host or a private network: loopback, unspecified, private,
- * carrier-grade NAT, link-local and metadata, unique-local and site-local, also inside IPv6 (mapped,
- * compatible, NAT64, 6to4). The narrower check for names the egress proxy resolves itself: a poisoned
- * local answer (Teredo, documentation, reserved) says nothing about where the proxy will connect.
- */
-export function isInternalAddress(address: string): boolean {
-  const v4 = parseIpv4(address);
-  if (v4) return ipv4Internal(v4);
-  const g = ipv6Groups(address);
-  if (!g) return true;
-  const [g0, g1, g2, g3, g4, g5, g6, g7] = g as [number, number, number, number, number, number, number, number];
-  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && (g5 === 0 || g5 === 0xffff)) {
-    if (g5 === 0 && g6 === 0 && (g7 === 0 || g7 === 1)) return true;
-    return ipv4Internal(embeddedIpv4(g6, g7));
-  }
-  if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) return ipv4Internal(embeddedIpv4(g6, g7));
-  if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return true;
-  if (g0 === 0x2002) return ipv4Internal(embeddedIpv4(g1, g2));
-  return (g0 & 0xfe00) === 0xfc00 || (g0 & 0xffc0) === 0xfe80 || (g0 & 0xffc0) === 0xfec0;
-}
-
 function blockedHostname(host: string): boolean {
   return host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal") || host === "metadata.google.internal";
 }
 
 /**
- * Rejects URLs that name or resolve to loopback, private, link-local or cloud-metadata addresses
- * (SSRF guard). A direct request is checked again at connect time, so a second DNS answer cannot slip
- * past. A name sent through the egress proxy (`proxied`) is resolved and dialled abroad, so only an
- * internal local answer refuses it: the local resolver's poisoned answers for blocked sites (Teredo and
- * other unroutable addresses) would otherwise refuse them. Only local debugging may disable the guard
- * via ALLOW_PRIVATE_NETWORK_FETCH.
+ * Rejects non-HTTP URLs and private destinations. Direct requests check the system DNS again at
+ * connect time; proxy requests supply their outbound resolver and pin its answer in the tunnel.
+ * Only local debugging may disable the guard via ALLOW_PRIVATE_NETWORK_FETCH.
  */
-export async function assertPublicUrl(url: string, allowPrivate = false, proxied = false): Promise<URL> {
+export async function assertPublicUrl(url: string, allowPrivate = false, resolve?: (host: string) => Promise<string[]>): Promise<URL> {
   const u = new URL(url);
   if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error(`Blocked protocol ${u.protocol}`);
   if (allowPrivate) return u;
   const host = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
   if (blockedHostname(host)) throw new Error(`Blocked host ${host}`);
   const literal = net.isIP(host) !== 0;
-  const addresses = literal ? [{ address: host }] : await lookup(host, { all: true });
+  const addresses = literal ? [{ address: host }] : resolve ? (await resolve(host)).map((address) => ({ address })) : await lookup(host, { all: true });
   if (addresses.length === 0) throw new Error(`No address for ${host}`);
-  const refused = proxied && !literal ? isInternalAddress : isBlockedAddress;
   for (const { address } of addresses) {
-    if (refused(address)) throw new Error(`Blocked private address for ${host}`);
+    if (isBlockedAddress(address)) throw new Error(`Blocked private address for ${host}`);
   }
   return u;
 }

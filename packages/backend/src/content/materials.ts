@@ -44,7 +44,10 @@ export interface MaterialInput {
   media?: MediaItem[];
   xPost?: XPostData | null;
   raw?: unknown;
-  via: "fetch" | "ingest" | "import";
+  via:
+    | "fetch"
+    | "ingest"
+    | "import";
   discoveredAt?: Date;
   /** Explicit backfill: first import of a new source, or a report flagged as backfill. */
   backfill?: string | null;

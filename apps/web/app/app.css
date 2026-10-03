@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* The site's logo comes from the industry pack. */
+@source "../../../industry/brand";
 
 /* ---------------------------------------------------------------------------
    Design tokens: warm off-white paper, ink text, one teal accent (cyan in
@@ -45,12 +47,6 @@
   --color-ok: var(--ok);
   --color-ok-soft: var(--ok-soft);
   --color-ok-ink: var(--ok-ink);
-  --color-cal-plain: var(--cal-plain);
-  --color-cal-confirmed: var(--cal-confirmed);
-  --color-cal-announced: var(--cal-announced);
-  --color-cal-key-confirmed: var(--cal-key-confirmed);
-  --color-cal-key-announced: var(--cal-key-announced);
-  --color-panel-quiet: var(--panel-quiet);
   --color-rank-1: var(--rank-1);
   --color-rank-2: var(--rank-2);
   --color-rank-3: var(--rank-3);
@@ -119,13 +115,6 @@
   --ok: #2f7d5c;
   --ok-soft: rgba(47, 125, 92, 0.1);
   --ok-ink: #2a6e51;
-  /* Reset monitor: days mixed from the landed (green) and announced (amber) tones over the surface. */
-  --cal-plain: rgba(28, 39, 51, 0.024);
-  --cal-confirmed: color-mix(in srgb, var(--ok-ink) 12%, var(--surface));
-  --cal-announced: color-mix(in srgb, var(--amber-ink) 14%, var(--surface));
-  --cal-key-confirmed: color-mix(in srgb, var(--ok-ink) 30%, var(--surface));
-  --cal-key-announced: color-mix(in srgb, var(--amber-ink) 30%, var(--surface));
-  --panel-quiet: color-mix(in srgb, var(--bg) 48%, var(--surface));
   --rank-1: #b3402a;
   --rank-2: #a3642f;
   --rank-3: #96702e;
@@ -184,7 +173,6 @@
   --ok: #5fc79a;
   --ok-soft: rgba(95, 199, 154, 0.12);
   --ok-ink: #7fd1ad;
-  --cal-plain: rgba(255, 255, 255, 0.03);
   --rank-1: #d86a52;
   --rank-2: #d18a5e;
   --rank-3: #d3b26a;
@@ -371,7 +359,6 @@
 @keyframes aihot-zoom-out { to { transform: scale(0.98); } }
 @keyframes aihot-sheet-in { from { transform: translateY(100%); } }
 @keyframes aihot-sheet-out { to { transform: translateY(100%); } }
-@keyframes aihot-slide-in-x { from { opacity: 0; transform: translateX(10px); } }
 @keyframes aihot-swap-in { from { opacity: 0; transform: scale(0.7); } }
 @keyframes aihot-bump { from { transform: scale(0.7); } 55% { transform: scale(1.08); } to { transform: scale(1); } }
 @keyframes aihot-pop-in { from { opacity: 0; transform: scale(0.6); } 60% { opacity: 1; transform: scale(1.05); } to { transform: scale(1); } }
@@ -387,7 +374,6 @@
 .anim-zoom-out, .anim-fade-out > .lightbox-img { animation: aihot-zoom-out 160ms ease-in both; }
 .anim-sheet-in { animation: aihot-sheet-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .anim-sheet-out, .anim-fade-out > .sheet-panel { animation: aihot-sheet-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
-.anim-slide-in-x { animation: aihot-slide-in-x 160ms var(--ease-out-quart) both; }
 .anim-swap-in { animation: aihot-swap-in 120ms var(--ease-out-quart) both; }
 .anim-bump { animation: aihot-bump 320ms var(--ease-out-quart) both; }
 .anim-pop-in { animation: aihot-pop-in 460ms var(--ease-out-quart) both; }
@@ -584,23 +570,4 @@
    the archive column is halfway between the site sidebar and white. */
 :root:not([data-theme="dark"]) body:has(.report-shell) {
   background: color-mix(in srgb, var(--bg) 60%, var(--surface));
-}
-/* Reset monitor status card: a 135° wash of the state's tone (amber pending, green landed, rose alert). */
-.cr-wash {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--tone, var(--ink-4)) 7%, var(--surface)), var(--surface) 60%);
-}
-/* The state dot carries a soft halo that breathes while something is pending. */
-.cr-dot {
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border-radius: 9999px;
-  background: currentColor;
-  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 18%, transparent);
-}
-.cr-dot-live {
-  animation: cr-pulse 2s ease-in-out infinite;
-}
-@keyframes cr-pulse {
-  50% { box-shadow: 0 0 0 7px color-mix(in srgb, currentColor 6%, transparent); }
 }

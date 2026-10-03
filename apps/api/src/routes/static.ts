@@ -1,20 +1,18 @@
-// Discovery and static files: sitemap, llms.txt, robots, security.txt, the web manifest, the OpenAPI
-// document, icons, the IndexNow key, leaderboard logos and the about page's contact codes.
+// Discovery and static files: sitemap, llms.txt, the site's public files (robots.txt, security.txt, the web
+// manifest, the OpenAPI document), icons, the IndexNow key and the about page's contact codes.
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { SITE } from "@aihot/industry/site";
-import { FEATURES } from "@aihot/industry/features";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
-import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
+import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT, config } from "@aihot/backend/config";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
 import { sitemapXml } from "@aihot/backend/publication/sitemap";
 import { llmsTxt, loadLlmsAvailability } from "@aihot/backend/publication/llms";
 
-const REF = path.join(REPO_ROOT, "reference");
-const ASSETS = path.join(REPO_ROOT, "assets");
+const PUBLIC = path.join(REPO_ROOT, "industry/public");
 const BRAND = path.join(REPO_ROOT, "industry/brand");
 
 const TYPES: Record<string, string> = {
@@ -26,88 +24,79 @@ const TYPES: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json",
 };
 
-const fileCache = new Map<string, { body: Buffer; etag: string; mtime: number }>();
+/**
+ * A public file's `{{…}}` placeholders: the site's name, address, description, tagline and locale, the
+ * public interface version and the category list (JSON-escaped in JSON files). In a JSON document, an
+ * `enum` or `examples` list holding "{{categories}}" becomes the list of category keys.
+ */
+function fillPlaceholders(text: string, json: boolean): string {
+  const values: Record<string, string> = {
+    siteName: SITE.name,
+    siteUrl: config.siteUrl,
+    description: SITE.description,
+    tagline: SITE.tagline,
+    locale: SITE.locale,
+    version: PUBLIC_INTERFACE_VERSION,
+    categoryList: PUBLIC_API_CATEGORY_KEYS.join(", "),
+  };
+  const filled = text.replace(/\{\{(\w+)\}\}/g, (all, key: string) => {
+    const value = values[key];
+    if (value === undefined) return all;
+    return json ? JSON.stringify(value).slice(1, -1) : value;
+  });
+  if (!json || !filled.includes('"{{categories}}"')) return filled;
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    const o = node as Record<string, unknown>;
+    for (const key of ["enum", "examples"]) if (Array.isArray(o[key]) && (o[key] as unknown[]).includes("{{categories}}")) o[key] = [...PUBLIC_API_CATEGORY_KEYS];
+    for (const v of Object.values(o)) walk(v);
+  };
+  const doc: unknown = JSON.parse(filled);
+  walk(doc);
+  return JSON.stringify(doc, null, 2);
+}
 
-async function loadFile(file: string) {
+interface Entry {
+  body: Buffer;
+  etag: string;
+}
+
+const etagOf = (body: Buffer) => `W/"${createHash("sha256").update(body).digest("hex").slice(0, 16)}"`;
+
+const fileCache = new Map<string, Entry & { mtime: number }>();
+
+/** A file's bytes and ETag, read again when it changes; `fill` fills in a public file's placeholders. */
+async function loadFile(file: string, fill = false): Promise<Entry> {
   const s = await stat(file);
   const cached = fileCache.get(file);
   if (cached && cached.mtime === s.mtimeMs) return cached;
-  const body = await readFile(file);
-  const entry = { body, etag: `W/"${createHash("sha256").update(body).digest("hex").slice(0, 16)}"`, mtime: s.mtimeMs };
+  let body = await readFile(file);
+  if (fill && body.includes("{{")) body = Buffer.from(fillPlaceholders(body.toString("utf8"), /\.(json|webmanifest)$/.test(file)));
+  const entry = { body, etag: etagOf(body), mtime: s.mtimeMs };
   fileCache.set(file, entry);
   return entry;
 }
 
-async function sendFile(req: FastifyRequest, reply: FastifyReply, file: string, opts: { type?: string; cacheControl: string }) {
-  let entry;
-  try {
-    entry = await loadFile(file);
-  } catch {
-    return reply.code(404).type("text/plain; charset=utf-8").send("Not found");
-  }
-  reply.header("Content-Type", opts.type ?? TYPES[path.extname(file)] ?? "application/octet-stream");
+function sendEntry(req: FastifyRequest, reply: FastifyReply, entry: Entry, opts: { type: string; cacheControl: string; publicApi?: boolean }) {
+  if (opts.publicApi) applyPublicHeaders(reply);
+  reply.header("Content-Type", opts.type);
   reply.header("Cache-Control", opts.cacheControl);
   reply.header("ETag", entry.etag);
   if (req.headers["if-none-match"] === entry.etag) return reply.code(304).send();
   return reply.send(entry.body);
 }
 
-function robotsTxt(): string {
-  return [
-    "User-agent: *",
-    "Allow: /api/v1/",
-    "Allow: /api/mcp",
-    "Disallow: /api/",
-    "Disallow: /admin/",
-    "Disallow: /starred",
-    "Disallow: /feedback",
-    "",
-    `Sitemap: ${config.siteUrl}/sitemap.xml`,
-    "",
-  ].join("\n");
-}
-
-function manifest() {
-  return {
-    name: `${SITE.name} — ${SITE.tagline}`,
-    short_name: SITE.name,
-    description: SITE.description,
-    lang: SITE.locale,
-    start_url: "/",
-    scope: "/",
-    display: "standalone",
-    background_color: "#13191c",
-    theme_color: "#13191c",
-    icons: [
-      { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { src: "/icon.png", sizes: "512x512", type: "image/png" },
-    ],
-  };
-}
-
-/** The OpenAPI document with this deployment's name, address and categories, and the public interface version. */
-let openApi: string | null = null;
-async function openApiJson(): Promise<string> {
-  if (openApi) return openApi;
-  const raw = (await readFile(path.join(REF, "public-v1.openapi.json"), "utf8"))
-    .replaceAll("{{version}}", PUBLIC_INTERFACE_VERSION)
-    .replaceAll("{{siteName}}", JSON.stringify(SITE.name).slice(1, -1))
-    .replaceAll("{{siteUrl}}", JSON.stringify(config.siteUrl).slice(1, -1))
-    .replaceAll("{{categoryList}}", JSON.stringify(CATEGORY_KEYS.join(", ")).slice(1, -1));
-  const doc = JSON.parse(raw) as { paths: Record<string, unknown>; components?: { parameters?: Record<string, { schema?: { enum?: string[] } }> } };
-  // Categories follow the industry pack.
-  const walk = (node: unknown) => {
-    if (!node || typeof node !== "object") return;
-    const o = node as Record<string, unknown>;
-    for (const key of ["enum", "examples"]) if (Array.isArray(o[key]) && (o[key] as unknown[]).includes("{{categories}}")) o[key] = [...CATEGORY_KEYS];
-    for (const v of Object.values(o)) walk(v);
-  };
-  walk(doc);
-  if (!FEATURES.codexResetMonitor) for (const p of Object.keys(doc.paths)) if (p.startsWith("/api/v1/codex-resets") || p === "/api/v1/agent/codex-resets") delete doc.paths[p];
-  openApi = JSON.stringify(doc, null, 2);
-  return openApi;
+async function sendFile(req: FastifyRequest, reply: FastifyReply, file: string, opts: { type?: string; cacheControl: string; publicApi?: boolean; fill?: boolean }) {
+  let entry;
+  try {
+    entry = await loadFile(file, opts.fill);
+  } catch {
+    return reply.code(404).type("text/plain; charset=utf-8").send("Not found");
+  }
+  return sendEntry(req, reply, entry, { type: opts.type ?? TYPES[path.extname(file)] ?? "application/octet-stream", cacheControl: opts.cacheControl, publicApi: opts.publicApi });
 }
 
 export function registerStatic(app: FastifyInstance) {
@@ -122,47 +111,35 @@ export function registerStatic(app: FastifyInstance) {
   });
 
   app.get("/llms.txt", async (req, reply) => {
-    const text = llmsTxt(await loadLlmsAvailability());
+    const text = llmsTxt({
+      ...await loadLlmsAvailability(),
+    });
     applyPublicHeaders(reply, { cors: false });
     // Cached like /openapi-v1.json: a release that adds an ability is described everywhere within minutes.
     return sendTextWithEtag(req, reply, text, { etagPrefix: "llms", cacheControl: "public, max-age=300, stale-while-revalidate=3600", contentType: "text/plain; charset=utf-8" });
   });
 
-  app.get("/robots.txt", (req, reply) => sendTextWithEtag(req, reply, robotsTxt(), { etagPrefix: "robots", cacheControl: "public, max-age=3600", contentType: "text/plain; charset=utf-8" }));
-
-  app.get("/.well-known/security.txt", (req, reply) => {
-    if (!SITE.contactEmail) return reply.code(404).type("text/plain; charset=utf-8").send("Not found");
-    const expires = new Date(Date.now() + 180 * 86400_000).toISOString();
-    const text = `Contact: mailto:${SITE.contactEmail}\nExpires: ${expires}\nPreferred-Languages: zh, en\nCanonical: ${config.siteUrl}/.well-known/security.txt\n`;
-    return sendTextWithEtag(req, reply, text, { etagPrefix: "security", cacheControl: "public, max-age=86400", contentType: "text/plain; charset=utf-8" });
-  });
-
-  app.get("/manifest.webmanifest", (req, reply) =>
-    sendTextWithEtag(req, reply, JSON.stringify(manifest()), { etagPrefix: "manifest", cacheControl: "public, max-age=86400", contentType: "application/manifest+json" }));
-
-  app.get("/openapi-v1.json", async (req, reply) => {
-    applyPublicHeaders(reply);
-    return sendTextWithEtag(req, reply, await openApiJson(), { etagPrefix: "openapi", cacheControl: "public, max-age=300, stale-while-revalidate=3600", contentType: "application/json; charset=utf-8" });
-  });
+  // The site's public files (industry/public/), placeholders filled in; one the site does not have is a 404.
+  app.get("/robots.txt", (req, reply) => sendFile(req, reply, path.join(PUBLIC, "robots.txt"), { cacheControl: "public, max-age=3600", fill: true }));
+  app.get("/.well-known/security.txt", (req, reply) => sendFile(req, reply, path.join(PUBLIC, ".well-known/security.txt"), { cacheControl: "public, max-age=86400", fill: true }));
+  app.get("/manifest.webmanifest", (req, reply) => sendFile(req, reply, path.join(PUBLIC, "manifest.webmanifest"), { cacheControl: "public, max-age=86400, stale-while-revalidate=604800", fill: true }));
+  app.get("/openapi-v1.json", (req, reply) => sendFile(req, reply, path.join(PUBLIC, "openapi-v1.json"), { cacheControl: "public, max-age=300, stale-while-revalidate=3600", publicApi: true, fill: true }));
 
   // IndexNow proves the key by a file at the site root named after it (INDEXNOW_KEY).
   if (config.indexNowKey) {
-    app.get(`/${config.indexNowKey}.txt`, (req, reply) => sendTextWithEtag(req, reply, config.indexNowKey!, { etagPrefix: "indexnow", cacheControl: "public, max-age=3600", contentType: "text/plain; charset=utf-8" }));
+    const key: Entry = { body: Buffer.from(config.indexNowKey), etag: etagOf(Buffer.from(config.indexNowKey)) };
+    app.get(`/${config.indexNowKey}.txt`, (req, reply) => sendEntry(req, reply, key, { type: TYPES[".txt"]!, cacheControl: "public, max-age=3600" }));
   }
 
   // Icons from the industry pack (industry/brand/).
-  for (const icon of ["favicon.ico", "icon.png", "icon-192.png", "apple-icon.png", "logo.svg"]) {
-    app.get(`/${icon}`, (req, reply) => sendFile(req, reply, path.join(BRAND, icon), { cacheControl: "public, max-age=86400, stale-while-revalidate=604800" }));
-  }
-
-  if (FEATURES.leaderboard) {
-    for (const dir of ["model-providers", "leaderboard-sources"]) {
-      app.get(`/${dir}/:file`, (req, reply) => {
-        const file = (req.params as { file: string }).file;
-        if (!/^[a-z0-9-]+\.(svg|png)$/.test(file)) return reply.code(404).send();
-        return sendFile(req, reply, path.join(ASSETS, dir, file), { cacheControl: "public, max-age=604800" });
-      });
-    }
+  for (const icon of [
+    "favicon.ico",
+    "icon.png",
+    "icon-192.png",
+    "apple-icon.png",
+    "logo.svg",
+  ]) {
+    app.get(`/${icon}`, (req, reply) => sendFile(req, reply, path.join(BRAND, icon), { cacheControl: "public, max-age=2592000, stale-while-revalidate=604800" }));
   }
 
   // Contact codes on the about page: uploaded in the admin (content-hashed names), or shipped in the pack.

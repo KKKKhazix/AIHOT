@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { renderSVG } from "uqr";
 import { SITE } from "@aihot/industry/site";
-import { clamp, h, nameMark, renderPng, SITE_HOST, type Node } from "./render.ts";
+import { brandMark, clamp, h, nameMark, renderPng, SITE_HOST, type Node } from "./render.ts";
 
 export const POSTER_TEMPLATE_VERSION = "poster-2026-09-29.1";
 const WIDTH = 1080;
@@ -44,7 +44,7 @@ async function tree(p: Poster): Promise<Node> {
     },
     [
       h("div", { display: "flex", alignItems: "center", justifyContent: "space-between" }, [
-        nameMark(44, INK, ACCENT),
+        (await brandMark("wordmark.svg", 50)) ?? nameMark(44, INK, ACCENT),
         h("div", { display: "flex", fontSize: 26, color: "#66757a" }, p.date),
       ]),
       h("div", { display: "flex", alignItems: "center", marginTop: 96 }, [
@@ -76,7 +76,7 @@ async function tree(p: Poster): Promise<Node> {
 }
 
 export function posterEtag(p: Poster): string {
-  return createHash("sha256").update(POSTER_TEMPLATE_VERSION).update(SITE.name).update(SITE_HOST).update(JSON.stringify(p)).digest("hex").slice(0, 24);
+  return createHash("sha256").update(POSTER_TEMPLATE_VERSION).update(JSON.stringify(p)).digest("hex").slice(0, 24);
 }
 
 /** PNG bytes for a poster, from the disk cache when this exact poster was rendered before. */

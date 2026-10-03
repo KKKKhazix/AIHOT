@@ -104,7 +104,16 @@ export function organizationLd() {
     name: SITE.organization.name,
     url: base,
     logo: `${base}/icon.png`,
-    ...(founder ? { founder: { "@type": "Person", name: founder.name, ...(founder.description ? { description: founder.description } : {}), ...(founder.url ? { sameAs: [founder.url] } : {}) } } : {}),
+    ...(founder ? {
+      founder: {
+        "@type": "Person",
+        name: founder.name,
+        ...(founder.alternateName ? { alternateName: founder.alternateName } : {}),
+        ...(founder.jobTitle ? { jobTitle: founder.jobTitle } : {}),
+        ...(founder.description ? { description: founder.description } : {}),
+        ...(founder.url ? { sameAs: [founder.url] } : {}),
+      },
+    } : {}),
   };
 }
 
@@ -146,7 +155,8 @@ export function siteLd() {
       url: base,
       inLanguage: SITE.locale,
       isAccessibleForFree: true,
-      keywords: [withSubject("资讯"), withSubject("新闻"), withSubject("日报"), withSubject("行业动态")],
+      ...(SITE.since ? { temporalCoverage: `${SITE.since}/..` } : {}),
+      keywords: SITE.keywords,
       creator: orgRef(),
       publisher: orgRef(),
       distribution: [
@@ -229,11 +239,13 @@ export function reportLd(r: ReportDetail, path: string, description: string) {
   });
 }
 
-/**
- * A topic page: the collection, when a report last reached it, and its chronicle as a list. Entries
- * name their event page when it has one (event pages are indexable, most article pages are not).
- */
-export function topicLd(input: { path: string; name: string; description: string; dateModified: string | null; events: Array<{ title: string; href: string | null }> }) {
+/** A topic page: the collection, and when a report last reached it. */
+export function topicLd(input: {
+  path: string;
+  name: string;
+  description: string;
+  dateModified: string | null;
+}) {
   const base = siteUrl();
   const url = `${base}${input.path}`;
   return {
@@ -246,18 +258,5 @@ export function topicLd(input: { path: string; name: string; description: string
     inLanguage: SITE.locale,
     isPartOf: { "@id": `${base}/#website` },
     ...(input.dateModified ? { dateModified: input.dateModified } : {}),
-    ...(input.events.length > 0 ? {
-      mainEntity: {
-        "@type": "ItemList",
-        name: `${input.name} · 大事记`,
-        numberOfItems: input.events.length,
-        itemListElement: input.events.map((e, i) => ({
-          "@type": "ListItem",
-          position: i + 1,
-          name: e.title,
-          ...(e.href?.startsWith("/story/") ? { url: `${base}${e.href}` } : {}),
-        })),
-      },
-    } : {}),
   };
 }

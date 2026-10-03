@@ -1,9 +1,8 @@
 // Site navigation in one place: the desktop sidebar's sections and the phone tab bar's tabs.
 import type { ReactNode } from "react";
 import { subjectAfter, withSubject } from "@aihot/industry/site";
-import { FEATURES } from "@aihot/industry/features";
 import {
-  IconBolt, IconBookmark, IconChart, IconDoc, IconFlame, IconGrid, IconHeart, IconHistory, IconList, IconMessage, IconPlug, IconUser,
+  IconBolt, IconBookmark, IconDoc, IconFlame, IconGrid, IconHeart, IconHistory, IconList, IconMessage, IconPlug, IconUser,
 } from "../icons";
 
 export interface NavItem {
@@ -28,18 +27,6 @@ export const SIDEBAR: Array<{ title: string; items: NavItem[] }> = [
       { to: "/starred", label: "收藏", icon: IconBookmark },
     ],
   },
-  // The optional AI-only modules (industry/features.ts).
-  ...(FEATURES.leaderboard || FEATURES.codexResetMonitor
-    ? [
-        {
-          title: "模型",
-          items: [
-            ...(FEATURES.leaderboard ? [{ to: "/leaderboard", label: "模型榜", icon: IconChart }] : []),
-            ...(FEATURES.codexResetMonitor ? [{ to: "/codex-reset", label: "Tibo重置监控", icon: IconHistory }] : []),
-          ],
-        },
-      ]
-    : []),
   {
     title: "更多",
     items: [
@@ -59,11 +46,15 @@ export function sidebarIsActive(item: NavItem, pathname: string): boolean {
 }
 
 /**
- * The phone tab bar: 全部 lives beside 精选 as a switch, 热点 and 模型榜 are tabs, and "我的" at /more
- * holds 收藏, 外观, the tools and the site's own pages. Without the leaderboard the bar has four tabs.
- * Which tab a page sits under is declared by the page itself (components/shell/screens.ts).
+ * The phone tab bar: 全部 lives beside 精选 as a switch, 热点 and 日报 are tabs, and "我的" at /more holds
+ * 收藏, 外观, the tools and the site's own pages. Which tab a page sits under is declared by the page
+ * itself (components/shell/screens.ts).
  */
-export type TabKey = "featured" | "hot" | "daily" | "leaderboard" | "me";
+export type TabKey =
+  | "featured"
+  | "hot"
+  | "daily"
+  | "me";
 
 export interface Tab {
   key: TabKey;
@@ -77,6 +68,5 @@ export const TABS: Tab[] = [
   { key: "featured", to: "/", label: "精选", icon: IconBolt },
   { key: "hot", to: "/hot", label: "热点", icon: IconFlame },
   { key: "daily", to: "/daily", label: "日报", icon: IconDoc },
-  ...(FEATURES.leaderboard ? [{ key: "leaderboard" as const, to: "/leaderboard", label: "模型榜", icon: IconChart }] : []),
   { key: "me", to: "/more", label: "我的", icon: IconUser, changelog: true },
 ];

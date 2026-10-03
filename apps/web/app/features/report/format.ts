@@ -1,7 +1,7 @@
 // Names, dates and grouping for daily, weekly and monthly reports.
 import type { ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
 import { beijingDate, beijingWeekday, isoWeekLabel, isoWeekRange } from "@aihot/contracts/time";
-import { SITE, subjectAfter } from "@aihot/industry/site";
+import { REPORTS, SITE, subjectAfter } from "@aihot/industry/site";
 import { RELEASE } from "@aihot/industry/taxonomy";
 import { monthDay, weekdayShort } from "../../lib/format.ts";
 
@@ -97,8 +97,7 @@ export function chipLabel(kind: ReportKind, key: string, index: ReportNavigation
  * index holds only the newest issues, so its length cannot tell.
  */
 export function issueNumber(index: ReportNavigationEntry[], key: string): number | null {
-  const n = index.find((e) => e.key === key)?.issueNumber;
-  return typeof n === "number" && Number.isInteger(n) && n > 0 ? n : null;
+  return index.find((e) => e.key === key)?.issueNumber ?? null;
 }
 
 /** The masthead's date block: a large figure and two small lines beside it. */
@@ -154,7 +153,7 @@ export function dateLine(kind: ReportKind, key: string): string {
 }
 
 /** What each kind is, under its nameplate. */
-export const MOTTO: Record<ReportKind, string> = { daily: `${SITE.subject} · 每日要闻`, weekly: `${SITE.subject} · 每周综述`, monthly: `${SITE.subject} · 每月盘点` };
+export const MOTTO: Record<ReportKind, string> = { daily: `${REPORTS.motto} · 每日要闻`, weekly: `${REPORTS.motto} · 每周综述`, monthly: `${REPORTS.motto} · 每月盘点` };
 
 export interface PeriodCell {
   key: string | null;
@@ -166,14 +165,14 @@ export interface PeriodCell {
 /**
  * The dot grid beside the date in the masthead: the days of this issue's month (dailies, Monday first),
  * the weeks of its year (weeklies) or the months of its year (monthlies), each marked as this issue,
- * an issue that exists, or none. This issue's own number (`currentIssueNumber`) wins over the index's.
+ * an issue that exists, or none. This issue's own number (`current`) labels it, also when it is older
+ * than the navigation.
  */
-export function periodGrid(kind: ReportKind, key: string, index: ReportNavigationEntry[], currentIssueNumber?: number): { title: string; note: string; columns: number; heads: string[] | null; cells: PeriodCell[] } {
+export function periodGrid(kind: ReportKind, key: string, index: ReportNavigationEntry[], current: number): { title: string; note: string; columns: number; heads: string[] | null; cells: PeriodCell[] } {
   const exists = new Set(index.map((e) => e.key));
   const cell = (k: string, name: string): PeriodCell => {
-    const n = k === key && currentIssueNumber !== undefined && Number.isInteger(currentIssueNumber) && currentIssueNumber > 0 ? currentIssueNumber : issueNumber(index, k);
-    const published = k === key || exists.has(k);
-    return { key: k, label: n ? `${name} · 第 ${n} 期` : `${name} · ${published ? "已出刊" : "未出刊"}`, state: k === key ? "current" : exists.has(k) ? "issue" : "none" };
+    const n = k === key ? current : issueNumber(index, k);
+    return { key: k, label: n ? `${name} · 第 ${n} 期` : `${name} · 未出刊`, state: k === key ? "current" : exists.has(k) ? "issue" : "none" };
   };
   const count = (cells: PeriodCell[]) => cells.filter((c) => c.state === "issue" || c.state === "current").length;
   const year = key.slice(0, 4);

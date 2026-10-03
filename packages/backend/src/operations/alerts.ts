@@ -5,20 +5,27 @@
 //   digest — other follow-ups: one 09:00 message a day, meant to be handed to the AI.
 // Delivery goes through sendAlert (ops chat, internal-chat fallback; off unless FEISHU_INTERNAL_ENABLED).
 import { beijingDate, beijingTime } from "@aihot/contracts/time";
+import { ALERTS } from "@aihot/industry/site";
 import { sql } from "../db.ts";
 import { beijingDay, beijingStamp, duration, formatAlert, formatRecovery, sendAlert, type Finding, type Level } from "../notify/feishu.ts";
 import { backupConfigured } from "./backup.ts";
-import { unmarkedBoardModels } from "../leaderboard/read.ts";
-import { awaitingReviewCondition } from "../monitor/read.ts";
 import { GROUPING_WARN_AFTER_MS, waitingSelectedNews } from "./grouping.ts";
 
 const REPEAT_MS: Record<Exclude<Level, "digest">, number> = { now: 3600_000, today: 24 * 3600_000 };
 
+/** What the content groups receive, as the alerts name it. */
+const PUSHES = [
+  "精选",
+];
+
 // Valves default off: read at call time, only an explicit "true" turns them on.
 const collecting = () => process.env.COLLECT_ENABLED === "true";
 const modelsOn = () => process.env.MODEL_CALLS_ENABLED === "true";
-/** How long the site may go without a new article before it counts as stalled (small source lists are quieter). */
-const QUIET_MS = Number(process.env.ALERT_QUIET_MINUTES || 360) * 60_000;
+/**
+ * How long the site may go without a new article before it counts as stalled (ALERT_QUIET_MINUTES, else
+ * the site's own setting; small source lists are quieter). At most a day: the check looks one day back.
+ */
+const QUIET_MINUTES = Math.min(Number(process.env.ALERT_QUIET_MINUTES || ALERTS.quietMinutes), 1440);
 
 /** Everything wrong right now, with its level. */
 export async function collectFindings(now = Date.now()): Promise<Finding[]> {
@@ -30,19 +37,22 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
   const [hb] = await sql<{ value: { startedAt?: string } }[]>`SELECT value FROM settings WHERE key = 'heartbeat.worker'`;
   const settled = !hb?.value.startedAt || now - Date.parse(hb.value.startedAt) > 20 * 60_000;
   if (settled && collecting()) {
-    const [last] = await sql<{ at: Date | null }[]>`SELECT max(discovered_at) AS at FROM articles WHERE discovered_at > ${new Date(now - 4 * QUIET_MS)}`;
-    const [anySource] = await sql`SELECT 1 FROM sources WHERE enabled LIMIT 1`;
-    if (anySource && (!last?.at || now - last.at.getTime() > QUIET_MS)) {
-      out.push({
-        key: "content.collect",
-        level: "now",
-        title: "网站停止收录新内容",
-        impact: last?.at ? `最后一篇新文章收录于 ${beijingStamp(last.at)}，之后网站不会出现新内容` : "很久没有收录任何新文章",
-        heals: "没有",
-        action: "转给 AI 立即处理",
-        detail: `articles.discovered_at 超过 ${Math.round(QUIET_MS / 60_000)} 分钟没有新值（ALERT_QUIET_MINUTES）；查 sources.schedule、出网代理与采集失败`,
-        since: last?.at ?? undefined,
-      });
+    const [last] = await sql<{ at: Date | null }[]>`SELECT max(discovered_at) AS at FROM articles WHERE discovered_at > now() - interval '1 day'`;
+    if (!last?.at || now - last.at.getTime() > QUIET_MINUTES * 60_000) {
+      // A site without an enabled source has nothing to collect.
+      const [anySource] = await sql`SELECT 1 FROM sources WHERE enabled LIMIT 1`;
+      if (anySource) {
+        out.push({
+          key: "content.collect",
+          level: "now",
+          title: "网站停止收录新内容",
+          impact: last?.at ? `最后一篇新文章收录于 ${beijingStamp(last.at)}，之后网站不会出现新内容` : "一天内没有收录任何新文章",
+          heals: ALERTS.usualFlow ? `没有，${ALERTS.usualFlow}` : "没有",
+          action: "转给 AI 立即处理",
+          detail: `articles.discovered_at 超过 ${QUIET_MINUTES} 分钟没有新值；查 sources.schedule、出网代理与采集失败`,
+          since: last?.at ?? undefined,
+        });
+      }
     }
   }
   if (settled && collecting() && modelsOn()) {
@@ -114,40 +124,10 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
       key: "deliveries.failed",
       level: "today",
       title: "飞书内容群有推送没发出去",
-      impact: `过去 24 小时 ${refused!.n} 条精选或重置通知没进${refused!.target ?? "内容群"}`,
+      impact: `过去 24 小时 ${refused!.n} 条${PUSHES.join("或")}通知没进${refused!.target ?? "内容群"}`,
       heals: "不会自动重发",
       action: "转给 AI 处理；如果推送机器人被移出了群，需要你把它加回去",
       detail: refused!.response ?? "",
-    });
-  }
-
-  // Reset monitor: posts are recognized in order, so one that keeps failing holds up every later one.
-  const [stuck] = await sql<{ url: string; collected_at: Date; failures: { count: number; error?: string } | null }[]>`
-    SELECT p.url, p.collected_at, s.value AS failures FROM monitor_posts p LEFT JOIN monitor_state s ON s.key = 'failures:' || p.id
-    WHERE p.processed_at IS NULL ORDER BY p.published_at, p.id LIMIT 1`;
-  if (stuck && now - stuck.collected_at.getTime() > 60 * 60_000) {
-    out.push({
-      key: "monitor.stuck",
-      level: "today",
-      title: "Codex 重置监控卡住了",
-      impact: "新的重置消息确认不了，内容群收不到重置通知",
-      heals: "暂时没有",
-      action: "转给 AI 处理",
-      detail: `${stuck.url} 等待 ${duration(now - stuck.collected_at.getTime())}${stuck.failures ? `，识别失败 ${stuck.failures.count} 次：${stuck.failures.error ?? ""}` : ""}；后台“Codex 重置 → 帖子与识别 → 待识别”可跳过`,
-      since: stuck.collected_at,
-    });
-  }
-  // Posts whose claims wait for a person (an unsure reading, a quote not in the post).
-  const review = await sql<{ url: string }[]>`SELECT url FROM monitor_posts WHERE ${awaitingReviewCondition()} ORDER BY published_at DESC LIMIT 5`;
-  if (review.length) {
-    out.push({
-      key: "monitor.review",
-      level: "today",
-      title: "有 Codex 重置消息需要你确认",
-      impact: "系统对这几条帖子的判断没把握，结论暂时没有生效，也没有推送",
-      heals: "不会",
-      action: "到后台“Codex 重置 → 帖子与识别 → 需复核”看一下；确认后需要的话在群里说明",
-      detail: review.map((h) => h.url).join(" "),
     });
   }
 
@@ -198,37 +178,17 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
     }
   }
 
-  // A leaderboard source keeps its last snapshot while failing.
-  const [lb] = await sql<{ value: { sources?: Record<string, { ok: boolean; lastOkAt: string | null; error?: string }> } }[]>`SELECT value FROM settings WHERE key = 'leaderboard.fetch'`;
-  const stale = Object.entries(lb?.value.sources ?? {}).filter(([, s]) => !s.ok && s.lastOkAt && now - Date.parse(s.lastOkAt) > 26 * 3600_000);
-  if (stale.length) {
-    out.push({
-      key: "leaderboard.fetch",
-      level: "digest",
-      title: `模型榜有 ${stale.length} 个评测来源超过一天没抓到，榜单暂用上一份数据`,
-      detail: stale.slice(0, 6).map(([k, s]) => `${k}：${s.error ?? "失败"}（上次成功 ${beijingStamp(s.lastOkAt!)}）`).join("；"),
-    });
-  }
-
-  const unmarked = await unmarkedBoardModels().catch(() => [] as string[]);
-  if (unmarked.length) {
-    out.push({
-      key: "leaderboard.marks",
-      level: "digest",
-      title: `模型榜有 ${unmarked.length} 个模型没有厂商标志，暂时显示首字母`,
-      detail: `${unmarked.slice(0, 8).join("、")}；标志文件放 assets/model-providers，映射在 packages/backend/src/leaderboard/registry.ts`,
-    });
-  }
   return out;
 }
 
-const MODEL_STOPS = "用到这家模型的步骤停了（看后台“模型与评测”），新内容可能进不了精选";
+/** What stops when a model service refuses us: the site's own words for its models, else a pointer to the admin. */
+const modelStops = (service: string) => ALERTS.modelStops[service] ?? "用到这家模型的步骤停了（看后台“模型与评测”），新内容可能进不了精选";
 const PROVIDERS: Record<string, { name: string; stops: string; where: string }> = {
   llm: { name: "默认模型服务", stops: "新文章的精选、摘要、归组和日报停了", where: "模型服务商的控制台" },
-  zhipu: { name: "智谱", stops: MODEL_STOPS, where: "智谱开放平台" },
-  dashscope: { name: "阿里云百炼", stops: MODEL_STOPS, where: "阿里云百炼控制台" },
-  deepseek: { name: "DeepSeek", stops: MODEL_STOPS, where: "DeepSeek 开放平台" },
-  mimo: { name: "小米 MiMo", stops: MODEL_STOPS, where: "小米 MiMo 开放平台" },
+  zhipu: { name: "智谱", stops: modelStops("zhipu"), where: "智谱开放平台" },
+  dashscope: { name: "阿里云百炼", stops: modelStops("dashscope"), where: "阿里云百炼控制台" },
+  deepseek: { name: "DeepSeek", stops: modelStops("deepseek"), where: "DeepSeek 开放平台" },
+  mimo: { name: "小米 MiMo", stops: modelStops("mimo"), where: "小米 MiMo 开放平台" },
   socialdata: { name: "SocialData", stops: "X（推特）上的新内容收不到", where: "SocialData 后台" },
   jina: { name: "Jina", stops: "部分文章取不到正文", where: "Jina 后台" },
   dajiala: { name: "极致了（Dajiala）", stops: "公众号新文章收不到", where: "极致了后台" },

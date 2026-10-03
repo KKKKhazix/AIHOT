@@ -65,6 +65,42 @@ function ReleaseBody({ lines }: { lines: string[] }) {
   );
 }
 
+/** One date's releases in a card; `id` is the jump target of the month index. */
+function Day({ date, releases, id }: { date: string; releases: Release[]; id?: string }) {
+  const h = dateHeading(date);
+  return (
+    <section id={id} className="card scroll-mt-[calc(var(--bar-h)+1.5rem)] px-5 lg:px-7">
+      <h2 className="flex items-baseline gap-3 border-b border-line-soft py-4">
+        <time dateTime={date} className="text-[18px] font-bold text-ink">
+          {h.label}
+        </time>
+        <span className="text-[12px] text-ink-4">{h.weekday}</span>
+      </h2>
+      <ol>
+        {releases.map((r) => (
+          <li
+            key={`${r.date}-${r.time}-${r.title}`}
+            className={`grid gap-x-8 gap-y-2 border-b border-line-soft py-5 last:border-b-0 sm:grid-cols-[88px_minmax(0,1fr)] ${r.urgent ? "-mx-5 border-l-4 border-l-hot bg-hot-soft pl-4 pr-5 lg:-mx-7 lg:pl-6 lg:pr-7" : ""}`}
+          >
+            <div className="flex items-center gap-3 sm:block">
+              <span className="mono block text-[12.5px] text-ink-3">{r.time}</span>
+              <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-4 sm:mt-1.5">
+                <span className={`size-1.5 rounded-full ${r.urgent ? "bg-hot" : KIND_DOT[r.kind]}`} aria-hidden="true" />
+                {r.kind}
+              </span>
+            </div>
+            <article className={`min-w-0 sm:border-l sm:pl-8 ${r.urgent ? "sm:border-hot/40" : "sm:border-line"}`}>
+              {r.urgent && <span className="mb-2 inline-flex rounded-full bg-hot px-2.5 py-0.5 text-[12px] font-semibold text-white">重要</span>}
+              <h3 className={`text-[15px] font-bold leading-snug ${r.urgent ? "text-hot" : "text-ink"}`}>{r.title}</h3>
+              <ReleaseBody lines={r.body} />
+            </article>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 export default function ChangelogPage() {
   const data = useLoaderData<typeof loader>();
   useEffect(() => setChangelogSeen(data.latestVersion), [data.latestVersion]);
@@ -129,38 +165,7 @@ export default function ChangelogPage() {
       </header>
       <div className="space-y-4">
         {[...groups.entries()].map(([date, releases]) => {
-          const h = dateHeading(date);
-          return (
-            <section key={date} id={`d-${date}`} className="card scroll-mt-[calc(var(--bar-h)+1.5rem)] px-5 lg:px-7">
-              <h2 className="flex items-baseline gap-3 border-b border-line-soft py-4">
-                <time dateTime={date} className="text-[18px] font-bold text-ink">
-                  {h.label}
-                </time>
-                <span className="text-[12px] text-ink-4">{h.weekday}</span>
-              </h2>
-              <ol>
-                {releases.map((r) => (
-                  <li
-                    key={`${r.date}-${r.time}-${r.title}`}
-                    className={`grid gap-x-8 gap-y-2 border-b border-line-soft py-5 last:border-b-0 sm:grid-cols-[88px_minmax(0,1fr)] ${r.urgent ? "-mx-5 border-l-4 border-l-hot bg-hot-soft pl-4 pr-5 lg:-mx-7 lg:pl-6 lg:pr-7" : ""}`}
-                  >
-                    <div className="flex items-center gap-3 sm:block">
-                      <span className="mono block text-[12.5px] text-ink-3">{r.time}</span>
-                      <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-4 sm:mt-1.5">
-                        <span className={`size-1.5 rounded-full ${r.urgent ? "bg-hot" : KIND_DOT[r.kind]}`} aria-hidden="true" />
-                        {r.kind}
-                      </span>
-                    </div>
-                    <article className={`min-w-0 sm:border-l sm:pl-8 ${r.urgent ? "sm:border-hot/40" : "sm:border-line"}`}>
-                      {r.urgent && <span className="mb-2 inline-flex rounded-full bg-hot px-2.5 py-0.5 text-[12px] font-semibold text-white">重要</span>}
-                      <h3 className={`text-[15px] font-bold leading-snug ${r.urgent ? "text-hot" : "text-ink"}`}>{r.title}</h3>
-                      <ReleaseBody lines={r.body} />
-                    </article>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          );
+          return <Day key={date} id={`d-${date}`} date={date} releases={releases} />;
         })}
       </div>
     </ReadingLayout>

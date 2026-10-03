@@ -1,6 +1,5 @@
 // First-party site API (/api/site/*). Not a public API: it may evolve with the website,
 // but it is served from the same public read layer as v1, RSS and MCP.
-import type { LbBrand } from "./leaderboard.ts";
 import type { CategoryKey, ChannelKey } from "./taxonomy.ts";
 
 export interface SourceRef {
@@ -336,7 +335,7 @@ export interface SiteMeta {
   changelogVersion: string;
 }
 
-/** One entry of industry/changelog.json, newest first. */
+/** One entry of the site's changelog (industry/changelog.json), newest first. */
 export interface ChangelogRelease {
   date: string;
   time: string;
@@ -395,8 +394,8 @@ export interface ItemAvailability {
   sourceName?: string;
 }
 
-/** All issue keys, with their issue numbers, keep calendars stable; closed daily months omit their titles. */
-export interface ReportNavigationEntry { key: string; issueNumber?: number; title?: string | null; count?: number }
+/** An issue in the archive and the calendar, numbered in its whole series; closed daily months omit their titles. */
+export interface ReportNavigationEntry { key: string; issueNumber: number; title?: string | null; count?: number }
 
 // Topics
 
@@ -413,11 +412,20 @@ export interface TopicLink {
   name: string;
 }
 
+/** A mark drawn beside a name: its logo, or a monogram when there is none. */
+export interface Brand {
+  /** Site-relative logo path, or null when only a monogram is available. */
+  src: string | null;
+  monogram: string;
+  /** Raster marks get a light backing plate in dark mode. */
+  raster: boolean;
+}
+
 export interface TopicSummary extends TopicLink {
   group: TopicGroupKey;
   definition: string;
-  /** Companies: the mark of their best model on the leaderboard when it is on, else their initial. */
-  brand: LbBrand | null;
+  /** Companies: their logo mark where the site has one, else their initial. */
+  brand: Brand | null;
   /** Selected reports, one per fact (as v1 and RSS count the selected set). */
   total: number;
   /** Of those, in the last 30 days. */
@@ -433,67 +441,8 @@ export interface TopicsResponse {
   topics: TopicSummary[];
 }
 
-/**
- * What a milestone is: a key of the industry pack's kinds (industry/chronicle.ts). In the AI demo pack a
- * model release, a product launch, research, a company's own news (its topic page) or industry news.
- */
-export type TopicMilestoneKind = string;
-
-/** How the pages show one kind of milestone. */
-export interface TopicKind {
-  label: string;
-  /** Its track lies above the axis, with the strongest mark (AI pack: models). */
-  above: boolean;
-  /** What a topic launches itself, with the accent mark (AI pack: models and products). */
-  launch: boolean;
-}
-
-/** One event of a topic's chronicle, from the report that heads it. */
-export interface TopicEvent {
-  id: string;
-  /** The report's headline. */
-  title: string;
-  /** The event's name in the chronicle: "Claude Opus 5.5 发布". */
-  label: string;
-  at: string;
-  kind: TopicMilestoneKind;
-  /** Its event page when it belongs to a public story, else the article page. */
-  href: string;
-}
-
-export interface TopicMonth {
-  /** Beijing calendar month, YYYY-MM. */
-  month: string;
-  events: TopicEvent[];
-}
-
-/** A milestone on a company's chronicle band: its curated history, then what the site picked up since. */
-export interface TopicMilestone {
-  /** "2022", "2022-11" or "2022-11-30", Beijing calendar. */
-  date: string;
-  kind: TopicMilestoneKind;
-  /** Its name in the chronicle: as curated, or the label of what the site picked up. */
-  title: string;
-  /** The headline of the report the site picked it up from; null for curated history. */
-  headline: string | null;
-  summary: string | null;
-  /** Its event page, its article page or (curated history) the original; null when it has none. */
-  href: string | null;
-  external: boolean;
-  /** A defining event of the curated history, its title set in bold; never set on what the site picked up. */
-  major: boolean;
-}
-
 export interface TopicPage {
   topic: TopicSummary & { groupName: string; /** Every listed report, selected or not. */ poolTotal: number };
-  /** Every kind of milestone by key. */
-  kinds: Record<TopicMilestoneKind, TopicKind>;
-  /** The rest is for the first page only. A direction's or a form's months, newest first. */
-  chronicle: TopicMonth[];
-  /** A company's chronicle band, oldest first. */
-  milestones: TopicMilestone[];
-  /** The most important events of the last 30 days. */
-  highlights: TopicEvent[];
   items: FeedItemSummary[];
   page: number;
   pageCount: number;

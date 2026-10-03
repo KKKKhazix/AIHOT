@@ -44,12 +44,12 @@ export const config = {
   /** IndexNow key (32 hex characters); without one nothing is submitted and no key file is served. */
   indexNowKey: /^[0-9a-f]{32}$/.test(env.INDEXNOW_KEY ?? "") ? env.INDEXNOW_KEY! : null,
   /** Optional directory of per-group dotenv files (models.env, collectors.env, …); normally everything is in .env. */
-  credentialsDir: env.AIHOT_CREDENTIALS_DIR || null,
+  credentialsDir: env.AIHOT_CREDENTIALS_DIR ? path.resolve(REPO_ROOT, env.AIHOT_CREDENTIALS_DIR) : null,
   dataDir: str("AIHOT_DATA_DIR", path.join(REPO_ROOT, ".data")),
   // Name of this deployment in alerts ("production" sends them without a prefix).
   environmentName: str("AIHOT_ENVIRONMENT", isProduction ? "production" : "development"),
   // External-action valve: off unless the environment turns it on, like COLLECT_ENABLED (read by the
-  // worker). .env.example turns both on.
+  // worker).
   modelCallsEnabled: bool("MODEL_CALLS_ENABLED", false),
   devAdmin: env.DEV_AUTH_ROLE === "admin" ? { displayName: env.DEV_AUTH_DISPLAY_NAME || "Dev Admin" } : null,
   /** The admin password (at least 12 characters). Feishu sign-in below is optional. */
@@ -62,6 +62,11 @@ export type CredentialGroup = "models" | "collectors" | "integrations" | "auth";
 
 const groupCache = new Map<CredentialGroup, Record<string, string>>();
 
+/** The file a group is kept in, under AIHOT_CREDENTIALS_DIR. */
+function groupFile(group: CredentialGroup): string {
+  return `${group}.env`;
+}
+
 /**
  * Loads one credential group from an optional dotenv file (AIHOT_CREDENTIALS_DIR/<group>.env). Values
  * in the environment always win; a normal deployment only uses environment variables (.env).
@@ -69,7 +74,7 @@ const groupCache = new Map<CredentialGroup, Record<string, string>>();
 export function credentials(group: CredentialGroup): Record<string, string> {
   const cached = groupCache.get(group);
   if (cached) return cached;
-  const file = config.credentialsDir ? path.join(config.credentialsDir, `${group}.env`) : null;
+  const file = config.credentialsDir ? path.join(config.credentialsDir, groupFile(group)) : null;
   const parsed: Record<string, string> = file && existsSync(file) ? (parseEnv(readFileSync(file, "utf8")) as Record<string, string>) : {};
   const merged: Record<string, string> = {};
   for (const [key, value] of Object.entries(parsed)) merged[key] = env[key] ?? value;

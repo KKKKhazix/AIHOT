@@ -1,10 +1,8 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
-import { FEATURES } from "@aihot/industry/features";
 import { OAUTH_PROBE_PATHS, resolveRedirect } from "@aihot/contracts/http-policy";
 import { sql } from "@aihot/backend/db";
 import { registerSite } from "./routes/site.ts";
-import { registerLeaderboard } from "./routes/leaderboard.ts";
 import { registerOg } from "./routes/og.ts";
 import { registerAdminAuth } from "./routes/admin-auth.ts";
 import { registerAdmin } from "./routes/admin.ts";
@@ -61,7 +59,6 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   registerSite(app);
-  if (FEATURES.leaderboard) registerLeaderboard(app);
   registerOg(app);
   registerAdminAuth(app);
   registerAdmin(app);

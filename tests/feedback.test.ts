@@ -1,11 +1,11 @@
 // Feedback reaches the internal Feishu chat with its screenshot even when Feishu fails at first: a
 // failed upload or send is tried again, only the Feishu image key is kept, a screenshot that cannot be
-// uploaded for a day, or that Feishu refuses outright, is dropped (the text still goes), and imported
-// feedback is never forwarded again. Screenshots that were never forwarded stay on the server: with
-// Feishu optional they are the only copy.
+// uploaded for a day, or that Feishu refuses outright, is dropped (the text still goes), screenshots left
+// behind are removed after a week, and imported feedback is never forwarded again. Without the chat a
+// screenshot is the only copy: it stays.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -14,6 +14,7 @@ import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { forwardFeedbackToFeishu } from "@aihot/backend/notify/feishu";
 import { forwardPendingFeedback, submitFeedback } from "@aihot/backend/operations/feedback";
+import { dailyRetention } from "@aihot/backend/operations/retention";
 
 const T = tag();
 config.dataDir = mkdtempSync(path.join(tmpdir(), "aihot-feedback-"));
@@ -111,6 +112,25 @@ test("a picture Feishu refuses is dropped at once, and the text still goes", asy
   assert.equal(feishu.uploads, uploads + 1, "offered once, not again on every sweep");
   assert.deepEqual({ ...(await state(id)) }, { forwarded: true, forward_error: null, screenshot_key: "gone:upload" });
   assert.ok(!existsSync(file));
+});
+
+test("screenshots left behind are removed after a week, whether or not forwarding ran; without the chat they stay", async () => {
+  const dir = path.join(config.dataDir, "feedback-screenshots");
+  mkdirSync(dir, { recursive: true });
+  const stale = path.join(dir, `stale-${T}.png`);
+  const recent = path.join(dir, `recent-${T}.png`);
+  writeFileSync(stale, "x");
+  writeFileSync(recent, "x");
+  const nineDaysAgo = new Date(Date.now() - 9 * 86400_000);
+  utimesSync(stale, nineDaysAgo, nineDaysAgo);
+  process.env.FEISHU_INTERNAL_ENABLED = "false";
+  assert.equal((await dailyRetention()).deletedScreenshots, 0);
+  assert.ok(existsSync(stale), "a screenshot nobody forwards is the only copy");
+  process.env.FEISHU_INTERNAL_ENABLED = "true";
+  const result = await dailyRetention();
+  assert.ok(result.deletedScreenshots >= 1);
+  assert.ok(!existsSync(stale));
+  assert.ok(existsSync(recent), "a screenshot still waiting for forwarding stays");
 });
 
 test("imported feedback that was never forwarded is not sent now", async () => {

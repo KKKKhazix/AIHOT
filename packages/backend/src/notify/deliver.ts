@@ -1,4 +1,4 @@
-// Content-group deliveries (Feishu custom-bot webhooks): selected cards and reset pushes.
+// Content-group deliveries (Feishu custom-bot webhooks), such as the cards of selected items.
 // One row per target and dedupe key, so nothing is pushed twice; an outcome we cannot know
 // ("unknown") is never retried automatically; content older than a target's enabled_at is never
 // back-filled. FEISHU_CONTENT_PUSH_ENABLED is the safety valve: off, deliveries are recorded as
@@ -11,7 +11,8 @@ import { postWebhook } from "./feishu.ts";
 import { selectedContent } from "./selected-content.ts";
 
 export interface DeliveryRequest {
-  subjectKind: "codex_reset" | "selected";
+  subjectKind:
+    | "selected";
   subjectId: string;
   dedupeKey: string;
   /** When the underlying content appeared; older than a target's enabled_at means skip. */
@@ -58,7 +59,7 @@ async function sendDelivery(id: number, url: string, card: unknown): Promise<{ s
 
 export async function deliverContent(req: DeliveryRequest): Promise<Array<{ target: string; status: string }>> {
   // A selected article may acquire a different fact after correction. Its own previous delivery
-  // still counts, even when the dedupe key changes. Reset amendments retain their separate keys.
+  // still counts, even when the dedupe key changes. Other kinds of push keep their own keys.
   const sentSubjects = req.subjectKind === "selected" ? [req.subjectId, ...(req.siblings ?? [])] : (req.siblings ?? []);
   const targets = await sql<{ key: string }[]>`SELECT key FROM notify_targets WHERE purpose = 'content' AND enabled
     AND (${req.targetKey ?? null}::text IS NULL OR key = ${req.targetKey ?? null}) ORDER BY key`;

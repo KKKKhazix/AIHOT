@@ -275,22 +275,25 @@ export async function loadHot(): Promise<HotResponse> {
 
 export async function v1HotTopics() {
   const ranking = await latestHotRanking();
-  const items = (ranking?.entries ?? []).map((e) => ({
-    rank: e.rank,
-    id: e.representativeItemId ?? e.storyPublicId,
-    title: e.title,
-    source: { name: e.representativeSource ?? e.sourceNames[0] ?? SITE.name },
-    links: {
+  const items = (ranking?.entries ?? []).map((e) => {
+    const links = {
       aihot: e.representativeItemId ? itemUrl(e.representativeItemId) : storyUrl(e.storyPublicId),
       original: e.representativeUrl ?? storyUrl(e.storyPublicId),
       story: storyUrl(e.storyPublicId),
-    },
-    sourceCount: e.sourceCount,
-    signalCount: e.signalCount,
-    participantCount: e.participantCount,
-    sourceNames: e.sourceNames,
-    latestAt: new Date(e.latestAt).toISOString(),
-  }));
+    };
+    return {
+      rank: e.rank,
+      id: e.representativeItemId ?? e.storyPublicId,
+      title: e.title,
+      source: { name: e.representativeSource ?? e.sourceNames[0] ?? SITE.name },
+      links,
+      sourceCount: e.sourceCount,
+      signalCount: e.signalCount,
+      participantCount: e.participantCount,
+      sourceNames: e.sourceNames,
+      latestAt: new Date(e.latestAt).toISOString(),
+    };
+  });
   return { schemaVersion: 1 as const, count: items.length, items };
 }
 
@@ -308,7 +311,10 @@ export async function v1Story(storyId: number) {
     FROM stories WHERE id = ${storyId}`;
   const inTimeline = new Set(primaryReports.map((r) => r.id));
   const digestCurrent = !d?.article_ids?.some((id) => !inTimeline.has(id));
-  const neighbors = (await relatedStories(storyId, now)).map((r) => ({ publicId: r.public_id, title: r.title, relation: r.relation, links: { aihot: storyUrl(r.public_id), api: storyApiUrl(r.public_id) } }));
+  const neighbors = (await relatedStories(storyId, now)).map((r) => {
+    const links = { aihot: storyUrl(r.public_id), api: storyApiUrl(r.public_id) };
+    return { publicId: r.public_id, title: r.title, relation: r.relation, links };
+  });
   return {
     schemaVersion: 1 as const,
     story: {

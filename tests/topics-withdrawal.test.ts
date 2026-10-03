@@ -1,9 +1,8 @@
 // A withdrawn report leaves the topic pages at once, though the topic index behind them
 // is kept for a minute. Its own file: the index is cached per process, and this needs it cold.
-// The way it can go wrong: the chronicle band, the search snippet's highlights or the index page's
-// latest headline still show the title from the cached index after the withdrawal.
-// Corrections can also leave an old headline, keep a report in a company it no longer belongs to,
-// or keep a newly classified tutorial in the company's milestones; check them before cache expiry.
+// The way it can go wrong: the page's or the index page's latest headline still shows the title from
+// the cached index after the withdrawal. Corrections can also leave an old headline or keep a report in
+// a company it no longer belongs to; check them before cache expiry.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -45,16 +44,14 @@ async function report(n: number, hoursAgo: number, subject = "minimax"): Promise
   return articleId;
 }
 
-test("a withdrawn report leaves the chronicle band and the index while the topic index is still cached", async () => {
+test("a withdrawn report leaves the topic page and the index while the topic index is still cached", async () => {
   // Both are read into the cached index.
   const before = await loadTopicPage("minimax", 1);
-  assert.ok(before?.milestones.some((m) => m.href === `/items/${newer}`));
+  assert.ok(before?.items.some((i) => i.id === newer));
   assert.equal((await listTopicSummaries()).topics.find((t) => t.slug === "minimax")?.latest?.title, `minimax 消息 2`);
 
   await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${newer}`;
   const page = await loadTopicPage("minimax", 1);
-  assert.deepEqual(page?.milestones.map((m) => m.href), [`/items/${older}`], "the chronicle band");
-  assert.ok(!page?.highlights.some((e) => e.id === newer), "the search snippet's events");
   assert.notEqual(page?.topic.latest?.title, `minimax 消息 2`, "the page's last update");
   assert.equal((await listTopicSummaries()).topics.find((t) => t.slug === "minimax")?.latest?.title, `minimax 消息 1`, "the index page's headline");
   assert.deepEqual(page?.items.map((i) => i.id), [older], "the list (rows were always checked again)");
@@ -66,21 +63,16 @@ test("a correction refreshes named content and its topic membership before the i
   const retitled = await loadTopicPage("qwen", 1);
   assert.equal(retitled?.items[0]?.title, title, "the list");
   assert.equal(retitled?.topic.latest?.title, title, "the page headline");
-  assert.equal(retitled?.milestones[0]?.headline, title, "the chronicle band");
-  assert.equal(retitled?.milestones[0]?.title, `更正后的模型消息 ${T}`, "named from the corrected headline");
-  assert.equal(retitled?.highlights[0]?.title, title, "the search snippet");
   assert.equal((await listTopicSummaries()).topics.find((t) => t.slug === "qwen")?.latest?.title, title, "the directory headline");
 
   await overrideFields(corrected, { fields: { category: "tip" }, version: 1, reason: "实际是教程" }, "test-topics");
   const reclassified = await loadTopicPage("qwen", 1);
-  assert.deepEqual(reclassified?.milestones, [], "the corrected tutorial is no company milestone");
   assert.equal(reclassified?.items[0]?.id, corrected, "it remains a selected report");
 
   await overrideFields(corrected, { fields: { tags: ["教程/实践", "entity:kimi"] }, version: 2, reason: "更正主体公司" }, "test-topics");
   const moved = await loadTopicPage("qwen", 1);
   assert.deepEqual(moved?.items, [], "the old topic list drops it");
   assert.equal(moved?.topic.latest, null, "the old topic headline drops it");
-  assert.deepEqual(moved?.highlights, [], "the old topic search snippet drops it");
   assert.equal((await listTopicSummaries()).topics.find((t) => t.slug === "qwen")?.latest, null, "the directory drops the old membership");
   assert.equal((await loadTopicPage("kimi", 1, new Date()))?.items[0]?.id, corrected, "the corrected membership is retained");
 });

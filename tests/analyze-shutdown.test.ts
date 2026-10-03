@@ -1,6 +1,6 @@
 // Exercise the real queue callback and process shutdown: already sent model answers must settle
 // before the DB closes, and the next process must recover using those receipts.
-import { gate, Reply, stub, tag } from "./setup.ts";
+import { gate, pointModels, Reply, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -63,8 +63,7 @@ function worker(queue: string) {
     process.send({ ready: true });
   `;
   const env = { ...process.env, TEST_ANALYZE_QUEUE: queue, MODEL_CALLS_ENABLED: "true", AIHOT_CREDENTIALS_DIR: "/nonexistent-test-credentials" };
-  for (const name of ["DASHSCOPE_BASE_URL", "ZHIPU_BASE_URL", "DEEPSEEK_BASE_URL"]) (env as Record<string, string>)[name] = `${provider.url}/v1`;
-  for (const name of ["DASHSCOPE_API_KEY", "ZHIPU_API_KEY", "DEEPSEEK_API_KEY"]) (env as Record<string, string>)[name] = "test-key";
+  pointModels(provider.url, undefined, env);
   const child = spawn(process.execPath, ["--input-type=module", "-e", script], { cwd: process.cwd(), env, stdio: ["ignore", "pipe", "pipe", "ipc"] });
   children.add(child);
   const ready = gate();

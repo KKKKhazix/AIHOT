@@ -31,6 +31,8 @@ const databases = new Set<string>();
 const objects = new Map<string, Buffer>();
 const PNG = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#808080" } }).png().toBuffer();
 const NOW = new Date("2026-11-01T04:00:00Z");
+// Backups are named after the database ("news_db" → news-db-…).
+const stem = sql.options.database.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
@@ -64,7 +66,7 @@ after(async () => {
 async function extractSavedFiles() {
   const destination = await mkdtemp(path.join(tmpdir(), "aihot-backup-restored-"));
   roots.push(destination);
-  const archive = objects.get("daily/aihot-files-202611010400.tar.gz");
+  const archive = objects.get(`daily/${stem}-files-202611010400.tar.gz`);
   assert.ok(archive, "backup must supply the real file archive");
   const archivePath = path.join(destination, "files.tar.gz");
   await writeFile(archivePath, archive);
@@ -85,7 +87,7 @@ test("a real paired restore opens a feedback screenshot when forwarding is disab
   const summary = await runBackup(NOW);
   assert.equal(summary.uploaded, true);
   const { destination, data } = await extractSavedFiles();
-  const dump = objects.get("daily/aihot-202611010400.dump");
+  const dump = objects.get(`daily/${stem}-202611010400.dump`);
   assert.ok(dump, "backup must supply the real database dump");
   const dumpPath = path.join(destination, "database.dump");
   await writeFile(dumpPath, dump);
@@ -136,7 +138,7 @@ test("both attachment roots restore nested paths and bytes, without caches or pr
   assert.deepEqual((await readdir(data)).sort(), ["feedback-screenshots", "uploads"]);
   assert.deepEqual(await readFile(path.join(data, "uploads/nested/user-file.bin")), upload);
   assert.deepEqual(await readFile(path.join(data, "feedback-screenshots/local.png")), PNG);
-  assert.deepEqual([...objects.keys()].sort(), ["daily", "weekly", "monthly"].flatMap(prefix => [`${prefix}/aihot-202611010400.dump`, `${prefix}/aihot-files-202611010400.tar.gz`]).sort());
+  assert.deepEqual([...objects.keys()].sort(), ["daily", "weekly", "monthly"].flatMap(prefix => [`${prefix}/${stem}-202611010400.dump`, `${prefix}/${stem}-files-202611010400.tar.gz`]).sort());
   for (const object of summary.objects) assert.equal(object.sha256, createHash("sha256").update(objects.get(object.key)!).digest("hex"));
 });
 
@@ -213,6 +215,6 @@ test("persistent packing failure still sends the database and reports incomplete
 test("local retention keeps three dump/archive pairs without deleting source attachments", async () => {
   await save("feedback-screenshots/retained.png");
   for (const day of [1, 2, 3, 4]) await runBackup(new Date(`2026-11-0${day}T04:00:00Z`));
-  assert.deepEqual((await readdir(path.join(config.dataDir, "backups"))).sort(), [2, 3, 4].flatMap(day => [`aihot-2026110${day}0400.dump`, `aihot-files-2026110${day}0400.tar.gz`]).sort());
+  assert.deepEqual((await readdir(path.join(config.dataDir, "backups"))).sort(), [2, 3, 4].flatMap(day => [`${stem}-2026110${day}0400.dump`, `${stem}-files-2026110${day}0400.tar.gz`]).sort());
   assert.deepEqual(await readFile(path.join(config.dataDir, "feedback-screenshots/retained.png")), PNG);
 });

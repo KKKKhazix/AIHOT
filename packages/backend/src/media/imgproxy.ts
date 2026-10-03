@@ -55,7 +55,7 @@ export function verifyProxyRequest(params: { u?: string; mode?: string; exp?: st
   if (!/^\d{9,11}$/.test(exp)) return { ok: false, reason: "missing" };
   if (Number(exp) * 1000 < nowMs) return { ok: false, reason: "expired" };
   if (!/^https?:\/\//i.test(u)) return { ok: false, reason: "bad-url" };
-  // Legacy article pages signed body images without a mode (as "default"); those still in open tabs and
+  // Older article pages signed body images without a mode (as "default"); those still in open tabs and
   // caches keep loading, as full images, until their signature expires.
   const given = Buffer.from(new RegExp(`^(?:[0-9a-f]{${SIG_HEX}}|[0-9a-f]{64})$`, "i").test(sig) ? sig : "", "hex");
   const expected = Buffer.from(signature(u, mode ?? "default", exp), "hex").subarray(0, given.length);

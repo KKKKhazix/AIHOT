@@ -13,6 +13,8 @@ x-app: &app
     AIHOT_DATA_DIR: /data
     API_BASE_URL: http://api:3001
     LOCAL_ROUTER_URL: http://web:3000
+    # No proxy in front limits pushes to /api/ingest/items: the api does (per client and minute; 0 turns it off).
+    INGEST_RATE_LIMIT: ${INGEST_RATE_LIMIT:-10}
   volumes:
     - data:/data
   depends_on:
@@ -35,7 +37,7 @@ services:
       timeout: 5s
       retries: 30
 
-  # Applies the database migrations and seeds the demo sources and the leaderboard directory, then exits.
+  # Applies the database migrations and seeds the demo sources, then exits.
   setup:
     <<: *app
     restart: "no"

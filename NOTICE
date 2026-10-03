@@ -7,10 +7,6 @@ and logo for your site.
 This repository also contains third-party material under its own terms:
 
 - assets/og-fonts/: Noto Sans SC, SIL Open Font License 1.1 (assets/og-fonts/LICENSE).
-- assets/model-providers/: model and provider marks, mostly from Lobe Icons (MIT). The marks remain
-  trademarks of their respective owners and are used only to identify them (assets/model-providers/NOTICE.md).
-- assets/leaderboard-sources/: the published marks of each evaluation operator, used only to identify
-  them (assets/leaderboard-sources/NOTICE.md).
 
 The demo sources in industry/sources.json are public feeds of their publishers. Their content belongs
 to them; by default the site shows only a summary and a link to the original.

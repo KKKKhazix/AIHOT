@@ -7,7 +7,7 @@ import { breadcrumbLd, pageMeta, siteUrl } from "../lib/seo";
 import { relativeTime } from "../lib/format";
 import { IconChevronRight } from "../components/icons";
 import { IntentLink } from "../components/ui/IntentLink";
-import { BrandMark } from "../features/leaderboard/BrandMark";
+import { BrandMark } from "../components/BrandMark";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
@@ -18,14 +18,14 @@ export async function loader({ request }: { request: Request }) {
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
-  if (!loaderData) return pageMeta({ title: withSubject("主题"), path: "/topics", image: "/og/pages/topics.png" });
+  if (!loaderData) return pageMeta({ title: SITE.topicsTitle, path: "/topics", image: "/og/pages/topics.png" });
   const { groups, topics } = loaderData;
   const by = groups.map((g) => g.name).join("、");
   const indexed = topics.filter((t) => t.indexable);
   const named = indexed.slice(0, 6).map((t) => t.name.split(" / ")[0]).join("、");
   const base = siteUrl();
   return pageMeta({
-    title: `${withSubject("主题")}：${by}的最新动态`,
+    title: SITE.topicsTitle,
     description: `按${by}${subjectAfter("追踪", "最新动态")}：${named ? `${named}等 ` : ""}${topics.length} 个主题，浏览最新精选与重要进展，持续更新。`,
     path: "/topics",
     image: "/og/pages/topics.png",
@@ -104,7 +104,8 @@ export default function TopicsPage() {
       <header className="pb-2 pt-3 lg:pt-1">
         <h1 data-page-title="" className="text-[24px] font-semibold leading-[1.3] text-ink">{subjectAfter("按主题看")}</h1>
         <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
-          按{groups.map((g) => g.name).join("、")}浏览 <span className="num">{topics.length}</span> 个主题，追踪最新精选与重要进展。
+          {`按${groups.map((g) => g.name).join("、")}浏览 `}
+          <span className="num">{topics.length}</span> 个主题，追踪最新精选与重要进展。
         </p>
       </header>
       {groups.map((g) => (

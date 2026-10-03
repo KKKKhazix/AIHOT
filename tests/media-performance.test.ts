@@ -202,7 +202,8 @@ test("image validators save unchanged bytes only after signature verification", 
       assert.equal(denied.headers.etag, undefined);
       assert.equal(denied.headers["x-img-proxy-sig"], query === expired ? "expired" : "invalid");
     }
-    const head = await app.inject({ method: "HEAD", url: `/api/img-proxy?${params}`, headers: { "if-none-match": etag } });
+    const headers: Record<string, string> = { "if-none-match": etag };
+    const head = await app.inject({ method: "HEAD", url: `/api/img-proxy?${params}`, headers });
     assert.equal(head.statusCode, 304, "a HEAD revalidates like a GET");
     assert.equal(head.headers.etag, etag);
     assert.equal(head.headers["x-accel-expires"], undefined);

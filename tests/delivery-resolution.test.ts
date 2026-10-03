@@ -31,7 +31,7 @@ after(async () => {
 test("manual recovery requires an explicit valid outcome and a note before changing or sending a delivery", async () => {
   for (const payload of [{ note: "checked the group" }, { outcome: null, note: "checked the group" }, { outcome: "typo", note: "checked the group" }, { outcome: "resend" }, { outcome: "resend", note: " " }]) {
     const [row] = await sql<{ id: number }[]>`INSERT INTO deliveries (target_key, subject_kind, subject_id, dedupe_key, status)
-      VALUES (${TARGET}, 'codex_reset', 'test', ${`${T}-${JSON.stringify(payload)}`}, 'unknown') RETURNING id`;
+      VALUES (${TARGET}, 'test', 'test', ${`${T}-${JSON.stringify(payload)}`}, 'unknown') RETURNING id`;
     await sql`UPDATE deliveries SET payload = ${sql.json({ id: row!.id })} WHERE id = ${row!.id}`;
     const state = async () => (await sql`SELECT status, attempts, updated_at::text AS version FROM deliveries WHERE id = ${row!.id}`)[0];
     const before = await state();

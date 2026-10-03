@@ -1,5 +1,6 @@
-// External collection scripts push items here (docs/sources.md). They use the ingest token (never an
-// admin session) and their own rate limit, kept in the process: no proxy in front limits it.
+// External collection scripts push items here. They use the ingest token (never an admin session); with
+// INGEST_RATE_LIMIT set, each client's pushes are also limited in the process, for a site with no proxy in
+// front that limits them.
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { credential } from "@aihot/backend/config";
@@ -17,6 +18,8 @@ function authorized(req: FastifyRequest): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** Pushes per client and minute (INGEST_RATE_LIMIT); 0 leaves the limit to a proxy in front. */
+const RATE_LIMIT = Math.max(0, Math.floor(Number(process.env.INGEST_RATE_LIMIT) || 0));
 const windows = new Map<string, number[]>();
 function limited(key: string, perMinute: number): boolean {
   const now = Date.now();
@@ -35,7 +38,7 @@ export function registerIngest(app: FastifyInstance) {
   app.post("/api/ingest/items", async (req, reply) => {
     reply.header("Cache-Control", "no-store");
     if (!authorized(req)) return unauthorized(reply);
-    if (limited(`items:${req.ip}`, 10)) return reply.code(429).header("Retry-After", "60").send({ ok: false, error: "rate limited" });
+    if (RATE_LIMIT > 0 && limited(`items:${req.ip}`, RATE_LIMIT)) return reply.code(429).header("Retry-After", "60").send({ ok: false, error: "rate limited" });
     try {
       return await ingestItems((req.body ?? {}) as never);
     } catch (error) {

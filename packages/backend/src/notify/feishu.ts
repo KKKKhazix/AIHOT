@@ -190,7 +190,7 @@ export async function forwardFeedbackToFeishu(id: number): Promise<"sent" | "dis
   }
 }
 
-/** Custom-bot webhook for content groups (selected cards, reset pushes). */
+/** Custom-bot webhook for content groups (selected cards and other pushes). */
 export async function postWebhook(url: string, card: unknown): Promise<{ status: "sent" | "failed" | "unknown"; body: string }> {
   const res = await fetch(url, {
     method: "POST",

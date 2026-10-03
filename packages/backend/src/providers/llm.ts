@@ -1,7 +1,9 @@
 // OpenAI-compatible chat calls, always through receipts. One model is enough: `default` is whatever the
-// deployment names in LLM_BASE_URL / LLM_API_KEY / LLM_MODEL, and every capability uses it unless an
-// environment variable or the admin's model page picks one of the named presets below.
+// deployment names in LLM_BASE_URL / LLM_API_KEY / LLM_MODEL, and every capability uses it unless the
+// industry pack, an environment variable or the admin's model page picks one of the pack's named
+// presets (industry/models.ts).
 import type { z } from "zod";
+import { PRESETS } from "@aihot/industry/models";
 import { config, credential } from "../config.ts";
 import { sha256 } from "../lib/ids.ts";
 import { assertAccepted, paidRequest, ProviderRejectedError, rejectReceivedResponse } from "./receipts.ts";
@@ -36,49 +38,8 @@ export const MODELS: Record<string, ModelSpec> = {
     get jsonMode() { return process.env.LLM_JSON_MODE !== "false"; },
     get vision() { return process.env.LLM_VISION === "true"; },
   },
-  // Named presets (the models AIHOT itself runs on); each needs its own key.
-  // GLM 5.3 Flash always reasons; the lowest effort keeps short structured tasks fast.
-  "glm-5.3-flash": {
-    key: "glm-5.3-flash", service: "zhipu", model: "glm-5.3-flash",
-    baseUrlEnv: "ZHIPU_BASE_URL", apiKeyEnv: "ZHIPU_API_KEY",
-    extra: { thinking: { type: "enabled" }, reasoning_effort: "low" }, jsonMode: true,
-  },
-  // The scorer's parameters for glm-5.3-flash (score calls; temperature 1 is set per call).
-  "glm-5.3-flash-selection": {
-    key: "glm-5.3-flash-selection", service: "zhipu", model: "glm-5.3-flash",
-    baseUrlEnv: "ZHIPU_BASE_URL", apiKeyEnv: "ZHIPU_API_KEY",
-    extra: { thinking: { type: "enabled", clear_thinking: false }, reasoning_effort: "high", top_p: 0.95 }, jsonMode: true,
-  },
-  // DeepSeek Flash reasons by default; structured tasks switch it off unless the -think variant is used.
-  "deepseek-flash": {
-    key: "deepseek-flash", service: "deepseek", model: "deepseek-flash",
-    baseUrlEnv: "DEEPSEEK_BASE_URL", apiKeyEnv: "DEEPSEEK_API_KEY",
-    extra: { thinking: { type: "disabled" } }, jsonMode: true,
-  },
-  "deepseek-flash-think": {
-    key: "deepseek-flash-think", service: "deepseek", model: "deepseek-flash",
-    baseUrlEnv: "DEEPSEEK_BASE_URL", apiKeyEnv: "DEEPSEEK_API_KEY", jsonMode: true,
-  },
-  "qwen3.7-flash": {
-    key: "qwen3.7-flash", service: "dashscope", model: "qwen3.7-flash",
-    baseUrlEnv: "DASHSCOPE_BASE_URL", apiKeyEnv: "DASHSCOPE_API_KEY",
-    extra: { enable_thinking: false }, jsonMode: true,
-  },
-  "qwen3.8-flash": {
-    key: "qwen3.8-flash", service: "dashscope", model: "qwen3.8-flash",
-    baseUrlEnv: "DASHSCOPE_BASE_URL", apiKeyEnv: "DASHSCOPE_API_KEY",
-    extra: { enable_thinking: false }, jsonMode: true,
-  },
-  "mimo-v2.6-flash": {
-    key: "mimo-v2.6-flash", service: "mimo", model: "mimo-v2.6-flash",
-    baseUrlEnv: "XIAOMI_MIMO_BASE_URL", apiKeyEnv: "XIAOMI_MIMO_API_KEY",
-    extra: { thinking: { type: "disabled" } }, jsonMode: true,
-  },
-  "qwen3-vl-flash": {
-    key: "qwen3-vl-flash", service: "dashscope", model: "qwen3-vl-flash",
-    baseUrlEnv: "DASHSCOPE_BASE_URL", apiKeyEnv: "DASHSCOPE_API_KEY",
-    extra: { enable_thinking: false }, jsonMode: false, vision: true,
-  },
+  // The pack's named presets, each with its own address and key.
+  ...Object.fromEntries(Object.entries(PRESETS).map(([key, preset]) => [key, { key, ...preset }])),
 };
 
 export type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };

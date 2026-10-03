@@ -18,6 +18,11 @@ export const meta: Route.MetaFunction = () => [{ title: `运行 · ${SITE.name} 
 
 const STATE_LABEL: Record<string, string> = { created: "排队", retry: "等待重试", active: "执行中" };
 
+/** Who reports through the ingest API, named when nothing has reported yet. */
+const INGEST_CLIENTS = [
+  "采集脚本",
+];
+
 export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
   const refresh = useFetcher<typeof loader>();
   const r = refresh.data ?? loaderData;
@@ -194,30 +199,6 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
         </Card>
       </div>
 
-      {r.leaderboard && (
-        <Card
-          className="mt-5"
-          title="模型榜评测来源"
-          right={<span>最近抓取 {bj(r.leaderboard.at)} · 成功 {r.leaderboard.sources.filter((x) => x.ok).length}/{r.leaderboard.sources.length}</span>}
-          pad={false}
-        >
-          <div className="max-h-[360px] overflow-y-auto">
-            <DataTable
-              dense
-              rows={r.leaderboard.sources}
-              rowKey={(x) => x.key}
-              columns={[
-                { key: "k", label: "来源", render: (x) => <span className="font-mono text-[12.5px]">{x.key}</span> },
-                { key: "s", label: "上次抓取", render: (x) => <Badge tone={x.ok ? "ok" : "bad"}>{x.ok ? (x.changed ? "有更新" : "无变化") : "失败"}</Badge> },
-                { key: "ok", label: "上次成功", render: (x) => <Time at={x.lastOkAt} /> },
-                { key: "n", label: "行数", align: "right", render: (x) => (x.rows == null ? "—" : num(x.rows)) },
-                { key: "e", label: "错误", render: (x) => <span className="line-clamp-1 text-[12px] text-ink-3" title={x.error ?? ""}>{x.error}</span> },
-              ]}
-            />
-          </div>
-        </Card>
-      )}
-
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <Card title="任务时间线" pad={false}>
           <div className="max-h-[420px] overflow-y-auto">
@@ -249,7 +230,7 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
               ]}
             />
           ) : (
-            <Empty>还没有外部上报（采集脚本）</Empty>
+            <Empty>{`还没有外部上报（${INGEST_CLIENTS.join("、")}）`}</Empty>
           )}
         </Card>
       </div>

@@ -35,9 +35,9 @@ export default function DailyArchive() {
       <div className="@container">
         <header className="pt-5 lg:pt-0">
           <div className="flex items-center justify-between gap-4 text-[12px] text-ink-4">
-            <span>{SITE.name} · {withSubject("日报")}</span>
+            <span>{`${SITE.name} · ${withSubject("日报")}`}</span>
             <span>
-              共 <span className="num">{index.length}</span> 期
+              共 <span className="num">{index[0]?.issueNumber ?? 0}</span> 期
             </span>
           </div>
           <div className="py-6 @[880px]:py-8">

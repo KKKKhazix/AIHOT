@@ -10,7 +10,7 @@ import { ActiveFilters, CategoryTabs, FeedBar, SearchField } from "../features/f
 import { PillTabs } from "../components/ui/Tabs";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { EmptyState } from "../components/ui/Page";
-import { RingMark } from "../components/Logo";
+import { RingMark } from "@aihot/industry/brand/Logo.tsx";
 import { IconSearch } from "../components/icons";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import { isPhone, type Screen } from "../components/shell/screens";

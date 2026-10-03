@@ -8,6 +8,8 @@ import { useChangelogDot } from "./Sidebar";
 const subscribe = () => () => {};
 const serverTab = () => null;
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+/** One grid column per tab, as whole class names the stylesheet can see. */
+const COLUMNS: Record<number, string> = { 4: "grid-cols-4", 5: "grid-cols-5" };
 
 /**
  * The phone tab bar (below lg). A page lights the tab it declares; pages reached from several tabs keep
@@ -35,7 +37,7 @@ export function TabBar({ changelogVersion }: { changelogVersion: string | null }
       aria-label="底部导航"
       className="fixed inset-x-0 bottom-0 z-40 bg-surface/90 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] shadow-[0_-1px_0_var(--line)] backdrop-blur-xl backdrop-saturate-150 lg:hidden"
     >
-      <div className="mx-auto grid h-[50px] max-w-[640px]" style={{ gridTemplateColumns: `repeat(${TABS.length}, minmax(0, 1fr))` }}>
+      <div className={`mx-auto grid h-[50px] max-w-[640px] ${COLUMNS[TABS.length]}`}>
         {TABS.map((t) => {
           const on = t.key === active;
           const Icon = t.icon;

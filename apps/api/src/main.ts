@@ -1,5 +1,6 @@
 import { assertProductionSecrets, config } from "@aihot/backend/config";
 import { closeDb } from "@aihot/backend/db";
+import { feishuLoginConfigured } from "@aihot/backend/admin/auth";
 import { startHeartbeat } from "@aihot/backend/operations/heartbeat";
 import { startWorkerWatchdog } from "@aihot/backend/operations/watch";
 import { buildApp } from "./app.ts";
@@ -9,7 +10,7 @@ assertProductionSecrets([
   ["auth", "IMG_PROXY_SIGN_SECRET"],
 ]);
 // Somebody must be able to sign in to the admin.
-if (config.environmentName === "production" && !(config.adminPassword && config.adminPassword.length >= 12) && !process.env.FEISHU_LOGIN_APP_ID) {
+if (config.environmentName === "production" && !(config.adminPassword && config.adminPassword.length >= 12) && !feishuLoginConfigured()) {
   throw new Error("Refusing to start in production: set ADMIN_PASSWORD (at least 12 characters) or configure Feishu sign-in");
 }
 

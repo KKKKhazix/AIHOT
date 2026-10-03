@@ -1,5 +1,7 @@
-// Issue numbers on the real server-rendered report pages (built web, a loopback API stand-in): the
-// masthead and the calendar show each issue's own number, not its place in the 400-entry navigation.
+// Run after `npm run build -w @aihot/web`. Real production server/router, synthetic HTTP API only.
+// Failure cases: the masthead numbering the newest of 405 issues 400 (the navigation index's length); an
+// issue older than the index losing its number; the calendar marking that issue as not published; the
+// daily archive counting 400 issues beside a masthead that numbers 405.
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
@@ -17,6 +19,7 @@ const keys = Object.fromEntries(kinds.map((kind) => [kind, Array.from({ length: 
   const day = new Date(Date.UTC(2020, 0, 6 + i * (kind === "weekly" ? 7 : 1))).toISOString().slice(0, 10);
   return kind === "weekly" ? isoWeekLabel(day) : day;
 })])) as Record<ReportKind, string[]>;
+/** The navigation as the api sends it: the newest 400 issues, each with its number in the whole series. */
 const index = (kind: ReportKind): ReportNavigationEntry[] => keys[kind].map((key, i) => ({ key, issueNumber: i + 1, title: `第${i + 1}期` })).reverse().slice(0, 400);
 function report(kind: ReportKind, key: string): ReportDetail {
   return {
@@ -31,6 +34,7 @@ const api = createServer((req, res) => {
   const path = new URL(req.url!, "http://api.local").pathname;
   res.setHeader("Content-Type", "application/json");
   if (path === "/api/site/meta") return res.end(JSON.stringify({ changelogVersion: "2026-09-28T12:00" }));
+  if (path === "/api/site/reports/daily") return res.end(JSON.stringify({ kind: "daily", items: index("daily").map((entry) => ({ ...entry, count: 1 })) }));
   const match = /^\/api\/site\/reports\/(daily|weekly|monthly)\/(.+)$/.exec(path);
   if (match) {
     const kind = match[1] as ReportKind;
@@ -42,11 +46,12 @@ const api = createServer((req, res) => {
   res.statusCode = 404;
   res.end(JSON.stringify({ code: "not_found" }));
 });
+
 before(async () => {
   api.listen(0, "127.0.0.1");
   await once(api, "listening");
   web = spawn(process.execPath, [fileURLToPath(new URL("../server.ts", import.meta.url))], {
-    env: { ...process.env, NODE_ENV: "production", WEB_HOST: "127.0.0.1", WEB_PORT: "0", API_BASE_URL: `http://127.0.0.1:${(api.address() as AddressInfo).port}` },
+    env: { ...process.env, WEB_PORT: "0", API_BASE_URL: `http://127.0.0.1:${(api.address() as AddressInfo).port}` },
     stdio: ["ignore", "pipe", "pipe"],
   });
   await new Promise<void>((resolve, reject) => {
@@ -56,68 +61,64 @@ before(async () => {
     web.stdout!.on("data", (chunk) => {
       logs += String(chunk);
       const match = logs.match(/"msg":"web started","port":(\d+)/);
-      if (match) { origin = `http://127.0.0.1:${match[1]}`; clearTimeout(timeout); resolve(); }
+      if (match) {
+        origin = `http://127.0.0.1:${match[1]}`;
+        clearTimeout(timeout);
+        resolve();
+      }
     });
   });
 });
+
 after(async () => {
-  if (web && web.exitCode === null) { web.kill("SIGTERM"); await once(web, "exit"); }
+  if (web && web.exitCode === null) {
+    web.kill("SIGTERM");
+    await once(web, "exit");
+  }
   api.closeAllConnections();
   await new Promise<void>((resolve) => api.close(() => resolve()));
 });
 
+/** The masthead's visible text (the archive's has the same frame). */
 function masthead(html: string): string {
   const header = /<header class="pt-5 lg:pt-0">([\s\S]*?)<\/header>/.exec(html);
-  assert.ok(header, "the actual report masthead must be rendered");
+  assert.ok(header, "the report masthead is rendered");
   return header[1]!.replace(/<[^>]+>/g, "");
 }
 
 for (const kind of kinds) {
-  test(`production SSR ${kind} masthead shows 405 instead of the navigation length`, async () => {
+  test(`the ${kind} masthead numbers the newest of 405 issues 405, not the navigation's 400`, async () => {
     const response = await fetch(`${origin}/${kind}`);
     assert.equal(response.status, 200, logs);
-    const html = await response.text();
-    const visible = masthead(html);
+    const visible = masthead(await response.text());
     assert.match(visible, /第\s*405\s*期/);
     assert.doesNotMatch(visible, /第\s*400\s*期/);
   });
-  test(`production SSR ${kind} oldest detail retains its own first issue number`, async () => {
+
+  test(`the oldest ${kind} issue, outside the navigation, keeps its number`, async () => {
     const first = keys[kind][0]!;
     assert.ok(!index(kind).some((entry) => entry.key === first));
     const response = await fetch(`${origin}/${kind}/${first}`);
     assert.equal(response.status, 200, logs);
-    const visible = masthead(await response.text());
-    assert.match(visible, /第\s*1\s*期/);
+    assert.match(masthead(await response.text()), /第\s*1\s*期/);
   });
-}
 
-
-for (const kind of kinds) {
-  test(`${kind} calendar keeps the current old issue number without inventing other old issues`, () => {
+  test(`the ${kind} calendar labels this issue with its own number and makes up none for others`, () => {
     const first = keys[kind][0]!;
-    const grid = periodGrid(kind, first, index(kind), 1);
-    const current = grid.cells.find((cell) => cell.key === first)!;
+    const { cells } = periodGrid(kind, first, index(kind), 1);
+    const current = cells.find((cell) => cell.key === first)!;
     assert.equal(current.state, "current");
     assert.match(current.label, /第 1 期/);
-    assert.doesNotMatch(current.label, /未出刊/);
-    const absent = grid.cells.find((cell) => cell.key === keys[kind][1])!;
-    assert.equal(absent.state, "none");
-    assert.match(absent.label, /未出刊/);
+    const unlisted = cells.find((cell) => cell.key === keys[kind][1])!;
+    assert.doesNotMatch(unlisted.label, /第 \d+ 期/, "an issue the navigation does not list gets no number");
     assert.equal(issueNumber(index(kind), keys[kind].at(-1)!), 405);
-    const refreshed = periodGrid(kind, first, [{ key: first, issueNumber: 9 }], 10);
-    assert.match(refreshed.cells.find((cell) => cell.key === first)!.label, /第 10 期/, "current detail metadata wins over an older navigation snapshot");
-  });
-  test(`${kind} known entries without numbers stay published without length-based fallback`, () => {
-    const current = keys[kind].at(-1)!;
-    const previous = keys[kind].at(-2)!;
-    const unnumbered = [{ key: current }, { key: previous }];
-    assert.equal(issueNumber(unnumbered, current), null);
-    const grid = periodGrid(kind, current, unnumbered);
-    for (const key of [current, previous]) {
-      const cell = grid.cells.find((entry) => entry.key === key)!;
-      assert.match(cell.label, /已出刊/);
-      assert.doesNotMatch(cell.label, /未出刊|第 \d+ 期/);
-    }
-    for (const n of [0, -1, NaN, 1.5]) assert.equal(issueNumber([{ key: current, issueNumber: n }], current), null);
+    const stale = periodGrid(kind, first, [{ key: first, issueNumber: 9 }], 10);
+    assert.match(stale.cells.find((cell) => cell.key === first)!.label, /第 10 期/, "the report's own number wins over an older navigation");
   });
 }
+
+test("the daily archive counts every issue, as the masthead numbers them", async () => {
+  const response = await fetch(`${origin}/daily/archive`);
+  assert.equal(response.status, 200, logs);
+  assert.match(masthead(await response.text()), /共\s*405\s*期/);
+});

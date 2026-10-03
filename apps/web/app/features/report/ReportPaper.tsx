@@ -8,7 +8,7 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import type { ReportCitation, ReportDetail, ReportNavigationEntry } from "@aihot/contracts/site";
-import { SITE, subjectAfter, withSubject } from "@aihot/industry/site";
+import { REPORTS, SITE, subjectAfter, withSubject } from "@aihot/industry/site";
 import { Badge } from "../../components/ui/Badge";
 import { IconArrowLeft, IconArrowRight, IconArrowUpRight } from "../../components/icons";
 import { Kicker } from "../../components/ui/Kicker";
@@ -24,10 +24,12 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const keyOf = (c: ReportCitation) => c.itemId ?? c.title;
 const anchorOf = (c: ReportCitation) => (c.itemId ? `r-${c.itemId}` : null);
 const LINK = "inline-flex min-h-7 items-center gap-0.5 font-medium transition-colors hover:text-accent";
+/** What comes before `noun` at the end of `phrase` ("往期 AI " of "往期 AI 周报"), so the kind's name is its own text. */
+const before = (phrase: string, noun: string) => phrase.slice(0, -noun.length);
 
 function Masthead({ report, index }: { report: ReportDetail; index: ReportNavigationEntry[] }) {
-  const issue = report.issueNumber;
   const mark = dateMark(report.kind, report.key);
+  const label = KIND_LABEL[report.kind];
   return (
     <header className="pt-5 lg:pt-0">
       <div className="flex items-center justify-between gap-4 text-[12px] text-ink-4">
@@ -40,17 +42,17 @@ function Masthead({ report, index }: { report: ReportDetail; index: ReportNaviga
         <div className="flex min-w-0 flex-col justify-center">
           <h1 id="report-start" className="scroll-mt-[calc(var(--bar-h)+1.5rem)]">
             <span className="sr-only">
-              {withSubject(KIND_LABEL[report.kind])} · {dateLine(report.kind, report.key)}
+              {before(withSubject(label), label)}{label} · {dateLine(report.kind, report.key)}
             </span>
             <Nameplate which={report.kind} className="block h-[44px] w-auto @[520px]:h-[58px] @[880px]:h-[74px] @[1040px]:h-[84px]" />
           </h1>
-          <p className="mt-3 text-[11.5px] tracking-[0.36em] text-ink-4 @[880px]:mt-4 @[880px]:text-[12.5px]">{SITE.name.toUpperCase()}</p>
+          <p className="mt-3 text-[11.5px] tracking-[0.36em] text-ink-4 @[880px]:mt-4 @[880px]:text-[12.5px]">{REPORTS.imprint}</p>
         </div>
         {/* 报眼: the box beside the nameplate, as a Chinese daily sets it: the issue and the date in the
             nameplate's dots, and on wider paper the issue calendar beside them. */}
         <div className="flex shrink-0 items-stretch well rounded-panel">
           <div className="flex w-[112px] flex-col items-center justify-center px-2 py-3 text-center @[880px]:w-[150px] @[880px]:py-4">
-            {issue && <span className="text-[11px] tracking-[0.2em] text-ink-4">第 {issue} 期</span>}
+            <span className="text-[11px] tracking-[0.2em] text-ink-4">第 {report.issueNumber} 期</span>
             <Halftone seed={`${report.kind}-${report.key}-date`} className="num mt-2 whitespace-nowrap text-[44px] font-black leading-[0.95] tracking-[-0.04em] text-ink @[880px]:text-[64px]">
               {mark.figure}
             </Halftone>
@@ -413,9 +415,10 @@ function Neighbours({ report, index }: { report: ReportDetail; index: ReportNavi
 function History({ report, index }: { report: ReportDetail; index: ReportNavigationEntry[] }) {
   const others = index.filter((e) => e.key !== report.key).slice(0, 12);
   if (others.length === 0) return null;
+  const label = KIND_LABEL[report.kind];
   return (
     <section id="report-history" className="scroll-mt-[calc(var(--bar-h)+1.5rem)] pt-12">
-      <Kicker>{subjectAfter("往期", KIND_LABEL[report.kind])}</Kicker>
+      <Kicker>{before(subjectAfter("往期", label), label)}{label}</Kicker>
       <ul className="mt-3">
         {others.map((e) => (
           <li key={e.key}>
@@ -503,7 +506,7 @@ export function ReportPaper({ report, index }: { report: ReportDetail; index: Re
       <footer className="py-10 text-center">
         <div className="text-[13px] font-semibold tracking-[0.6em] text-ink-4">（本期完）</div>
         <p className="mt-3 text-[12px] text-ink-4">
-          {SITE.name} {KIND_LABEL[report.kind]}由编辑系统根据公开来源自动{daily ? "编辑" : "综合"}，每条均附原文 ·{" "}
+          {`${SITE.name} `}{KIND_LABEL[report.kind]}由编辑系统根据公开来源自动{daily ? "编辑" : "综合"}，每条均附原文 ·{" "}
           <Link to={daily ? "/daily/archive" : "#report-history"} viewTransition={daily} className="font-medium text-ink-3 transition-colors hover:text-accent">
             {daily ? "日报合订本" : `往期${KIND_LABEL[report.kind]}`}
           </Link>

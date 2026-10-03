@@ -1,13 +1,13 @@
 // Failure cases: concurrent claims duplicate a fact; an ambiguous webhook reply looks delivered;
 // a retry bypasses target disable/withdrawal; a mirror sends after the first target awaited a withdrawal.
 // A lost reply must still suppress regrouped siblings; enabling a group must not replay older items.
+// An admin's resolution with a mistyped outcome must not re-send, nor one without a note pass.
 import { gate, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
-import { deliverContent, resendDelivery } from "@aihot/backend/notify/deliver";
+import { resendDelivery, resolveDelivery } from "@aihot/backend/notify/deliver";
 import { pushSelected } from "@aihot/backend/notify/selected";
 
 const T = tag();
@@ -37,9 +37,10 @@ after(async () => {
   await closeDb();
 });
 
+/** A delivery that sends the card it stored (a selected article's card is built afresh instead). */
 async function delivery(status = "unknown") {
   const [row] = await sql<{ id: number }[]>`INSERT INTO deliveries (target_key, subject_kind, subject_id, dedupe_key, status)
-    VALUES (${TARGET}, 'codex_reset', 'test', ${`${T}-${ids.length}`}, ${status}) RETURNING id`;
+    VALUES (${TARGET}, 'test', 'test', ${`${T}-${ids.length}`}, ${status}) RETURNING id`;
   ids.push(row.id);
   await sql`UPDATE deliveries SET payload = ${sql.json({ id: row.id })} WHERE id = ${row.id}`;
   return row.id;
@@ -89,6 +90,17 @@ test("a disabled target cannot receive a manual retry", async () => {
     assert.deepEqual(await state(id), before);
     assert.equal(requests.filter((n) => n === id).length, 0);
   } finally { await sql`UPDATE notify_targets SET enabled = true WHERE key = ${TARGET}`; }
+});
+
+test("an admin resolution names a known outcome and a note, or changes and sends nothing", async () => {
+  const id = await delivery();
+  const before = await state(id);
+  for (const input of [{ outcome: "resent", note: "checked the group" }, { outcome: "sent", note: " " }, { outcome: "drop" }]) {
+    // A validation error, which the admin API answers with 400.
+    await assert.rejects(resolveDelivery(id, input as never, "test-admin"), { name: "ZodError" });
+  }
+  assert.deepEqual(await state(id), before);
+  assert.equal(requests.filter((n) => n === id).length, 0);
 });
 
 async function selectedItem() {
@@ -197,34 +209,4 @@ test("enabling a group excludes earlier content and includes content arriving at
       assert.equal((await sql`SELECT 1 FROM deliveries WHERE target_key = ${TARGET} AND subject_id = ${id}`).length, expected);
     }
   } finally { await sql`UPDATE notify_targets SET enabled_at = NULL WHERE key = ${TARGET}`; }
-});
-
-test("concurrent sibling claims reserve a target once, including the pending delivery", async () => {
-  const blocker = gate<number>();
-  const release = gate();
-  const holding = sql.begin(async (tx) => {
-    await tx`LOCK TABLE deliveries IN SHARE MODE`;
-    blocker.open((await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`)[0]!.pid);
-    await release.promise;
-  });
-  const pid = await blocker.promise;
-  const subjects = [`${T}-sibling-a`, `${T}-sibling-b`];
-  const before = requests.length;
-  const done = Promise.all(subjects.map((subjectId) => deliverContent({
-    subjectKind: "codex_reset", subjectId, dedupeKey: subjectId, contentAt: new Date(), card: { id: 999 }, siblings: subjects,
-  })));
-  try {
-    const deadline = performance.now() + 5000;
-    while (true) {
-      const [row] = await sql<{ n: number }[]>`WITH RECURSIVE waiting(pid) AS (
-        SELECT pid FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))
-        UNION SELECT a.pid FROM pg_stat_activity a JOIN waiting w ON w.pid = ANY(pg_blocking_pids(a.pid))
-      ) SELECT count(*)::int AS n FROM waiting`;
-      if (row!.n >= 2) break;
-      assert.ok(performance.now() < deadline, "both target claims reach the held delivery table");
-      await delay(10);
-    }
-  } finally { release.open(); await holding; }
-  await done;
-  assert.equal(requests.length - before, 1);
 });

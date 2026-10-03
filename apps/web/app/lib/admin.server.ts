@@ -9,7 +9,7 @@ export async function adminGet<T>(request: Request, path: string): Promise<T> {
   });
   if (res.status === 401) {
     const url = new URL(request.url);
-    throw redirect(`/admin/login?${new URLSearchParams({ return: url.pathname + url.search })}`);
+    throw redirect(`/api/auth/login?${new URLSearchParams({ return: url.pathname + url.search })}`);
   }
   if (res.status === 404) throw data({ message: "not_found" }, { status: 404 });
   if (!res.ok) {

@@ -3,7 +3,7 @@
 // In a browser tab nothing is listened for, and the browser's own pull-to-refresh stays in charge.
 import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
-import { RingMark } from "../Logo";
+import { RingMark } from "@aihot/industry/brand/Logo.tsx";
 import { isPhone } from "./screens";
 
 const TRIGGER = 64; // pulled this far (after resistance), letting go reloads

@@ -68,7 +68,9 @@ function BudgetRow({ b }: { b: AdminSettings["budgets"][number] }) {
         <ReasonDialog
           open={open}
           title={`调整 ${b.service} 的请求上限`}
-          description="上限是付费请求的熔断：超过后请求暂停并按窗口重试。填 0 表示立即停用这个服务。"
+          description={[
+            "上限是付费请求的熔断：超过后请求暂停并按窗口重试。填 0 表示立即停用这个服务。",
+          ].join("")}
           confirmLabel="保存"
           busy={pending === "budget"}
           onClose={() => setOpen(false)}

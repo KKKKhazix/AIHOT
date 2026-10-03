@@ -5,7 +5,7 @@ import { bodyToMarkdown } from "../content/markdown.ts";
 import { sql } from "../db.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { textToHtml } from "../content/sanitize.ts";
-import { exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, toItemSummary, xView, type ItemRow } from "./items.ts";
+import { exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, toItemSummary, xView, type ItemRow } from "./items.ts";
 import { listedCondition } from "./scope.ts";
 import { itemUrl } from "./links.ts";
 import { hasItemPage, publicSourceName } from "./rules.ts";
@@ -109,8 +109,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
 
   let x: SiteItemDetail["x"] = null;
   let reading: Pick<SiteItemDetail, "body" | "outline" | "hasTranslation" | "bodyLanguage"> = { body: null, outline: [], hasTranslation: false, bodyLanguage: "original" };
-  // An X post's own text and media are its body: shown only where the source allows full text.
-  if (row.channel === "x" && row.body_mode === "full") {
+  if (showsPost(row)) {
     const post = xView(row, false, true);
     const text = String(row.x_post?.text ?? row.body_text ?? "");
     // A post's text is sent as written: its headings make the outline, without anchors.
@@ -165,13 +164,13 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
 
 /**
  * Same predicate for the export button and the export route: a public page with something to export
- * (a summary, or a post or body whose full text may be shown).
+ * (a summary, the post where pages show it, or a full-text body).
  */
 export function markdownAvailable(row: {
   visibility: string; source_mode: string; summary: string | null; body_mode: string; body_html?: string | null; channel: string; x_post: Record<string, any> | null;
 }): boolean {
   if (row.visibility !== "public" || !hasItemPage({ visibility: row.visibility, sourceMode: row.source_mode })) return false;
-  return !!row.summary || (row.body_mode === "full" && ((row.channel === "x" && !!row.x_post?.text) || !!row.body_html));
+  return !!row.summary || (showsPost(row) && !!row.x_post?.text) || (row.body_mode === "full" && !!row.body_html);
 }
 
 export async function exportMarkdown(id: string): Promise<{ filename: string; body: string } | null> {
@@ -186,7 +185,7 @@ export async function exportMarkdown(id: string): Promise<{ filename: string; bo
   lines.push(`- 原文：${row.url}`, "");
   if (row.summary) lines.push("## 摘要", "", row.summary, "");
   if (row.selected && row.seat && row.reason) lines.push("## 推荐理由", "", row.reason, "");
-  if (row.channel === "x" && row.body_mode === "full" && row.x_post?.text) {
+  if (showsPost(row) && row.x_post?.text) {
     lines.push("## 正文", "", String(row.x_post.text), "");
     if (row.zh_text) lines.push("## 中文译文", "", row.zh_text, "");
     const q = row.x_post.quoted as { handle?: string; text?: string; url?: string } | null | undefined;

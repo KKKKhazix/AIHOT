@@ -3,14 +3,11 @@
 import { tag } from './setup.ts';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { beijingDate } from '@aihot/contracts/time';
 import { closeDb, sql } from '@aihot/backend/db';
 import { loadPool } from '@aihot/backend/publication/pool';
 import { v1Items } from '@aihot/backend/publication/v1';
 import { itemFeed } from '@aihot/backend/publication/feeds';
 import { issueLead, listReports, reportIndexRows, unavailableIds } from '@aihot/backend/publication/reports';
-import { codexResetPage, codexResetVersion, LIKELY_COMPLETED_AFTER_MS, OUTAGE_VISIBLE_MS } from '@aihot/backend/monitor/read';
-import { siteCodexResetPage } from '@aihot/backend/publication/monitor';
 import { buildApp } from '../apps/api/src/app.ts';
 
 const T = `readperf${tag()}`;
@@ -40,8 +37,6 @@ before(async () => {
 
 after(async () => {
   await app.close();
-  await sql`DELETE FROM monitor_events WHERE id LIKE ${T + '%'}`;
-  await sql`DELETE FROM monitor_posts WHERE id LIKE ${T + '%'}`;
   await sql`DELETE FROM reports WHERE content->>'fixture' = ${T}`;
   await sql`DELETE FROM articles WHERE source_id = ${SOURCE}`;
   await sql`DELETE FROM sources WHERE id = ${SOURCE}`;
@@ -119,13 +114,13 @@ test('v1 search allows terms to match direct text and body, retaining time curso
 
 test('RSS summary excludes bodies; full RSS includes only licensed items', async () => {
   await sql`UPDATE publications SET selected = true, syndicate = true WHERE article_id = ${id(1)}`;
-  const summary = await itemFeed('selected', null, now);
-  const full = await itemFeed('selected-full', null, now);
+  const summary = await itemFeed('selected', null, { now });
+  const full = await itemFeed('selected-full', null, { now });
   assert.ok(summary.includes(`<guid isPermaLink="false">${id(1)}</guid>`));
   assert.ok(!summary.includes('<content:encoded>'));
   assert.ok(full.includes('licensed body'));
   await sql`UPDATE publications SET syndicate = false WHERE article_id = ${id(1)}`;
-  const revoked = await itemFeed('selected-full', null, now);
+  const revoked = await itemFeed('selected-full', null, { now });
   // Restrict the assertion to this item's XML: unrelated fixtures may legitimately syndicate.
   const item = revoked.split('<item>').find((i) => i.includes(`<guid isPermaLink="false">${id(1)}</guid>`))!;
   assert.ok(!item.includes('<content:encoded>'));
@@ -150,39 +145,6 @@ test('report directory projection preserves citation order, fallback headlines a
   assert.ok(navigation.every((e: object) => !('generatedAt' in e) && !('count' in e)));
   const month = (await app.inject({ method: 'GET', url: `/api/site/reports/daily/months/${key.slice(0, 7)}` })).json().items;
   assert.equal(month.find((e: { key: string }) => e.key === key).title, 'Historical fallback');
-});
-
-test('minimal monitor polling version equals the full page across announcement/expiry/outage transitions', async () => {
-  const boundary = +now + 3600000;
-  const eventId = `${T}-event`;
-  await sql`INSERT INTO monitor_events (id, type, status, title, schedule, presentation, created_at, updated_at)
-    VALUES (${eventId}, 'direct_reset', 'announced', 'test',
-      ${sql.json({ precision: 'hour', from: now.toISOString(), through: new Date(boundary).toISOString(), label: 'test' })},
-      ${sql.json({ scopeKnown: true, scopeLabel: 'all', kindExplicit: true, timeInferred: false, audienceZh: null, productsZh: null, reportedAt: null })}, ${now}, ${now})`;
-  await sql`INSERT INTO monitor_posts (id, author, published_at, text, url, outage)
-    VALUES (${`${T}-outage`}, 'test', ${now}, 'outage', 'https://example.org/outage', ${sql.json({ kind: 'outage', recoveredAt: null, resetEventId: null })})`;
-  const dayResponse = await app.inject({ method: 'GET', url: `/api/site/codex-reset/days/${beijingDate(now)}` });
-  assert.equal(dayResponse.statusCode, 200);
-  assert.equal(dayResponse.headers['cache-control'], 'no-store', 'a previous day snapshot must not outlive the page version in HTTP caches');
-  assert.ok(typeof dayResponse.json().version === 'string');
-  const announced = await codexResetPage(+now);
-  const site = siteCodexResetPage(announced);
-  assert.ok(!('activities' in site));
-  assert.deepEqual(site.calendar, announced.calendar, 'lazy history keeps every calendar mark');
-  const expectedEvent = announced.events.find((e) => e.id === eventId);
-  assert.ok(expectedEvent);
-  assert.deepEqual(dayResponse.json().events.find((e: { id: string }) => e.id === eventId), expectedEvent, 'the selected day returns the complete public event');
-  const versions = [];
-  for (const time of [boundary - 1, boundary, boundary + LIKELY_COMPLETED_AFTER_MS, +now + OUTAGE_VISIBLE_MS + 1]) {
-    const page = await codexResetPage(time);
-    const version = await codexResetVersion(time);
-    assert.deepEqual(version, { version: page.version, checkedAt: page.checkedAt, today: page.today });
-    versions.push(version.version);
-  }
-  assert.equal(new Set(versions).size, 4, 'clock-only transitions invalidate the probe');
-  await sql`UPDATE monitor_events SET status = 'confirmed', presentation = NULL WHERE id = ${eventId}`;
-  const page = await codexResetPage(+now);
-  assert.equal((await codexResetVersion(+now)).version, page.version, 'events without presentation keep the original hash shape');
 });
 
 test('unchanged pool and timeline revalidate with 304 while a content change returns a new body', async () => {

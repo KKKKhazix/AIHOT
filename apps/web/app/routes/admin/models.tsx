@@ -18,6 +18,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 export const meta: Route.MetaFunction = () => [{ title: `模型与评测 · ${SITE.name} 后台` }];
 
 const SOURCE_LABEL = { admin: "后台切换", env: "环境变量", default: "代码默认" } as const;
+
+/** A cost the provider did not report and no price covers. */
+let UNPRICED = <span className="whitespace-nowrap text-ink-4" title="服务商没有返回费用，按 token 数和你的模型单价自己估算">未定价</span>;
 const secs = (ms: number | null) => (ms == null ? "—" : ms >= 10_000 ? `${Math.round(ms / 1000)} s` : `${(ms / 1000).toFixed(1)} s`);
 
 export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
@@ -89,7 +92,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
                         ) : u.estimate ? (
                           <span title="按用量 × 单价推算">≈ {money(u.estimate.amount)}{u.estimate.currency !== "CNY" ? ` ${u.estimate.currency}` : ""}</span>
                         ) : (
-                          <span className="whitespace-nowrap text-ink-4" title="服务商没有返回费用，按 token 数和你的模型单价自己估算">未定价</span>
+                          UNPRICED
                         ),
                     },
                   ]}

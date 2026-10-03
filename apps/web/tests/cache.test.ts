@@ -129,7 +129,7 @@ test("admin data and actions never become public cache entries", async () => {
   assert.equal(admin.status, 202);
   assert.equal(admin.headers.get("Cache-Control"), "private, no-store");
   assert.equal(admin.headers.get("X-Accel-Expires"), "0");
-  assert.match(await admin.text(), /admin\/login/);
+  assert.match(await admin.text(), /api\/auth\/login/);
   const action = await fetch(`${origin}/hot.data`, { method: "POST" });
   assert.equal(action.status, 405);
   assert.equal(action.headers.get("Cache-Control"), "private, no-store");

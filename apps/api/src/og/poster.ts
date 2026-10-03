@@ -2,7 +2,7 @@
 // chat apps. Same font pipeline as the share cards; the QR code opens the article on the site.
 import { createHash } from "node:crypto";
 import { renderSVG } from "uqr";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { brandMark, clamp, h, nameMark, renderPng, SITE_HOST, type Node } from "./render.ts";
 
 export const POSTER_TEMPLATE_VERSION = "poster-2026-09-29.1";

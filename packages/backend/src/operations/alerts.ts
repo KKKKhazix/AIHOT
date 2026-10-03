@@ -5,18 +5,18 @@
 //   digest — other follow-ups: one 09:00 message a day, meant to be handed to the AI.
 // Delivery goes through sendAlert (ops chat, internal-chat fallback; off unless FEISHU_INTERNAL_ENABLED).
 import { beijingDate, beijingTime } from "@aihot/contracts/time";
-import { ALERTS } from "@aihot/industry/site";
+import { ALERTS } from "@aihot/site";
 import { sql } from "../db.ts";
 import { beijingDay, beijingStamp, duration, formatAlert, formatRecovery, sendAlert, type Finding, type Level } from "../notify/feishu.ts";
 import { backupConfigured } from "./backup.ts";
 import { GROUPING_WARN_AFTER_MS, waitingSelectedNews } from "./grouping.ts";
+import { upstreamFindings } from "../media/upstream.ts";
+import { serverModules } from "../modules.ts";
 
 const REPEAT_MS: Record<Exclude<Level, "digest">, number> = { now: 3600_000, today: 24 * 3600_000 };
 
-/** What the content groups receive, as the alerts name it. */
-const PUSHES = [
-  "精选",
-];
+/** What the content groups receive, as the alerts name it: the engine's cards, then the modules' pushes. */
+const pushes = () => ["精选", ...serverModules().flatMap((m) => m.pushes ?? [])];
 
 // Valves default off: read at call time, only an explicit "true" turns them on.
 const collecting = () => process.env.COLLECT_ENABLED === "true";
@@ -124,7 +124,7 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
       key: "deliveries.failed",
       level: "today",
       title: "飞书内容群有推送没发出去",
-      impact: `过去 24 小时 ${refused!.n} 条${PUSHES.join("或")}通知没进${refused!.target ?? "内容群"}`,
+      impact: `过去 24 小时 ${refused!.n} 条${pushes().join("或")}通知没进${refused!.target ?? "内容群"}`,
       heals: "不会自动重发",
       action: "转给 AI 处理；如果推送机器人被移出了群，需要你把它加回去",
       detail: refused!.response ?? "",
@@ -158,6 +158,11 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
     }
   }
 
+  out.push(...(await upstreamFindings(now)));
+
+  // What the site's modules find.
+  for (const m of serverModules()) if (m.alerts) out.push(...(await m.alerts(now)));
+
   // Follow-ups for the daily digest
   const [r] = await sql<{ receipts: number; services: string | null; deliveries: number }[]>`
     SELECT (SELECT count(*)::int FROM receipts WHERE status = 'unknown') AS receipts,
@@ -178,6 +183,8 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
     }
   }
 
+  // The site's modules' follow-ups.
+  for (const m of serverModules()) if (m.followUps) out.push(...(await m.followUps(now)));
   return out;
 }
 

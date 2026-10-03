@@ -1,7 +1,7 @@
 // Building blocks of the Agent page: panel heads, numbered steps, copyable asks and addresses,
-// quiet tip tiles, tables and the fold-away details under each panel.
+// quiet tip tiles, callouts, tables and the fold-away details under each panel.
 import type { ReactNode } from "react";
-import { CopyButton } from "../../components/CodeBlock";
+import { CopyButton } from "./CodeBlock";
 import { IconChevronDown } from "../../components/icons";
 
 /** A panel's head: the track and version in small mono, the promise, and one line of context. */
@@ -74,6 +74,26 @@ export function Tips({ items }: { items: Array<{ title: string; text: ReactNode 
         </li>
       ))}
     </ol>
+  );
+}
+
+/** A note in the accent or amber wash: an upgrade to make, a deadline. */
+export function Callout({ tone = "accent", title, children, action }: { tone?: "accent" | "amber"; title: ReactNode; children: ReactNode; action?: ReactNode }) {
+  const wash = tone === "amber" ? "border-amber/30 bg-amber-soft" : "border-accent/20 bg-accent-softer";
+  const dot = tone === "amber" ? "bg-amber" : "bg-accent";
+  return (
+    <div className={`rounded-card border px-4 py-3.5 sm:px-5 ${wash}`}>
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 gap-2.5">
+          <span className={`mt-[9px] size-1.5 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
+          <div className="min-w-0 text-[13.5px] leading-[1.75] text-ink-2">
+            <div className="font-semibold text-ink">{title}</div>
+            <div className="mt-0.5">{children}</div>
+          </div>
+        </div>
+        {action && <div className="shrink-0 pl-4 sm:pl-0">{action}</div>}
+      </div>
+    </div>
   );
 }
 

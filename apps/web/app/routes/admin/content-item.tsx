@@ -1,4 +1,4 @@
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { CATEGORY_KEYS, CATEGORY_LABELS } from "@aihot/contracts/taxonomy";

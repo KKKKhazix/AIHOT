@@ -8,10 +8,14 @@ import { agentGuide, dailyAnswer, hotAnswer, latestAnswer, periodAnswer, searchA
 import { v1Items } from "@aihot/backend/publication/v1";
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
 import { dailyWithNotes, isPeriodKey, v1Period } from "@aihot/backend/publication/reports";
+import { requestNotice, serverModules } from "@aihot/backend/modules";
 import { QueryError, sendProblem, sendTextWithEtag, strictQuery } from "../http/respond.ts";
 import { enumParam, intParam, publicHandler, V1_OPERATIONS } from "./v1.ts";
 
 function markdown(req: FastifyRequest, reply: FastifyReply, text: string, etagPrefix: string, cacheControl: string) {
+  // A module's reminder for the person behind the request closes the answer.
+  const note = requestNotice("agent", req);
+  if (note) text += note;
   return sendTextWithEtag(req, reply, text, { etagPrefix, cacheControl, contentType: "text/markdown; charset=utf-8" });
 }
 
@@ -96,6 +100,13 @@ export function registerAgent(app: FastifyInstance) {
       const body = await v1Period(p.kind, key);
       if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `没有 ${key} 的${p.name}；不要换一期冒充。`, cacheControl: "public, max-age=60" });
       return markdown(req, reply, periodAnswer(body.report, p.kind, "http"), `agent-${p.kind}`, p.byKey);
+    }));
+  }
+  // The modules' abilities, each answered at its own address.
+  for (const ability of serverModules().flatMap((m) => m.agent?.abilities ?? [])) {
+    app.get(`/api/v1/agent${ability.path}`, publicHandler(async (req, reply) => {
+      strictQuery(req, []);
+      return markdown(req, reply, await ability.answer(), ability.etagPrefix, ability.cacheControl);
     }));
   }
 }

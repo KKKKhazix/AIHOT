@@ -11,8 +11,8 @@ import { postWebhook } from "./feishu.ts";
 import { selectedContent } from "./selected-content.ts";
 
 export interface DeliveryRequest {
-  subjectKind:
-    | "selected";
+  /** "selected" for the engine's cards; a module's deliveries carry its own kind. */
+  subjectKind: string;
   subjectId: string;
   dedupeKey: string;
   /** When the underlying content appeared; older than a target's enabled_at means skip. */

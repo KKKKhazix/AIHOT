@@ -8,6 +8,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { config, credential } from "../config.ts";
 import { sql } from "../db.ts";
+import { serverModules } from "../modules.ts";
 import { feishuInternalEnabled, forwardFeedbackToFeishu } from "../notify/feishu.ts";
 
 export class FeedbackRejected extends Error {
@@ -65,7 +66,7 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
   const pageUrl = input.pageUrl?.trim().slice(0, 500) || null;
   const source = feedbackSourceHash(input.ip, input.userAgent);
   // A ban holds under every key the source is known by.
-  const keys = [source];
+  const keys = [source, ...serverModules().flatMap((m) => m.feedbackKeys?.(input.ip) ?? [])];
   const [banned] = await sql`SELECT 1 FROM feedback_bans WHERE source_hash IN ${sql(keys)}`;
   if (banned) throw new FeedbackRejected(403, "forbidden", "暂时无法提交反馈。");
   rateLimit(source);

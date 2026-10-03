@@ -335,7 +335,7 @@ export interface SiteMeta {
   changelogVersion: string;
 }
 
-/** One entry of the site's changelog (industry/changelog.json), newest first. */
+/** One entry of the site's changelog (site/changelog.json), newest first. */
 export interface ChangelogRelease {
   date: string;
   time: string;
@@ -344,6 +344,8 @@ export interface ChangelogRelease {
   body: string[];
   /** A notice readers must act on: drawn in the warning red so it cannot be skimmed past. */
   urgent?: true;
+  /** A major release's long form, drawn by the site's own drawing when it ships one; its shape is the site's. */
+  feature?: unknown;
 }
 
 export interface ChangelogResponse {
@@ -352,7 +354,7 @@ export interface ChangelogResponse {
 }
 
 /**
- * The about page's contact codes (uploaded in the admin or shipped in the industry pack; null when there is
+ * The about page's contact codes (uploaded in the admin or shipped with the site; null when there is
  * none) and the maker's avatar through the image proxy.
  */
 export interface SiteContact {
@@ -443,6 +445,8 @@ export interface TopicsResponse {
 
 export interface TopicPage {
   topic: TopicSummary & { groupName: string; /** Every listed report, selected or not. */ poolTotal: number };
+  /** The site's modules' parts of the page, under their names; each module's web part draws its own. */
+  modules: Record<string, unknown>;
   items: FeedItemSummary[];
   page: number;
   pageCount: number;

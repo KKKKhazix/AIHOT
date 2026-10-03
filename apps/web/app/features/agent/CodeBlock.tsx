@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { copyText } from "../lib/clipboard";
-import { IconCheck, IconCopy } from "./icons";
+import { copyText } from "../../lib/clipboard";
+import { IconCheck, IconCopy } from "../../components/icons";
 
 export function CopyButton({ text, label = "复制", className = "" }: { text: string; label?: string; className?: string }) {
   const [copied, setCopied] = useState(false);

@@ -6,7 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 
 const dir = await mkdtemp(path.join(tmpdir(), "aihot-media-test-"));
 process.env.AIHOT_DATA_DIR = dir;
@@ -202,8 +202,7 @@ test("image validators save unchanged bytes only after signature verification", 
       assert.equal(denied.headers.etag, undefined);
       assert.equal(denied.headers["x-img-proxy-sig"], query === expired ? "expired" : "invalid");
     }
-    const headers: Record<string, string> = { "if-none-match": etag };
-    const head = await app.inject({ method: "HEAD", url: `/api/img-proxy?${params}`, headers });
+    const head = await app.inject({ method: "HEAD", url: `/api/img-proxy?${params}`, headers: { "if-none-match": etag } });
     assert.equal(head.statusCode, 304, "a HEAD revalidates like a GET");
     assert.equal(head.headers.etag, etag);
     assert.equal(head.headers["x-accel-expires"], undefined);

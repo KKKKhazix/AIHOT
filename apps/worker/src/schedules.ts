@@ -1,6 +1,8 @@
-// Cron-style schedules (Asia/Shanghai). Each run is recorded in job_runs; missed slots run once.
+// Cron-style schedules (Asia/Shanghai), the engine's and then the site's modules'. Each run is recorded in
+// job_runs; missed slots run once.
 import type { PgBoss } from "pg-boss";
 import { ensureQueue, recordRun } from "@aihot/backend/jobs/queue";
+import { serverModules, type Scheduled } from "@aihot/backend/modules";
 import { sweepUnprocessed } from "@aihot/backend/jobs/content";
 import { translatePending } from "@aihot/backend/editorial/translate";
 import { adaptIntervals, scheduleDueSources } from "@aihot/backend/sources/collect";
@@ -18,16 +20,9 @@ import { forwardPendingFeedback } from "@aihot/backend/operations/feedback";
 import { backupConfigured, runBackup } from "@aihot/backend/operations/backup";
 import { sourceHealthWeekly } from "@aihot/backend/operations/reports";
 
-interface Scheduled {
-  name: string;
-  cron: string;
-  run: () => Promise<unknown>;
-  missed?: "skip" | "once";
-}
-
 const collecting = process.env.COLLECT_ENABLED === "true";
 
-export const SCHEDULES: Scheduled[] = [
+const ENGINE_SCHEDULES: Scheduled[] = [
   { name: "content.sweep", cron: "*/5 * * * *", run: sweepUnprocessed },
   // Full-text translations of newly selected items (model calls; off with MODEL_CALLS_ENABLED=false).
   { name: "content.translate", cron: "*/5 * * * *", run: () => translatePending() },
@@ -63,7 +58,8 @@ export const SCHEDULES: Scheduled[] = [
 ];
 
 export async function registerSchedules(boss: PgBoss) {
-  for (const s of SCHEDULES) {
+  const schedules = [...ENGINE_SCHEDULES, ...serverModules().flatMap((m) => m.schedules ?? []).filter((s) => s.when?.() ?? true)];
+  for (const s of schedules) {
     const queue = `cron.${s.name}`;
     await ensureQueue(queue, { policy: "singleton", retryLimit: 1, expireInSeconds: 3600 });
     await boss.schedule(queue, s.cron, {}, { tz: "Asia/Shanghai", missed: s.missed ?? "skip" });
@@ -72,7 +68,7 @@ export async function registerSchedules(boss: PgBoss) {
   }
   // pg-boss keeps a schedule until it is unscheduled: one dropped from this list (or switched off) would go
   // on queueing jobs nobody works.
-  const current = new Set(SCHEDULES.map((s) => `cron.${s.name}`));
+  const current = new Set(schedules.map((s) => `cron.${s.name}`));
   for (const old of await boss.getSchedules()) {
     if (old.name.startsWith("cron.") && !current.has(old.name)) await boss.unschedule(old.name, old.key);
   }

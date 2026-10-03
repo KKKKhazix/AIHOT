@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
-import { SITE } from "@aihot/industry/site";
+import { DEPLOYMENT, SITE } from "@aihot/site";
 
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
 
@@ -32,6 +32,9 @@ function bool(name: string, fallback: boolean): boolean {
 
 export const isProduction = env.NODE_ENV === "production";
 
+/** AIHOT_CREDENTIALS_DIR, else the site's own default (relative to the repository). */
+const credentialsDir = env.AIHOT_CREDENTIALS_DIR || DEPLOYMENT.credentialsDir;
+
 export const config = {
   databaseUrl: str("DATABASE_URL", "postgres://127.0.0.1:5432/aihot"),
   apiPort: int("API_PORT", 3001),
@@ -44,7 +47,7 @@ export const config = {
   /** IndexNow key (32 hex characters); without one nothing is submitted and no key file is served. */
   indexNowKey: /^[0-9a-f]{32}$/.test(env.INDEXNOW_KEY ?? "") ? env.INDEXNOW_KEY! : null,
   /** Optional directory of per-group dotenv files (models.env, collectors.env, …); normally everything is in .env. */
-  credentialsDir: env.AIHOT_CREDENTIALS_DIR ? path.resolve(REPO_ROOT, env.AIHOT_CREDENTIALS_DIR) : null,
+  credentialsDir: credentialsDir ? path.resolve(REPO_ROOT, credentialsDir) : null,
   dataDir: str("AIHOT_DATA_DIR", path.join(REPO_ROOT, ".data")),
   // Name of this deployment in alerts ("production" sends them without a prefix).
   environmentName: str("AIHOT_ENVIRONMENT", isProduction ? "production" : "development"),
@@ -62,9 +65,9 @@ export type CredentialGroup = "models" | "collectors" | "integrations" | "auth";
 
 const groupCache = new Map<CredentialGroup, Record<string, string>>();
 
-/** The file a group is kept in, under AIHOT_CREDENTIALS_DIR. */
+/** The file a group is kept in, under AIHOT_CREDENTIALS_DIR: the site's name for it, else <group>.env. */
 function groupFile(group: CredentialGroup): string {
-  return `${group}.env`;
+  return DEPLOYMENT.credentialFiles[group] ?? `${group}.env`;
 }
 
 /**

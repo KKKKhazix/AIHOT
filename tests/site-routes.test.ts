@@ -30,14 +30,11 @@ test("current browser feedback still works", async () => {
 });
 
 test("agents read Markdown answers under /api/v1/agent", async () => {
-  const headers: Record<string, string> = {};
-  const get = (url: string) => app.inject({ method: "GET", url, headers });
+  const get = (url: string) => app.inject({ method: "GET", url });
   const guide = await get("/api/v1/agent");
   assert.equal(guide.statusCode, 200);
   assert.match(String(guide.headers["content-type"]), /^text\/markdown/);
-  const paths = [
-    "/latest", "/search", "/hot", "/daily",
-  ];
+  const paths = ["/latest", "/search", "/hot", "/daily"];
   for (const path of paths) assert.ok(guide.body.includes(`${config.siteUrl}/api/v1/agent${path}`), path);
   const answers = [
     "/api/v1/agent/latest", "/api/v1/agent/latest?window=7d&mode=all&category=paper&limit=5", "/api/v1/agent/search?q=OpenAI", "/api/v1/agent/hot",

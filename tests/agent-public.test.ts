@@ -3,7 +3,7 @@
 import './setup.ts';
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { SITE } from '@aihot/industry/site';
+import { SITE } from '@aihot/site';
 import { PUBLIC_API_CATEGORY_KEYS } from '@aihot/contracts/taxonomy';
 import { config } from '@aihot/backend/config';
 import { closeDb } from '@aihot/backend/db';

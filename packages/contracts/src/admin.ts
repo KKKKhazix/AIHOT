@@ -20,13 +20,8 @@ export interface AdminMe {
   dev: boolean;
 }
 
-/** Items waiting for the admin, shown on the navigation. */
-export type AdminNavCounts = Partial<Record<
-  | "feedback"
-  | "sources"
-  | "runs",
-  number
->>;
+/** Items waiting for the admin, shown on the navigation: the engine's, and the modules' under their own keys. */
+export type AdminNavCounts = Partial<Record<"feedback" | "sources" | "runs", number>> & Record<string, number | undefined>;
 
 /** One manual change (audit_log), as a history list shows it. */
 export interface AdminAuditEntry {
@@ -280,6 +275,8 @@ export interface AdminRuns {
   errors: Array<{ error: string; n: number; last: Timestamp; example: string }>;
   retrying: { count: number; next: Timestamp | null };
   ingest: Array<{ client: string; kind: string; status: string; error: string | null; summary: unknown; created_at: Timestamp }>;
+  /** Each module's part of the page, under its name (what its server module's admin.runs returns). */
+  modules: Record<string, unknown>;
 }
 
 // Settings

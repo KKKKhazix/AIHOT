@@ -1,10 +1,10 @@
 // About-page contact codes: replaceable from the admin without code changes (file names carry a content
-// hash), or shipped in the industry pack (industry/brand/contact/qr-wechat…, qr-feishu…). The page shows a
+// hash), or shipped with the site (site/brand/contact/qr-wechat…, qr-feishu…). The page shows a
 // code only when set. The maker block can show the avatar of an X account the site follows as a source
 // (ABOUT.maker).
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { ABOUT } from "@aihot/industry/site";
+import { ABOUT } from "@aihot/site";
 import { REPO_ROOT } from "../config.ts";
 import { sql } from "../db.ts";
 import { proxiedImage } from "../media/imgproxy.ts";
@@ -14,7 +14,7 @@ export interface ContactSettings {
   feishuQr: string | null;
 }
 
-const PACK_CODES = path.join(REPO_ROOT, "industry/brand/contact");
+const PACK_CODES = path.join(REPO_ROOT, "site/brand/contact");
 
 /** The pack's code for a slot, served under /contact/; none when the pack ships no such file. */
 function packCode(slot: "wechat" | "feishu"): string | null {

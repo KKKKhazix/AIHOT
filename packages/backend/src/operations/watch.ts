@@ -1,6 +1,6 @@
 // The worker watchdog, run from the api process (the worker cannot report its own death). It keeps its
 // state in settings and sends its own alerts.
-import { ALERTS } from "@aihot/industry/site";
+import { ALERTS } from "@aihot/site";
 import { sql } from "../db.ts";
 import { beijingStamp, formatAlert, formatRecovery, sendAlert, type Finding } from "../notify/feishu.ts";
 

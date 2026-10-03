@@ -28,14 +28,14 @@ async function querySiteStats(now: Date): Promise<SiteStats> {
              (SELECT count(*) FROM reports WHERE kind = 'daily')::int AS dailies,
              (SELECT count(*) FROM publications p WHERE p.visibility <> 'withdrawn' AND p.discovered_at > ${dayAgo})::int AS collected,
              (SELECT count(*) FROM publications p WHERE ${selectedCondition(now)} AND p.timeline_at > ${dayAgo})::int AS "selectedDay"`,
-    sql<{ kind: string; n: number }[]>`SELECT kind, count(*)::int AS n FROM sources WHERE enabled GROUP BY kind`,
+    sql<{ kind: string; n: number }[]>`SELECT kind, count(*)::int AS n FROM sources WHERE enabled GROUP BY kind ORDER BY kind`,
     // A shuffle that holds for the day, so the river keeps its sources between visits.
     sql<{ name: string; kind: string; heat_only: boolean }[]>`
       SELECT name, kind, participation_mode = 'hot_signal' AS heat_only FROM sources WHERE enabled
-      ORDER BY md5(id::text || ${now.toISOString().slice(0, 10)}) LIMIT ${SAMPLE}`,
+      ORDER BY md5(id::text || ${now.toISOString().slice(0, 10)}), id LIMIT ${SAMPLE}`,
     sql<{ id: string; title: string; source: string }[]>`
       SELECT p.article_id AS id, p.title, s.name AS source FROM publications p JOIN sources s ON s.id = p.source_id
-      WHERE ${selectedCondition(now)} ORDER BY p.timeline_at DESC LIMIT 8`,
+      WHERE ${selectedCondition(now)} ORDER BY p.timeline_at DESC, p.article_id DESC LIMIT 8`,
   ]);
   const { collected, selectedDay, ...totals } = row!;
   const value: SiteStats = {

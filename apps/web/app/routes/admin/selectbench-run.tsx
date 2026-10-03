@@ -1,4 +1,4 @@
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { Fragment, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";

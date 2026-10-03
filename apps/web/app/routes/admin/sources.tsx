@@ -1,4 +1,4 @@
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { Form, Link, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/sources";
 import type { AdminSources } from "@aihot/contracts/admin";

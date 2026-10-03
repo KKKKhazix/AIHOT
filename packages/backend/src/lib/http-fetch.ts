@@ -5,7 +5,7 @@ import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici
 import { config } from "../config.ts";
 import { assertPublicUrl, guardedLookup } from "./url.ts";
 import { createEgressProxy, createEgressResolver } from "./egress-proxy.ts";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 
 /**
  * Where a request leaves the host. "egress" (collection, bodies, images and other public data) goes
@@ -65,7 +65,7 @@ export interface GuardedResponse {
   text(): string;
 }
 
-/** How the collectors introduce themselves: the site's own crawler name and address (industry/site.ts). */
+/** How the collectors introduce themselves: the site's own crawler name and address (site/site.ts). */
 export const DEFAULT_UA = `Mozilla/5.0 (compatible; ${SITE.crawlerName}; +${config.siteUrl}/about)`;
 
 export async function guardedFetch(input: string, opts: GuardedFetchOptions = {}): Promise<GuardedResponse> {

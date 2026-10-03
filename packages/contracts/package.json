@@ -6,6 +6,7 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@aihot/industry": "*"
+    "@aihot/industry": "*",
+    "@aihot/site": "*"
   }
 }

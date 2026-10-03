@@ -1,4 +1,4 @@
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/topic";
 import type { TopicPage } from "@aihot/contracts/site";
@@ -8,9 +8,12 @@ import { DayList, Pagination } from "../features/feed/DayList";
 import { BrandMark } from "../components/BrandMark";
 import { EmptyState } from "../components/ui/Page";
 import { IconArrowLeft } from "../components/icons";
-import { monthDayTime } from "../lib/format";
+import { beijingDate } from "@aihot/contracts/time";
+import { monthDay, monthDayTime } from "../lib/format";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
+import type { TopicPagePart } from "../modules";
+import { loadParts } from "../site-modules";
 
 export const handle: Screen = { home: "me" };
 
@@ -28,10 +31,24 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   return { data };
 }
 
+const PARTS = await loadParts((m) => m.topicPage);
+
+type Part = TopicPagePart & { key: string; data: unknown };
+
+/** The modules' parts that have something on this page, in the site's order. */
+function partsOf(data: TopicPage): Part[] {
+  return PARTS.flatMap(({ name, part }) => {
+    const value = data.modules[name];
+    return value !== undefined && part.shows(value, data.topic) ? [{ ...part, key: name, data: value }] : [];
+  });
+}
+
 /** The search snippet: what the topic covers, after when it last changed and its biggest recent events. */
-function description(data: TopicPage): string {
+function description(data: TopicPage, parts: Part[]): string {
   const { topic } = data;
   let text = topic.definition;
+  const news = parts.flatMap((p) => p.news(p.data)).slice(0, 2).map((title) => title.replace(/[。.]$/u, "")).join("；");
+  if (news && topic.latest) text = `${monthDay(beijingDate(topic.latest.at))}更新：${news}。${topic.definition}`;
   return text.length > 150 ? `${text.slice(0, 149)}…` : text;
 }
 
@@ -39,13 +56,14 @@ export function meta({ loaderData }: Route.MetaArgs) {
   if (!loaderData) return [{ title: titled("主题不存在") }, { name: "robots", content: "noindex" }];
   const data = loaderData.data;
   const { topic, page } = data;
+  const parts = partsOf(data);
   const path = page > 1 ? `/topics/${topic.slug}/page/${page}` : `/topics/${topic.slug}`;
-  const text = page > 1 ? `${topic.name}的精选归档第 ${page} 页。${topic.definition}` : description(data);
+  const text = page > 1 ? `${topic.name}的精选归档第 ${page} 页。${topic.definition}` : description(data, parts);
   const crumbs = breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "主题", path: "/topics" }, { name: topic.name, path: `/topics/${topic.slug}` }]);
   return pageMeta({
     title: page > 1
       ? `${topic.name} 精选 · 第 ${page} 页`
-      : `${topic.name} 最新动态`,
+      : `${topic.name} 最新动态${parts.length ? `与${parts.map((p) => p.name).join("、")}` : ""}`,
     description: text,
     path,
     image: `/og/topics/${topic.slug}.png`,
@@ -58,6 +76,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
             name: `${topic.name} 最新动态`,
             description: text,
             dateModified: topic.latest?.at ?? null,
+            lists: parts.map((p) => ({ name: p.name, entries: p.entries(p.data) })),
           }),
           crumbs,
         ],
@@ -67,6 +86,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
 export default function TopicRoute() {
   const { data } = useLoaderData<typeof loader>();
   const { topic, items, page, pageCount, pageSize } = data;
+  const parts = partsOf(data);
   const href = (p: number) => (p <= 1 ? `/topics/${topic.slug}` : `/topics/${topic.slug}/page/${p}`);
   const first = (page - 1) * pageSize + 1;
   const last = first + items.length - 1;
@@ -107,6 +127,12 @@ export default function TopicRoute() {
           )}
         </div>
       </header>
+
+      {parts.map((p) => (
+        <div key={`${p.key}:${topic.slug}`} className="mb-8">
+          <p.Block data={p.data} topic={topic} />
+        </div>
+      ))}
 
       <h2 className="sr-only">{page === 1 ? `${topic.name}的精选` : `精选归档 · 第 ${page} 页`}</h2>
       {items.length === 0 ? (

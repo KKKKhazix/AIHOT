@@ -2,7 +2,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 import type { AdminMe } from "@aihot/contracts/admin";
-import { SITE } from "@aihot/industry/site";
+import { DEPLOYMENT, SITE } from "@aihot/site";
 import { config } from "@aihot/backend/config";
 import {
   completeLogin,
@@ -80,11 +80,13 @@ function feishuRedirect(reply: FastifyReply, returnTo: string) {
 }
 
 export function registerAdminAuth(app: FastifyInstance) {
-  // The web admin sends a signed-out visitor here with ?return=. With Feishu as the only way in, sign-in
-  // starts there at once; otherwise the sign-in page (in the web app) offers the ways in.
+  // The web admin sends a signed-out visitor here with ?return=, a reverse proxy with the site's header.
+  // With Feishu as the only way in, sign-in starts there at once; otherwise the sign-in page (in the web
+  // app) offers the ways in.
   app.get("/api/auth/login", async (req, reply) => {
     const returnTo = String(
       (req.query as Record<string, string>).return
+      ?? (DEPLOYMENT.loginReturnHeader ? req.headers[DEPLOYMENT.loginReturnHeader.toLowerCase()] : undefined)
       ?? "/admin",
     );
     if (feishuLoginConfigured() && !config.adminPassword) return feishuRedirect(reply, returnTo);

@@ -1,10 +1,11 @@
-import { POLICY, SITE } from "@aihot/industry/site";
-import copy from "@aihot/industry/pages/terms.md?raw";
+import { POLICY, SITE } from "@aihot/site";
+import copy from "@aihot/site/pages/terms.md?raw";
 import { edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
 import { prepareCopy } from "../lib/site-copy";
 import { CopyPage, LegalFooterLinks } from "../features/copy/CopyPage";
 import type { Screen } from "../components/shell/screens";
+import { webModules } from "../site-modules";
 
 export const handle: Screen = { tab: "me" };
 
@@ -29,6 +30,7 @@ export default function TermsPage() {
           links={[
             { to: "/privacy", label: "隐私说明" },
             { to: "/agent", label: "Agent 接入页" },
+            ...webModules().flatMap((m) => m.termsLinks ?? []),
           ]}
           note={`${POLICY.terms.name} ${TERMS.doc.meta["版本"] ?? ""} · ${TERMS.doc.meta["生效日期"] ?? ""}`}
         />

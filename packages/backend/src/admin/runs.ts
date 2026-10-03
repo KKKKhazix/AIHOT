@@ -7,6 +7,7 @@ import type { Heartbeat } from "../operations/heartbeat.ts";
 import { audit } from "../audit.ts";
 import { failureGroupSql, requeueFailed } from "../jobs/content.ts";
 import { groupingOverview, waitingSelectedNews } from "../operations/grouping.ts";
+import { serverModules } from "../modules.ts";
 
 const STALE_HEARTBEAT_MS = 3 * 60_000;
 
@@ -31,40 +32,40 @@ export async function runsOverview(): Promise<Runs> {
     sql<Runs["jobs"]>`
       WITH latest AS (
         SELECT DISTINCT ON (job) job, started_at, finished_at, status, left(error, 400) AS error
-        FROM job_runs ORDER BY job, started_at DESC
+        FROM job_runs ORDER BY job, started_at DESC, id DESC
       ), counts AS (
         SELECT job, count(*) FILTER (WHERE status = 'failed')::int AS failed_24h, count(*)::int AS runs_24h
         FROM job_runs WHERE started_at > now() - interval '24 hours' GROUP BY job
       )
       SELECT latest.*, coalesce(counts.failed_24h, 0) AS failed_24h, coalesce(counts.runs_24h, 0) AS runs_24h
       FROM latest LEFT JOIN counts USING (job) ORDER BY job`,
-    sql<Runs["timeline"]>`SELECT id, job, started_at, finished_at, status, left(error, 300) AS error FROM job_runs ORDER BY started_at DESC LIMIT 80`,
+    sql<Runs["timeline"]>`SELECT id, job, started_at, finished_at, status, left(error, 300) AS error FROM job_runs ORDER BY started_at DESC, id DESC LIMIT 80`,
     sql<Runs["queues"]>`
       SELECT name, state, count(*)::int AS n, min(created_on) AS oldest FROM pgboss.job
       WHERE state IN ('created', 'retry', 'active') GROUP BY 1, 2 ORDER BY 1, 2`,
     sql<Runs["failedJobs"]>`
       SELECT name, count(*)::int AS failed, max(completed_on) AS last, left((array_agg(output::text ORDER BY completed_on DESC))[1], 300) AS last_output
-      FROM pgboss.job WHERE state = 'failed' AND completed_on > now() - interval '24 hours' GROUP BY 1 ORDER BY 2 DESC`,
+      FROM pgboss.job WHERE state = 'failed' AND completed_on > now() - interval '24 hours' GROUP BY 1 ORDER BY 2 DESC, 1`,
     sql<Runs["lagging"]>`
       SELECT id, name, kind, health, fail_count, last_ok_at, last_fetch_at, next_fetch_at, interval_minutes, left(last_error, 200) AS last_error
       FROM sources
       WHERE enabled AND kind NOT IN ('mp_account', 'external')
         AND (health = 'failing' OR next_fetch_at < now() - interval '30 minutes' OR last_ok_at < now() - make_interval(mins => greatest(interval_minutes * 6, 360)))
-      ORDER BY health = 'failing' DESC, next_fetch_at LIMIT 60`,
-    sql<{ status: string; n: number }[]>`SELECT status, count(*)::int AS n FROM receipts WHERE created_at > now() - interval '7 days' GROUP BY 1`,
+      ORDER BY health = 'failing' DESC, next_fetch_at, id LIMIT 60`,
+    sql<{ status: string; n: number }[]>`SELECT status, count(*)::int AS n FROM receipts WHERE created_at > now() - interval '7 days' GROUP BY 1 ORDER BY 1`,
     sql<Runs["receipts"]["issues"]>`
       SELECT id, service, model, purpose, subject, status, attempts, left(error, 240) AS error, created_at, updated_at FROM receipts
       WHERE status = 'unknown' OR (status = 'failed' AND updated_at > now() - interval '3 days') OR (status = 'pending' AND updated_at < now() - interval '15 minutes')
-      ORDER BY status = 'unknown' DESC, updated_at DESC LIMIT 40`,
+      ORDER BY status = 'unknown' DESC, updated_at DESC, id DESC LIMIT 40`,
     sql<Runs["deliveries"]>`
       SELECT id, target_key, subject_kind, subject_id, status, attempts, left(response, 240) AS response, created_at, updated_at FROM deliveries
       WHERE status IN ('unknown', 'failed') OR (status = 'sending' AND updated_at < now() - interval '15 minutes')
-      ORDER BY status = 'unknown' DESC, updated_at DESC LIMIT 40`,
+      ORDER BY status = 'unknown' DESC, updated_at DESC, id DESC LIMIT 40`,
     sql<Runs["errors"]>`
       SELECT ${failureGroupSql()} AS error, count(*)::int AS n, max(discovered_at) AS last,
              (array_agg(id ORDER BY discovered_at DESC))[1] AS example
-      FROM articles WHERE processing_state = 'failed' AND discovered_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 20`,
-    sql<Runs["ingest"]>`SELECT client, kind, status, left(error, 200) AS error, summary, created_at FROM ingest_events ORDER BY created_at DESC LIMIT 20`,
+      FROM articles WHERE processing_state = 'failed' AND discovered_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 20`,
+    sql<Runs["ingest"]>`SELECT client, kind, status, left(error, 200) AS error, summary, created_at FROM ingest_events ORDER BY created_at DESC, id DESC LIMIT 20`,
     waitingSelectedNews(),
   ]);
   // Articles waiting to retry after a passing provider problem (they are not failed).
@@ -90,6 +91,7 @@ export async function runsOverview(): Promise<Runs> {
     errors,
     retrying: { count: retrying?.n ?? 0, next: retrying?.next ?? null },
     ingest,
+    modules: Object.fromEntries(await Promise.all(serverModules().flatMap((m) => (m.admin?.runs ? [m.admin.runs().then((part) => [m.name, part] as const)] : [])))),
   };
 }
 

@@ -9,7 +9,7 @@ import { analyzeArticle } from "@aihot/backend/editorial/analyze";
 import { CAPABILITIES, type Capability } from "@aihot/backend/editorial/models";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 
-// Nothing chosen per step: every capability falls back to the `default` model (a step the industry pack
+// Nothing chosen per step: every capability falls back to the `default` model (a step the site
 // gives a model of its own is sent back to it by its environment variable).
 for (const c of Object.values(CAPABILITIES) as Capability[]) {
   if (c.default === "default") delete process.env[c.env];

@@ -16,7 +16,7 @@ test("public and admin loaders forward cancellation without turning it into a 50
   try {
     for (const load of [
       (signal: AbortSignal) => loadOr404("/api/site/items/example", { signal }),
-      (signal: AbortSignal) => adminGet(new Request("http://local/admin/realtime", { signal }), "/api/admin/dashboard/realtime"),
+      (signal: AbortSignal) => adminGet(new Request("http://local/admin/runs", { signal }), "/api/admin/runs"),
     ]) {
       const controller = new AbortController();
       const pending = load(controller.signal);

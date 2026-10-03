@@ -58,7 +58,7 @@ async function queryExtras(ranking: HotRanking): Promise<Extras> {
       FROM story_signals ss JOIN sources s ON s.id = ss.source_id
       LEFT JOIN articles a ON a.id = ss.article_id AND a.x_post ? 'avatarUrl'
       WHERE ss.story_id = ANY(${ids}::bigint[])
-      ORDER BY s.id, (a.id IS NULL), a.discovered_at DESC`,
+      ORDER BY s.id, (a.id IS NULL), a.discovered_at DESC, a.id DESC`,
     storyTexts(ids),
   ]);
   return {

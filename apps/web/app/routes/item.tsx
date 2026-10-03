@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { Await, isRouteErrorResponse, Link, useAsyncError, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/item";
 import type { FeedItemSummary, SiteItemDetail } from "@aihot/contracts/site";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { edgeTtl, loadOr404 } from "../lib/api.server";
 import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
 import { fullDateTime, relativeTime } from "../lib/format";

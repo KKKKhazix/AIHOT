@@ -1,15 +1,16 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLoaderData, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/agent";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
-import { MCP_TOOLS } from "@aihot/contracts/mcp";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { apiGet, edgeTtl } from "../lib/api.server";
 import { listPath, pageMeta, siteUrl } from "../lib/seo";
 import { IconArrowUpRight, IconChevronRight, IconCode, IconPlug, IconRss } from "../components/icons";
 import { Kicker } from "../components/ui/Kicker";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
-import { ApiPanel, McpPanel, RssPanel } from "../features/agent/panels";
+import { AGENT_PARTS, GUIDE_CLIENTS, TAG } from "../features/agent/module-parts";
+import { ApiPanel, McpPanel, mcpToolCount, RssPanel } from "../features/agent/panels";
+import type { AgentTrack } from "../modules";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
@@ -21,42 +22,50 @@ export function headers() {
 
 const V = PUBLIC_INTERFACE_VERSION;
 
-/** The ways in. The chooser's cards are the tabs: `?tab=` (the first is the default and not written). */
-const TRACKS: Array<{ key: TrackKey; name: string; short: string; badge?: string; pitch: string; fit: string; icon: ComponentType<{ size?: number }> }> = [
-  { key: "mcp", name: "MCP", short: "MCP", pitch: `填一个地址，多出 ${MCP_TOOLS.length} 个工具`, fit: "Claude 桌面版、Cursor 等远程 MCP 客户端", icon: IconPlug },
-  { key: "rss", name: "RSS", short: "RSS", pitch: "复制地址，用阅读器订阅", fit: "Reeder、Folo、Inoreader、n8n", icon: IconRss },
-  { key: "api", name: "REST API", short: "API", pitch: "匿名 GET，自己写程序取数", fit: "脚本、机器人、小程序、看板", icon: IconCode },
+/** The ways in, the modules' first. The chooser's cards are the tabs: `?tab=` (the first is the default and not written). */
+const TRACKS: AgentTrack[] = [
+  ...AGENT_PARTS.flatMap((p) => p.tracks ?? []),
+  { key: "mcp", name: "MCP", short: "MCP", pitch: `填一个地址，多出 ${mcpToolCount()} 个工具`, fit: "Claude 桌面版、Cursor 等远程 MCP 客户端", icon: IconPlug, Panel: McpPanel },
+  { key: "rss", name: "RSS", short: "RSS", pitch: "复制地址，用阅读器订阅", fit: "Reeder、Folo、Inoreader、n8n", icon: IconRss, Panel: RssPanel },
+  { key: "api", name: "REST API", short: "API", pitch: "匿名 GET，自己写程序取数", fit: "脚本、机器人、小程序、看板", icon: IconCode, Panel: ApiPanel, anchors: ["agent-api-recovery"] },
 ];
-type TrackKey =
-  | "mcp"
-  | "rss"
-  | "api";
 const FIRST = TRACKS[0]!.key;
-const hrefOf = (key: TrackKey) => (key === FIRST ? "/agent" : `/agent?tab=${key}`);
+const hrefOf = (key: string) => (key === FIRST ? "/agent" : `/agent?tab=${key}`);
 /** How many ways, as the copy counts them ("四种方式"). */
 const WAYS = ["零", "一", "两", "三", "四", "五", "六"][TRACKS.length];
 
-/** What reads the agent guide. */
-const GUIDE_READERS = [
-  "Agent 读了就能查",
-];
+/** The modules' sections at the end of a panel. */
+const BLOCKS = AGENT_PARTS.flatMap((p) => p.blocks ?? []);
+/** Which tab each section that can be linked to is on: the tracks' own, then the modules'. */
+const ANCHORS = new Map([
+  ...TRACKS.flatMap((t) => (t.anchors ?? []).map((id) => [id, t.key] as const)),
+  ...BLOCKS.map((b) => [b.anchor, b.track] as const),
+]);
+const anchorHref = (id: string) => `${hrefOf(ANCHORS.get(id)!)}#${id}`;
 
 /** Machine-readable entry points, with what each one is for. */
 const RESOURCES: Array<[label: string, href: string, note: string]> = [
   ["llms.txt", "/llms.txt", "给大模型读的站点说明"],
-  ["Agent 使用说明", "/api/v1/agent", GUIDE_READERS.join("，")],
+  ["Agent 使用说明", "/api/v1/agent", `Agent 读了就能查${GUIDE_CLIENTS ? `，${GUIDE_CLIENTS} 用的也是它` : ""}`],
   ["OpenAPI 3.1", "/openapi-v1.json", `REST API 的完整定义 · ${V}`],
+  ...AGENT_PARTS.flatMap((p) => p.resources ?? []),
 ];
+
+const BANNERS = AGENT_PARTS.flatMap((p) => (p.Banner ? [p.Banner] : []));
+/** The tag's value: a hook, called on every render. */
+const useTag = TAG?.useValue ?? (() => null);
 
 export async function loader({ request }: Route.LoaderArgs) {
   const tab = new URL(request.url).searchParams.get("tab");
   // Only whether the api answers, within three seconds.
   const healthy = await apiGet("/api/health", { signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]) }).then(() => true, () => false);
   return {
-    tab: (TRACKS.some((t) => t.key === tab) ? tab : FIRST) as TrackKey,
+    tab: tab && TRACKS.some((t) => t.key === tab) ? tab : FIRST,
     healthy,
-    // The examples show the configured public address, the same on the server and in the browser.
+    // The examples show the configured public address, the same on the server and in the browser; what
+    // depends on the time reads the server's.
     base: siteUrl(),
+    now: Date.now(),
   };
 }
 
@@ -71,21 +80,39 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 export default function AgentPage() {
-  const {
-    tab: initialTab,
-    healthy,
-    base,
-  } = useLoaderData<typeof loader>();
+  const { tab: initialTab, healthy, base, now } = useLoaderData<typeof loader>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<TrackKey>(initialTab);
+  const tag = useTag();
+  const [tab, setTab] = useState(initialTab);
+  // A section to scroll to once its panel is on the page.
+  const [target, setTarget] = useState<string | null>(null);
 
-  useEffect(() => setTab((params.get("tab") as TrackKey) || FIRST), [params]);
+  useEffect(() => setTab(params.get("tab") || FIRST), [params]);
+  // Opened at a section's anchor: show its tab and scroll there.
+  useEffect(() => {
+    const hash = location.hash.slice(1);
+    const key = ANCHORS.get(hash);
+    if (key) {
+      setTab(key);
+      setTarget(hash);
+    }
+  }, []);
+  useEffect(() => {
+    if (!target || tab !== ANCHORS.get(target)) return;
+    document.getElementById(target)?.scrollIntoView({ block: "start" });
+    setTarget(null);
+  }, [target, tab]);
 
-  const select = (key: TrackKey) => {
+  const select = (key: string) => {
     setTab(key);
     navigate(hrefOf(key), { replace: true, preventScrollReset: true });
   };
+  const open = (id: string) => {
+    select(ANCHORS.get(id)!);
+    setTarget(id);
+  };
+  const track = TRACKS.find((t) => t.key === tab);
 
   const chip = "inline-flex h-7 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 text-[12px] text-ink-3";
   const aside = (
@@ -154,6 +181,8 @@ export default function AgentPage() {
         </div>
       </header>
 
+      {BANNERS.map((Banner, i) => <Banner key={i} base={base} tag={tag} now={now} href={anchorHref} open={open} />)}
+
       <div role="tablist" aria-label="接入方式" className="mt-8 grid grid-cols-2 gap-2.5 sm:gap-3 2xl:grid-cols-4">
         {TRACKS.map((t) => {
           const on = t.key === tab;
@@ -184,23 +213,11 @@ export default function AgentPage() {
           );
         })}
       </div>
+      {TAG && <TAG.Note />}
 
       <section id="agent-panel" role="tabpanel" aria-labelledby={`agent-tab-${tab}`} className="mt-9">
-        {tab === "mcp" && (
-          <McpPanel
-            base={base}
-          />
-        )}
-        {tab === "rss" && (
-          <RssPanel
-            base={base}
-          />
-        )}
-        {tab === "api" && (
-          <ApiPanel
-            base={base}
-          />
-        )}
+        {track && <track.Panel key={track.key} base={base} tag={tag} now={now} />}
+        {BLOCKS.filter((b) => b.track === tab).map((b) => <b.Block key={b.anchor} base={base} tag={tag} now={now} />)}
       </section>
     </ReadingLayout>
     </>

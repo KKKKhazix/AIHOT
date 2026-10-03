@@ -1,6 +1,6 @@
 # 把它改成你的行业
 
-这份仓库默认是一个“AI 行业”的示例站：示范信源是一批公开的 AI 资讯源，精选口味是 AIHOT 在 AI 领域调了很久的那一套。要把它变成“法律热点”“HR 热点”“黄金热点”，要改的东西几乎都在 [`industry/`](../industry/) 这一个文件夹里，代码基本不用动。
+这份仓库默认是一个“AI 行业”的示例站：示范信源是一批公开的 AI 资讯源，精选口味是 AIHOT 在 AI 领域调了很久的那一套。要把它变成“法律热点”“HR 热点”“黄金热点”，要改的东西几乎都在 [`site/`](../site/)（这个站自己的名字、文案、品牌和页面）和 [`industry/`](../industry/)（行业的分类、信源、提示词和门槛）这两个文件夹里，代码基本不用动。
 
 如果你用 Claude Code、Codex 这类 Agent，可以把下面这段直接发给它，然后回答它的问题：
 
@@ -12,7 +12,7 @@
 
 下面是它（或者你）要做的事，按顺序。
 
-## 1. 站名和文案：`industry/site.ts`
+## 1. 站名和文案：`site/site.ts`
 
 - `name`：站名。导航、标题、分享图、RSS、MCP、后台都用它。
 - `subject`：行业词。页面上“AI 日报”“全部 AI 动态”会变成“法律日报”“全部法律动态”。
@@ -21,10 +21,17 @@
 - `interfaceVersion`：公开接口（MCP、OpenAPI、`llms.txt`）的版本号，只升不降；改了接口里已有的字段或含义时升主版本。
 - `crawlerName`：抓取信源时报的名字，别用别人的站名。
 - `icp`：中国大陆网站的备案号，填了就显示在页脚。
-- `POLICY`：使用规则和隐私说明两页的名字和简介；`xPostIsFullText` 决定 X 帖子本身的文字算不算全文（算的话，只在信源允许全文时显示）。
-- `ABOUT`：关于页的大标题、四个环节的说明、作者块（可选）、版权说明。
+- `github`：源码仓库的地址（选填），填了就在侧栏和“我的”页底部显示“GitHub 开源”。
+- `llmsIntro`：`llms.txt` 里一句话介绍下面的一段详细介绍（选填）。
+- `rootIcons`：标准图标以外也放在网站根目录的图标，`site/brand/` 里的文件名（选填）。
+- `POLICY`：使用规则和隐私说明两页的名字和简介；`terms.license` 是讲清哪些用途要先取得授权的话，`terms.headers` 是公开接口声明使用规则的响应头（都选填）；`xPostIsFullText` 决定 X 帖子本身的文字算不算全文（算的话，只在信源允许全文时显示）。
+- `ABOUT`：关于页的大标题、四个环节的说明、作者块（可选）、版权说明，以及“使用规则”链接的锚点（`termsAnchor`，选填）。
 - `CARDS`：各页分享图上的文字。
 - `ALERTS`、`SOURCE_DEFAULTS`、`COMMUNITY_FEEDS`：告警里随部署而变的说法，后台新建信源时默认展不展示全文，哪些社区站信源按发帖的账号算热度。
+- `ACCESS`：给 Agent 的说明和 `llms.txt` 里的限流说法与建议的 User-Agent；前面的反向代理真的按 IP 限流了，再填 `ratePerMinute`。
+- `ADMIN`：后台几处给管理员的提示（选填）。
+- `DEPLOYMENT`：这个部署自己的安排：凭据文件放在哪、CDN 回源用的域名、后台登录回跳用的请求头、图片代理的流量上限、不走出网代理的图片域名、精选评测默认用的样本，都可以不填。
+- `FEED_COPY`、`PUBLIC_CATEGORIES`：“全部动态”RSS 说明里补充的不含内容；公开接口（API、RSS、MCP）里和网页不同的类别，比如把一类并进另一类，上线后不要改。
 
 站点地址不写在这里，部署时用环境变量 `SITE_URL` 设置。
 
@@ -88,7 +95,7 @@
 
 这一步决定了你的站“选得准不准”。
 
-## 6. 品牌：`industry/brand/`
+## 6. 品牌：`site/brand/`
 
 - `logo.svg`、`icon.png`（512）、`icon-192.png`、`apple-icon.png`（180）、`favicon.ico`：站点图标。
 - `Logo.tsx`：网页左上角的站名标志，默认用站名文字排出来；有自己的 Logo，把 `Wordmark` 换成你的 SVG，参数保持不变。
@@ -98,11 +105,11 @@
   npm pack @fontsource/noto-sans-sc@5.3.0 && tar xzf fontsource-noto-sans-sc-5.3.0.tgz
   node scripts/nameplates.ts package
   ```
-- 关于页的二维码：在后台“设置”里上传，或者把图片放进 `industry/brand/contact/`。
+- 关于页的二维码：在后台“设置”里上传，或者把图片放进 `site/brand/contact/`。
 
 请不要使用 AIHOT 的名字和 Logo。
 
-## 7. 页面文案：`industry/pages/`、`industry/public/`、`industry/changelog.json`
+## 7. 页面文案：`site/pages/`、`site/public/`、`site/changelog.json`
 
 - `pages/terms.md`、`pages/privacy.md`：使用规则和隐私说明。**现在是模板**，上线前按你的实际情况改写，必要时请专业人士看一下。
 - `public/`：原样发布在网站根目录的文件：`robots.txt`、`manifest.webmanifest`（装到手机桌面时的名字和图标）、`openapi-v1.json`（公开 API 的说明），以及可选的 `.well-known/security.txt`（安全问题的联系方式）。文件里的 `{{siteName}}`、`{{siteUrl}}`、`{{description}}`、`{{tagline}}`、`{{locale}}`、`{{version}}` 会换成这个站的值，OpenAPI 里的 `{{categories}}`、`{{categoryList}}` 换成公开的分类；没有的文件访问时是 404。
@@ -110,7 +117,7 @@
 
 ## 8. 模型和部署
 
-- 模型：`.env` 里的 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`，任何 OpenAI 兼容接口都行，所有步骤默认都用它。`industry/models.ts` 列出具名的模型（各用自己的地址和密钥环境变量）和每一步默认用哪个；部署时还可以用环境变量（见 `.env.example`）或后台“模型”页逐步改选。
+- 模型：`.env` 里的 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`，任何 OpenAI 兼容接口都行，所有步骤默认都用它。`site/models.ts` 列出具名的模型（各用自己的地址和密钥环境变量）和每一步默认用哪个；部署时还可以用环境变量（见 `.env.example`）或后台“模型”页逐步改选。
 - 部署：见 [部署](deploy.md)。
 
 ## 改完以后检查

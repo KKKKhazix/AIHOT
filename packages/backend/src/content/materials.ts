@@ -44,10 +44,8 @@ export interface MaterialInput {
   media?: MediaItem[];
   xPost?: XPostData | null;
   raw?: unknown;
-  via:
-    | "fetch"
-    | "ingest"
-    | "import";
+  /** How it arrived: the engine's collection, the ingest API or an import, or the module that brought it (its name). */
+  via: "fetch" | "ingest" | "import" | (string & {});
   discoveredAt?: Date;
   /** Explicit backfill: first import of a new source, or a report flagged as backfill. */
   backfill?: string | null;

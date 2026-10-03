@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, redirect, useLoaderData, useLocation, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/all";
 import type { PoolResponse } from "@aihot/contracts/site";
-import { SITE, subjectAfter } from "@aihot/industry/site";
+import { SITE, subjectAfter } from "@aihot/site";
 import { beijingTime } from "@aihot/contracts/time";
 import { edgeTtl, loadOr404 } from "../lib/api.server";
 import { filterParams, itemListLd, listPath, pageMeta, readFilters } from "../lib/seo";
@@ -10,7 +10,7 @@ import { ActiveFilters, CategoryTabs, FeedBar, SearchField } from "../features/f
 import { PillTabs } from "../components/ui/Tabs";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { EmptyState } from "../components/ui/Page";
-import { RingMark } from "@aihot/industry/brand/Logo.tsx";
+import { RingMark } from "@aihot/site/brand/Logo.tsx";
 import { IconSearch } from "../components/icons";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import { isPhone, type Screen } from "../components/shell/screens";

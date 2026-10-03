@@ -1,7 +1,7 @@
 // Hot ranking: attention over the last 48 hours from independent participants.
 // Each participant counts once per window (repeat collection does not add heat), decays with a
 // 24-hour half-life, and the source time (not collection time) places evidence in the window.
-import { COMMUNITY_FEEDS } from "@aihot/industry/site";
+import { COMMUNITY_FEEDS } from "@aihot/site";
 import { sql, type Db } from "../db.ts";
 import { pickRepresentative, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity } from "../publication/representative.ts";
 import { evidenceCondition, listedCondition } from "../publication/scope.ts";

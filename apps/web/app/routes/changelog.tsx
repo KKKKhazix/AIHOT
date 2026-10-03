@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import type { ChangelogRelease, ChangelogResponse } from "@aihot/contracts/site";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { Link, useLoaderData } from "react-router";
 import { apiGet, edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
@@ -101,6 +101,30 @@ function Day({ date, releases, id }: { date: string; releases: Release[]; id?: s
   );
 }
 
+/** Draws a major release: its `feature`, whose shape is the site's. */
+type FeatureDrawing = ComponentType<{ release: Release; id?: string }>;
+
+/** The site's drawing (site/changelog/FeatureRelease.tsx), when it ships one. */
+const SITE_FEATURE = Object.values(import.meta.glob<FeatureDrawing>("../../../../site/changelog/FeatureRelease.tsx", { eager: true, import: "FeatureRelease" }))[0];
+
+/**
+ * A date with a major release: each release's `feature` is drawn as its own block by the site's drawing,
+ * the first one carrying the date's anchor, above a card of the date's other releases; `body` stays the
+ * short form.
+ */
+function FeatureDay({ date, releases, Drawing }: { date: string; releases: Release[]; Drawing: FeatureDrawing }) {
+  const features = releases.filter((r) => r.feature);
+  const plain = releases.filter((r) => !r.feature);
+  return (
+    <>
+      {features.map((r, i) => (
+        <Drawing key={`${r.date}-${r.time}`} release={r} id={i === 0 ? `d-${date}` : undefined} />
+      ))}
+      {plain.length > 0 && <Day date={date} releases={plain} />}
+    </>
+  );
+}
+
 export default function ChangelogPage() {
   const data = useLoaderData<typeof loader>();
   useEffect(() => setChangelogSeen(data.latestVersion), [data.latestVersion]);
@@ -165,6 +189,7 @@ export default function ChangelogPage() {
       </header>
       <div className="space-y-4">
         {[...groups.entries()].map(([date, releases]) => {
+          if (SITE_FEATURE && releases.some((r) => r.feature)) return <FeatureDay key={date} date={date} releases={releases} Drawing={SITE_FEATURE} />;
           return <Day key={date} id={`d-${date}`} date={date} releases={releases} />;
         })}
       </div>

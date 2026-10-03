@@ -1,7 +1,7 @@
 import { data, useLoaderData } from "react-router";
 import type { Route } from "./+types/report-detail";
 import type { ReportDetail, ReportNavigationResponse, ReportKind } from "@aihot/contracts/site";
-import { SITE, subjectAfter, withSubject } from "@aihot/industry/site";
+import { SITE, subjectAfter, withSubject } from "@aihot/site";
 import { apiGet, edgeTtl, loadOr404 } from "../lib/api.server";
 import { pageMeta, reportLd, titled } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";

@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useRouteLoaderData } from "react-router";
-import { POLICY, SITE } from "@aihot/industry/site";
+import { POLICY, SITE } from "@aihot/site";
 import type { loader as rootLoader } from "../root";
 import { useChangelogDot } from "../components/shell/Sidebar";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 import { edgeTtl } from "../lib/api.server";
+import { webModules } from "../site-modules";
 import { pageMeta } from "../lib/seo";
 import { useStarred } from "../lib/local-state";
 import { ThemeSwitch } from "../components/shell/ThemeSwitch";
@@ -27,16 +28,14 @@ export function meta() {
  */
 type Row = { to: string; label: string; icon: ReactNode; detail?: ReactNode };
 
-/** The ways in that the agent page offers; its row names the first three. */
-const AGENT_WAYS = [
-  "MCP",
-  "RSS",
-  "API",
-];
+/** The ways in that the agent page offers, the modules' first; its row names the first three. */
+const agentWays = () => [...webModules().flatMap((m) => m.agentWays ?? []), "MCP", "RSS", "API"];
 
-const TOOLS: Row[] = [
+/** The modules' tools first, then the engine's. */
+const tools = (): Row[] => [
+  ...webModules().flatMap((m) => m.tools ?? []),
   { to: "/topics", label: "主题", icon: <IconGrid size={20} /> },
-  { to: "/agent", label: "Agent 接入", icon: <IconPlug size={20} />, detail: AGENT_WAYS.slice(0, 3).join(" · ") },
+  { to: "/agent", label: "Agent 接入", icon: <IconPlug size={20} />, detail: agentWays().slice(0, 3).join(" · ") },
 ];
 
 function Group({ title, children }: { title?: string; children: ReactNode }) {
@@ -87,7 +86,7 @@ export default function MorePage() {
           </li>
         </Group>
         <Group title="工具与入口">
-          {TOOLS.map((r) => (
+          {tools().map((r) => (
             <RowLink key={r.to} row={r} />
           ))}
         </Group>
@@ -101,6 +100,7 @@ export default function MorePage() {
         <Link viewTransition to="/terms" className="hover:text-ink-2">{POLICY.terms.name}</Link>
         <Link viewTransition to="/privacy" className="hover:text-ink-2">隐私说明</Link>
         <a href="/feed.xml" className="hover:text-ink-2">RSS</a>
+        {SITE.github && <a href={SITE.github} target="_blank" rel="noopener noreferrer" className="hover:text-ink-2">GitHub 开源</a>}
         {SITE.icp && <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="hover:text-ink-2">{SITE.icp}</a>}
       </div>
     </div>

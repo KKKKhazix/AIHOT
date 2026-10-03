@@ -1,4 +1,4 @@
-import { SITE } from "@aihot/industry/site";
+import { ADMIN, SITE } from "@aihot/site";
 import { useState } from "react";
 import { Form, useSearchParams } from "react-router";
 import type { Route } from "./+types/feedback";
@@ -68,9 +68,7 @@ function FeedbackCard({ f }: { f: AdminFeedbackRow }) {
       <ReasonDialog
         open={dialog === "ban"}
         title="封禁这个反馈来源"
-        description={[
-          "同一来源之后提交反馈会被拒绝。来源标识不可还原成 IP。",
-        ].join("")}
+        description={`同一来源之后提交反馈会被拒绝。来源标识不可还原成 IP。${ADMIN.banNote ?? ""}`}
         danger
         confirmLabel="封禁"
         onClose={() => setDialog(null)}
@@ -95,9 +93,7 @@ export default function FeedbackAdmin({ loaderData }: Route.ComponentProps) {
   const { run } = useAdminAction();
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   return (
-    <AdminPage
-      title="反馈"
-    >
+    <AdminPage title="反馈" subtitle={ADMIN.feedbackNote}>
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <FilterChips
           param="status"

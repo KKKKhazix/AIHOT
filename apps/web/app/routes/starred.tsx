@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import type { ItemAvailability } from "@aihot/contracts/site";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { Presence } from "../components/ui/Presence";
 import { edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
@@ -11,6 +11,7 @@ import { IconBookmark, IconDownload, IconClose } from "../components/icons";
 import { readSnapshot, restoreAnchor, useSaveOnLeave } from "../lib/restore";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
+import { webModules } from "../site-modules";
 
 export const handle: Screen = { tab: "me", name: "收藏" };
 
@@ -87,6 +88,13 @@ export default function StarredPage() {
     }
   };
 
+  // Imports from elsewhere that the site's modules offer.
+  const importFrom = (run: () => Promise<{ ok: boolean; text: string }>) =>
+    run().then(
+      (r) => setNotice({ kind: r.ok ? "ok" : "error", text: r.text }),
+      (err: Error) => setNotice({ kind: "error", text: err.message }),
+    );
+
   const action = "text-[12.5px] text-ink-3 transition-colors hover:text-accent";
   return (
     <div className="pb-12">
@@ -97,6 +105,11 @@ export default function StarredPage() {
           <p className="mt-1.5 text-[13px] text-ink-3">{`本机收藏的 ${SITE.name} 内容，适合稍后阅读和回看。`}</p>
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:pt-1.5">
+          {webModules().flatMap((m) => m.starredImports ?? []).map((i) => (
+            <button key={i.label} type="button" onClick={() => importFrom(i.run)} className={action}>
+              {i.label}
+            </button>
+          ))}
           <button type="button" onClick={() => fileRef.current?.click()} className={action}>
             导入文件
           </button>

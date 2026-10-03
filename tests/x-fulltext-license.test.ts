@@ -12,7 +12,7 @@ import { upsertMaterial, type XPostData } from "@aihot/backend/content/materials
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { ITEM_COLUMNS, ITEM_FROM, toFeedItemSummary, type ItemRow } from "@aihot/backend/publication/items";
 import { publishArticle, republishSource } from "@aihot/backend/publication/publish";
-import { POLICY } from "@aihot/industry/site";
+import { POLICY } from "@aihot/site";
 import { buildApp } from "../apps/api/src/app.ts";
 
 const T = `x-license-${tag()}`;

@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { Presence } from "../components/ui/Presence";
 import { edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
 import { KEYS, lastPage, readJson, writeRaw } from "../lib/local-state";
 import { IconCheck, IconClose, IconImage } from "../components/icons";
-import { RingMark } from "@aihot/industry/brand/Logo.tsx";
+import { RingMark } from "@aihot/site/brand/Logo.tsx";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
+import { webModules } from "../site-modules";
 
 export const handle: Screen = { tab: "me", name: "反馈" };
 
@@ -33,15 +34,20 @@ function parseDraft(value: unknown): Draft | null {
   return { content: String(d.content ?? ""), email: String(d.email ?? ""), pageUrl: String(d.pageUrl ?? "") };
 }
 
+/** Drafts the site's modules keep elsewhere in this browser. */
+const otherDrafts = () => webModules().flatMap((m) => (m.feedbackDraft ? [m.feedbackDraft] : []));
+
 function readDraft(): Draft | null {
-  return (
-    parseDraft(readJson(KEYS.feedbackDraft))
-  );
+  let draft = parseDraft(readJson(KEYS.feedbackDraft));
+  for (const other of otherDrafts()) draft ??= parseDraft(other.read());
+  return draft;
 }
 
 /** Saves the draft in this browser, or clears it (null); false when the browser refused. */
 function writeDraft(d: Draft | null): boolean {
   const saved = writeRaw(KEYS.feedbackDraft, d && JSON.stringify({ ...d, savedAt: new Date().toISOString() }));
+  // Another draft is kept until this one is saved; a submitted draft clears them all.
+  if (saved || d === null) for (const other of otherDrafts()) other.clear();
   return saved;
 }
 

@@ -9,7 +9,7 @@ import { findTopic, TOPIC_GROUPS, TOPICS } from "@aihot/backend/publication/topi
 import { loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
 import { ogEtag, renderOg, type OgCard } from "../og/render.ts";
 import { posterEtag, renderPoster, type Poster } from "../og/poster.ts";
-import { CARDS, subjectAfter, withSubject } from "@aihot/industry/site";
+import { CARDS, subjectAfter, withSubject } from "@aihot/site";
 import { config } from "@aihot/backend/config";
 
 /** The pages' share cards: the site's texts, and the topic count of the topic list. */
@@ -20,7 +20,8 @@ const PAGES: Record<string, OgCard> = {
 
 /**
  * Article and event share images carry current content, so shared caches keep them for an hour at most:
- * after a withdrawal or a correction they are gone from any cache within the hour.
+ * after a withdrawal or a correction they are gone from any cache within the hour. A reverse proxy in front
+ * of the api keeps its copy for five minutes.
  */
 const CONTENT_IMAGE_CACHE = "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600";
 const CONTENT_IMAGE_ORIGIN_SECONDS = "300";

@@ -1,13 +1,30 @@
 {
-  "include": ["**/*.ts", "**/*.tsx", ".react-router/types/**/*"],
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".react-router/types/**/*",
+    "../../modules/*/web.tsx",
+    "../../modules/*/web/**/*",
+    "../../site/**/*.tsx"
+  ],
   "compilerOptions": {
-    "lib": ["DOM", "DOM.Iterable", "ES2024"],
-    "types": ["node", "vite/client"],
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ES2024"
+    ],
+    "types": [
+      "node",
+      "vite/client"
+    ],
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "rootDirs": [".", "./.react-router/types"],
+    "rootDirs": [
+      ".",
+      "./.react-router/types"
+    ],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -15,6 +32,11 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "paths": {
+      "@aihot/web/*": [
+        "./app/*"
+      ]
+    }
   }
 }

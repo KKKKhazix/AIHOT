@@ -3,7 +3,7 @@
 // pages follow one rule, a withdrawal next to an unresolved selection leaves new snapshots at once, and
 // snapshots answer conditional requests.
 import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
-import { withSubject } from "@aihot/industry/site";
+import { withSubject } from "@aihot/site";
 import { beijingDate } from "@aihot/contracts/time";
 import { ogEtag } from "../apps/api/src/og/render.ts";
 import { posterEtag } from "../apps/api/src/og/poster.ts";
@@ -183,22 +183,15 @@ test("a withdrawn item leaves every report exit", async () => {
   assert.ok((await get(`/api/v1/dailies/${REPORT_KEY}`)).body.includes(`QUOTED-${T}`), "the report quotes the item before");
 
   await setVisibility(id, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
-  const reports = [
-    `/api/v1/dailies/${REPORT_KEY}`, `/api/site/reports/daily/${REPORT_KEY}`, `/api/v1/agent/daily/${REPORT_KEY}`, "/api/v1/agent/daily",
-  ];
+  const reports = [`/api/v1/dailies/${REPORT_KEY}`, `/api/site/reports/daily/${REPORT_KEY}`, `/api/v1/agent/daily/${REPORT_KEY}`, "/api/v1/agent/daily"];
   for (const url of reports) {
     const res = await get(url);
     assert.equal(res.status, 200, url);
     assert.ok(!res.body.includes(`QUOTED-${T}`) && !res.body.includes(`original-${T}`), `${url} still quotes the withdrawn item`);
   }
-  const lists = [
-    "/api/v1/dailies",
-  ];
-  for (const url of lists) {
-    const res = await get(url);
-    assert.ok(res.body.includes(REPORT_KEY), `${url} lists the report`);
-    assert.ok(!res.body.includes(`LEAD-${T}`), `${url} headlines the withdrawn title`);
-  }
+  const list = await get("/api/v1/dailies");
+  assert.ok(list.body.includes(REPORT_KEY), "/api/v1/dailies lists the report");
+  assert.ok(!list.body.includes(`LEAD-${T}`), "/api/v1/dailies headlines the withdrawn title");
 });
 
 test("story changes refresh share images and a withdrawal takes down only the stories citing it", async () => {
@@ -260,10 +253,7 @@ test("a withdrawn item leaves the hot board and the hot APIs at once, not at the
   const rep = (await latestHotRanking())!.entries.find((e) => e.storyId === story!.id)?.representativeItemId;
   assert.ok(rep, "the story is on the board with a representative item");
   // The machine exits name the item; the hot board names the event it stands for.
-  const exits = [
-    "/api/v1/hot-topics",
-    "/api/v1/agent/hot?limit=3",
-  ];
+  const exits = ["/api/v1/hot-topics", "/api/v1/agent/hot?limit=3"];
   for (const url of exits) assert.ok((await get(url)).body.includes(rep!), `${url} shows the item before`);
   assert.ok((await get("/api/site/hot")).body.includes(publicId), "/api/site/hot shows the event before");
 
@@ -311,14 +301,9 @@ test("unresolved selection does not delay a withdrawal or its sync watermark", a
   await publishArticle(y); // unresolved: no selected ledger entry yet
   await setVisibility(x, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
 
-  const snapshots = [
-    "/api/v1/selected/snapshot?fields=minimal&limit=1000",
-  ];
-  for (const url of snapshots) {
-    const body = (await get(url)).body;
-    assert.ok(!body.includes(x), `${url} still lists the withdrawn item`);
-    assert.ok(!body.includes(y), `${url} lists an item before its release`);
-  }
+  const listed = (await get("/api/v1/selected/snapshot?fields=minimal&limit=1000")).body;
+  assert.ok(!listed.includes(x), "the snapshot still lists the withdrawn item");
+  assert.ok(!listed.includes(y), "the snapshot lists an item before its release");
   // This snapshot already includes the withdrawal; completing y adds only y afterwards.
   const snapshot = JSON.parse((await get("/api/v1/selected/snapshot?fields=minimal&limit=1000")).body) as { cursor: string };
   await sql`UPDATE articles SET grouping_status = 'complete', grouped_at = now() WHERE id = ${y}`;
@@ -331,14 +316,10 @@ test("unresolved selection does not delay a withdrawal or its sync watermark", a
 });
 
 test("snapshots answer 304 to their own ETag", async () => {
-  const snapshots = [
-    "/api/v1/selected/snapshot?fields=minimal&limit=1000",
-  ];
-  for (const url of snapshots) {
-    const first = await get(url);
-    assert.ok(first.etag, `${url} has an ETag`);
-    assert.equal((await get(url, { "if-none-match": first.etag! })).status, 304, url);
-  }
+  const url = "/api/v1/selected/snapshot?fields=minimal&limit=1000";
+  const first = await get(url);
+  assert.ok(first.etag, `${url} has an ETag`);
+  assert.equal((await get(url, { "if-none-match": first.etag! })).status, 304, url);
 });
 
 // Failure cases: an offline client resumes before a withdrawal; a one-entry page must not send the
@@ -350,19 +331,14 @@ test('historical sync never redistributes withdrawn content, even on a one-entry
       const id = await article();
       await publishArticle(id, released());
       await setVisibility(id, { visibility, reason: 'test offline sync', version: 0 }, 'test');
-      const routes = [
-        ['v1', 'limit'],
-      ];
-      for (const [prefix, limit] of routes) {
-        const response = await get(`/api/${prefix}/selected/changes?${limit}=1&cursor=${encodeURIComponent(start)}`);
-        assert.equal(response.status, 200);
-        const page = JSON.parse(response.body);
-        assert.equal(page.changes[0].op, 'remove', `${prefix} ${fields} ${visibility}`);
-        assert.equal(page.changes[0].id, id);
-        assert.equal(page.changes[0].item, undefined);
-        assert.notEqual(page.cursor, start, 'redacting a historical upsert must still advance');
-        assert.equal(page.hasMore, true, 'the later removal is still resumable');
-      }
+      const response = await get(`/api/v1/selected/changes?limit=1&cursor=${encodeURIComponent(start)}`);
+      assert.equal(response.status, 200);
+      const page = JSON.parse(response.body);
+      assert.equal(page.changes[0].op, 'remove', `${fields} ${visibility}`);
+      assert.equal(page.changes[0].id, id);
+      assert.equal(page.changes[0].item, undefined);
+      assert.notEqual(page.cursor, start, 'redacting a historical upsert must still advance');
+      assert.equal(page.hasMore, true, 'the later removal is still resumable');
     }
   }
 });
@@ -406,7 +382,6 @@ test('event neighbors disappear when their last readable evidence is withdrawn',
   assert.equal((await get(`/api/v1/stories/${neighbor}`)).status, 404);
   for (const url of exits) assert.ok(!(await get(url)).body.includes(neighbor), `${url} must not advertise an unreadable neighbor`);
 });
-
 
 test("unchanged republishing preserves freshness, while URL-only changes still reach the projection and ledger", async () => {
   const id = await article();

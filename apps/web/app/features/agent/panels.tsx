@@ -1,28 +1,27 @@
-// The ways in, one panel each: what it is for, the steps to connect, then the details folded away.
-// Addresses are the site's configured public address (`base`).
-import { useState, type ReactNode } from "react";
+// The engine's ways in, one panel each: what it is for, the steps to connect, then the details folded away.
+// Addresses are the site's configured public address (`base`); what visitors copy carries the site's tag
+// (CopyTag) when it has one.
+import { Fragment, useState } from "react";
 import { Link } from "react-router";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { MCP_TOOL_NAMES as T, MCP_TOOLS } from "@aihot/contracts/mcp";
-import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
-import { CATEGORIES } from "@aihot/industry/taxonomy";
-import { AGENT, POLICY, SITE, subjectAfter, withSubject } from "@aihot/industry/site";
-import { CodeBlock, CopyButton } from "../../components/CodeBlock";
+import { feedCategoryLabel, PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
+import { ACCESS, AGENT, POLICY, SITE, subjectAfter, withSubject } from "@aihot/site";
+import { CodeBlock, CopyButton } from "./CodeBlock";
 import { PillTabs } from "../../components/ui/Tabs";
+import type { AgentPanelProps } from "../../modules";
+import { AGENT_PARTS, GUIDE_CLIENTS, TAG } from "./module-parts";
 import { Address, Ask, Block, Bullets, Details, Mono, PanelHead, Step, Steps, Table, Tips } from "./parts";
 
 const V = PUBLIC_INTERFACE_VERSION;
+
+/** Every MCP tool: the engine's and the modules'. */
+export const mcpToolCount = () => MCP_TOOLS.length + AGENT_PARTS.reduce((n, a) => n + (a.tools?.length ?? 0), 0);
 const link = "text-accent hover:underline";
 
-/** What the agent page gives every panel. */
-interface PanelProps {
-  /** The site's public address, read on the server so the page and the browser agree. */
-  base: string;
-}
-
-/** An address on this site as the copy buttons copy it. */
-function addressOf(props: PanelProps, path: string): string {
-  return `${props.base}${path}`;
+/** An address on this site as the copy buttons copy it, with the tag. */
+function addressOf({ base, tag }: AgentPanelProps, path: string): string {
+  return TAG && tag ? `${base}${path}?${TAG.query}=${tag}` : `${base}${path}`;
 }
 
 const MCP_CLIENTS = [
@@ -32,18 +31,19 @@ const MCP_CLIENTS = [
   { key: "other", label: "其他客户端" },
 ] as const;
 
-export function McpPanel(props: PanelProps) {
+export function McpPanel(props: AgentPanelProps) {
   const url = addressOf(props, "/api/mcp");
   const name = SITE.mcpPrefix;
   const [client, setClient] = useState<string>("claude");
   return (
     <>
-      <PanelHead label={`MCP · ${V}`} title={`填一个地址，Agent 多出 ${MCP_TOOLS.length} 个工具`}>
+      <PanelHead label={`MCP · ${V}`} title={`填一个地址，Agent 多出 ${mcpToolCount()} 个工具`}>
         标准 Streamable HTTP，匿名只读，不用 token，也不读你的登录状态。适合 Claude 桌面版、Cursor、Cherry Studio 这类支持远程 MCP 的客户端。
       </PanelHead>
       <Steps>
         <Step n={1} title="复制服务地址">
           <Address url={url} />
+          {TAG && <p className="mt-2 text-[13px] text-ink-3">{TAG.mcp}</p>}
         </Step>
         <Step n={2} title="加到你的客户端">
           <PillTabs className="mt-3" size="xs" layoutId="agent-mcp-client" label="客户端" active={client} onSelect={setClient} items={MCP_CLIENTS.map((c) => ({ key: c.key, label: c.label }))} />
@@ -58,7 +58,7 @@ export function McpPanel(props: PanelProps) {
         </Step>
       </Steps>
 
-      <Block title={`${MCP_TOOLS.length} 个工具`}>
+      <Block title={`${mcpToolCount()} 个工具`}>
         <Table
           head={["工具", "能做什么", "可以这样问"]}
           minWidth={600}
@@ -70,6 +70,7 @@ export function McpPanel(props: PanelProps) {
             [<Mono>{T.daily}</Mono>, subjectAfter("最新或指定日期的", "日报"), "给我今天的日报。"],
             [<Mono>{T.weekly}</Mono>, subjectAfter("最新或指定一周的", "周报"), `${subjectAfter("这周", "圈")}有哪些大事？`],
             [<Mono>{T.monthly}</Mono>, subjectAfter("最新或指定月份的", "月报"), `${subjectAfter("9 月", "圈")}发生了什么？`],
+            ...AGENT_PARTS.flatMap((a) => a.tools ?? []).map((t) => [<Mono>{t.name}</Mono>, t.does, t.ask]),
           ]}
         />
       </Block>
@@ -91,6 +92,7 @@ export function McpPanel(props: PanelProps) {
             body: (
               <Bullets items={[
                 "先确认地址完整、客户端支持远程 Streamable HTTP；缺少新工具时，刷新工具列表或重新连接。",
+                ...AGENT_PARTS.flatMap((a) => a.mcpTroubles ?? []),
                 "服务不需要登录；客户端问起 OAuth 或 API Key，选“无”即可。",
                 "收到 429 就按提示等一会儿，不要并发重试。",
                 <>还连不上：把客户端名称、版本和报错写到<Link viewTransition to="/feedback" className={link}>反馈页</Link>。</>,
@@ -113,15 +115,11 @@ const FEEDS = [
 ];
 
 /** The category feeds, under the names the feeds themselves use. */
-const FEED_CATEGORIES = PUBLIC_API_CATEGORY_KEYS.map((key) => {
-  const c: { label: string; feedLabel?: string } = CATEGORIES.find((x) => x.key === key)!;
-  return [key, c.feedLabel ?? c.label] as const;
-});
+const FEED_CATEGORIES = PUBLIC_API_CATEGORY_KEYS.map((key) => [key, feedCategoryLabel(key)] as const);
 
-export function RssPanel(props: PanelProps) {
+export function RssPanel(props: AgentPanelProps) {
   const { base } = props;
-  const stable = "兼容主流 RSS 2.0 阅读器，也能接 n8n、Zapier 这类自动化工具。地址长期不变";
-  let lead: ReactNode = `${stable}。`;
+  const lead = `${["兼容主流 RSS 2.0 阅读器，也能接 n8n、Zapier 这类自动化工具。地址长期不变", ...AGENT_PARTS.flatMap((a) => a.rssLead ?? [])].join("；")}。`;
   return (
     <>
       <PanelHead label="RSS" title="复制地址，用阅读器订阅">
@@ -142,6 +140,7 @@ export function RssPanel(props: PanelProps) {
           </div>
         ))}
       </div>
+      {TAG && <p className="mt-3 text-[12.5px] text-ink-4">{TAG.rss}</p>}
 
       <Block title="按分类订阅">
         <Table
@@ -166,13 +165,16 @@ export function RssPanel(props: PanelProps) {
 const RECIPES = [
   { key: "latest", label: "盯最新资讯" },
   { key: "sync", label: "同步全部精选" },
-] as const;
+];
 
-export function ApiPanel(props: PanelProps) {
-  const { base } = props;
-  let curl = "curl --compressed";
+export function ApiPanel(props: AgentPanelProps) {
+  const { base, tag } = props;
+  const userAgent = [ACCESS.userAgent, TAG && tag ? TAG.userAgent(tag) : null].filter(Boolean).join(" ");
+  const curl = `curl --compressed${userAgent ? ` -A '${userAgent}'` : ""}`;
   let pace = "内容多久变一次：新资讯全天陆续进来，精选每天变几次到几十次，日报每天 08:00、周报每周一 10:00、月报每月 1 日 10:30（北京时间）各一期。";
+  if (ACCESS.ratePerMinute) pace += `同一个 IP 每分钟超过约 ${ACCESS.ratePerMinute} 次会收到 429，请按 Retry-After 等待，不要并发重试。`;
   const [recipe, setRecipe] = useState<string>("latest");
+  const recipes = AGENT_PARTS.flatMap((a) => a.recipes ?? []);
   const items = `${base}/api/v1/items?mode=selected&window=24h&limit=20`;
   return (
     <>
@@ -213,10 +215,9 @@ export function ApiPanel(props: PanelProps) {
             [<Mono>/api/v1/monthlies/latest</Mono>, "最新一期月报", "每月 1 日 10:30 后一次"],
             [<Mono>{"/api/v1/monthlies/{month}"}</Mono>, "指定月份，如 2026-09", "缓存过期后使用前验证 ETag"],
             [<Mono>/api/v1/monthlies</Mono>, "月报索引", "每月一次"],
+            ...AGENT_PARTS.flatMap((a) => (a.api ? [{ group: a.api.group }, ...a.api.rows.map(([path, does, often]) => [<Mono>{path}</Mono>, does, often])] : [])),
             { group: "给 AI 助手" },
-            [<Mono>/api/v1/agent</Mono>, [
-              "给 Agent 的使用说明，列出的地址返回整理好的中文 Markdown",
-            ].join("；"), "需要时"],
+            [<Mono>/api/v1/agent</Mono>, `给 Agent 的使用说明，列出的地址返回整理好的中文 Markdown${GUIDE_CLIENTS ? `；${GUIDE_CLIENTS} 用的就是它们` : ""}`, "需要时"],
             { group: "完整精选同步" },
             [<Mono>/api/v1/selected/snapshot</Mono>, "当前全部精选，分页一次拿全", "只在第一次"],
             [<Mono>/api/v1/selected/changes</Mono>, "之后的新增、修改和撤选", "几分钟一次"],
@@ -225,7 +226,7 @@ export function ApiPanel(props: PanelProps) {
       </Block>
 
       <Block title="常见用法">
-        <PillTabs size="xs" layoutId="agent-api-recipe" label="用法" active={recipe} onSelect={setRecipe} items={RECIPES.map((r) => ({ key: r.key, label: r.label }))} />
+        <PillTabs size="xs" layoutId="agent-api-recipe" label="用法" active={recipe} onSelect={setRecipe} items={[...RECIPES, ...recipes].map((r) => ({ key: r.key, label: r.label }))} />
         {recipe === "latest" && (
           <>
             <CodeBlock className="mb-3 mt-3" lang="bash" code={`# 第一次：保存响应头里的 ETag\n${curl} -i '${items}'\n# 之后最快每分钟一次，带上 ETag；返回 304 就是没变化\n${curl} -i -H 'If-None-Match: <上次的 ETag>' '${items}'`} />
@@ -238,6 +239,7 @@ export function ApiPanel(props: PanelProps) {
             <p>每页成功写进本地后再保存新的 cursor。cursor 是流水账水位，放多久都不会过期；返回 409 <Mono>snapshot_required</Mono> 时重新取一次快照，不会悄悄漏数据。</p>
           </>
         )}
+        {recipes.map((r) => recipe === r.key && <r.Body key={r.key} base={base} curl={curl} />)}
       </Block>
 
       <Block title="出错了怎么办" id="agent-api-recovery">
@@ -250,6 +252,12 @@ export function ApiPanel(props: PanelProps) {
           <dd>请求太密：按 Retry-After 等待，不要并发重试。</dd>
           <dt className="mono text-[13px] text-ink">5xx</dt>
           <dd>指数退避，先用上次成功的结果；公开服务不承诺 SLA。</dd>
+          {AGENT_PARTS.flatMap((a) => a.apiErrors ?? []).map(([status, what]) => (
+            <Fragment key={status}>
+              <dt className="mono text-[13px] text-ink">{status}</dt>
+              <dd>{what}</dd>
+            </Fragment>
+          ))}
         </dl>
         <p className="mt-4 text-[13px] text-ink-3">{`能匿名调用不等于所有用途都获许可${POLICY.terms.notes ? `：${POLICY.terms.notes.api}` : ""}，见`}<Link viewTransition to="/terms" className={link}>{POLICY.terms.name}</Link>。</p>
       </Block>

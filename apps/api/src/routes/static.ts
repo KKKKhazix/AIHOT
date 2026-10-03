@@ -4,16 +4,19 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { SITE } from "@aihot/industry/site";
-import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
+import { SITE } from "@aihot/site";
+import { CONTACT_ALIASES, PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT, config } from "@aihot/backend/config";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
 import { sitemapXml } from "@aihot/backend/publication/sitemap";
 import { llmsTxt, loadLlmsAvailability } from "@aihot/backend/publication/llms";
+import { loadContact } from "@aihot/backend/site/contact";
 
-const PUBLIC = path.join(REPO_ROOT, "industry/public");
-const BRAND = path.join(REPO_ROOT, "industry/brand");
+const PUBLIC = path.join(REPO_ROOT, "site/public");
+/** The site's brand files (site/brand/), and how long its icons are cached. */
+const BRAND = path.join(REPO_ROOT, "site/brand");
+const ICON_CACHE = "public, max-age=2592000, stale-while-revalidate=604800";
 
 const TYPES: Record<string, string> = {
   ".json": "application/json; charset=UTF-8",
@@ -89,7 +92,8 @@ function sendEntry(req: FastifyRequest, reply: FastifyReply, entry: Entry, opts:
   return reply.send(entry.body);
 }
 
-async function sendFile(req: FastifyRequest, reply: FastifyReply, file: string, opts: { type?: string; cacheControl: string; publicApi?: boolean; fill?: boolean }) {
+/** A file's bytes with an ETag (304 when it matches), its type from the extension unless given; a missing one is a 404. Modules serve their own files with it. */
+export async function sendFile(req: FastifyRequest, reply: FastifyReply, file: string, opts: { type?: string; cacheControl: string; publicApi?: boolean; fill?: boolean }) {
   let entry;
   try {
     entry = await loadFile(file, opts.fill);
@@ -111,15 +115,13 @@ export function registerStatic(app: FastifyInstance) {
   });
 
   app.get("/llms.txt", async (req, reply) => {
-    const text = llmsTxt({
-      ...await loadLlmsAvailability(),
-    });
+    const text = llmsTxt(await loadLlmsAvailability());
     applyPublicHeaders(reply, { cors: false });
     // Cached like /openapi-v1.json: a release that adds an ability is described everywhere within minutes.
     return sendTextWithEtag(req, reply, text, { etagPrefix: "llms", cacheControl: "public, max-age=300, stale-while-revalidate=3600", contentType: "text/plain; charset=utf-8" });
   });
 
-  // The site's public files (industry/public/), placeholders filled in; one the site does not have is a 404.
+  // The site's public files (site/public/), placeholders filled in; one the site does not have is a 404.
   app.get("/robots.txt", (req, reply) => sendFile(req, reply, path.join(PUBLIC, "robots.txt"), { cacheControl: "public, max-age=3600", fill: true }));
   app.get("/.well-known/security.txt", (req, reply) => sendFile(req, reply, path.join(PUBLIC, ".well-known/security.txt"), { cacheControl: "public, max-age=86400", fill: true }));
   app.get("/manifest.webmanifest", (req, reply) => sendFile(req, reply, path.join(PUBLIC, "manifest.webmanifest"), { cacheControl: "public, max-age=86400, stale-while-revalidate=604800", fill: true }));
@@ -131,15 +133,18 @@ export function registerStatic(app: FastifyInstance) {
     app.get(`/${config.indexNowKey}.txt`, (req, reply) => sendEntry(req, reply, key, { type: TYPES[".txt"]!, cacheControl: "public, max-age=3600" }));
   }
 
-  // Icons from the industry pack (industry/brand/).
-  for (const icon of [
-    "favicon.ico",
-    "icon.png",
-    "icon-192.png",
-    "apple-icon.png",
-    "logo.svg",
-  ]) {
-    app.get(`/${icon}`, (req, reply) => sendFile(req, reply, path.join(BRAND, icon), { cacheControl: "public, max-age=2592000, stale-while-revalidate=604800" }));
+  // The site's icons (site/brand/): the standard ones, then any others it keeps at the root.
+  for (const icon of ["favicon.ico", "icon.png", "icon-192.png", "apple-icon.png", "logo.svg", ...SITE.rootIcons]) {
+    app.get(`/${icon}`, (req, reply) => sendFile(req, reply, path.join(BRAND, icon), { cacheControl: ICON_CACHE }));
+  }
+
+  // Contact codes' root addresses linked from outside lead to the codes the about page shows now
+  // (replacing a code changes its file name).
+  for (const { slot, file } of CONTACT_ALIASES) {
+    app.get(`/${file}`, async (_req, reply) => {
+      const contact = await loadContact();
+      return reply.code(302).header("Location", contact[`${slot}Qr`]).header("Cache-Control", "public, max-age=3600").send();
+    });
   }
 
   // Contact codes on the about page: uploaded in the admin (content-hashed names), or shipped in the pack.

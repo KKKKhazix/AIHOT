@@ -11,6 +11,7 @@ import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { queueProcessing } from "../jobs/content.ts";
 import { identityKeyForUrl, normalizeUrl } from "../lib/url.ts";
 import { publishArticleTx, setSeoDecision } from "../publication/publish.ts";
+import { emit } from "../modules.ts";
 import { requestRegroup } from "../events/corrections.ts";
 import { computeHotRanking, storedHotRanking } from "../events/hot.ts";
 import { audit, auditHistory, Conflict } from "../audit.ts";
@@ -99,6 +100,7 @@ export async function setVisibility(id: string, input: { visibility: "public" | 
     let hot = false;
     if (published?.reduced || (before.visibility ?? "public") !== input.visibility) {
       hot = await inHotRanking(id, tx);
+      await emit("articleChanged", { id, reason: `visibility ${input.visibility}`, reports: true, hot }, tx);
       const stories = await tx<{ story_id: number }[]>`
         SELECT DISTINCT f.story_id FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id WHERE fa.article_id = ${id} AND f.story_id IS NOT NULL`;
       for (const s of stories) await enqueue(QUEUES.digest, { storyId: s.story_id }, { singletonKey: `story:${s.story_id}` }, tx);
@@ -151,6 +153,7 @@ export async function overrideFields(id: string, input: { fields: unknown; clear
       ON CONFLICT (article_id) DO UPDATE SET fields = EXCLUDED.fields, reason = EXCLUDED.reason, version = editorial_overrides.version + 1, updated_by = EXCLUDED.updated_by, updated_at = now()`;
     const published = await publishArticleTx(tx, id);
     if (published?.changed) {
+      await emit("articleChanged", { id, reason: "manual correction", reports: false, hot: false }, tx);
       const changedFields = new Set([...Object.keys(fields), ...(input.clear ?? [])]);
       if (changedFields.has("category") || changedFields.has("tags")) await correctReportClassification(tx, id, input.reason);
       const [st] = await tx<{ story_id: number | null }[]>`SELECT story_id FROM publications WHERE article_id = ${id}`;

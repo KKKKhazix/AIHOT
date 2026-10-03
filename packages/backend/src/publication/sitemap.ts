@@ -11,6 +11,7 @@ import { escapeXml } from "../lib/text.ts";
 import { siteUrl } from "./links.ts";
 import { evidenceCondition, listedCondition, selectedCondition } from "./scope.ts";
 import { topicPageCounts } from "./topics.ts";
+import { serverModules, type SitemapEntry } from "../modules.ts";
 
 const MAX_URLS = 45_000;
 const TTL_MS = 5 * 60 * 1000;
@@ -18,12 +19,7 @@ const CACHE_FILE = path.join(config.dataDir, "sitemap-last.xml");
 
 let lastGood: string | null = null;
 
-interface Entry {
-  loc: string;
-  lastmod?: Date | null;
-  changefreq?: string;
-  priority?: number;
-}
+type Entry = SitemapEntry;
 
 async function build(): Promise<string> {
   const entries: Entry[] = [];
@@ -39,6 +35,8 @@ async function build(): Promise<string> {
     { loc: "/weekly", changefreq: "weekly", priority: 0.7 },
     { loc: "/monthly", changefreq: "monthly", priority: 0.6 },
     { loc: "/topics", changefreq: "daily", priority: 0.7 },
+    // The modules' pages, between the content pages and the site's own.
+    ...serverModules().flatMap((m) => m.sitemap?.pages ?? []),
     { loc: "/agent", lastmod: now, changefreq: "weekly", priority: 0.7 },
     { loc: "/about", changefreq: "monthly", priority: 0.5 },
     { loc: "/terms", changefreq: "monthly", priority: 0.4 },
@@ -60,8 +58,9 @@ async function build(): Promise<string> {
       WHERE f.story_id = stories.id AND ${evidenceCondition()} AND ${listedCondition(new Date())})
     ORDER BY latest_at DESC NULLS LAST, id DESC LIMIT 500`;
   for (const s of stories) entries.push({ loc: `/story/${s.public_id}`, lastmod: s.latest_at, changefreq: "daily", priority: 0.5 });
+  for (const m of serverModules()) if (m.sitemap?.entries) entries.push(...(await m.sitemap.entries()));
   const items = await sql<{ id: string; t: Date }[]>`
-    SELECT article_id AS id, updated_at AS t FROM publications WHERE visibility = 'public' AND indexable ORDER BY timeline_at DESC LIMIT ${MAX_URLS - entries.length}`;
+    SELECT article_id AS id, updated_at AS t FROM publications WHERE visibility = 'public' AND indexable ORDER BY timeline_at DESC, article_id DESC LIMIT ${MAX_URLS - entries.length}`;
   for (const it of items) entries.push({ loc: `/items/${it.id}`, lastmod: it.t, changefreq: "monthly", priority: 0.5 });
 
   const body = entries

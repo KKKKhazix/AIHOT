@@ -2,7 +2,7 @@
 // manual overrides and grouping, then record selected-set changes in the sync ledger.
 // Rebuilding only re-reads stored results; it never calls a model.
 import { toPublicApiCategory } from "@aihot/contracts/taxonomy";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { one, sql, type Tx } from "../db.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { collapseWhitespace } from "../lib/text.ts";

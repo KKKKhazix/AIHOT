@@ -1,7 +1,10 @@
-// Worker process: queues and schedules for collection, processing, events, reports, monitors and ops.
+// Worker process: queues and schedules for collection, processing, events, reports and ops, and the site's
+// modules (site/modules/server.ts).
 import { assertProductionSecrets } from "@aihot/backend/config";
 import { closeDb } from "@aihot/backend/db";
-import { getBoss, stopBoss } from "@aihot/backend/jobs/queue";
+import { getBoss, stopBoss, workModuleQueues } from "@aihot/backend/jobs/queue";
+import { installModules } from "@aihot/backend/modules";
+import { SERVER_MODULES } from "@aihot/site/modules/server";
 import { registerContentJobs } from "@aihot/backend/jobs/content";
 import { registerSourceJobs } from "@aihot/backend/jobs/sources";
 import { registerEventJobs } from "@aihot/backend/jobs/events";
@@ -11,6 +14,7 @@ import { registerSchedules } from "./schedules.ts";
 import { ensureContentTargets } from "@aihot/backend/notify/deliver";
 import { startHeartbeat } from "@aihot/backend/operations/heartbeat";
 
+installModules(SERVER_MODULES);
 assertProductionSecrets([["auth", "IMG_PROXY_SIGN_SECRET"]]);
 
 await ensureContentTargets();
@@ -20,6 +24,7 @@ if (process.env.COLLECT_ENABLED === "true") await registerSourceJobs(boss);
 await registerEventJobs(boss);
 await registerNotifyJobs(boss);
 await registerPublicationJobs(boss);
+await workModuleQueues(boss);
 await registerSchedules(boss);
 const heartbeat = startHeartbeat("worker");
 console.log(JSON.stringify({ level: "info", msg: "worker started", pid: process.pid }));

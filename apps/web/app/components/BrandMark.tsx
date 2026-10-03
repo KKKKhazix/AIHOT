@@ -1,14 +1,12 @@
 import type { Brand } from "@aihot/contracts/site";
-
-/** Logos drawn in white (for a dark tile) sit on their own dark plate: their paths. */
-const DARK_TILE = new Set<string>([
-]);
+import { webModules } from "../site-modules";
 
 /** A company's, vendor's or evaluator's mark on a bordered tile; falls back to a monogram. Marks identify, never endorse. */
 export function BrandMark({ brand, size = 28, className = "" }: { brand: Brand | null; size?: number; className?: string }) {
   const radius = Math.round(size * 0.27);
   if (brand?.src) {
-    const dark = DARK_TILE.has(brand.src);
+    // Logos drawn in white (for a dark tile) sit on their own dark plate.
+    const dark = webModules().flatMap((m) => m.darkMarks ?? []).includes(brand.src);
     return (
       <span
         className={`inline-flex shrink-0 items-center justify-center overflow-hidden border ${dark ? "border-transparent bg-[#111]" : `border-line bg-white ${brand.raster ? "" : "dark:bg-white/95"}`} ${className}`}

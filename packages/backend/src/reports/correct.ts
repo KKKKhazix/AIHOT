@@ -3,6 +3,7 @@
 import { RELEASE } from "@aihot/industry/taxonomy";
 import type { Tx } from "../db.ts";
 import { isRelease } from "../editorial/vocabulary.ts";
+import { emit } from "../modules.ts";
 import { SECTION_ORDER, sectionOf } from "./edition.ts";
 
 interface Entry { itemId: string; followUp?: string; firstParty?: boolean; role?: string; [key: string]: unknown }
@@ -58,5 +59,6 @@ export async function correctReportClassification(tx: Tx, articleId: string, rea
     await tx`UPDATE reports SET content=${tx.json(content as never)},revision=revision+1,updated_at=now() WHERE id=${report.id}`;
     changed = true;
   }
+  if (changed) await emit("reportsChanged", { reason: `report classification ${articleId}` }, tx);
   return changed;
 }

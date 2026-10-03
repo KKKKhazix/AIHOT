@@ -43,7 +43,7 @@ function storage(kind: StorageKind): Storage | null {
 }
 
 /** A stored string; null when it is missing or storage is unavailable. */
-function readRaw(key: string, kind: StorageKind = "local"): string | null {
+export function readRaw(key: string, kind: StorageKind = "local"): string | null {
   try {
     return storage(kind)?.getItem(key) ?? null;
   } catch {
@@ -433,6 +433,9 @@ function mergeLocalData(incoming: { starred: unknown[]; read: unknown[]; theme: 
     return { starredAdded: accepted.length, starredSkipped, readAdded: readFailed ? 0 : Math.min(readAdditions.length, readRoom), readSkipped, themeApplied, readFailed };
   });
 }
+
+/** Imports from elsewhere (the site's modules') merge through the same path. */
+export { mergeLocalData };
 
 // React hooks
 const EMPTY_STARRED: LocalStarredItem[] = [];

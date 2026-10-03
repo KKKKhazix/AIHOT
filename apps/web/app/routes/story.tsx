@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { Link, useLoaderData, useLocation } from "react-router";
 import type { Route } from "./+types/story";
 import type { StoryDetail, StoryReportView } from "@aihot/contracts/site";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { edgeTtl, loadOr404 } from "../lib/api.server";
 import { breadcrumbLd, pageMeta, titled } from "../lib/seo";
 import { beijingDate, beijingTime } from "@aihot/contracts/time";

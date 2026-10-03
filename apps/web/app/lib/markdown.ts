@@ -94,7 +94,7 @@ export interface CopyDocument {
 }
 
 /**
- * Splits a page copy file (industry/pages/) into its page parts: the first heading (title), the meta table,
+ * Splits a page copy file (site/pages/) into its page parts: the first heading (title), the meta table,
  * the page-top statement (页首说明) and the verbatim body starting at the first "## " section.
  */
 export function parseCopyFile(md: string, firstSection = /^## /m): CopyDocument {

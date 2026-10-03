@@ -8,7 +8,7 @@
       "title": "网站上线",
       "body": [
         "用 AIHOT 开源框架搭起了这个站：自动盯住信源、精选、把同一件事归到一起，每天早上出一份日报。",
-        "这是示例条目。新条目写在 industry/changelog.json 的最前面，并把 latestVersion 改成它的日期和时间，导航上就会出现提醒红点。"
+        "这是示例条目。新条目写在 site/changelog.json 的最前面，并把 latestVersion 改成它的日期和时间，导航上就会出现提醒红点。"
       ]
     }
   ]

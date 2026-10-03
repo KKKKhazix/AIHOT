@@ -9,6 +9,7 @@
   "dependencies": {
     "@aihot/backend": "*",
     "@aihot/contracts": "*",
-    "@aihot/industry": "*"
+    "@aihot/industry": "*",
+    "@aihot/site": "*"
   }
 }

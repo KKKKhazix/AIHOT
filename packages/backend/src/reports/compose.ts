@@ -4,7 +4,7 @@
 // dailies and a model only writes its overview and introductions, from the brief in the industry pack
 // (industry/prompts/report-period*.md).
 import { z } from "zod";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { PLAIN_TERMS, RELEASE } from "@aihot/industry/taxonomy";
 import { promptText, promptVersion } from "../editorial/prompts.ts";
 import { modelFor } from "../editorial/models.ts";
@@ -14,6 +14,7 @@ import { sql } from "../db.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt } from "../providers/receipts.ts";
 import { shutdownSignal } from "../jobs/queue.ts";
+import { emit } from "../modules.ts";
 import { arrangeDaily, candidates, dailyEdition, periodEntries, sectionOf, SECTION_ORDER, type Candidate, type EditionEntry } from "./edition.ts";
 
 export const REPORT_VERSION = promptVersion("report-period", "report-period-sections", "report-period-no-sections");
@@ -65,6 +66,8 @@ async function saveReport(kind: ReportKind, key: string, start: Date, end: Date,
         written = true;
       } else written = await insert();
     }
+    // A new issue changes the latest page, the archive, its neighbours' navigation and the report feeds.
+    if (written) await emit("reportsChanged", { reason: `${kind} ${key} published` }, tx);
     for (const id of receiptIds) await completeReceipt(tx, id);
     return written;
   });

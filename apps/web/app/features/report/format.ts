@@ -1,7 +1,7 @@
 // Names, dates and grouping for daily, weekly and monthly reports.
 import type { ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
 import { beijingDate, beijingWeekday, isoWeekLabel, isoWeekRange } from "@aihot/contracts/time";
-import { REPORTS, SITE, subjectAfter } from "@aihot/industry/site";
+import { REPORTS, SITE, subjectAfter } from "@aihot/site";
 import { RELEASE } from "@aihot/industry/taxonomy";
 import { monthDay, weekdayShort } from "../../lib/format.ts";
 
@@ -24,7 +24,7 @@ export function reportPath(kind: ReportKind, key: string): string {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** "这一天的 4 件 AI 大事" / "本周的 12 件 AI 大事" / "8 月的 20 件 AI 大事" (the subject from industry/site.ts). */
+/** "这一天的 4 件 AI 大事" / "本周的 12 件 AI 大事" / "8 月的 20 件 AI 大事" (the subject from site/site.ts). */
 export function headline(kind: ReportKind, key: string, count: number): string {
   if (kind === "daily") return subjectAfter(`这一天的 ${count} 件`, "大事");
   if (kind === "weekly") return subjectAfter(`本周的 ${count} 件`, "大事");

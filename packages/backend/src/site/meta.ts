@@ -6,9 +6,9 @@ import { REPO_ROOT } from "../config.ts";
 
 let changelogCache: ChangelogResponse | null = null;
 
-/** Changelog is published as a data file in the industry pack (industry/changelog.json), newest first. */
+/** Changelog is published as a data file of the site (site/changelog.json), newest first. */
 export function loadChangelog(): ChangelogResponse {
-  changelogCache ??= JSON.parse(readFileSync(path.join(REPO_ROOT, "industry/changelog.json"), "utf8")) as ChangelogResponse;
+  changelogCache ??= JSON.parse(readFileSync(path.join(REPO_ROOT, "site/changelog.json"), "utf8")) as ChangelogResponse;
   return changelogCache;
 }
 

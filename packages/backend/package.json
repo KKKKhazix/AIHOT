@@ -8,6 +8,7 @@
   "dependencies": {
     "@aihot/contracts": "*",
     "@aihot/industry": "*",
+    "@aihot/site": "*",
     "@mozilla/readability": "0.6.0",
     "@paralleldrive/cuid2": "3.3.0",
     "cheerio": "1.2.0",

@@ -39,8 +39,7 @@ export interface MpArticle {
  * their queue run only then.
  */
 export function dajialaConfigured(): boolean {
-  const key = credential("collectors", "DAJIALA_KEY");
-  return key !== null;
+  return credential("collectors", "DAJIALA_KEY") !== null;
 }
 
 function base(): { url: string; key: string } {

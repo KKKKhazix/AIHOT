@@ -2,9 +2,12 @@
 // alerts (off unless FEISHU_INTERNAL_ENABLED).
 import { sql } from "../db.ts";
 import { beijingDay, sendAlert } from "../notify/feishu.ts";
+import { serverModules } from "../modules.ts";
 
-const pct = (a: number, b: number) => (b ? `${a >= b ? "+" : ""}${(((a - b) / b) * 100).toFixed(0)}%` : "—");
-const n = (v: number) => v.toLocaleString("en-US");
+/** The change from b to a: "+12%", "—" without a b. Also the modules' reports. */
+export const pct = (a: number, b: number) => (b ? `${a >= b ? "+" : ""}${(((a - b) / b) * 100).toFixed(0)}%` : "—");
+/** A count with thousands separators. */
+export const n = (v: number) => v.toLocaleString("en-US");
 
 /** Monday 09:00: how the sources did over the last seven days. */
 export async function sourceHealthWeekly(now = Date.now()) {
@@ -36,6 +39,8 @@ export async function sourceHealthWeekly(now = Date.now()) {
     `本周收录 ${n(items!.week)} 条（上周 ${n(items!.prev)}，${pct(items!.week, items!.prev)}），其中精选 ${n(items!.selected)} 条`,
     `在用信源 ${counts!.enabled} 个，本周新增 ${counts!.added} 个；抓取失败 ${counts!.failing} 个，不太稳定 ${counts!.degraded} 个`,
   ];
+  // The modules' own collectors, a line each.
+  for (const m of serverModules()) if (m.sourceHealth) lines.push(...(await m.sourceHealth(now)));
   if (failing.length) lines.push("", "抓取失败的信源（这些来源的新内容暂时收不到）：", ...failing.map((f) => `· ${f.name}：连续失败 ${f.fail_count} 次${f.last_ok_at ? `，上次成功 ${beijingDay(f.last_ok_at)}` : ""}${f.last_error ? `（${f.last_error}）` : ""}`));
   if (silent.length) lines.push("", "7 天没有新内容的信源（可能是对方没更新，也可能是抓取方式失效）：", ...silent.map((s) => `· ${s.name}${s.last ? `（最近 ${beijingDay(s.last)}）` : "（从没产出过）"}`));
   lines.push("", failing.length || silent.length ? "需要处理的话，把这条转给 AI；详情在后台“信源”与“运行”页。" : "没有需要处理的信源。");

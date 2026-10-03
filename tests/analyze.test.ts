@@ -14,7 +14,7 @@ import { queueProcessing } from "@aihot/backend/jobs/content";
 import { QUEUES, stopBoss } from "@aihot/backend/jobs/queue";
 import { compactAnswerFirstSummary, enforceIdentity, MAX_BODY_CHARS, parseTranslateOutput, PREFILTER_SYSTEM } from "@aihot/backend/editorial/writing";
 import { promptText } from "@aihot/backend/editorial/prompts";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 
 const T = tag();
 const SOURCE = `test-analyze-${T}`;

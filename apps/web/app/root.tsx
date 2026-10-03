@@ -3,8 +3,8 @@ import {
   type ShouldRevalidateFunction,
 } from "react-router";
 import type { SiteMeta } from "@aihot/contracts/site";
-import { SITE } from "@aihot/industry/site";
-import { RingMark } from "@aihot/industry/brand/Logo.tsx";
+import { SITE } from "@aihot/site";
+import { RingMark } from "@aihot/site/brand/Logo.tsx";
 import { useEffect, useState, type ReactNode } from "react";
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -19,6 +19,7 @@ import { rememberPage, THEME_BOOT_SCRIPT, useThemeSync } from "./lib/local-state
 import { apiGet } from "./lib/api.server";
 import { useHydratedFlag } from "./lib/hydration";
 import { titled } from "./lib/seo";
+import { webModules } from "./site-modules";
 
 export const links: Route.LinksFunction = () => [
   { rel: "icon", href: "/favicon.ico", sizes: "any" },
@@ -33,6 +34,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const release = process.env.AIHOT_RELEASE ?? null;
   try {
     const meta = await apiGet<SiteMeta>("/api/site/meta", {
+      headers: Object.assign({}, ...webModules().map((m) => m.root?.documentHeaders?.(request) ?? {})),
       signal: request.signal,
     });
     return { ...meta, release };
@@ -56,6 +58,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#13191c" />
         <meta name="apple-mobile-web-app-title" content={SITE.name} />
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        {webModules().map((m) => m.root?.bootScript && <script key={m.name} dangerouslySetInnerHTML={{ __html: m.root.bootScript }} />)}
         <Meta />
         <Links />
       </head>
@@ -92,6 +95,7 @@ function SiteShell({ changelogVersion, children }: { changelogVersion: string | 
           Desktop: the page fills the main area up to the list width (--page-max-wide), centred beyond it. */}
       <main id="main" className="min-w-0 flex-1 pb-[calc(72px+env(safe-area-inset-bottom))] lg:px-7 lg:pb-[72px] lg:pt-6">
         <div className="mx-auto w-full max-w-[640px] pl-[var(--gutter-l)] pr-[var(--gutter-r)] lg:max-w-[var(--page-max-wide)] lg:px-0">
+          {webModules().map((m) => m.root?.Top && <m.root.Top key={m.name} />)}
           {children}
         </div>
       </main>
@@ -123,6 +127,7 @@ export default function App() {
       <SiteShell changelogVersion={meta.changelogVersion}>
         <Outlet />
       </SiteShell>
+      {webModules().map((m) => m.root?.Bottom && <m.root.Bottom key={m.name} />)}
     </>
   );
 }

@@ -1,7 +1,7 @@
 // Source administration: list, detail, preview (fetch without storing), edit, create with
 // duplicate checks, pause/resume and manual collection. Every change is audited.
 import { z } from "zod";
-import { SOURCE_DEFAULTS } from "@aihot/industry/site";
+import { SOURCE_DEFAULTS } from "@aihot/site";
 import type { AdminSource, AdminSourceCreated, AdminSourceDetail, AdminSourcePreview, AdminSourceRow, AdminSources, BeforeJson } from "@aihot/contracts/admin";
 import { audit, auditHistory, Conflict } from "../audit.ts";
 import { groupingReset } from "../content/provenance.ts";
@@ -9,6 +9,7 @@ import { sql, type Db } from "../db.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { republishKey } from "../jobs/publication.ts";
 import { normalizeUrl } from "../lib/url.ts";
+import { serverModules } from "../modules.ts";
 import { fetchJsonList } from "../sources/json-list.ts";
 import { fetchRss } from "../sources/rss.ts";
 import { assertSupportedConfig } from "../sources/config-keys.ts";
@@ -110,6 +111,9 @@ const EDITABLE = z
   .partial()
   .strict();
 
+/** What the installed modules do for a source kind they collect themselves (their server.ts sourceKinds). */
+const kindHooks = (kind: string) => serverModules().flatMap((m) => m.sourceKinds?.[kind] ?? []);
+
 export async function updateSource(id: string, input: { patch: unknown; version: string; reason?: string }, actor: string) {
   const patch = EDITABLE.parse(input.patch);
   return sql.begin(async (tx) => {
@@ -131,6 +135,9 @@ export async function updateSource(id: string, input: { patch: unknown; version:
     const keys = Object.keys(patch) as Array<keyof typeof patch>;
     if (!keys.length) return before;
     const values = Object.fromEntries(keys.map((k) => [k, k === "config" ? tx.json(patch.config as never) : patch[k]]));
+    // A module that collects this kind hears of the resume first, in the same transaction, so the row
+    // returned below has what it stamps.
+    if (patch.enabled === true && !before.enabled) for (const h of kindHooks(String(before.kind))) await h.resumed?.(id, tx);
     const [after] = await tx`UPDATE sources SET ${tx(values as never, ...(keys as string[]))}, updated_at = now(),
       health = CASE WHEN ${patch.enabled ?? null}::boolean IS FALSE THEN 'paused' WHEN ${patch.enabled ?? null}::boolean IS TRUE AND health = 'paused' THEN 'unknown' ELSE health END,
       next_fetch_at = CASE WHEN ${patch.enabled ?? null}::boolean IS TRUE THEN now() ELSE next_fetch_at END
@@ -217,8 +224,13 @@ export async function createSource(input: unknown, actor: string): Promise<Befor
 }
 
 export async function fetchNow(id: string, actor: string) {
-  const [s] = await sql<{ id: string; kind: string; config: { ghid?: string; wxid?: string } }[]>`SELECT id, kind, config FROM sources WHERE id = ${id}`;
+  const [s] = await sql<{ id: string; kind: string; config: Record<string, unknown> }[]>`SELECT id, kind, config FROM sources WHERE id = ${id}`;
   if (!s) return null;
+  const own = kindHooks(s.kind).find((h) => h.fetchNow)?.fetchNow;
+  if (own) {
+    await audit(actor, "source.fetch", `source:${id}`, null, null, await own(s));
+    return { jobId: null };
+  }
   const jobId =
     s.kind === "mp_account"
       ? await enqueue(QUEUES.mpCheck, { sourceId: id, reason: "manual" }, { singletonKey: `mp:${id}` })

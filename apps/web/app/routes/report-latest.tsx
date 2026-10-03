@@ -1,7 +1,7 @@
 import { useLoaderData } from "react-router";
 import type { Route } from "./+types/report-latest";
 import type { ReportLatestPage } from "@aihot/contracts/site";
-import { SITE, subjectAfter, withSubject } from "@aihot/industry/site";
+import { SITE, subjectAfter, withSubject } from "@aihot/site";
 import { edgeTtl, loadOr404 } from "../lib/api.server";
 import { pageMeta, reportLd } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";

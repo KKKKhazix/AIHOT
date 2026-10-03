@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLoaderData } from "react-router";
 import type { SiteContact, SiteStats } from "@aihot/contracts/site";
-import { ABOUT, POLICY, SITE, subjectAfter } from "@aihot/industry/site";
+import { ABOUT, POLICY, SITE, subjectAfter } from "@aihot/site";
 import { apiGet, edgeTtl } from "../lib/api.server";
 import { organizationLd, pageMeta } from "../lib/seo";
 import { Kicker } from "../components/ui/Kicker";
@@ -283,6 +283,7 @@ export default function AboutPage() {
         <nav className="flex gap-5" aria-label="规则与隐私">
           <Link
             viewTransition
+            id={ABOUT.termsAnchor ?? undefined}
             to="/terms"
             className="transition-colors hover:text-accent"
           >

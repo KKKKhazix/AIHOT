@@ -1,6 +1,9 @@
 @import "tailwindcss";
-/* The site's logo comes from the industry pack. */
-@source "../../../industry/brand";
+/* Classes also live in the site's logo and changelog drawings (site/brand, site/changelog) and in the
+   modules' web code (their other files are not scanned: words in backend code and data would become classes). */
+@source "../../../site/brand";
+@source "../../../site/changelog";
+@source "../../../modules/*/{web.tsx,web/**}";
 
 /* ---------------------------------------------------------------------------
    Design tokens: warm off-white paper, ink text, one teal accent (cyan in

@@ -18,6 +18,8 @@ export const SITE = {
   feedbackExample: "例如：我在搜索某个关键词时遇到……我原本想……",
   /** 一句话介绍：搜索引擎、分享卡片、RSS、llms.txt 会用。 */
   description: "自动盯住你挑的信源，用模型摘要、打分、精选，把同一件事的多篇报道归到一起，每天早上出一份日报。",
+  /** llms.txt 里一句话介绍下面的一段详细介绍（选填）。 */
+  llmsIntro: null as string | null,
   /** 一行小字：分享图、海报下方。 */
   tagline: "值得关注的 AI 动态",
   /** 搜索引擎读到的关键词（首页结构化数据）。 */
@@ -28,6 +30,8 @@ export const SITE = {
   locale: "zh-CN",
   /** 默认域名，只在没设置 SITE_URL 时使用。 */
   defaultUrl: "http://localhost:3000",
+  /** 标准图标（favicon.ico、icon.png、icon-192.png、apple-icon.png、logo.svg）以外也放在网站根目录的图标，site/brand/ 里的文件名（选填）；manifest.webmanifest 或外站引用了它们时用。 */
+  rootIcons: [] as string[],
   /**
    * MCP 工具名的前缀（小写字母、数字、下划线），工具会叫 myhot_get_latest、myhot_search……
    * 已经有人接入后就不要再改。
@@ -44,6 +48,8 @@ export const SITE = {
   footerNote: "由 AIHOT 开源框架驱动",
   /** 中国大陆网站的 ICP 备案号（选填），填了就显示在页脚并链接到工信部备案系统。 */
   icp: null as string | null,
+  /** 源码的 GitHub 仓库地址（选填），填了就在侧栏底部和“我的”页底部显示“GitHub 开源”。 */
+  github: null as string | null,
   /** 结构化数据里的网站运营者（搜索引擎用）。 */
   organization: {
     name: "MyHOT",
@@ -64,6 +70,16 @@ export const POLICY = {
     covers: null as string | null,
     /** Agent 接入页的 RSS、API 两栏各自提醒的使用规则（选填）。 */
     notes: null as null | { rss: string; api: string },
+    /**
+     * 讲清哪些用途要先取得授权的话（选填）：llms 接在 llms.txt“使用说明”的版权说明后面，
+     * agent 写在给 Agent 的使用说明“使用规则”一节的开头。
+     */
+    license: null as null | { llms: string; agent: string },
+    /**
+     * 公开 API、RSS 和 OpenAPI 文件声明使用规则的响应头（选填）：原样附上，再加一个指向这一页的
+     * Link 头（rel="terms-of-service"）；浏览器里的调用方也读得到它们。
+     */
+    headers: null as null | Record<string, string>,
   },
   privacy: {
     description: "本站如何处理浏览器本地数据、反馈资料与访问日志。",
@@ -76,6 +92,15 @@ export const POLICY = {
    */
   xPostIsFullText: true,
 } as const;
+
+/** 关于页的一张二维码卡片。 */
+interface ContactCard {
+  kind: string;
+  title: string;
+  note: string;
+  /** 站外链接过的根目录文件名（选填），比如 qr-wechat.jpg：这个地址总是跳到现在的二维码。 */
+  alias?: string;
+}
 
 /** 关于页的文案。数字（信源数、收录数、精选数、日报期数）来自站内实时统计，不用写在这里。 */
 export const ABOUT = {
@@ -97,18 +122,30 @@ export const ABOUT = {
   /**
    * 作者块（选填），null 就不显示。
    * avatarSourceId：一个 X 账号信源的 id，头像取它的（选填）。
-   * 二维码在后台“设置”里上传，或者放进 industry/brand/contact/；没有二维码就不显示那张卡片。
+   * 二维码在后台“设置”里上传，或者放进 site/brand/contact/；没有二维码就不显示那张卡片。
    */
   maker: null as null | {
     name: string;
     avatarSourceId?: string | null;
     greeting: string[];
-    wechat?: { kind: string; title: string; note: string };
-    feishu?: { kind: string; title: string; note: string };
+    wechat?: ContactCard;
+    feishu?: ContactCard;
   },
   /** 页面底部的版权与下架说明，中间接“反馈页”的链接。 */
   copyright: [`${SITE.name} 是聚合摘要和阅读索引，原文版权归各来源所有。如果你是来源方，希望更正、下架或调整展示方式，可以通过`, "联系我们。"] as [string, string],
+  /** 页面底部“使用规则”链接的锚点 id（选填）：外部文档写死过这个锚点就填上，以后不要改。 */
+  termsAnchor: null as string | null,
 } as const;
+
+/** 后台页面上给管理员的提示（选填）。 */
+export const ADMIN = {
+  /** “反馈”页标题下的一行。 */
+  feedbackNote: null as string | null,
+  /** 确认框里补的一句本站规定：封禁反馈来源时。 */
+  banNote: null as string | null,
+  /** 确认框里补的一句本站规定：调整付费服务的请求上限时。 */
+  budgetNote: null as string | null,
+};
 
 /** Agent 接入页的示例。 */
 export const AGENT = {
@@ -166,6 +203,54 @@ export const CARDS: Record<string, { kicker: string; title: string; subtitle: st
   feedback: { kicker: "反馈", title: "告诉我们哪里可以更好", subtitle: "内容、功能、接入，或来源方的更正与下架请求。" },
   agent: { kicker: "Agent 接入", title: `把 ${SITE.name} 接进你的 Agent`, subtitle: "MCP、RSS、API 三种方式，匿名只读，无需 API Key。" },
 };
+
+/** 公开接口的访问约定里随部署而变的几处：给 Agent 的使用说明、llms.txt 会写。 */
+export const ACCESS = {
+  /** 同一 IP 每分钟大约能请求多少次，超过会收到 429 并带 Retry-After（选填，由部署的反向代理限流）；null 表示不限流，说明里不提。 */
+  ratePerMinute: null as number | null,
+  /** 请写程序同步数据的人报上的 User-Agent（选填），写在 JSON 接口的说明后面。 */
+  userAgent: null as string | null,
+};
+
+/** 这个部署自己的几处安排（选填）。 */
+export const DEPLOYMENT = {
+  /** 凭据分组文件（models.env、collectors.env……）默认放在哪个目录，相对仓库根目录；环境变量 AIHOT_CREDENTIALS_DIR 优先，都没有就只读环境变量。 */
+  credentialsDir: null as string | null,
+  /** 凭据分组的文件名（放在凭据目录下，选填）：没写的分组用“分组名.env”，比如 models.env。 */
+  credentialFiles: {} as Partial<Record<string, string>>,
+  /** 线上 api 收到的 Host（CDN 回源用的域名，选填）；本地开发时，网页开发服务器转给 api 的请求也换成它，和线上一致。 */
+  originHost: null as string | null,
+  /** 反向代理把没登录的后台访问转去登录时，用哪个请求头带上原来的地址（选填，登录后回到那里）。 */
+  loginReturnHeader: null as string | null,
+  /**
+   * 图片代理从原站取图的流量上限：超过后没缓存的图先返回 503，等这一分钟或这一天过去，当天额度用完会进运营日报；
+   * null 就不设上限。环境变量 IMGPROXY_UPSTREAM_MB_PER_MINUTE、IMGPROXY_UPSTREAM_GB_PER_DAY 优先。
+   */
+  imageUpstreamBudget: null as null | { mbPerMinute: number; gbPerDay: number },
+  /** 图片代理不走出网代理（EGRESS_PROXY_URL）、直接连的图片域名（选填）。 */
+  directImageHosts: [] as string[],
+  /**
+   * 精选评测（scripts/eval-selection.ts）不带参数时用的金标集：文件（相对仓库根目录）、抽样条数、只抽哪一份、门槛扫描范围。
+   * null 就用 .data/gold.jsonl 的全部样本（最多 200 条），在 40–90 之间扫描。
+   */
+  selectionGold: null as null | { file: string; sample: number; split: string; sweep: [number, number] },
+};
+
+/** RSS 订阅源的说明里随站点而变的说法。 */
+export const FEED_COPY = {
+  /** “全部动态”源的说明里，除了未审内容、低相关条目和已合并重复条目，还写明不含的内容（选填）。 */
+  allLeavesOut: [] as string[],
+};
+
+/**
+ * 公开接口（API、RSS、MCP）里和网页不同的类别（选填）。上线后不要改：接口参数和订阅地址里有类别的 key。
+ * merge：并进另一类发布的类别，key 是行业包里的类别，值是它并进的类别（公开接口比网页少一类时用）；
+ * feedLabels：分类 RSS 标题里的名字，替换行业包里的 feedLabel（并进了别的类别时，名字常常也要跟着改）。
+ */
+export const PUBLIC_CATEGORIES = {
+  merge: {},
+  feedLabels: {},
+} as const;
 
 /** “AI 日报”这类说法：行业词和名词之间，英文词加空格，中文词不加。 */
 export function withSubject(noun: string): string {

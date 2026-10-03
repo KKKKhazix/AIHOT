@@ -4,7 +4,7 @@
 // new work only.
 import type { AdminModels, BeforeJson } from "@aihot/contracts/admin";
 import { sql } from "../db.ts";
-import { CAPABILITIES, invalidateModelCache, modelSources, type Capability, type CapabilityKey } from "../editorial/models.ts";
+import { capabilities, invalidateModelCache, modelSources } from "../editorial/models.ts";
 import { MODELS } from "../providers/llm.ts";
 import { audit } from "../audit.ts";
 
@@ -69,7 +69,7 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
     const amount = (fresh / 1e6) * Number(p.input_per_mtok ?? 0) + (cached / 1e6) * Number(p.cached_per_mtok ?? p.input_per_mtok ?? 0) + (Number(u.tokens_out_uncosted ?? 0) / 1e6) * Number(p.output_per_mtok ?? 0);
     return { amount, currency: p.currency };
   };
-  const capabilities = (Object.entries(CAPABILITIES) as Array<[CapabilityKey, Capability]>).map(([key, c]) => ({
+  const steps = Object.entries(capabilities()).map(([key, c]) => ({
     key,
     label: c.label,
     env: c.env,
@@ -96,12 +96,12 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
       })),
   }));
   const choices = Object.values(MODELS).map((m) => ({ key: m.key, service: m.service, vision: !!m.vision }));
-  return { days, capabilities, choices, history, benches };
+  return { days, capabilities: steps, choices, history, benches };
 }
 
 /** Switches a capability to another registered model (or back to the environment/default when null). */
 export async function switchModel(capability: string, model: string | null, reason: string, actor: string) {
-  const c = (CAPABILITIES as Record<string, Capability>)[capability];
+  const c = capabilities()[capability];
   if (!c) throw Object.assign(new Error("unknown capability"), { statusCode: 400 });
   if (!reason.trim()) throw Object.assign(new Error("a reason is required"), { statusCode: 400 });
   if (model !== null) {

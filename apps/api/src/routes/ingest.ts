@@ -1,6 +1,6 @@
 // External collection scripts push items here. They use the ingest token (never an admin session); with
 // INGEST_RATE_LIMIT set, each client's pushes are also limited in the process, for a site with no proxy in
-// front that limits them.
+// front that limits them. The site's modules' reporting clients use the same token (authorized below).
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { credential } from "@aihot/backend/config";
@@ -9,7 +9,7 @@ import { IngestError, ingestItems } from "@aihot/backend/ingest/items";
 const PLACEHOLDER = /^(|changeme|change-me|placeholder|xxx+|todo|test|dev|your[-_]?token.*)$/i;
 
 /** Constant-time check; an empty or placeholder server token rejects everything. */
-function authorized(req: FastifyRequest): boolean {
+export function authorized(req: FastifyRequest): boolean {
   const expected = credential("auth", "INGEST_TOKEN") ?? "";
   if (PLACEHOLDER.test(expected) || expected.length < 16) return false;
   const given = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? "")?.[1]?.trim() ?? "";
@@ -30,7 +30,7 @@ function limited(key: string, perMinute: number): boolean {
   return false;
 }
 
-function unauthorized(reply: FastifyReply) {
+export function unauthorized(reply: FastifyReply) {
   return reply.code(401).header("Cache-Control", "no-store").type("text/plain; charset=utf-8").send("Unauthorized");
 }
 

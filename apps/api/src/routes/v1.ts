@@ -9,7 +9,8 @@ import { selectedChanges, selectedSnapshot, SnapshotRequiredError, v1Items } fro
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
 import { isPeriodKey, v1Dailies, v1Daily, v1Period, v1Periods } from "@aihot/backend/publication/reports";
 import { isValidDate } from "@aihot/contracts/time";
-import { applyPublicHeaders, QueryError, sendJsonWithEtag, sendProblem, strictQuery } from "../http/respond.ts";
+import { requestNotice } from "@aihot/backend/modules";
+import { applyPublicHeaders, QueryError, sendJsonWithNotice, sendJsonWithEtag, sendProblem, strictQuery } from "../http/respond.ts";
 
 type Handler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
 
@@ -50,9 +51,9 @@ export function enumParam<T extends string>(value: string | undefined, name: str
 
 type SendOptions = Parameters<typeof sendJsonWithEtag>[3];
 
-/** Every v1 JSON answer: with a weak ETag, 304 when it matches. */
-function sendV1(req: FastifyRequest, reply: FastifyReply, body: object, opts: SendOptions) {
-  return sendJsonWithEtag(req, reply, body, opts);
+/** Every v1 JSON answer: with a weak ETag, 304 when it matches, and a module's reminder for the person behind the request on top. */
+export function sendV1(req: FastifyRequest, reply: FastifyReply, body: object, opts: SendOptions) {
+  return sendJsonWithNotice(req, reply, body, requestNotice("json", req), opts);
 }
 
 /** Wraps a v1 handler with shared error mapping. Errors never leak internals. */
@@ -186,6 +187,24 @@ export function registerV1(app: FastifyInstance) {
   }));
 }
 
+const notAllowed: Handler = async (req, reply) => {
+  applyPublicHeaders(reply);
+  reply.header("Allow", "GET, HEAD, OPTIONS");
+  return sendProblem(req, reply, { status: 405, code: "method_not_allowed", detail: "This endpoint supports only GET, HEAD, and OPTIONS." });
+};
+const preflight: Handler = async (_req, reply) => {
+  applyPublicHeaders(reply);
+  return reply.code(204).header("Cache-Control", "public, max-age=86400").send();
+};
+
+/** A read-only public address (a path or a wildcard): CORS preflight, and 405 for any other method. */
+export function readOnlyMethods(app: FastifyInstance, url: string) {
+  app.options(url, preflight);
+  // A read-only operation never interprets a rejected method's body: even malformed JSON and
+  // unsupported media types must receive the same 405 and readable public error headers.
+  app.route({ method: ["POST", "PUT", "PATCH", "DELETE", "TRACE"], url, onRequest: notAllowed, handler: notAllowed });
+}
+
 /** Registered last: CORS preflight, 405 for other methods, Problem 404 for undefined v1 paths. */
 export function registerV1Fallbacks(app: FastifyInstance) {
   const notFound: Handler = async (req, reply) => {
@@ -198,25 +217,7 @@ export function registerV1Fallbacks(app: FastifyInstance) {
       detail: `No public API v1 operation exists at ${path}. Recent items are at /api/v1/items; every operation is listed at ${config.siteUrl}/openapi-v1.json`,
     });
   };
-  const notAllowed: Handler = async (req, reply) => {
-    applyPublicHeaders(reply);
-    reply.header("Allow", "GET, HEAD, OPTIONS");
-    return sendProblem(req, reply, { status: 405, code: "method_not_allowed", detail: "This endpoint supports only GET, HEAD, and OPTIONS." });
-  };
-  const preflight: Handler = async (_req, reply) => {
-    applyPublicHeaders(reply);
-    return reply.code(204).header("Cache-Control", "public, max-age=86400").send();
-  };
-  for (const url of [
-    "/api/v1",
-    "/api/v1/*",
-    "/openapi-v1.json",
-  ]) {
-    app.options(url, preflight);
-    // A read-only operation never interprets a rejected method's body: even malformed JSON and
-    // unsupported media types must receive the same 405 and readable public error headers.
-    app.route({ method: ["POST", "PUT", "PATCH", "DELETE", "TRACE"], url, onRequest: notAllowed, handler: notAllowed });
-  }
+  for (const url of ["/api/v1", "/api/v1/*", "/openapi-v1.json"]) readOnlyMethods(app, url);
   app.get("/api/v1", notFound);
   app.get("/api/v1/*", notFound);
 }

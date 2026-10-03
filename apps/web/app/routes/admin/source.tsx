@@ -1,4 +1,4 @@
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { useState } from "react";
 import { Link } from "react-router";
 import type { Route } from "./+types/source";

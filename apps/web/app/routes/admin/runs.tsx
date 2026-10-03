@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { Link, useFetcher } from "react-router";
 import { useEffect } from "react";
 import type { Route } from "./+types/runs";
@@ -8,6 +8,7 @@ import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { ago, bj, duration, num } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, DataTable, Dot, Empty, Field, Json, ReasonDialog, Select, Stat, Time } from "../../features/admin/ui";
+import { loadParts, webModules } from "../../site-modules";
 
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -18,8 +19,11 @@ export const meta: Route.MetaFunction = () => [{ title: `运行 · ${SITE.name} 
 
 const STATE_LABEL: Record<string, string> = { created: "排队", retry: "等待重试", active: "执行中" };
 
-/** Who reports through the ingest API, named when nothing has reported yet. */
-const INGEST_CLIENTS = [
+const PARTS = await loadParts((m) => m.admin?.runs);
+
+/** Who reports through the ingest API, named when nothing has reported yet: the modules' clients first. */
+const ingestClients = () => [
+  ...webModules().flatMap((m) => m.admin?.ingestClients ?? []),
   "采集脚本",
 ];
 
@@ -199,6 +203,8 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
         </Card>
       </div>
 
+      {PARTS.map(({ name, part: Part }) => (r.modules[name] != null ? <Part key={name} data={r.modules[name]} /> : null))}
+
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <Card title="任务时间线" pad={false}>
           <div className="max-h-[420px] overflow-y-auto">
@@ -230,7 +236,7 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
               ]}
             />
           ) : (
-            <Empty>{`还没有外部上报（${INGEST_CLIENTS.join("、")}）`}</Empty>
+            <Empty>{`还没有外部上报（${ingestClients().join("、")}）`}</Empty>
           )}
         </Card>
       </div>

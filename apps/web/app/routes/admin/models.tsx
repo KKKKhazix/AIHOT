@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Link } from "react-router";
 import type { Route } from "./+types/models";
 import type { AdminModels } from "@aihot/contracts/admin";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { bj, money, num } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, DataTable, Empty, Field, FilterChips, ReasonDialog, Select } from "../../features/admin/ui";
+import { webModules } from "../../site-modules";
 
 
 
@@ -19,8 +20,12 @@ export const meta: Route.MetaFunction = () => [{ title: `模型与评测 · ${SI
 
 const SOURCE_LABEL = { admin: "后台切换", env: "环境变量", default: "代码默认" } as const;
 
-/** A cost the provider did not report and no price covers. */
-let UNPRICED = <span className="whitespace-nowrap text-ink-4" title="服务商没有返回费用，按 token 数和你的模型单价自己估算">未定价</span>;
+/** A cost the provider did not report and no price covers: a link to the prices when a module keeps them. */
+function Unpriced() {
+  const prices = webModules().find((m) => m.admin?.prices)?.admin?.prices;
+  if (prices) return <Link to={prices} className="whitespace-nowrap text-ink-4 hover:text-accent">未定价</Link>;
+  return <span className="whitespace-nowrap text-ink-4" title="服务商没有返回费用，按 token 数和你的模型单价自己估算">未定价</span>;
+}
 const secs = (ms: number | null) => (ms == null ? "—" : ms >= 10_000 ? `${Math.round(ms / 1000)} s` : `${(ms / 1000).toFixed(1)} s`);
 
 export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
@@ -92,7 +97,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
                         ) : u.estimate ? (
                           <span title="按用量 × 单价推算">≈ {money(u.estimate.amount)}{u.estimate.currency !== "CNY" ? ` ${u.estimate.currency}` : ""}</span>
                         ) : (
-                          UNPRICED
+                          <Unpriced />
                         ),
                     },
                   ]}

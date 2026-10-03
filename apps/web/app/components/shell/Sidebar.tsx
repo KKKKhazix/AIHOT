@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { SITE } from "@aihot/industry/site";
-import { Wordmark } from "@aihot/industry/brand/Logo.tsx";
+import { SITE } from "@aihot/site";
+import { Wordmark } from "@aihot/site/brand/Logo.tsx";
 import { useChangelogSeen } from "../../lib/local-state";
-import { SIDEBAR, sidebarIsActive, type NavItem } from "./nav";
+import { sidebar, sidebarIsActive, type NavItem } from "./nav";
 import { ThemeSwitch } from "./ThemeSwitch";
+import { IconGithub } from "../icons";
 
 /** True while the changelog has an entry newer than the one this reader last opened. */
 export function useChangelogDot(latestVersion: string | null): boolean {
@@ -45,7 +46,7 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
         <Wordmark size={26} />
       </Link>
       <nav className="-mx-1 flex-1 overflow-y-auto px-1" aria-label="主导航">
-        {SIDEBAR.map((section) => (
+        {sidebar().map((section) => (
           <div key={section.title}>
             <div className="px-2.5 pb-1 pt-3.5 text-[11px] text-ink-4">{section.title}</div>
             <div className="flex flex-col gap-1">
@@ -57,6 +58,17 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
         ))}
       </nav>
       <div className="mt-2 space-y-2.5 px-1 pt-1">
+        {SITE.github && (
+          <a
+            href={SITE.github}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mx-1 flex h-[34px] items-center justify-center gap-1.5 rounded-full border border-line text-[12.5px] text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink"
+          >
+            <IconGithub size={14} />
+            GitHub 开源
+          </a>
+        )}
         <ThemeSwitch className="mx-1" />
         {SITE.icp && (
           <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="block px-2 text-[10px] text-ink-4 hover:text-ink-3">

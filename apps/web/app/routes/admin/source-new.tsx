@@ -1,4 +1,4 @@
-import { SITE, SOURCE_DEFAULTS } from "@aihot/industry/site";
+import { SITE, SOURCE_DEFAULTS } from "@aihot/site";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import type { Route } from "./+types/source-new";

@@ -1,10 +1,10 @@
 // Page metadata from one place: title template, canonical address, OG images, robots; and list addresses,
-// with the feed filters they carry. The site's name and wording come from the industry pack
-// (industry/site.ts); its address from SITE_URL.
+// with the feed filters they carry. The site's name and wording come from site/site.ts;
+//; its address from SITE_URL.
 import type { MetaDescriptor } from "react-router";
 import type { ReportDetail, TimelineFilters } from "@aihot/contracts/site";
 import { isCategoryKey, isChannelKey } from "@aihot/contracts/taxonomy";
-import { SITE, subjectAfter, withSubject } from "@aihot/industry/site";
+import { SITE, subjectAfter, withSubject } from "@aihot/site";
 
 /**
  * The site's address: SITE_URL while rendering on the server (what crawlers and share previews read),
@@ -239,15 +239,28 @@ export function reportLd(r: ReportDetail, path: string, description: string) {
   });
 }
 
-/** A topic page: the collection, and when a report last reached it. */
+/** A topic page: the collection, when a report last reached it, and the lists its parts show. */
 export function topicLd(input: {
   path: string;
   name: string;
   description: string;
   dateModified: string | null;
+  lists: Array<{ name: string; entries: Array<{ title: string; href: string | null }> }>;
 }) {
   const base = siteUrl();
   const url = `${base}${input.path}`;
+  // Entries name their event page when they have one (event pages are indexable, most article pages are not).
+  const lists = input.lists.filter((l) => l.entries.length > 0).map((l) => ({
+    "@type": "ItemList",
+    name: `${input.name} · ${l.name}`,
+    numberOfItems: l.entries.length,
+    itemListElement: l.entries.map((e, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: e.title,
+      ...(e.href?.startsWith("/story/") ? { url: `${base}${e.href}` } : {}),
+    })),
+  }));
   return {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
@@ -258,5 +271,6 @@ export function topicLd(input: {
     inLanguage: SITE.locale,
     isPartOf: { "@id": `${base}/#website` },
     ...(input.dateModified ? { dateModified: input.dateModified } : {}),
+    ...(lists.length > 0 ? { mainEntity: lists.length === 1 ? lists[0] : lists } : {}),
   };
 }

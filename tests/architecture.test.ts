@@ -2,6 +2,7 @@
 // Each rule reads the source and names what breaks it. A rule changes here and in the architecture
 // document together.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -51,11 +52,9 @@ test("packages never import the apps, and nothing below the admin imports it", (
 
 // Public routes read through the public read faces; the rest are the reader's own writes (feedback) and
 // the image proxy. Admin and ingest routes may call any backend use case.
-const PRIVATE_ROUTES = new Set([
-  "admin.ts", "admin-auth.ts", "ingest.ts",
-]);
+const PRIVATE_ROUTES = new Set(["admin.ts", "admin-auth.ts", "ingest.ts"]);
 const PUBLIC_READS = [
-  /^publication\//, /^site\//, /^lib\//, /^config\.ts$/, /^operations\/feedback\.ts$/, /^media\//, /^jobs\/queue\.ts$/,
+  /^publication\//, /^site\//, /^lib\//, /^config\.ts$/, /^operations\/feedback\.ts$/, /^media\//, /^jobs\/queue\.ts$/, /^modules\.ts$/,
 ];
 
 test("public routes read content only through the public read layer", () => {
@@ -104,11 +103,13 @@ test("the public scope and the composite rule are spelled once, in publication/s
 // whose name its table's code also uses for something else slips through. Tests, fixtures and local
 // tools do not make anything used.
 const PRODUCTION = ["packages/backend/src", "packages/contracts/src", "apps/api/src", "apps/worker/src", "apps/web/app"];
-const production = () => [...PRODUCTION.flatMap((dir) => sources(dir)), { file: "apps/web/server.ts", text: readFileSync(path.join(ROOT, "apps/web/server.ts"), "utf8") }];
+/** The site's modules (modules/<name>/), their tests and local tools left out. */
+const modules = () => (existsSync(path.join(ROOT, "modules")) ? sources("modules").filter(({ file }) => !/[/\\](tests|scripts)[/\\]/.test(file)) : []);
+const production = () => [...PRODUCTION.flatMap((dir) => sources(dir)), { file: "apps/web/server.ts", text: readFileSync(path.join(ROOT, "apps/web/server.ts"), "utf8") }, ...modules()];
 const words = (text: string) => new Set(text.match(/[A-Za-z_][A-Za-z0-9_]*/g));
 
 test("every table and column is used by the code that reads and writes the database", async () => {
-  const files = ["packages/backend/src", "apps/api/src", "apps/worker/src"].flatMap((dir) => sources(dir)).map(({ text }) => words(text));
+  const files = [...["packages/backend/src", "apps/api/src", "apps/worker/src"].flatMap((dir) => sources(dir)), ...modules()].map(({ text }) => words(text));
   const columns = await sql<{ table_name: string; column_name: string }[]>`
     SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name <> 'schema_migrations'`;
   const unused = new Set<string>();
@@ -128,7 +129,8 @@ const assigned = (file: string, pattern: RegExp) => [...readFileSync(path.join(R
 
 // .env.example is the template. A deployment's own files, where the repository has them, set the rest
 // themselves: docker-compose.yml the container settings (database address, data folder, hosts and
-// ports), the Caddyfile the HTTPS domain. Keys and secrets are read by name through credential(group,
+// ports), the Caddyfile the HTTPS domain; a server deployment may keep its own templates beside it
+// (`<name>.env.example`) and set a few in its systemd units (`Environment=`). Keys and secrets are read by name through credential(group,
 // NAME) or a model preset, so a name the code gives whole as a string counts as read, and so does one a
 // deployment file substitutes (the database password, the HTTPS domain).
 const matches = (text: string, pattern: RegExp) => [...text.matchAll(pattern)].map((m) => (m[1] ?? m[2])!);
@@ -136,10 +138,14 @@ const NAMED = /["']([A-Z][A-Z0-9_]+)["']/g;
 const SUBSTITUTED = /\$\{([A-Z][A-Z0-9_]+)|\{\$([A-Z][A-Z0-9_]+)\}/g;
 const COMPOSE = "docker-compose.yml";
 const DEPLOYMENT = [COMPOSE, "deploy/Caddyfile"].filter((file) => existsSync(path.join(ROOT, file)));
+const tracked = (pattern: string) => execFileSync("git", ["ls-files", "--", pattern], { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
 
 test("every environment variable the code reads is listed in a template, and every listed one is read", () => {
-  const listed = new Set(assigned(".env.example", /^#?\s*([A-Z][A-Z0-9_]+)=/gm));
-  const preset = new Set(DEPLOYMENT.includes(COMPOSE) ? assigned(COMPOSE, /^\s+([A-Z][A-Z0-9_]+):\s/gm) : []);
+  const listed = new Set(tracked("*.env.example").flatMap((file) => assigned(file, /^#?\s*([A-Z][A-Z0-9_]+)=/gm)));
+  const preset = new Set([
+    ...(DEPLOYMENT.includes(COMPOSE) ? assigned(COMPOSE, /^\s+([A-Z][A-Z0-9_]+):\s/gm) : []),
+    ...tracked("*.service").flatMap((unit) => assigned(unit, /^Environment="?([A-Z][A-Z0-9_]+)=/gm)),
+  ]);
   const read = envReads(production());
   const readAnywhere = new Set([...read, ...envReads(sources("scripts")),
     ...[...production(), ...sources("scripts")].flatMap(({ text }) => matches(text, NAMED)),
@@ -149,10 +155,8 @@ test("every environment variable the code reads is listed in a template, and eve
 });
 
 test("every field of the website's own interfaces is read by the website", () => {
-  const web = words(production().filter(({ file }) => file.startsWith("apps/web/")).map(({ text }) => text).join("\n"));
-  const contracts = [
-    "packages/contracts/src/site.ts",
-  ];
+  const web = words(production().filter(({ file }) => file.startsWith("apps/web/") || /^modules\/[^/]+\/web/.test(file)).map(({ text }) => text).join("\n"));
+  const contracts = ["packages/contracts/src/site.ts"];
   const unread = contracts.flatMap((file) =>
     assigned(file, /^\s+(?:readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)\??:\s/gm).filter((field) => !web.has(field)).map((field) => `${file}: ${field}`));
   assert.deepEqual(unread, [], "drop the field from the contract and from the read that fills it, or show it");

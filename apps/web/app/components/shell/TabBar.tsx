@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { Link, useLocation, useRevalidator } from "react-router";
-import { TABS, type TabKey } from "./nav";
+import { tabs, type TabKey } from "./nav";
 import { noteScreen, rememberedTab, useScreen } from "./screens";
 import { markBack } from "./transitions";
 import { useChangelogDot } from "./Sidebar";
@@ -32,13 +32,14 @@ export function TabBar({ changelogVersion }: { changelogVersion: string | null }
     noteScreen(screen.name, key, active);
   }, [active, key, screen.name, restored]);
   if (screen.toolbar) return null;
+  const items = tabs();
   return (
     <nav
       aria-label="底部导航"
       className="fixed inset-x-0 bottom-0 z-40 bg-surface/90 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] shadow-[0_-1px_0_var(--line)] backdrop-blur-xl backdrop-saturate-150 lg:hidden"
     >
-      <div className={`mx-auto grid h-[50px] max-w-[640px] ${COLUMNS[TABS.length]}`}>
-        {TABS.map((t) => {
+      <div className={`mx-auto grid h-[50px] max-w-[640px] ${COLUMNS[items.length]}`}>
+        {items.map((t) => {
           const on = t.key === active;
           const Icon = t.icon;
           return (

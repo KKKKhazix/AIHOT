@@ -2,6 +2,9 @@
   "name": "@aihot/api",
   "private": true,
   "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
   "scripts": {
     "dev": "node --watch --env-file-if-exists=../../.env src/main.ts",
     "start": "node src/main.ts"
@@ -10,6 +13,7 @@
     "@aihot/backend": "*",
     "@aihot/contracts": "*",
     "@aihot/industry": "*",
+    "@aihot/site": "*",
     "@modelcontextprotocol/server": "2.1.0",
     "fastify": "5.12.5",
     "satori": "0.33.5",

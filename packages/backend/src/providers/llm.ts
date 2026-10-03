@@ -1,9 +1,9 @@
 // OpenAI-compatible chat calls, always through receipts. One model is enough: `default` is whatever the
 // deployment names in LLM_BASE_URL / LLM_API_KEY / LLM_MODEL, and every capability uses it unless the
-// industry pack, an environment variable or the admin's model page picks one of the pack's named
-// presets (industry/models.ts).
+// site, an environment variable or the admin's model page picks one of the site's named presets
+// (site/models.ts).
 import type { z } from "zod";
-import { PRESETS } from "@aihot/industry/models";
+import { PRESETS } from "@aihot/site/models";
 import { config, credential } from "../config.ts";
 import { sha256 } from "../lib/ids.ts";
 import { assertAccepted, paidRequest, ProviderRejectedError, rejectReceivedResponse } from "./receipts.ts";

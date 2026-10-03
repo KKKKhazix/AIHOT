@@ -10,7 +10,7 @@ import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
 import { loadReport } from "@aihot/backend/publication/reports";
 import { composeDaily, dueDaily, dueMonthly, dueWeekly } from "@aihot/backend/reports/compose";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 
 const T = tag();
 const SOURCE = `test-reports-${T}`;

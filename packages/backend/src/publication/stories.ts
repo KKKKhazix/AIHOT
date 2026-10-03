@@ -1,7 +1,7 @@
 // Stories (events) and the hot ranking through the public read layer. The website sees heat values;
 // v1 and MCP only see ranks and counts.
 import type { HeatPoint, HotResponse, StoryDetail, StoryReportView } from "@aihot/contracts/site";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { sql } from "../db.ts";
 import { cachedByKey, SHARED_ONLY } from "../lib/cache.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
@@ -12,7 +12,7 @@ import { publicSourceName } from "./rules.ts";
 import { latestHotRanking, rankingExtras } from "./hot.ts";
 import { storyTexts } from "./story-text.ts";
 import { topicsOfStory } from "./topics.ts";
-import { itemUrl, storyApiUrl, storyUrl } from "./links.ts";
+import { itemUrl, storyUrl, v1StoryApiUrl, v1StoryUrl } from "./links.ts";
 
 export type StoryLookup = { kind: "found"; storyId: number; publicId: string } | { kind: "merged"; target: string } | { kind: "not_found" };
 
@@ -130,7 +130,7 @@ async function relatedStories(storyId: number, now: Date) {
       SELECT 1 FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
       JOIN sources s ON s.id = p.source_id
       WHERE f.story_id = st.id AND ${evidenceCondition()} AND ${storyReportCondition(now)}
-    ) ORDER BY st.latest_at DESC NULLS LAST LIMIT 8`;
+    ) ORDER BY st.latest_at DESC NULLS LAST, st.id DESC LIMIT 8`;
 }
 
 export async function loadStoryDetail(storyId: number, now = new Date()): Promise<StoryDetail | null> {
@@ -279,7 +279,7 @@ export async function v1HotTopics() {
     const links = {
       aihot: e.representativeItemId ? itemUrl(e.representativeItemId) : storyUrl(e.storyPublicId),
       original: e.representativeUrl ?? storyUrl(e.storyPublicId),
-      story: storyUrl(e.storyPublicId),
+      story: v1StoryUrl(e.storyPublicId),
     };
     return {
       rank: e.rank,
@@ -312,7 +312,7 @@ export async function v1Story(storyId: number) {
   const inTimeline = new Set(primaryReports.map((r) => r.id));
   const digestCurrent = !d?.article_ids?.some((id) => !inTimeline.has(id));
   const neighbors = (await relatedStories(storyId, now)).map((r) => {
-    const links = { aihot: storyUrl(r.public_id), api: storyApiUrl(r.public_id) };
+    const links = { aihot: storyUrl(r.public_id), api: v1StoryApiUrl(r.public_id) };
     return { publicId: r.public_id, title: r.title, relation: r.relation, links };
   });
   return {

@@ -3,16 +3,15 @@
 // them to the api directly.
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { createServer, request as httpRequest } from "node:http";
+import { createServer } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequestListener } from "@react-router/node";
 import { isApiOwned, resolveRedirect } from "@aihot/contracts/http-policy";
-import { API_BASE_URL } from "./app/lib/api.server.ts";
+import { proxyToApi } from "./app/lib/api-proxy.server.ts";
 
 const PORT = Number(process.env.WEB_PORT || 3000);
 const HOST = process.env.WEB_HOST || "127.0.0.1";
-const API = new URL(API_BASE_URL);
 /**
  * Whether a reverse proxy in front (Caddy, nginx) records the visitor in X-Forwarded-For. Without one
  * the header is never believed: a visitor could name any address and slip past the api's per-visitor
@@ -141,16 +140,7 @@ async function handle(req: import("node:http").IncomingMessage, res: import("nod
     // entry), or this connection's own. Both headers carry only that.
     const forwarded = String(req.headers["x-forwarded-for"] ?? "").split(",").map((v) => v.trim()).filter(Boolean);
     const client = TRUST_PROXY && forwarded.length ? forwarded[forwarded.length - 1]! : (req.socket.remoteAddress ?? "");
-    const headers = { ...req.headers, "x-forwarded-for": client, "x-real-ip": client };
-    const upstream = httpRequest({ hostname: API.hostname, port: API.port, path: raw, method: req.method, headers }, (up) => {
-      res.writeHead(up.statusCode ?? 502, up.headers);
-      up.pipe(res);
-    });
-    upstream.on("error", () => {
-      res.statusCode = 502;
-      res.end("api unavailable");
-    });
-    return req.pipe(upstream);
+    return proxyToApi(req, res, { "x-forwarded-for": client, "x-real-ip": client });
   }
 
   if ((req.method === "GET" || req.method === "HEAD") && pathname.includes(".") && (await serveStatic(pathname, res))) return;

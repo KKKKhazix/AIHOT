@@ -4,9 +4,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { DEPLOYMENT } from "@aihot/site";
 import { config } from "../config.ts";
 import { guardedFetch, type GuardedResponse } from "../lib/http-fetch.ts";
 import { IMAGE_WIDTHS } from "./renditions.ts";
+import { recordUpstream, upstreamAllowed } from "./upstream.ts";
 
 const CACHE_DIR = path.join(config.dataDir, "imgcache");
 const ORIGINAL_TTL_MS = 60_000;
@@ -65,6 +67,8 @@ function original(url: string): Promise<GuardedResponse> {
       return res;
     }).catch((error: unknown) => {
       // A failed original is not refetched for a minute; this also coalesces failures across signed modes.
+      // Budget failures must be rechecked against the current minute instead of being cached.
+      if (error instanceof ImageBudgetExceeded) throw error;
       failures.set(url, { until: Date.now() + 60_000, error });
       if (failures.size > 512) failures.delete(failures.keys().next().value!);
       throw error;
@@ -75,9 +79,14 @@ function original(url: string): Promise<GuardedResponse> {
 }
 
 async function fetchOriginal(url: string): Promise<GuardedResponse> {
+  const allowed = upstreamAllowed();
+  if (!allowed.ok) throw new ImageBudgetExceeded(allowed.reason);
+  const route = DEPLOYMENT.directImageHosts.includes(new URL(url).hostname) ? "direct" : "egress";
   const res = await guardedFetch(url, {
+    route,
     timeoutMs: 20_000, maxBytes: 15 * 1024 * 1024, headers: { accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
   });
+  recordUpstream(res.body.length);
   if (res.status !== 200) throw new Error(`upstream ${res.status}`);
   return res;
 }
@@ -120,6 +129,9 @@ export function decodeIco(buf: Buffer): Buffer | { raw: Buffer; width: number; h
   }
   return null;
 }
+
+/** The upstream budget is spent (upstream.ts): uncached images wait for the window to reset. */
+export class ImageBudgetExceeded extends Error {}
 
 /** The cached rendition of an image for a mode, fetched and resized on first use. */
 export function produceImage(url: string, mode: string): Promise<PreparedImage> {

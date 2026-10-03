@@ -7,7 +7,7 @@ import { Collapse } from "../../components/ui/Presence";
 import type { TimelineCard, TimelineFilters, TimelineResponse } from "@aihot/contracts/site";
 import { FeedItem } from "./FeedItem";
 import { IconChevronDown } from "../../components/icons";
-import { RingMark } from "@aihot/industry/brand/Logo.tsx";
+import { RingMark } from "@aihot/site/brand/Logo.tsx";
 import { EmptyState } from "../../components/ui/Page";
 import { beijingDate, beijingTime, beijingWeekday } from "@aihot/contracts/time";
 import { monthDay, weekdayShort } from "../../lib/format";

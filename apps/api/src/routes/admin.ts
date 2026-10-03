@@ -18,13 +18,14 @@ import { createSource, fetchNow, listSources, previewSource, previewStoredSource
 import { sendProblem } from "../http/respond.ts";
 import { adminHandler } from "./admin-auth.ts";
 
+// What every admin route reads its request with (the modules' admin routes too).
 type Q = Record<string, string | undefined>;
-const q = (req: FastifyRequest) => req.query as Q;
-const body = <T = Record<string, unknown>>(req: FastifyRequest) => (req.body ?? {}) as T;
-const param = (req: FastifyRequest, name: string) => (req.params as Record<string, string>)[name]!;
+export const q = (req: FastifyRequest) => req.query as Q;
+export const body = <T = Record<string, unknown>>(req: FastifyRequest) => (req.body ?? {}) as T;
+export const param = (req: FastifyRequest, name: string) => (req.params as Record<string, string>)[name]!;
 const notFound = (req: FastifyRequest, reply: FastifyReply) => sendProblem(req, reply, { status: 404, code: "not_found", detail: "Not found." });
-const orNotFound = <T>(req: FastifyRequest, reply: FastifyReply, value: T | null) => (value === null || value === undefined ? notFound(req, reply) : value);
-const page = (req: FastifyRequest) => Math.max(1, Number(q(req).page) || 1);
+export const orNotFound = <T>(req: FastifyRequest, reply: FastifyReply, value: T | null) => (value === null || value === undefined ? notFound(req, reply) : value);
+export const page = (req: FastifyRequest) => Math.max(1, Number(q(req).page) || 1);
 
 function decodeImage(dataUrl: unknown): Buffer {
   const m = /^data:image\/(png|jpeg|webp);base64,(.+)$/s.exec(String(dataUrl ?? ""));
@@ -103,6 +104,7 @@ export function registerAdmin(app: FastifyInstance) {
     return orNotFound(req, reply, await setTargetEnabled(param(req, "key"), !!b.enabled, b.reason, actorOf(admin)));
   }));
   app.put("/api/admin/budgets/:service", adminHandler(async (req, _reply, admin) => updateBudget(param(req, "service"), body(req) as never, actorOf(admin))));
+
 
   // Models and evaluation
   app.get("/api/admin/models", adminHandler(async (req) => modelsOverview(Math.min(90, Number(q(req).days) || 7))));

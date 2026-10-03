@@ -2,7 +2,7 @@
 // items through these columns and views; which rows are public is decided by scope.ts.
 import type { CategoryKey, ChannelKey } from "@aihot/contracts/taxonomy";
 import type { FeedItemSummary, ItemSummary, MediaView, XPostView } from "@aihot/contracts/site";
-import { POLICY } from "@aihot/industry/site";
+import { POLICY } from "@aihot/site";
 import { sql, type Db } from "../db.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { displayTags, publicSourceName } from "./rules.ts";

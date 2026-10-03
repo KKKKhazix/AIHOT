@@ -5,7 +5,9 @@
   "workspaces": [
     "packages/*",
     "apps/*",
-    "industry"
+    "industry",
+    "site",
+    "modules/*"
   ],
   "engines": {
     "node": ">=24.11"
@@ -18,8 +20,8 @@
     "dev:api": "npm run dev -w @aihot/api",
     "dev:worker": "npm run dev -w @aihot/worker",
     "dev:web": "npm run dev -w @aihot/web",
-    "typecheck": "tsc -p packages/contracts && tsc -p packages/backend && tsc -p apps/api && tsc -p apps/worker && tsc -p tests && npm run typecheck -w @aihot/web",
-    "test": "node --test-global-setup=tests/databases.ts --import ./tests/databases.ts --test --test-concurrency=6 --test-timeout=120000 \"tests/*.test.ts\""
+    "typecheck": "tsc -p packages/contracts && tsc -p packages/backend && tsc -p apps/api && tsc -p apps/worker && tsc -p tests && tsc -p modules && npm run typecheck -w @aihot/web",
+    "test": "node --test-global-setup=tests/databases.ts --import ./tests/databases.ts --test --test-concurrency=6 --test-timeout=120000 \"tests/*.test.ts\" \"modules/*/tests/*.test.ts\""
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.1.0",

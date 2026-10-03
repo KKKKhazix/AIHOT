@@ -5,7 +5,7 @@
 // the database (databases.ts).
 import { createHash } from "node:crypto";
 import http from "node:http";
-import { DEFAULTS, PRESETS } from "@aihot/industry/models";
+import { DEFAULTS, PRESETS } from "@aihot/site/models";
 
 const database = new URL(process.env.DATABASE_URL ?? "postgres://unset/unset").pathname.slice(1);
 if (!/_(test|ci)$/.test(database)) {
@@ -21,7 +21,7 @@ process.env.LOG_LEVEL ??= "error";
 process.env.MODEL_CALLS_ENABLED ??= "true";
 process.env.COLLECT_ENABLED ??= "true";
 // The tests were written against named model presets, one per step (each provider is pointed at a
-// local stub by the test that needs it). A step the industry pack leaves on the `default` model gets its
+// local stub by the test that needs it). A step the site leaves on the `default` model gets its
 // preset here; tests/default-model.test.ts covers the default.
 const STEP_MODELS: Record<string, [env: string, model: string]> = {
   prefilter: ["PREFILTER_MODEL", "qwen3.7-flash"], score: ["SCORE_MODEL", "glm-5.3-flash-selection"], understand: ["UNDERSTAND_MODEL", "glm-5.3-flash"],
@@ -33,12 +33,12 @@ for (const [step, [env, model]] of Object.entries(STEP_MODELS)) if (!DEFAULTS[st
 
 /**
  * Sends the calls of the named model presets to a stub: sets each one's address and key variables, which
- * the industry pack names. By default the providers of the article analysis (DashScope, GLM, DeepSeek).
+ * the site's presets name. By default the providers of the article analysis (DashScope, GLM, DeepSeek).
  */
 export function pointModels(url: string, models = ["qwen3.7-flash", "glm-5.3-flash", "deepseek-flash"], env: NodeJS.ProcessEnv = process.env) {
   for (const name of models) {
     const preset = PRESETS[name];
-    if (!preset) throw new Error(`the industry pack has no model preset ${name}`);
+    if (!preset) throw new Error(`the site has no model preset ${name}`);
     env[preset.baseUrlEnv] = `${url}/v1`;
     env[preset.apiKeyEnv] = "test-key";
   }

@@ -6,7 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import satori from "satori";
 import sharp from "sharp";
 import { config, REPO_ROOT } from "@aihot/backend/config";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 
 export const OG_TEMPLATE_VERSION = "og-2026-09-29.1";
 const WIDTH = 1200;
@@ -54,13 +54,13 @@ function aspect(svg: string): number {
 const wordmarks = new Map<string, Promise<{ src: string; aspect: number } | null>>();
 
 /**
- * A wordmark of the industry pack (industry/brand/<file>, e.g. wordmark-dark.svg for the dark cards) as an
+ * A wordmark of the site (site/brand/<file>, e.g. wordmark-dark.svg for the dark cards) as an
  * image of the given height; null when the pack has none, and the card sets the name in type instead.
  */
 export async function brandMark(file: string, height: number): Promise<Node | null> {
   let mark = wordmarks.get(file);
   if (!mark) {
-    mark = readFile(path.join(REPO_ROOT, "industry/brand", file), "utf8").then(
+    mark = readFile(path.join(REPO_ROOT, "site/brand", file), "utf8").then(
       (svg) => ({ src: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, aspect: aspect(svg) }),
       () => null,
     );

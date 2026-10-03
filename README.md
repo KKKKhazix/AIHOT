@@ -129,19 +129,19 @@ docker compose up -d --build
 我关心的是：……（你想盯哪些信源，你觉得什么消息重要、什么不重要，越具体越好）。
 ```
 
-要改的东西几乎都在 [`industry/`](industry/) 这一个文件夹里，代码基本不用动：
+要改的东西几乎都在 [`site/`](site/) 和 [`industry/`](industry/) 这两个文件夹里，代码基本不用动：
 
 | 文件 | 改什么 |
 |---|---|
-| `site.ts` | 站名、行业词、首页文案、关于页 |
-| `taxonomy.ts`、`topics.json` | 分类、标签、主题 |
-| `sources.json` | 首次启动时导入的信源 |
-| `prompts/` | 精选标准和写作要求。**你的行业 KnowHow，就写在这里** |
-| `selection.ts` | 入选门槛 |
-| `models.ts` | 每一步默认用哪个模型（不改也行：都用 `.env` 里配的那一个） |
-| `brand/`、`pages/`、`public/` | 图标与 Logo，使用规则和隐私说明，`robots.txt` 这类原样发布的文件 |
+| `site/site.ts` | 站名、行业词、首页文案、关于页 |
+| `industry/taxonomy.ts`、`industry/topics.json` | 分类、标签、主题 |
+| `industry/sources.json` | 首次启动时导入的信源 |
+| `industry/prompts/` | 精选标准和写作要求。**你的行业 KnowHow，就写在这里** |
+| `industry/selection.ts` | 入选门槛 |
+| `site/models.ts` | 每一步默认用哪个模型（不改也行：都用 `.env` 里配的那一个） |
+| `site/brand/`、`site/pages/`、`site/public/` | 图标与 Logo，使用规则和隐私说明，`robots.txt` 这类原样发布的文件 |
 
-最值得花时间的是评分标准（`prompts/selection-score.md`）和门槛：拿一两百条你自己标注过的资料，用 `scripts/eval-selection.ts` 跑一遍，看它选得准不准，再回去改。怎么做写在 [精选与校准](docs/selection.md) 里。
+最值得花时间的是评分标准（`industry/prompts/selection-score.md`）和门槛：拿一两百条你自己标注过的资料，用 `scripts/eval-selection.ts` 跑一遍，看它选得准不准，再回去改。怎么做写在 [精选与校准](docs/selection.md) 里。
 
 ## 文档
 

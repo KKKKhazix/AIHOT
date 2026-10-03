@@ -7,7 +7,7 @@
 // Theme-aware, paused off screen; reduced motion draws it still. The canvas only illustrates: what it
 // says is also written in the page.
 import { useEffect, useRef, type ReactNode } from "react";
-import { withSubject } from "@aihot/industry/site";
+import { withSubject } from "@aihot/site";
 
 export interface RiverSource {
   name: string;

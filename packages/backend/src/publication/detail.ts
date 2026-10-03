@@ -1,6 +1,6 @@
 // Item detail and Markdown export, both behind the same visibility and licence rules.
 import type { OutlineEntry, SiteItemDetail, StoryRef } from "@aihot/contracts/site";
-import { SITE } from "@aihot/industry/site";
+import { SITE } from "@aihot/site";
 import { bodyToMarkdown } from "../content/markdown.ts";
 import { sql } from "../db.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
@@ -105,7 +105,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
     SELECT DISTINCT st.public_id::text AS "publicId", st.title
     FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id JOIN stories st ON st.id = f.story_id
     WHERE fa.article_id = ${id} AND fa.role <> 'mention' AND st.merged_into IS NULL
-    LIMIT 6`;
+    ORDER BY "publicId" LIMIT 6`;
 
   let x: SiteItemDetail["x"] = null;
   let reading: Pick<SiteItemDetail, "body" | "outline" | "hasTranslation" | "bodyLanguage"> = { body: null, outline: [], hasTranslation: false, bodyLanguage: "original" };

@@ -3,6 +3,7 @@ import { credential } from "../config.ts";
 import { guardedFetch } from "../lib/http-fetch.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
+import { parseLooseDate } from "./web-list.ts";
 
 export function getPath(obj: unknown, path: string): unknown {
   if (!path) return obj;
@@ -39,7 +40,11 @@ export function renderTemplate(template: string, item: unknown): string | null {
   return missing ? null : out;
 }
 
-function toDate(v: unknown, unit: string | undefined): Date | null {
+// "2026-09-30 17:43:58": a wall-clock time with no zone. Read in the source's offset, as list pages are
+// (web-list.ts); Date.parse would read it in the server's own zone, hours off on a UTC host.
+const NAIVE_DATETIME = /^\d{4}-\d{1,2}-\d{1,2}[ T]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
+
+function toDate(v: unknown, unit: string | undefined, utcOffset?: string): Date | null {
   if (v === null || v === undefined || v === "") return null;
   if (unit === "epoch_ms" || unit === "epoch_s") {
     try {
@@ -55,7 +60,9 @@ function toDate(v: unknown, unit: string | undefined): Date | null {
     const d = m ? new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`) : null;
     return d && Number.isFinite(d.getTime()) && d.toISOString().startsWith(`${m![1]}-${m![2]}-${m![3]}`) ? d : null;
   }
-  const t = Date.parse(String(v));
+  const text = String(v).trim();
+  if (NAIVE_DATETIME.test(text)) return parseLooseDate(text, utcOffset);
+  const t = Date.parse(text);
   return Number.isFinite(t) ? new Date(t) : null;
 }
 
@@ -177,7 +184,7 @@ export async function fetchJsonList(source: SourceRow): Promise<Candidate[]> {
       url,
       title: collapseWhitespace(stripTags(title)),
       author: firstString(item, c.authorPaths),
-      publishedAt: toDate(getPath(item, c.publishedAtPath), c.publishedAtUnit),
+      publishedAt: toDate(getPath(item, c.publishedAtPath), c.publishedAtUnit, c.publishedAtUtcOffset),
       excerpt: summary ? collapseWhitespace(stripTags(summary)).slice(0, 2000) : null,
       bodyText: summaryIsBody ? stripTags(summary!) : null,
       bodyStatus: summaryIsBody ? "ok" : "pending",

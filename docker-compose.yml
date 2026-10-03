@@ -5,9 +5,12 @@ name: aihot
 x-app: &app
   build: .
   image: aihot-app
-  env_file: .env
   restart: unless-stopped
-  environment: &app-env
+
+x-backend: &backend
+  <<: *app
+  env_file: .env
+  environment: &backend-env
     NODE_ENV: production
     DATABASE_URL: postgres://aihot:${POSTGRES_PASSWORD:-aihot}@db:5432/aihot
     AIHOT_DATA_DIR: /data
@@ -39,15 +42,15 @@ services:
 
   # Applies the database migrations and seeds the demo sources, then exits.
   setup:
-    <<: *app
+    <<: *backend
     restart: "no"
     command: ["sh", "-c", "node scripts/migrate.ts && node scripts/seed.ts"]
 
   api:
-    <<: *app
+    <<: *backend
     command: ["node", "apps/api/src/main.ts"]
     environment:
-      <<: *app-env
+      <<: *backend-env
       API_HOST: 0.0.0.0
       API_PORT: "3001"
     depends_on:
@@ -55,7 +58,7 @@ services:
         condition: service_completed_successfully
 
   worker:
-    <<: *app
+    <<: *backend
     command: ["node", "apps/worker/src/main.ts"]
     # On stop the worker lets a paid call in flight finish (STOP_TIMEOUT_MS, 195 s); Docker's default
     # 10 s would kill it mid-call and leave "outcome unknown" receipts that are paid for again.
@@ -67,8 +70,13 @@ services:
   web:
     <<: *app
     command: ["node", "apps/web/server.ts"]
+    # SSR reads the API over HTTP; backend credentials and stored files stay in api/worker.
     environment:
-      <<: *app-env
+      NODE_ENV: production
+      API_BASE_URL: http://api:3001
+      SITE_URL: ${SITE_URL:-http://localhost:3000}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      AIHOT_RELEASE: ${AIHOT_RELEASE:-}
       WEB_HOST: 0.0.0.0
       WEB_PORT: "3000"
     ports:

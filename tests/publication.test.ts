@@ -170,6 +170,31 @@ test("revoking a source's licence takes its articles off every exit", async () =
   await sql`UPDATE sources SET participation_mode = 'editorial', site_fulltext = true, syndicate_fulltext = true WHERE id = ${SOURCE}`;
 });
 
+// Losing redistribution permission must remove the RSS body without also withdrawing the item or
+// its licensed website body. Revoking all three source permissions at once cannot exercise this case.
+test("revoking only redistribution keeps the website body and removes it from full RSS", async () => {
+  const id = await article();
+  await sql`UPDATE articles SET grouping_status = 'complete' WHERE id = ${id}`;
+  await publishArticle(id, released());
+  const feedItem = async () => (await get("/feed/full.xml")).body.split("<item>").find((item) => item.includes(`<guid isPermaLink="false">${id}</guid>`));
+  assert.ok((await feedItem())?.includes(`FULLTEXT-${T}`));
+
+  const [source] = await sql<{ updated_at: Date }[]>`SELECT updated_at FROM sources WHERE id = ${SOURCE}`;
+  try {
+    await updateSource(SOURCE, { patch: { syndicate_fulltext: false }, version: source!.updated_at.toISOString(), reason: "test" }, "test");
+    await republishSource(SOURCE);
+    const item = await feedItem();
+    assert.ok(item, "the article remains in RSS");
+    assert.ok(!item.includes(`FULLTEXT-${T}`), "RSS no longer carries the body");
+    assert.ok(!item.includes("<content:encoded>"));
+    const detail = await get(`/api/site/items/${id}`);
+    assert.equal(detail.status, 200);
+    assert.ok(detail.body.includes(`FULLTEXT-${T}`), "the website retains its separate full-text permission");
+  } finally {
+    await sql`UPDATE sources SET syndicate_fulltext = true WHERE id = ${SOURCE}`;
+  }
+});
+
 test("a withdrawn item leaves every report exit", async () => {
   const id = await article();
   await publishArticle(id, released());

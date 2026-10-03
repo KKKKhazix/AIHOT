@@ -39,7 +39,7 @@ function violations(files: Array<{ file: string; text: string }>, broken: (file:
 }
 
 test("the web reaches the backend only over HTTP", () => {
-  const found = violations(sources("apps/web"), (_file, spec) => spec.startsWith("@aihot/backend") || spec.includes("packages/backend") || spec === "postgres" || spec === "pg-boss");
+  const found = violations([...sources("apps/web"), ...modules().filter(({ file }) => /^modules\/[^/]+\/web(?:\.|\/)/.test(file))], (_file, spec) => spec.startsWith("@aihot/backend") || spec.includes("packages/backend") || spec === "postgres" || spec === "pg-boss");
   assert.deepEqual(found, [], "apps/web imports backend code; read it through /api/site or /api/admin instead");
 });
 
@@ -79,7 +79,7 @@ const OWNERS: Record<string, string> = {
 
 test("the tables that carry a rule are written only by the module that owns it", () => {
   const found: string[] = [];
-  for (const { file, text } of sources("packages/backend/src")) {
+  for (const { file, text } of [...sources("packages/backend/src"), ...sources("apps/api/src"), ...sources("apps/worker/src"), ...modules()]) {
     const own = path.relative("packages/backend/src", file);
     for (const [, table] of text.matchAll(/\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE)\s+([a-z_]+)\b/gi)) {
       const owner = OWNERS[table!.toLowerCase()];
@@ -91,7 +91,7 @@ test("the tables that carry a rule are written only by the module that owns it",
 
 // The composite rule compares a scope with the 'composite' literal: =, <>, != or IS [NOT] DISTINCT FROM.
 test("the public scope and the composite rule are spelled once, in publication/scope.ts", () => {
-  const found = sources("packages/backend/src")
+  const found = [...sources("packages/backend/src"), ...modules()]
     .filter(({ file }) => !file.endsWith("publication/scope.ts"))
     .filter(({ text }) => /(?:=|<>|DISTINCT FROM)\s*'composite'|visible_after <= \$\{/i.test(text))
     .map(({ file }) => file);
@@ -160,4 +160,19 @@ test("every field of the website's own interfaces is read by the website", () =>
   const unread = contracts.flatMap((file) =>
     assigned(file, /^\s+(?:readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)\??:\s/gm).filter((field) => !web.has(field)).map((field) => `${file}: ${field}`));
   assert.deepEqual(unread, [], "drop the field from the contract and from the read that fills it, or show it");
+});
+
+// A module can use the engine, but it does not reach into another module; the site composes capabilities.
+test("modules do not import other modules", () => {
+  const installed = existsSync(path.join(ROOT, "modules")) ? readdirSync(path.join(ROOT, "modules"), { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name) : [];
+  const found = violations(modules(), (file, spec) => {
+    const owner = file.split("/")[1];
+    if (spec.startsWith(".")) {
+      const target = path.relative(ROOT, path.resolve(ROOT, path.dirname(file), spec)).split(path.sep);
+      return target[0] === "modules" && target[1] !== owner;
+    }
+    const target = /^@aihot\/([^/]+)/.exec(spec)?.[1];
+    return !!target && installed.includes(target) && target !== owner;
+  });
+  assert.deepEqual(found, [], "compose modules in site/modules instead of importing their implementation");
 });

@@ -6,7 +6,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { WorkOptions } from "pg-boss";
 import type { z } from "zod";
 import type { Brand } from "@aihot/contracts/site";
-import type { CredentialGroup } from "./config.ts";
 import type { Db } from "./db.ts";
 import type { QueueOptions } from "./jobs/queue.ts";
 import type { Finding } from "./notify/feishu.ts";
@@ -18,7 +17,7 @@ export interface Scheduled {
   cron: string;
   run: () => Promise<unknown>;
   missed?: "skip" | "once";
-  /** Read when the worker starts: false leaves the schedule out (and unschedules it). */
+  /** Read when the worker starts: false removes the schedule and its execution queue; run history remains. */
   when?: () => boolean;
 }
 
@@ -36,9 +35,9 @@ export interface ModelStep {
  * same answer (routes/mcp.ts), named in the guide (publication/agent.ts) and in llms.txt.
  */
 export interface AgentAbility {
-  /** Address under /api/v1/agent: "/codex-resets". */
+  /** Address under /api/v1/agent: "/status". */
   path: string;
-  /** Named in the guide's first sentence, after the engine's abilities: "Codex 额度重置监控". */
+  /** Named in the guide's first sentence, after the engine's abilities: "服务状态". */
   title: string;
   /** The guide's table row: what the user wants to know. */
   ask: string;
@@ -47,9 +46,9 @@ export interface AgentAbility {
   etagPrefix: string;
   cacheControl: string;
   mcp: {
-    /** The tool name after the site's prefix: "get_codex_resets". */
+    /** The tool name after the site's prefix: "get_status". */
     tool: string;
-    /** What the server's instructions say it is for: "for Tibo's Codex usage-limit resets". */
+    /** What the server's instructions say it is for: "for service status". */
     use: string;
     description: string;
     input: z.ZodObject;
@@ -181,8 +180,6 @@ export interface ServerModule {
   name: string;
   /** Its HTTP routes, registered before the engine's v1 fallbacks (apps/api/src/app.ts). */
   http?: (app: FastifyInstance) => void;
-  /** Credentials the api needs in production, as [group, key] (config.ts assertProductionSecrets). */
-  secrets?: Array<[group: CredentialGroup, key: string]>;
   /** Run before the api process exits, to flush what it buffers (apps/api/src/main.ts). */
   stop?: () => Promise<void>;
   agent?: {
@@ -210,7 +207,7 @@ export interface ServerModule {
   schedules?: Scheduled[];
   /** What is wrong now, for the owner's alerts (operations/alerts.ts), after the engine's problems. */
   alerts?: (now: number) => Promise<Finding[]>;
-  /** What the content groups receive from it, as the alerts name it: "重置". */
+  /** What the content groups receive from it, as the alerts name it: "状态". */
   pushes?: string[];
   /** Its share of the daily retention run (operations/retention.ts): what it deleted or aggregated. */
   retention?: (now: Date) => Promise<Record<string, unknown>>;

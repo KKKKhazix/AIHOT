@@ -66,10 +66,10 @@ export async function registerSchedules(boss: PgBoss) {
     // Schedules fire at minute boundaries; a 15 s pickup keeps them on time with a third of the polling.
     await boss.work(queue, { pollingIntervalSeconds: 15 }, async () => recordRun(s.name, s.run));
   }
-  // pg-boss keeps a schedule until it is unscheduled: one dropped from this list (or switched off) would go
-  // on queueing jobs nobody works.
+  // Retired or disabled timers must leave no queued work behind, including queues an earlier release
+  // already unscheduled. pg-boss deletes the queue's jobs and schedules; job_runs retains its audit.
   const current = new Set(schedules.map((s) => `cron.${s.name}`));
-  for (const old of await boss.getSchedules()) {
-    if (old.name.startsWith("cron.") && !current.has(old.name)) await boss.unschedule(old.name, old.key);
+  for (const old of await boss.getQueues()) {
+    if (old.name.startsWith("cron.") && !current.has(old.name)) await boss.deleteQueue(old.name);
   }
 }

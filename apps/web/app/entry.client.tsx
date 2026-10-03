@@ -1,4 +1,4 @@
-// React Router's default bootstrap, with one recovery path for obsolete public documents.
+// One recovery boundary for obsolete public documents, including route metadata in <Meta>.
 import { startTransition, StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { HydratedRouter } from "react-router/dom";
@@ -12,7 +12,8 @@ startTransition(() => {
   hydrateRoot(
     document,
     <StrictMode>
-      <HydratedRouter onError={onError} />
+      <HydratedRouter />
     </StrictMode>,
+    { onCaughtError: onError },
   );
 });

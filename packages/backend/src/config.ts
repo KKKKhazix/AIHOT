@@ -93,7 +93,7 @@ export function credential(group: CredentialGroup, name: string): string | null 
 const PLACEHOLDER = /^(changeme|placeholder|dummy|test|xxx+|your[-_ ].*|<.*>)$/i;
 
 /** Production refuses to start with missing or placeholder critical secrets, or dev-login bypasses. */
-export function assertProductionSecrets(names: Array<[CredentialGroup, string]>): void {
+export function assertProductionSecrets(names: ReadonlyArray<readonly [CredentialGroup, string]>): void {
   if (!isProduction) return;
   const problems: string[] = [];
   for (const [group, name] of names) {

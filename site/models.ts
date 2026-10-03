@@ -15,7 +15,7 @@ export interface ModelPreset {
   vision?: boolean;
 }
 
-/** 具名的模型：AIHOT 线上用的几家（每个要配自己的密钥）。用不上可以删掉。 */
+/** 具名的模型示例（每个要配自己的密钥）。用不上可以删掉。 */
 export const PRESETS: Record<string, ModelPreset> = {
   // GLM 5.3 Flash always reasons; the lowest effort keeps short structured tasks fast.
   "glm-5.3-flash": {

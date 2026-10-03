@@ -25,13 +25,9 @@ function browser(path = "/topics/openai?page=2#latest", stored = new Map<string,
   return { location, sessionStorage, stored, fetch, log };
 }
 
-function errorInfo(path = "/topics/openai?page=2#latest", render = true) {
-  const url = new URL(path, ORIGIN);
-  return {
-    location: { pathname: url.pathname, search: url.search, hash: url.hash, state: null, key: "topic" },
-    params: {}, pattern: "/topics/:slug",
-    ...(render ? { errorInfo: { componentStack: "at TopicRoute" } } : {}),
-  };
+// React reports both route components and document metadata through the root error boundary.
+function errorInfo() {
+  return { componentStack: "at TopicRoute" };
 }
 
 test("an old document render failure checks fresh health and reloads its exact URL once", async () => {
@@ -74,16 +70,15 @@ test("current releases and unsuccessful health checks keep the error page", asyn
   }
 });
 
-test("route responses, loader/network failures, admin and unversioned documents never probe health", async () => {
+test("route responses, admin and unversioned documents never probe health", async () => {
   const b = browser();
   const onError = createRenderErrorHandler("release-A");
   for (const status of [404, 503]) {
     await onError({ status, statusText: "Error", internal: false, data: {} }, errorInfo());
   }
-  await onError(new TypeError("Failed to fetch"), errorInfo(undefined, false));
   for (const path of ["/admin", "/admin/content/1"]) {
     b.location.href = `${ORIGIN}${path}`;
-    await onError(new Error("admin render failed"), errorInfo(path));
+    await onError(new Error("admin render failed"), errorInfo());
   }
   b.location.href = `${ORIGIN}/topics/openai?page=2#latest`;
   for (const release of [null, "", "dev"]) {
@@ -105,4 +100,16 @@ test("blocked storage never risks an automatic reload loop", async () => {
   Object.defineProperty(window, "sessionStorage", { get() { throw new Error("storage disabled"); } });
   await createRenderErrorHandler("release-A")(new Error("render failed"), errorInfo());
   assert.equal(b.location.reload.mock.calls.length, 0);
+});
+
+test("navigation while the version check is pending never reloads another page", async () => {
+  const b = browser();
+  let finish!: (response: Response) => void;
+  b.fetch.mock.mockImplementation(() => new Promise<Response>((resolve) => { finish = resolve; }));
+  const pending = createRenderErrorHandler("release-A")(new TypeError("metadata changed"), errorInfo());
+  b.location.href = `${ORIGIN}/all`;
+  finish(Response.json({ ok: true, release: "release-B" }));
+  await pending;
+  assert.equal(b.location.reload.mock.calls.length, 0);
+  assert.equal(b.stored.size, 0);
 });

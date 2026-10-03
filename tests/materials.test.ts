@@ -167,3 +167,58 @@ test("characters lost in transit are no revision, lost or restored", async () =>
   for (const report of [edited(clean), edited(garbled[2]!)]) assert.equal((await upsertMaterial(report)).revised, false);
   assert.equal((await state(first.articleId)).revision, 2);
 });
+
+// A listing can learn a date after the article was first stored: the source's date rule was added
+// later, or the feed moved to an API that carries one. Only a content change used to reach the row,
+// so the date never arrived and every reader showed the discovery time instead.
+test("a date learned after the first report fills the row in", async () => {
+  const url = `https://example.com/date-later-${tag()}`;
+  const bare = { sourceId: SOURCE, url, title: "Undated at first", excerpt: "same text", via: "fetch" as const };
+  const first = await upsertMaterial(bare);
+  const blank = (await sql<{ published_at: Date | null }[]>`SELECT published_at FROM articles WHERE id = ${first.articleId}`)[0]!;
+  assert.equal(blank.published_at, null, "stored without a date");
+
+  const when = new Date("2026-04-23T00:00:00Z");
+  assert.equal((await upsertMaterial({ ...bare, publishedAt: when })).revised, false, "filling a blank is not a content revision");
+  const filled = (await sql<{ published_at: Date | null }[]>`SELECT published_at FROM articles WHERE id = ${first.articleId}`)[0]!;
+  assert.equal(filled.published_at?.toISOString(), when.toISOString());
+  assert.equal((await state(first.articleId)).revision, 1, "filling a blank adds no revision");
+});
+
+test("a later report never overwrites a date that is already stored", async () => {
+  const url = `https://example.com/date-sticky-${tag()}`;
+  const when = new Date("2026-05-01T00:00:00Z");
+  const base = { sourceId: SOURCE, url, title: "Dated on arrival", excerpt: "same text", publishedAt: when, via: "fetch" as const };
+  const first = await upsertMaterial(base);
+  // A feed that shifts its own dates around, or a listing page that shows a wrong one, must not win.
+  await upsertMaterial({ ...base, publishedAt: new Date("2026-06-01T00:00:00Z") });
+  await upsertMaterial({ ...base, publishedAt: new Date("2020-01-01T00:00:00Z") });
+  const row = (await sql<{ published_at: Date | null }[]>`SELECT published_at FROM articles WHERE id = ${first.articleId}`)[0]!;
+  assert.equal(row.published_at?.toISOString(), when.toISOString());
+});
+
+test("another source's listing cannot change a date", async () => {
+  // Titles and summaries are already ignored from a second source; the date is no different.
+  const url = `https://example.com/date-other-source-${tag()}`;
+  const when = new Date("2026-05-01T00:00:00Z");
+  const base = { url, title: "Dated on arrival", excerpt: "same text", publishedAt: when, via: "fetch" as const };
+  const first = await upsertMaterial({ ...base, sourceId: SOURCE });
+  await upsertMaterial({ ...base, sourceId: OTHER, publishedAt: new Date("2026-06-01T00:00:00Z") });
+  const row = (await sql<{ published_at: Date | null }[]>`SELECT published_at FROM articles WHERE id = ${first.articleId}`)[0]!;
+  assert.equal(row.published_at?.toISOString(), when.toISOString());
+});
+
+// A claimed date in the future is dropped when the article is stored; a later valid report should
+// still be able to fill the blank it left behind.
+test("a date rejected as future does not block a valid one later", async () => {
+  const url = `https://example.com/date-future-${tag()}`;
+  const base = { sourceId: SOURCE, url, title: "Future claim", excerpt: "same text", via: "fetch" as const };
+  const first = await upsertMaterial({ ...base, publishedAt: new Date(Date.now() + 7 * 86400_000) });
+  const afterFuture = (await sql<{ published_at: Date | null }[]>`SELECT published_at FROM articles WHERE id = ${first.articleId}`)[0]!;
+  assert.equal(afterFuture.published_at, null, "a future claim is not stored");
+
+  const when = new Date("2026-04-23T00:00:00Z");
+  await upsertMaterial({ ...base, publishedAt: when });
+  const filled = (await sql<{ published_at: Date | null }[]>`SELECT published_at FROM articles WHERE id = ${first.articleId}`)[0]!;
+  assert.equal(filled.published_at?.toISOString(), when.toISOString());
+});

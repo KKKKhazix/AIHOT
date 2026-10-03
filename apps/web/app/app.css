@@ -256,7 +256,7 @@
     border-radius: var(--radius-control);
     animation: skeleton-pulse 1.6s ease-in-out infinite;
   }
-  /* Hide horizontal scrollbars on chip and tab rows that scroll on small screens. */
+  /* Hide scrollbars without disabling scrolling (navigation, chips and tabs). */
   .scrollbar-none {
     scrollbar-width: none;
   }

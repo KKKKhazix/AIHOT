@@ -171,6 +171,18 @@ test("首次回灌保留数量和年龄限制，下一次普通采集补齐再�
   assert.equal(listing.requests[1]!.etag, undefined);
 });
 
+test("initialBackfillOnly 时，下一次普通采集不再补进加入前的旧条目", async () => {
+  const rows = items("only", 30);
+  for (const [i, row] of rows.entries()) if (i >= 10) row.date = new Date(Date.now() - (3 + i) * 86400000).toISOString();
+  const { id } = await source("only", "rss", rows, { _aihot: { initialBackfillLimit: 4, initialBackfillOnly: true } }, false);
+  assert.equal((await collectSource(id)).created, 4);
+  const second = await collectSource(id);
+  assert.deepEqual([second.status, second.found, second.created], ["ok", 30, 6]);
+  assert.equal(await count(id), 10);
+  const [old] = await sql`SELECT count(*)::int AS n FROM articles WHERE source_id=${id} AND published_at < now() - interval '3 days'`;
+  assert.equal(old!.n, 0);
+});
+
 test("大列表仍严格限制详情请求并保留已知详情标题", async () => {
   const rows = items("detail", 100).map(i => ({ ...i, title: "Read more", date: null }));
   const { id } = await source("detail", "web_list", rows, { detail: { maxFetches: 3, titleSelector: "h1", titleAuthoritative: true, publishedAtSelector: "time" } });

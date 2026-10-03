@@ -1,7 +1,7 @@
 // Collection run for one source: fetch listing → filter → store material → enqueue processing.
 // A failed fetch never advances the success cursor; the source's health reflects consecutive failures.
 import { sql } from "../db.ts";
-import { identityKeyFor, upsertMaterial } from "../content/materials.ts";
+import { identityKeyFor, STALE_ON_DISCOVERY_MS, upsertMaterial } from "../content/materials.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
 import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
 import { queueProcessing } from "../jobs/content.ts";
@@ -136,6 +136,12 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     if (firstImport) {
       const cutoff = Date.now() - backfillMonths * 30 * 86400000;
       candidates = candidates.filter((c) => !c.publishedAt || !Number.isFinite(c.publishedAt.getTime()) || c.publishedAt.getTime() >= cutoff).slice(0, backfillLimit);
+    } else if (source.config._aihot?.initialBackfillOnly === true && source.cursor?.initializedAt) {
+      // History only through the bounded first import: what was published well before the source was
+      // added stays out on later runs too. A long feed (a company newsroom, a podcast archive) would
+      // otherwise send its whole archive through analysis on the second run.
+      const floor = Date.parse(String(source.cursor.initializedAt)) - STALE_ON_DISCOVERY_MS;
+      candidates = candidates.filter((c) => !c.publishedAt || !Number.isFinite(c.publishedAt.getTime()) || c.publishedAt.getTime() >= floor);
     }
     // Process all candidates already returned before advancing the success cursor.
 

@@ -19,7 +19,7 @@ import { sendProblem } from "./http/respond.ts";
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: { level: process.env.LOG_LEVEL || "info", redact: ["req.headers.authorization", "req.headers.cookie"] },
+    logger: { level: process.env.LOG_LEVEL || "info", redact: ["req.headers.authorization", "req.headers.cookie", "req.body.apiKey"] },
     // Access logs never record query strings (tokens, actors).
     disableRequestLogging: true,
     trustProxy: true,

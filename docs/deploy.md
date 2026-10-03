@@ -97,7 +97,17 @@ docker compose exec -T db pg_dump -U aihot aihot | gzip > myhot-$(date +%F).sql.
 
 数据都在三个 Docker 卷里：`db`（数据库）、`data`（上传的图片、图片缓存、本地备份）、`caddy`（证书）。`docker compose down` 不会删除它们；`docker compose down -v` 会。
 
-### 看日志
+### 在后台更换模型接口
+
+打开 `/admin/models` 的“模型 API 连接”，粘贴 API Key。支持的密钥格式会给出服务商建议；通用 `sk-` 密钥无法可靠判断厂商，需要从菜单选择一次。常见服务商会自动填写地址、默认模型和参数，百炼需选择密钥所属地域。
+
+第三方中转站请选择“第三方中转 / 自定义”，填写其提供的 OpenAI 兼容 Base URL。点击“读取模型列表”后可选择模型；没有 `/models` 接口的平台可以直接填写模型名称。读取列表只请求当前选择的地址，不会将密钥发送给其他厂商，不会调用聊天模型。模型名称本身不能判断密钥所属平台。
+
+“保存并使用”后，API 和 worker 会在约 5 秒内加载新配置，无需编辑 `.env` 或重启 Docker。已在执行的调用继续完成，历史内容不会重新评分；已有单项能力的模型选择仍然保留。新连接替代 `.env` 的默认模型配置，付费调用继续经过原有预算与回执机制。
+
+后台密钥使用 `SESSION_SECRET` 派生的 AES-GCM 密钥加密后存入数据库，不在页面或审计记录中回显。备份时需要保留数据库和原 `SESSION_SECRET`；更换该密钥前应先安排重新填写模型 API Key。
+
+### 查看运行日志
 
 ```bash
 docker compose logs -f --tail 100 api worker web

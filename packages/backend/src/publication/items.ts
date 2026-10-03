@@ -3,6 +3,7 @@
 import type { CategoryKey, ChannelKey } from "@aihot/contracts/taxonomy";
 import type { FeedItemSummary, ItemSummary, MediaView, XPostView } from "@aihot/contracts/site";
 import { POLICY } from "@aihot/industry/site";
+import { CATEGORIES } from "@aihot/industry/taxonomy";
 import { sql, type Db } from "../db.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { displayTags, publicSourceName } from "./rules.ts";
@@ -76,8 +77,10 @@ export function channelCondition(channel: ChannelKey | null | undefined) {
 
 export function categoryCondition(category: CategoryKey | null | undefined, v1 = false) {
   if (!category) return sql``;
-  // v1 and RSS publish opinion as tip.
-  if (v1 && category === "tip") return sql`AND p.category IN ('tip', 'opinion')`;
+  // The public API, RSS and MCP publish a category with `publicAs` as that one, so filtering by it takes
+  // those in too. Read from the industry's categories: no key is spelled out here.
+  const published = v1 ? CATEGORIES.filter((c) => "publicAs" in c && c.publicAs === category).map((c) => c.key) : [];
+  if (published.length) return sql`AND p.category IN ${sql([category, ...published])}`;
   return sql`AND p.category = ${category}`;
 }
 

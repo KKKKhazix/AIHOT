@@ -6,7 +6,7 @@ import { SourceAvatar } from "../../components/ui/SourceAvatar";
 import { Lightbox } from "../../components/ui/Lightbox";
 import { toggleStar, useIsStarred } from "../../lib/local-state";
 
-/** "IT之家（RSS）" or, for X, avatar + display name + @handle. */
+/** The source's name, or, for X, avatar + display name + @handle. */
 export function SourceLine({ item, avatarSize = 16, className = "" }: { item: Pick<FeedItemSummary, "source" | "x" | "channel">; avatarSize?: number; className?: string }) {
   if (item.channel === "x" && item.x) {
     return (

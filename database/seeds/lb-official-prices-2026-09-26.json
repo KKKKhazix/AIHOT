@@ -1,6 +1,5 @@
 {
   "_note": "Official API prices per million tokens, in each vendor's listed currency, from the vendor pages linked in each entry (checked on 2026-09-26). The pages show them in CNY at the current USD/CNY rate.",
-  "verifiedOn": "2026-09-26",
   "prices": {
     "claude-opus-5-5": ["USD", 4, 20, 0.2, "https://platform.claude.com/docs/en/models/opus-5-5/overview"],
     "claude-fable-5-1": ["USD", 10, 50, 0.25, "https://platform.claude.com/docs/en/models/fable-5-1/overview"],

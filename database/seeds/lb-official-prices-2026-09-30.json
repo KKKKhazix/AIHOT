@@ -1,6 +1,5 @@
 {
   "_note": "Official API prices for the models on the public boards and their 国产厂商/开源模型 filters that had none, read from the vendor pages linked here on 2026-09-30. Per million tokens, standard tier, first input-length tier; CNY for domestic vendors. Permanent vendor discounts are applied (MiniMax-M3 永久五折), limited-time ones are not (Qwen3.7-Plus 限时八折). Hybrid models use the reasoning-mode output price, matching the tested configuration. Bailian's table leaves out cache-hit prices (implicit and explicit caching differ), so Qwen cache stays empty. GLM-4.7 uses the [0,32K) input tier with output of 0.2K or more. Rows with no prices carry a note: the vendor sells no paid API for that exact model.",
-  "verifiedOn": "2026-09-30",
   "prices": {
     "claude-sonnet-5-5": ["USD", 2, 10, 0.2, "https://platform.claude.com/docs/en/about-claude/pricing"],
     "gpt-6-1-sol": ["USD", 2, 10, 0.1, "https://developers.openai.com/api/docs/pricing"],

@@ -89,6 +89,12 @@ test("a text corrected while its translation was running is translated again, an
   assert.equal(stale.body.zh, null, "a translation of the old wording is not shown");
   assert.ok(stale.body.original?.includes("twenty"));
 
+  // The corrected material waits for its own analysis and identity decision before another paid
+  // translation. Install that completed current-revision fixture, as the processing chain does.
+  assert.equal((await sql`SELECT selected FROM publications WHERE article_id=${id}`)[0]!.selected, false);
+  await sql`UPDATE analyses SET input_revision=2 WHERE article_id=${id}`;
+  await sql`UPDATE articles SET processing_state='analyzed',grouping_status='complete',grouped_at=now() WHERE id=${id}`;
+  await publishArticle(id);
   await translatePending({ limit: 1 });
   const [tr] = await sql<{ revision: number }[]>`SELECT revision FROM translations WHERE article_id = ${id}`;
   assert.equal(tr?.revision, 2, "the corrected text is translated on the next run");

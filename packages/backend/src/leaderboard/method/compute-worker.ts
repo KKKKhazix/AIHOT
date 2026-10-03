@@ -1,6 +1,6 @@
 // Pure computation only: this thread never opens a database or calls a provider.
 import { parentPort, workerData } from "node:worker_threads";
-import { computeBoard, type BoardInput } from "./v15.ts";
+import { computeBoard, type BoardInput } from "./consensus.ts";
 import type { ComputedBoards } from "./compute.ts";
 
 const boards = workerData as BoardInput[];

@@ -1,6 +1,6 @@
-// Listing parsers on the page shapes Jina returns for real sites: card links that wrap
-// an image, a title attribute, http links under https prefixes, and navigation that is no post. Also
-// what made articles flip between versions: in-page anchors of an HTML listing and
+// Listing parsers on the page shapes Jina returns for real sites: card links that wrap an image, a title
+// attribute, http links under https prefixes, and navigation that is no post. Also what made articles
+// flip between versions: in-page anchors of an HTML listing and
 // promotions a feed rotates inside its posts. And the Xiaomi MiMo homepage, whose posts have no links in
 // its HTML: read without its adapter, it gave the menu (MiMo Desktop, 简体中文) as articles.
 import "./setup.ts";
@@ -13,7 +13,6 @@ import { fetchDetail, fetchWebList, fromHtml, fromMarkdown } from "@aihot/backen
 import { fetchRss } from "@aihot/backend/sources/rss";
 import { fetchJsonList } from "@aihot/backend/sources/json-list";
 import { noiseFiltered } from "@aihot/backend/sources/collect";
-import { unsupportedConfig } from "@aihot/backend/sources/config-keys";
 
 const source = (config: Record<string, unknown>) => ({ id: "test-list", config }) as never;
 
@@ -150,16 +149,6 @@ test("the MiMo homepage lists its posts and model pages, not its menu", async ()
 
 test("a MiMo homepage without the list fails the fetch instead of listing its menu", async () => {
   await assert.rejects(fetchWebList(source({ url: `${site}/redesigned/`, adapter: "mimo_home" })), /mimo_home/);
-});
-
-test("config entries a source kind does not implement are named, not ignored", () => {
-  // Configs naming adapters or rules a collector does not implement used to fall back to the generic parse.
-  assert.deepEqual(
-    unsupportedConfig("web_list", { url: "https://example.org/", adapter: "site_cards", detail: { maxFetches: 5, titleFoo: "h1" }, contentPublic: false }),
-    ["adapter=site_cards", "detail.titleFoo", "contentPublic"],
-  );
-  assert.deepEqual(unsupportedConfig("rss", { feedUrl: "https://example.org/feed", denyUrlPrefixes: ["https://example.org/business/"] }), []);
-  assert.deepEqual(unsupportedConfig("x_search", { query: "from:a", allowUrlPrefixes: ["https://example.org/"] }), ["allowUrlPrefixes"], "X shards apply no URL rules");
 });
 
 test("a listing that links other articles in its teasers takes only the links that begin a line", () => {

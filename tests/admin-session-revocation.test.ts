@@ -20,9 +20,6 @@ const APP = `test-login-app-${T}`;
 const original = { password: config.adminPassword, unions: config.adminUnionIds, emails: config.adminEmails, dev: config.devAdmin, environment: config.environmentName };
 const envKeys = ["SESSION_SECRET", "FEISHU_LOGIN_APP_ID", "FEISHU_LOGIN_APP_SECRET"];
 const oldEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
-const tokens: string[] = [];
-const users = new Set<number>();
-let existingUsers = new Set<number>();
 let profile: { union_id?: string; email?: string; enterprise_email?: string; name?: string } = {};
 let userInfoGate: (() => Promise<void>) | null = null;
 const oauth = await stub(async (_hit, req) => {
@@ -51,16 +48,13 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
 }) as typeof fetch;
 const cookie = (token: string) => `${SESSION_COOKIE}=${token}`;
 async function password(password = PASSWORD_A) {
-  const login = await passwordLogin(password, "/admin", "synthetic-agent");
-  tokens.push(login.token); users.add(Number(login.userId));
-  return login.token;
+  return (await passwordLogin(password, "/admin", "synthetic-agent")).token;
 }
 async function federated(claims = profile) {
   profile = claims;
   const redirect = loginRedirect("/admin");
   const state = new URL(redirect.url).searchParams.get("state")!;
   const login = await completeLogin("synthetic-code", state, redirect.stateCookie, "synthetic-agent");
-  tokens.push(login.token); users.add(Number(login.userId));
   return login.token;
 }
 async function request(path: string, token: string, csrf?: string) {
@@ -89,7 +83,6 @@ async function bindingColumns() {
 }
 
 before(async () => {
-  existingUsers = new Set((await sql<{ id: number }[]>`SELECT id FROM admin_users`).map((u) => Number(u.id)));
   base = await app.listen({ host: "127.0.0.1", port: 0 });
 });
 beforeEach(() => {
@@ -107,9 +100,6 @@ beforeEach(() => {
 after(async () => {
   globalThis.fetch = realFetch;
   await app.close(); await oauth.close();
-  if (tokens.length) await sql`DELETE FROM admin_sessions WHERE id_hash=ANY(${tokens.map(sha256)})`;
-  const created = [...users].filter((id) => !existingUsers.has(id));
-  if (created.length) await sql`DELETE FROM admin_users WHERE id=ANY(${created}::bigint[])`;
   config.adminPassword = original.password; config.adminUnionIds = original.unions; config.adminEmails = original.emails;
   config.devAdmin = original.dev; config.environmentName = original.environment;
   for (const [key, value] of oldEnv) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
@@ -200,7 +190,6 @@ test("Feishu original union or normalized email remains authorized under OR sema
 test("a coalesced older profile email cannot keep a newly verified identity authorized", async () => {
   const union = `union-stale-${T}`; const oldEmail = `old-${T}@example.test`; const newEmail = `new-${T}@example.test`;
   const [user] = await sql<{ id: number }[]>`INSERT INTO admin_users(feishu_union_id,email) VALUES(${union},${oldEmail}) RETURNING id`;
-  users.add(Number(user!.id));
   config.adminUnionIds = [union];
   const token = await federated({ union_id: union, email: newEmail });
   const [profileRow] = await sql<{ email: string }[]>`SELECT email FROM admin_users WHERE id=${user!.id}`;
@@ -275,7 +264,7 @@ for (const next of [SECRET_B, ""]) test(`session-secret ${next ? "rotation" : "r
 test("legacy unbound sessions fail closed and are deleted", async () => {
   const valid = await password();
   const [user] = await sql<{ user_id: number }[]>`SELECT user_id FROM admin_sessions WHERE id_hash=${sha256(valid)}`;
-  const token = randomBytes(32).toString("base64url"); tokens.push(token);
+  const token = randomBytes(32).toString("base64url");
   await sql`INSERT INTO admin_sessions(id_hash,user_id,csrf_token,expires_at) VALUES(${sha256(token)},${user!.user_id},'legacy-csrf',now()+interval '1 day')`;
   await revoked(token, "legacy-csrf");
   assert.equal(await exists(token), false);

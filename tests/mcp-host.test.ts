@@ -1,3 +1,6 @@
+// MCP answers only requests addressed to this site (SITE_URL, MCP_ALLOWED_HOSTS and localhost): the
+// Host, or the forwarded host, is parsed whole (one host and an optional port); anything malformed,
+// empty, repeated or foreign is refused before the request is read.
 import "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
@@ -103,7 +106,7 @@ function rawRequest(address: string, authorityHeaders: string[], method = "POST"
 }
 
 test("MCP rejects an empty Host received over HTTP", async () => {
-  // 注入工具会把空 Host 自动补成 localhost，因此此边界使用真实 HTTP 请求。
+  // Injected requests turn an empty Host into localhost, so this one goes over real HTTP.
   const server = Fastify();
   registerMcp(server);
   try {
@@ -118,7 +121,7 @@ test("MCP rejects an empty Host received over HTTP", async () => {
 });
 
 test("MCP rejects repeated effective authority headers over HTTP", async () => {
-  // 必须发送原始字段，避免注入工具合并重复 Host 后掩盖 Node 丢弃后续值的行为。
+  // Raw header fields: injection would merge repeated Host values and hide which one Node keeps.
   const server = Fastify();
   registerMcp(server);
   try {
@@ -198,7 +201,7 @@ test("MCP preserves preflight, unsupported methods, and shared GET/DELETE Host c
 });
 
 function checkConfiguration(siteUrl: string, allowedHosts: string, cases: Array<{ headers: Record<string, string>; status: number }>) {
-  // 独立进程在导入路由前设置配置，避免模块缓存掩盖环境变量行为。
+  // A process of its own sets the configuration before the route loads (the module reads it once).
   execFileSync(process.execPath, ["--input-type=module", "-e", `
     import assert from "node:assert/strict";
     import Fastify from "fastify";

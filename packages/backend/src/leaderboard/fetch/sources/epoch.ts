@@ -1,7 +1,7 @@
 // Epoch AI Benchmarking Hub (CC BY 4.0): Epoch's own evaluations, one CSV per benchmark in the
 // published archive. The run setting follows the last underscore ("_xhigh", "_none", "_32K").
 import { guardedFetch } from "../../../lib/http-fetch.ts";
-import { configurationOf, REASONS } from "../configuration.ts";
+import { configurationOf, REASONS, slug } from "../configuration.ts";
 import { parseCsv } from "../csv.ts";
 import { unzipEntries } from "../unzip.ts";
 import type { FetchResult, Fetcher, ParsedRow } from "../types.ts";
@@ -22,8 +22,6 @@ const BOARDS = [
 /** Agent systems and unverified run settings that cannot stand for one public model. */
 const SPECIAL_SYSTEMS = new Set(["gdm-ai-co-mathematician"]);
 const TIER = /^(xhigh|high|medium|low|max|minimal)$/i;
-
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 export function epochConfiguration(version: string) {
   const i = version.lastIndexOf("_");
@@ -82,7 +80,10 @@ export const epoch: Fetcher = {
           lowerBound: hasError ? score - stderr : null,
           upperBound: hasError ? score + stderr : null,
           sourcePublishedAt: started,
-          metadata: { stderr: Number.isFinite(stderr) ? stderr : null, runId: r.id || null, metricDirection: "HIGHER" },
+          metadata: {
+            stderr: Number.isFinite(stderr) ? stderr : null, runId: r.id || null, measuredAt: started,
+            logUrl: r["Log viewer"] || r.Logs || null, metricDirection: "HIGHER",
+          },
         });
       }
       out.push({

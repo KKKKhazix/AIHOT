@@ -4,8 +4,14 @@ import { beijingDate, beijingTime } from "@aihot/contracts/time";
 /** ≥ ¥0.1 → up to two decimals; smaller amounts keep three significant digits. */
 export function yuan(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
+  if (v === 0) return "免费";
   const n = v >= 0.1 ? Number(v.toFixed(2)) : Number(v.toPrecision(3));
   return `¥${n.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
+}
+
+/** A checked model the vendor sells no paid API for (retired, weights only, free trial only). */
+export function noOfficialApi(p: LbPrice | null): boolean {
+  return !!p && p.input == null && p.output == null;
 }
 
 export function listPrice(v: number | null, currency: LbPrice["currency"]): string {
@@ -41,4 +47,9 @@ export function boardHref(key: string): string {
 
 export function modelHref(slug: string, from?: string | null): string {
   return from && from !== "overall" ? `/leaderboard/${slug}?from=${from}` : `/leaderboard/${slug}`;
+}
+
+/** One decimal for the comparative index; a missing score is never shown as zero. */
+export function score(value: number | null | undefined): string {
+  return value == null || !Number.isFinite(value) ? "—" : value.toFixed(1);
 }

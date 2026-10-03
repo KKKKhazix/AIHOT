@@ -1,14 +1,12 @@
 // One leaderboard computation round: build inputs from the latest snapshots, compute every board
-// with method v15, and publish only when the evidence changed and every published board solved
+// with the current method, and publish only when the evidence changed and every published board solved
 // to optimality. A failed round keeps the previous published run on the site.
+import { LEADERBOARD_PUBLIC_BOARDS } from "@aihot/contracts/taxonomy";
 import { newArticleId, sha256, stableJson } from "../../lib/ids.ts";
 import { sql } from "../../db.ts";
 import { buildRunInputs, type RunInputs } from "./inputs.ts";
-import { ANCHORS, BUDGETS, METHOD_VERSION } from "./v15.ts";
+import { ANCHORS, BUDGETS, METHOD_VERSION } from "./consensus.ts";
 import { computeBoardsInWorker } from "./compute.ts";
-
-export const TIE_POLICY = "published-order-then-slug/highs-js";
-const PUBLIC_BOARDS = ["overall", "coding", "reasoning", "knowledge", "professional"];
 
 export interface RoundResult {
   /** "refreshed": the same ranking republished with the current exchange rate and verification times. */
@@ -40,24 +38,23 @@ async function republishEvidence(latestId: string, inputs: RunInputs, at: Date):
   if (!latest) return null;
   const fxQuote = await currentFxQuote();
   const was = latest.summary;
-  const evidenceOf = (x: { fxQuote?: unknown; sources?: unknown; categories?: unknown; consensus?: { evidence?: unknown } }) =>
-    stableJson({ fx: x.fxQuote ?? null, sources: x.sources ?? null, categories: x.categories ?? null, evidence: x.consensus?.evidence ?? null });
-  const next = { ...was, fxQuote, sources: inputs.sources, categories: inputs.categories, consensus: { ...was.consensus, evidence: inputs.evidence } };
+  const evidenceOf = (x: { fxQuote?: unknown; consensus?: { evidence?: unknown; exclusions?: unknown } }) =>
+    stableJson({ fx: x.fxQuote ?? null, evidence: x.consensus?.evidence ?? null, exclusions: x.consensus?.exclusions ?? null });
+  const next = { ...was, fxQuote, consensus: { ...was.consensus, evidence: inputs.evidence, exclusions: inputs.exclusions } };
   if (evidenceOf(next) === evidenceOf(was)) return null;
   const runId = newArticleId();
   await sql.begin(async (tx) => {
     const [run] = await tx<{ methodology_version: string }[]>`SELECT methodology_version FROM lb_runs WHERE id = ${latestId}`;
     await tx`INSERT INTO lb_runs (id, methodology_version, generated_at, source_snapshot_ids, summary, status, origin)
              VALUES (${runId}, ${run!.methodology_version}, ${at}, ${inputs.snapshotIds}, ${tx.json(next as never)}, 'published', 'computed')`;
-    await tx`INSERT INTO lb_rankings (run_id, board, model_id, rank, score, uncertainty, coverage, confidence, metric_count, summary, component_scores, detail)
-             SELECT ${runId}, board, model_id, rank, score, uncertainty, coverage, confidence, metric_count, summary, component_scores, detail
-             FROM lb_rankings WHERE run_id = ${latestId}`;
+    await tx`INSERT INTO lb_rankings (run_id, board, model_id, rank, score, coverage, detail)
+             SELECT ${runId}, board, model_id, rank, score, coverage, detail FROM lb_rankings WHERE run_id = ${latestId}`;
   });
   return runId;
 }
 
-export async function runLeaderboardRound(opts: { at?: Date; force?: boolean } = {}): Promise<RoundResult> {
-  const at = opts.at ?? new Date();
+export async function runLeaderboardRound(opts: { force?: boolean } = {}): Promise<RoundResult> {
+  const at = new Date();
   const inputs = await buildRunInputs({ at });
   const fingerprint = inputFingerprint(inputs);
   const [latest] = await sql<{ id: string; fingerprint: string | null }[]>`
@@ -68,21 +65,20 @@ export async function runLeaderboardRound(opts: { at?: Date; force?: boolean } =
     return { status: refreshed ? "refreshed" : "unchanged", runId: refreshed ?? latest.id, fingerprint, boards: [] };
   }
 
-  const { outputs: computed, timings } = await computeBoardsInWorker(inputs.boards);
+  const { outputs, timings } = await computeBoardsInWorker(inputs.boards);
 
   // A published board must solve to optimality over one connected evidence network, and meet the
-  // method's evidence minimums (legacy public consensus): the overall board at least 10 qualified
-  // models with 8 reference models among them, a category 5 and 4. A public board short of them fails
-  // the round, so the previous valid run stays on the site; an internal board short of them is left out.
+  // method's evidence minimums: the overall board at least 10 qualified models with 8 reference models
+  // among them, a category 5 and 4. A board short of them fails the round, so the previous valid run
+  // stays on the site.
   const enough = (board: string) => {
     const models = inputs.boards.find((b) => b.board === board)?.models ?? [];
     const anchors = models.filter((m) => (ANCHORS as readonly string[]).includes(m)).length;
     return board === "overall" ? models.length >= 10 && anchors >= 8 : models.length >= 5 && anchors >= 4;
   };
-  const outputs = computed.filter((o) => PUBLIC_BOARDS.includes(o.board) || enough(o.board));
-  const broken = PUBLIC_BOARDS.filter((board) => {
+  const broken = LEADERBOARD_PUBLIC_BOARDS.filter((board) => {
     const output = outputs.find((o) => o.board === board);
-    return !output || !output.solver.optimal || !output.publishable_connectivity || !enough(board);
+    return !output || !output.solver.optimal || !output.scoring.optimal || !output.publishable_connectivity || !enough(board);
   });
   const reason = broken.length ? `not publishable: ${broken.join(", ")}` : undefined;
 
@@ -91,13 +87,12 @@ export async function runLeaderboardRound(opts: { at?: Date; force?: boolean } =
     budgets: BUDGETS,
     fxQuote: await currentFxQuote(),
     sources: inputs.sources,
-    categories: inputs.categories,
     consensus: {
       input: inputs.boards,
       boards: outputs,
       version: METHOD_VERSION,
       evidence: inputs.evidence,
-      tiePolicy: TIE_POLICY,
+      exclusions: inputs.exclusions,
       fingerprint,
       calculatedAt: new Date().toISOString(),
     },
@@ -119,9 +114,7 @@ export async function runLeaderboardRound(opts: { at?: Date; force?: boolean } =
           rank: e.rank,
           score: e.score,
           coverage: e.coverage,
-          metric_count: e.source_count,
-          summary: `${e.source_count} 项评测 · ${e.operator_count} 家机构`,
-          detail: { stability: e.stability, sourceCount: e.source_count, operatorCount: e.operator_count },
+          detail: { scoreVersion: out.scoring.version, sourceCount: e.source_count, operatorCount: e.operator_count, unknownErrorCount: e.unknownErrorCount },
         }));
       for (let i = 0; i < rows.length; i += 500) await tx`INSERT INTO lb_rankings ${tx(rows.slice(i, i + 500) as never)}`;
     }

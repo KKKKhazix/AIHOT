@@ -1,4 +1,5 @@
-// 使用真实生产 SSR 服务与回环 API 夹具验证报头；不是浏览器截图或画布交互测试。
+// Issue numbers on the real server-rendered report pages (built web, a loopback API stand-in): the
+// masthead and the calendar show each issue's own number, not its place in the 400-entry navigation.
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
@@ -19,8 +20,8 @@ const keys = Object.fromEntries(kinds.map((kind) => [kind, Array.from({ length: 
 const index = (kind: ReportKind): ReportNavigationEntry[] => keys[kind].map((key, i) => ({ key, issueNumber: i + 1, title: `第${i + 1}期` })).reverse().slice(0, 400);
 function report(kind: ReportKind, key: string): ReportDetail {
   return {
-    kind, key, issueNumber: keys[kind].indexOf(key) + 1, title: "测试刊物", windowStart: "2020-01-01T00:00:00Z", windowEnd: "2020-01-02T00:00:00Z", generatedAt: "2020-01-02T00:00:00Z", revision: 1,
-    lead: null, overview: null, highlights: [], sections: [], stories: [], flashes: [], cover: null, metrics: {}, readingMinutes: 1, prev: null, next: null,
+    kind, key, issueNumber: keys[kind].indexOf(key) + 1, title: "测试刊物", generatedAt: "2020-01-02T00:00:00Z",
+    lead: null, leadItemId: null, overview: null, highlights: [], sections: [], flashes: [], cover: null, metrics: {}, readingMinutes: 1, prev: null, next: null,
   };
 }
 let web: ChildProcess;
@@ -109,9 +110,9 @@ for (const kind of kinds) {
   test(`${kind} known entries without numbers stay published without length-based fallback`, () => {
     const current = keys[kind].at(-1)!;
     const previous = keys[kind].at(-2)!;
-    const legacy = [{ key: current }, { key: previous }];
-    assert.equal(issueNumber(legacy, current), null);
-    const grid = periodGrid(kind, current, legacy);
+    const unnumbered = [{ key: current }, { key: previous }];
+    assert.equal(issueNumber(unnumbered, current), null);
+    const grid = periodGrid(kind, current, unnumbered);
     for (const key of [current, previous]) {
       const cell = grid.cells.find((entry) => entry.key === key)!;
       assert.match(cell.label, /已出刊/);

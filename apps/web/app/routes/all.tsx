@@ -1,31 +1,39 @@
-import { SITE, withSubject } from "@aihot/industry/site";
-import { Link, useLoaderData, useNavigation, useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, redirect, useLoaderData, useLocation, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/all";
 import type { PoolResponse } from "@aihot/contracts/site";
-import { isCategoryKey, isChannelKey } from "@aihot/contracts/taxonomy";
-import { loadOr404, queryString } from "../lib/api.server";
-import { listPath, pageMeta } from "../lib/seo";
-import { CategoryTabs, SearchField } from "../features/feed/Filters";
+import { SITE, subjectAfter } from "@aihot/industry/site";
+import { beijingTime } from "@aihot/contracts/time";
+import { edgeTtl, loadOr404 } from "../lib/api.server";
+import { filterParams, itemListLd, listPath, pageMeta, readFilters } from "../lib/seo";
+import { ActiveFilters, CategoryTabs, FeedBar, SearchField } from "../features/feed/Filters";
 import { PillTabs } from "../components/ui/Tabs";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { EmptyState } from "../components/ui/Page";
 import { RingMark } from "../components/Logo";
+import { IconSearch } from "../components/icons";
+import { PhoneBar } from "../components/shell/PhoneBar";
+import { isPhone, type Screen } from "../components/shell/screens";
+import { openSearch } from "../features/search/SearchOverlay";
+import { addRecentSearch } from "../lib/local-state";
+
+export const handle: Screen = { tab: "featured", name: "全部" };
+
+const ALL_TITLE = subjectAfter("全部", "动态");
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
-  const channelParam = url.searchParams.get("channel") ?? "all";
-  const categoryParam = url.searchParams.get("category");
-  const channel = isChannelKey(channelParam) ? channelParam : "all";
-  const category = categoryParam && isCategoryKey(categoryParam) ? categoryParam : null;
-  const tag = url.searchParams.get("tag")?.trim() || null;
   const q = url.searchParams.get("q")?.trim().slice(0, 200) || null;
   const tab = url.searchParams.get("tab") === "relevance" ? "relevance" : null;
-  // Legacy deep-paging parameters (deep, anchorAt) still open a normal page.
+  // Older deep-paging parameters (deep, anchorAt) still open a normal page.
   const page = Math.min(Math.max(Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1, 1), 50);
   const data = await loadOr404<PoolResponse>(
-    `/api/site/pool${queryString({ channel: channel === "all" ? null : channel, category, tag, q, tab, page: page > 1 ? page : null })}`,
-    { signal: request.signal, busyRedirect: "/all/search-busy" },
+    listPath("/api/site/pool", { ...filterParams(readFilters(url.searchParams)), q, tab, page: page > 1 ? page : null }),
+    // The busy page keeps the search, so it can be tried again as it was.
+    { signal: request.signal, busyRedirect: `/all/search-busy${url.search}` },
   );
+  // Past the last page of what there is: the last page, with the same search and filters.
+  if (data.total > 0 && data.page > data.pageCount) throw redirect(pageHref(url.searchParams, data.pageCount));
   return { data };
 }
 
@@ -33,16 +41,18 @@ export function meta({ loaderData }: Route.MetaArgs) {
   const f = loaderData?.data.filters;
   const q = f?.q;
   const page = loaderData?.data.page ?? 1;
+  const path = listPath("/all", { ...(f && filterParams(f)), q, tab: f?.tab === "relevance" ? "relevance" : null, page: page > 1 ? page : null });
   return pageMeta({
-    title: q ? `搜索：${q}` : `全部${withSubject("动态")}`,
-    description: `${SITE.name} 收录的全部${withSubject("动态")}，可按类别与标签筛选，支持中英文搜索。`,
-    path: listPath("/all", { channel: f && f.channel !== "all" ? f.channel : null, category: f?.category, tag: f?.tag, q, tab: f?.tab === "relevance" ? "relevance" : null, page: page > 1 ? page : null }),
+    title: q ? `搜索：${q}` : ALL_TITLE,
+    description: `${SITE.name} 收录的${subjectAfter("全部", "相关动态")}，可按频道、类别与标签筛选，支持中英文搜索。`,
+    path,
     noindex: !!q,
+    jsonLd: q ? undefined : itemListLd(path, ALL_TITLE, loaderData?.data.items.map((i) => i.title) ?? []),
   });
 }
 
 export function headers() {
-  return { "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=30" };
+  return edgeTtl(60);
 }
 
 function pageHref(params: URLSearchParams, page: number) {
@@ -62,7 +72,8 @@ export default function AllPage() {
   const navigation = useNavigation();
   const f = data.filters;
   const busy = navigation.state === "loading" && navigation.location?.pathname === "/all";
-  const keep = { channel: f.channel === "all" ? null : f.channel, category: f.category };
+  const { channel, category } = filterParams(f);
+  const keep = { channel, category };
   const searchTabHref = (tab: "time" | "relevance") => {
     const sp = new URLSearchParams(params);
     sp.delete("page");
@@ -71,37 +82,45 @@ export default function AllPage() {
     return `/all?${sp}`;
   };
   const title = f.q ? `搜索“${f.q}”` : f.tag ? `#${f.tag}` : null;
-  const updated = new Date(data.freshness).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Shanghai" });
+  const updated = beijingTime(data.freshness);
+  // Searches are remembered in this browser for the phone search (listed in the privacy notice).
+  useEffect(() => {
+    if (f.q) addRecentSearch(f.q);
+  }, [f.q]);
+  // Older phone links (/all?search=1) opened the search field; they open the search now.
+  useEffect(() => {
+    if (params.get("search") === "1" && isPhone()) openSearch(f.q ?? "");
+  }, []);
 
   return (
     <div className="pb-6">
+      {/* Phones: the feed bar, or for a search the query (tap to change it) and back to 全部. */}
+      {f.q ? (
+        <PhoneBar
+          back={{ to: "/all", label: "全部" }}
+          center={
+            <button type="button" onClick={(event) => openSearch(f.q ?? "", event.currentTarget)} className="flex h-11 min-w-0 max-w-full items-center gap-2 rounded-full bg-bg-sunk px-3.5 text-[15px] text-ink ring-1 ring-inset ring-line-soft dark:bg-bg-muted/60">
+              <IconSearch size={16} className="shrink-0 text-ink-4" />
+              <span className="truncate">{f.q}</span>
+            </button>
+          }
+        />
+      ) : (
+        <FeedBar base="/all" category={f.category} channel={f.channel} />
+      )}
+      <ActiveFilters base="/all" category={f.category} channel={f.channel} tag={f.tag} />
+
       {/* Desktop, as on 精选: the title, then one filter row with the search field aligned on the right. */}
       <div className="hidden lg:block">
-        <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">{title ?? `全部${withSubject("动态")}`}</h1>
+        <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">{title ?? ALL_TITLE}</h1>
         <div className="mb-5 mt-4 flex items-center justify-between gap-4">
           <CategoryTabs base="/all" category={f.category} channel={f.channel} layoutId="all-cat-desk" className="min-w-0" />
-          <SearchField variant="track" defaultValue={f.q ?? ""} keep={keep} />
-        </div>
-      </div>
-
-      {/* Phones: title with today's count, the search bar, then the same filter row as 精选. */}
-      <div className="lg:hidden">
-        <div className="flex items-baseline justify-between pb-3 pt-5">
-          <h1 className="text-[22px] font-bold text-ink">{title ?? "全部动态"}</h1>
-          {!f.q && (
-            <span className="text-[12.5px] text-ink-4">
-              今日 <span className="num">{data.todayCount}</span> 条
-            </span>
-          )}
-        </div>
-        <SearchField variant="bar" defaultValue={f.q ?? ""} keep={keep} autoFocus={params.get("search") === "1"} />
-        <div className="-mx-4 mt-3 border-b border-line-soft px-4 pb-3">
-          <CategoryTabs base="/all" category={f.category} channel={f.channel} layoutId="all-cat-mobile" size="sm" className="min-w-0" />
+          <SearchField defaultValue={f.q ?? ""} keep={keep} />
         </div>
       </div>
 
       {f.q && (
-        <div className="mb-3 mt-3 flex flex-wrap items-center justify-between gap-2 lg:mt-0">
+        <div className="mb-3 mt-1 flex flex-wrap items-center justify-between gap-2 lg:mt-0">
           <PillTabs
             size="xs"
             layoutId="all-search-sort"
@@ -132,7 +151,7 @@ export default function AllPage() {
             </EmptyState>
           </div>
         ) : (
-          <DayList items={data.items} todayCount={f.q ? null : data.todayCount} showTags />
+          <DayList items={data.items} todayCount={f.q ? null : data.todayCount} />
         )}
       </div>
       <Pagination page={data.page} pageCount={data.pageCount} href={(p) => pageHref(params, p)} />
@@ -141,16 +160,42 @@ export default function AllPage() {
   );
 }
 
+const RETRY_AFTER_SECONDS = 5;
+const SEARCH_PARAMS = ["q", "tag", "channel", "category", "page", "tab"];
+
+/** The busy page after an overloaded search: the same search can be tried again after a few seconds. */
 export function SearchBusy() {
+  const { pathname, search } = useLocation();
+  const [wait, setWait] = useState(RETRY_AFTER_SECONDS);
+  useEffect(() => {
+    if (wait <= 0) return;
+    const t = setTimeout(() => setWait((w) => w - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
+  const kept = new URLSearchParams();
+  for (const [k, v] of new URLSearchParams(search)) if (SEARCH_PARAMS.includes(k)) kept.append(k, v);
+  const base = pathname.startsWith("/all") ? "/all" : "/";
+  const retry = kept.toString() ? `${base}?${kept}` : base;
+  const hasSearch = kept.has("q");
+  const button = "inline-flex h-9 items-center rounded-full px-4 text-[13.5px]";
   return (
-    <div className="mx-auto max-w-sm py-24 text-center">
+    <>
+    <PhoneBar back={{ to: base, label: base === "/all" ? "全部" : "精选" }} />
+    <div className="mx-auto max-w-sm py-24 text-center" aria-live="polite">
       <RingMark className="mx-auto mb-5 size-10 text-accent" spinning />
       <h1 className="text-[20px] font-bold text-ink">搜索有点忙</h1>
-      <p className="mt-2 text-[14px] leading-relaxed text-ink-3">现在搜索的人比较多，请稍等几秒再试。列表浏览不受影响。</p>
-      <div className="mt-6 flex justify-center gap-2.5">
-        <Link to="/all" className="inline-flex h-9 items-center rounded-full bg-accent px-4 text-[13.5px] font-medium text-accent-contrast hover:bg-accent-ink">浏览全部动态</Link>
-        <Link to="/" className="inline-flex h-9 items-center rounded-full border border-line-strong bg-surface px-4 text-[13.5px] text-ink-2 hover:border-ink-4">回到精选</Link>
+      <p className="mt-2 text-[14px] leading-relaxed text-ink-3">现在搜索的人比较多，请 {RETRY_AFTER_SECONDS} 秒以后重试。列表浏览不受影响。</p>
+      <div className="mt-6 flex flex-wrap justify-center gap-2.5">
+        {hasSearch &&
+          (wait > 0 ? (
+            <span aria-disabled="true" className={`${button} num cursor-default bg-bg-sunk font-medium text-ink-4`}>{wait} 秒后可重试</span>
+          ) : (
+            <Link to={retry} className={`${button} bg-accent font-medium text-accent-contrast hover:bg-accent-ink`}>重试这次搜索</Link>
+          ))}
+        <Link to="/all" className={`${button} ${hasSearch ? "border border-line-strong bg-surface text-ink-2 hover:border-ink-4" : "bg-accent font-medium text-accent-contrast hover:bg-accent-ink"}`}>浏览全部动态</Link>
+        <Link to="/" className={`${button} border border-line-strong bg-surface text-ink-2 hover:border-ink-4`}>回到精选</Link>
       </div>
     </div>
+    </>
   );
 }

@@ -2,13 +2,12 @@
 // results (pass@1 ± the reported error, per model and reasoning effort). The leaderboard page carries the
 // whole board in its Next.js data; the edition date is the publish date of the post it links to.
 import { guardedFetch } from "../../../lib/http-fetch.ts";
-import { configurationOf, scaffolded } from "../configuration.ts";
+import { configurationOf, scaffolded, slug } from "../configuration.ts";
 import { competitionRanks } from "../rank.ts";
 import type { Fetcher, ParsedRow } from "../types.ts";
 
 const PAGE = "https://www.mercor.com/apex/apex-agents-leaderboard/";
 const HARNESS = "loop_truncated_tools_agent";
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 interface Entry {
   model: { modelId: string; modelName: string; effort: string | null; releaseDate: string | null; provider: { name: string } | null };
@@ -75,7 +74,7 @@ export const mercor: Fetcher = {
         sourceRank: rank[i],
         sampleSize: e.nSamples,
         sourcePublishedAt: publishedAt,
-        metadata: { harness: HARNESS, systemId, statistic: "pass-1", reasoningEffort: m.effort, reportedError: error, metricDirection: "HIGHER" },
+        metadata: { benchmarkVersion: version, sourceModelId: m.modelId, harness: HARNESS, systemId, statistic: "pass-1", reasoningEffort: m.effort, reportedError: error, metricDirection: "HIGHER" },
       };
     });
 

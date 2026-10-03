@@ -3,7 +3,9 @@
 // node scripts/mcp-check.ts [url]
 import { Client } from "@modelcontextprotocol/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { MCP_TOOL_NAMES as T, MCP_TOOLS } from "@aihot/contracts/mcp";
+import { FEATURES } from "@aihot/industry/features";
 import { SITE } from "@aihot/industry/site";
 
 const url = new URL(process.argv[2] ?? "http://127.0.0.1:3001/api/mcp");
@@ -43,6 +45,9 @@ try {
   if (info?.name !== SITE.mcpPrefix) {
     throw new Error(`server name mismatch: expected ${SITE.mcpPrefix}, got ${info?.name ?? "(missing)"}`);
   }
+  if (info?.version !== PUBLIC_INTERFACE_VERSION) {
+    throw new Error(`server version mismatch: expected ${PUBLIC_INTERFACE_VERSION}, got ${info?.version ?? "(missing)"}`);
+  }
 
   const listed = await client.listTools();
   const actualNames = listed.tools.map((tool) => tool.name).sort();
@@ -56,9 +61,12 @@ try {
   await call(T.latest, { limit: 2 });
   await call(T.search, { q: "OpenAI", limit: 2 });
   await call(T.hot, { limit: 3 });
+  if (FEATURES.codexResetMonitor) await call(T.codexResets, {});
 
   // Exercise the remaining tools without depending on seeded reports/stories.
   await call(T.daily, { date: "2026-02-30" }, { error: true, code: "invalid_request" });
+  await call(T.weekly, { week: "2026-W54" }, { error: true, code: "invalid_request" });
+  await call(T.monthly, { month: "2026-13" }, { error: true, code: "invalid_request" });
   await call(T.story, { public_id: "__mcp_check_missing__", report_limit: 3 }, { error: true, code: "not_found" });
 
   // SDK/server schema validation must reject values outside the advertised input contract.

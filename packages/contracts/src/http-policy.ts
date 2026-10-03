@@ -1,5 +1,5 @@
-// Outward HTTP behaviour, defined once: CORS, cache lifetimes, redirects and which process owns a path.
-// The API server and the web server both read this module.
+// Outward HTTP behaviour, defined once: CORS, the public interface version, redirects and which process
+// owns a path. The API server and the web server both read this module.
 
 /** CORS for /api/v1/* and /openapi-v1.json. */
 export const PUBLIC_API_CORS: Record<string, string> = {
@@ -10,26 +10,9 @@ export const PUBLIC_API_CORS: Record<string, string> = {
   "Access-Control-Max-Age": "86400",
 };
 
-/** Cache-Control per v1 operation. */
-export const V1_CACHE_CONTROL = {
-  items: "public, max-age=60, s-maxage=60, stale-while-revalidate=300",
-  codexResets: "public, max-age=60, s-maxage=60, stale-while-revalidate=60",
-  hotTopics: "public, max-age=60, s-maxage=60, stale-while-revalidate=60",
-  storyByPublicId: "public, max-age=60, s-maxage=60, stale-while-revalidate=60",
-  dailies: "public, max-age=60, s-maxage=60, stale-while-revalidate=300",
-  latestDaily: "public, max-age=60, s-maxage=60, stale-while-revalidate=300",
-  dailyByDate: "public, max-age=300, s-maxage=300, stale-while-revalidate=3600",
-  weeklies: "public, max-age=300, s-maxage=300, stale-while-revalidate=1800",
-  latestWeekly: "public, max-age=300, s-maxage=300, stale-while-revalidate=1800",
-  weeklyByWeek: "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
-  monthlies: "public, max-age=300, s-maxage=300, stale-while-revalidate=1800",
-  latestMonthly: "public, max-age=300, s-maxage=300, stale-while-revalidate=1800",
-  monthlyByMonth: "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
-  selectedSnapshot: "public, max-age=300, s-maxage=300, stale-while-revalidate=900",
-  selectedChanges: "public, max-age=60, s-maxage=60, stale-while-revalidate=60",
-} as const;
+/** MCP and the v1 OpenAPI carry one public version; it only goes up. */
+export const PUBLIC_INTERFACE_VERSION = "3.0.0";
 
-export const RSS_CACHE_CONTROL = "public, max-age=300, s-maxage=300, stale-while-revalidate=900";
 export const NO_STORE = "no-store";
 
 export interface RedirectRule {
@@ -61,7 +44,7 @@ export const REDIRECTS: RedirectRule[] = [
     why: "RSS reader aliases",
   },
   { match: "exact", path: "/leaderboard/methodology", status: 308, location: "/leaderboard/sources" },
-  { match: "regex", path: "^/leaderboard/category/(aesthetics|writing)$", status: 307, location: "/leaderboard", why: "data-layer categories not yet public" },
+  { match: "regex", path: "^/leaderboard/category/(aesthetics|writing)$", status: 307, location: "/leaderboard", why: "categories without a board" },
   { match: "exact", path: "/leaderboard/category/overall", status: 404, why: "the overall board lives at /leaderboard" },
   { match: "prefix", path: "/sources", status: 302, location: "/admin/sources*", why: "admin bookmarks" },
 ];

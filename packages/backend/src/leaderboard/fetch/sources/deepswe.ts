@@ -1,12 +1,11 @@
 // DeepSWE v1.1 (DataCurve): every model through the same mini-swe-agent harness; pass@1 with a 95%
 // run-to-run interval. The highest reasoning tier run represents the base model.
 import { guardedFetch } from "../../../lib/http-fetch.ts";
-import { configurationOf, scaffolded } from "../configuration.ts";
+import { configurationOf, scaffolded, slug } from "../configuration.ts";
 import { competitionRanks } from "../rank.ts";
 import type { Fetcher, ParsedRow } from "../types.ts";
 
 const URL_ = "https://deepswe.datacurve.ai/artifacts/v1.1/leaderboard-live.json";
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 interface Row {
   model: string;
@@ -46,7 +45,7 @@ export const deepswe: Fetcher = {
         upperBound: r.ci_hi,
         sourceRank: rank[i],
         sampleSize: r.n_attempted,
-        metadata: { harness: r.harness, ciMethod: r.ci_method, runCount: r.n_runs, systemId, taskCount: r.n_tasks_attempted, meanCostUsd: r.mean_cost_usd, metricDirection: "HIGHER" },
+        metadata: { benchmarkVersion: "1.1", harness: r.harness, harnessConfig: r.config, ciMethod: r.ci_method, runCount: r.n_runs, systemId, taskCount: r.n_tasks_attempted, meanCostUsd: r.mean_cost_usd, metricDirection: "HIGHER" },
       };
     });
     return [{

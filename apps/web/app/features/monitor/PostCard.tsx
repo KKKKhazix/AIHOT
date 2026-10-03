@@ -18,7 +18,10 @@ function Context({ c, original }: { c: CodexResetContextPost; original: boolean 
   return (
     <div className="mt-3 border-l-2 border-line-strong pl-3">
       <div className="text-[12px] text-ink-4">
-        {c.relation === "quote" ? "引用" : "回复"} @{c.author}
+        {c.relation === "quote" ? "引用" : "回复"}{" "}
+        <a href={c.url} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-accent">
+          @{c.author}
+        </a>
       </div>
       <p className="mt-0.5 whitespace-pre-line text-[13px] leading-[1.75] text-ink-3">{original ? c.originalText : (c.text ?? c.originalText)}</p>
       {original && c.text && <p className="mt-1 whitespace-pre-line text-[12.5px] leading-[1.7] text-ink-4">{c.text}</p>}

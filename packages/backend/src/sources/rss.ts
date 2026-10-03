@@ -3,7 +3,6 @@ import { XMLParser } from "fast-xml-parser";
 import { guardedFetch } from "../lib/http-fetch.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
-import { identityKeyForUrl } from "../lib/url.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
 
@@ -146,9 +145,6 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
     throw new FetchError(`feed parse error: ${String(e).slice(0, 200)}`);
   }
   const summaryIsBody = source.config.summaryIsBody === true;
-  // Entries that are sections of one page (#september-24-2026 …) keep their fragment as identity.
-  const identity = (link: string) =>
-    source.config.preserveUrlFragment === true ? { identityKey: identityKeyForUrl(link, { keepFragment: true }) ?? undefined } : {};
   const out: Candidate[] = [];
 
   const channel = doc.rss?.channel ?? doc["rdf:RDF"];
@@ -169,7 +165,6 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
       ];
       out.push({
         url: link,
-        ...identity(link),
         title,
         author: text(it["dc:creator"]) || text(it.author) || null,
         publishedAt: parseDate(text(it.pubDate) || text(it["dc:date"]) || text(it.published)),
@@ -196,7 +191,6 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
       const bodyHtml = content ? sanitizeBody(content, entryUrl) : null;
       out.push({
         url: entryUrl,
-        ...identity(entryUrl),
         title,
         author: text(arr(e.author)[0]?.name) || null,
         publishedAt: parseDate(text(e.published) || text(e.updated)),

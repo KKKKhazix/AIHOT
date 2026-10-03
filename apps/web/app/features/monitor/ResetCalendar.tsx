@@ -3,10 +3,11 @@ import type { CodexCalendarMark, CodexResetEvent, CodexResetDay } from "@aihot/c
 import { addDays } from "@aihot/contracts/time";
 import { IconChevronRight } from "../../components/icons";
 import { PostCard } from "./PostCard";
-import { bjDate, dayWord, durationText, monthDay, stamp, windowText } from "./format";
+import { bjDate, dayWord, durationText, stamp, windowText } from "./format";
+import { monthDay } from "../../lib/format";
 
-// Day cells as on the original monitor: a faint plain day, green for landed resets, a dashed green edge
-// on white for "should have landed", warm sand for announced ones; the label chip repeats the tone.
+// Day cells: a faint plain day, green for landed resets, a dashed green edge on white for "should have
+// landed", warm sand for announced ones; the label chip repeats the tone.
 const CELL: Record<CodexCalendarMark["state"], string> = {
   confirmed: "bg-cal-confirmed border-transparent",
   likely: "bg-surface border-dashed border-ok-ink/55",
@@ -122,14 +123,19 @@ export function ResetCalendar({ marks, events, today, historyFrom, now, avatar, 
       <noscript><nav aria-label="历史重置记录">{[...new Set(marks.map((m) => m.date))].sort().reverse().map((d) => <a key={d} href={`/codex-reset/history/${d}`} className="mr-3 inline-block">{d}</a>)}</nav></noscript>
       <div className="mt-4 overflow-hidden rounded-card border border-line-strong bg-surface lg:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,1fr)] xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,1fr)]">
         <div className="px-3 py-[18px] sm:p-6">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="num text-[18px] font-[650] text-ink">
               {month.slice(0, 4)} 年 {Number(month.slice(5))} 月
             </span>
             <div className="flex items-center gap-0.5">
-              {month !== monthOf(latest) && (
+              {(selected !== today || month !== monthOf(today)) && (
+                <button type="button" onClick={() => select(today)} aria-label="回到今天" className="mr-1 h-8 rounded-full px-3 text-[12px] text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink">
+                  今天
+                </button>
+              )}
+              {marks.length > 0 && (selected !== latest || month !== monthOf(latest)) && (
                 <button type="button" onClick={() => select(latest)} className="mr-1 h-8 rounded-full px-3 text-[12px] text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink">
-                  回到最近
+                  最近记录
                 </button>
               )}
               <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} disabled={month <= minMonth} aria-label="上个月" className="grid size-8 place-items-center rounded-full text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink disabled:opacity-35">
@@ -250,6 +256,9 @@ export function ResetCalendar({ marks, events, today, historyFrom, now, avatar, 
                   </p>
                 )}
                 {!e.confirmedAt && e.occurredOn && <p className="num mb-1 text-[13px] font-medium text-ink">核实到账 {monthDay(e.occurredOn)}</p>}
+                {!e.confirmedAt && !e.occurredOn && e.confirmationBasis === "receipt_review" && (
+                  <p className="mb-1 text-[13px] text-ink-4">具体到账日期未确定，日历日期不代表到账日期。</p>
+                )}
                 {window && e.status !== "confirmed" && (
                   <p className="mb-1 text-[13px] font-medium leading-[1.5] text-ink">
                     <span className="num">预计 {windowText(window.from, window.through, today)}</span>
@@ -265,11 +274,7 @@ export function ResetCalendar({ marks, events, today, historyFrom, now, avatar, 
                     <PostCard compact avatar={avatar} stage={post.stage} post={{ id: post.id, publishedAt: post.publishedAt, translation: post.fullText ?? post.text, original: post.fullOriginalText ?? post.originalText, context: post.context, url: post.url }} />
                   </div>
                 )}
-                {e.posts.length > 1 && (
-                  <p className="text-[12px] text-ink-4">
-                    这件事共有 {e.posts.length} 条相关原帖{bjDate(e.posts.at(-1)!.publishedAt ?? "") ? `，最早 ${stamp(e.posts.at(-1)!.publishedAt)}` : ""}。
-                  </p>
-                )}
+                {e.posts.length > 1 && <EarlierPosts posts={e.posts.slice(1)} avatar={avatar} />}
               </article>
             );
           })}
@@ -280,11 +285,36 @@ export function ResetCalendar({ marks, events, today, historyFrom, now, avatar, 
                 <path d="M3.5 9.5h17M8 3v4M16 3v4" />
               </svg>
               <h4 className="mt-4 text-[15px] font-semibold text-ink">这一天没有记录</h4>
-              <p className="mb-5 mt-3 max-w-[280px] text-[12px] leading-[1.8] text-ink-4">这天没有 Tibo 宣布或确认的重置，也没有发放重置卡。点日历上带标签的日期查看记录。</p>
+              <p className="mb-5 mt-3 max-w-[280px] text-[12px] leading-[1.8] text-ink-4">暂未收录这一天的重置或发卡记录。点日历上带标签的日期查看已有记录。</p>
             </div>
           )}
         </aside>
       </div>
     </section>
+  );
+}
+
+/**
+ * The rest of an event's evidence (the announcement behind a confirmation, a correction), newest first,
+ * one tap away: every post the event rests on can be read.
+ */
+function EarlierPosts({ posts, avatar }: { posts: CodexResetEvent["posts"]; avatar: string | null }) {
+  const [open, setOpen] = useState(false);
+  const earliest = posts.at(-1)?.publishedAt ?? null;
+  return (
+    <div className="mt-1">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="inline-flex items-center gap-1 text-[12px] text-ink-4 transition-colors hover:text-ink-2">
+        <IconChevronRight size={12} className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
+        {open ? "收起" : `另有 ${posts.length} 条相关原帖`}
+        {!open && earliest && bjDate(earliest) ? `，最早 ${stamp(earliest)}` : ""}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {posts.map((p) => (
+            <PostCard key={p.id} compact avatar={avatar} stage={p.stage} post={{ id: p.id, publishedAt: p.publishedAt, translation: p.fullText ?? p.text, original: p.fullOriginalText ?? p.originalText, context: p.context, url: p.url }} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,12 +1,11 @@
-// Source administration (F18): list, detail, preview (fetch without storing), edit, create with
+// Source administration: list, detail, preview (fetch without storing), edit, create with
 // duplicate checks, pause/resume and manual collection. Every change is audited.
 import { z } from "zod";
 import type { AdminSource, AdminSourceCreated, AdminSourceDetail, AdminSourcePreview, AdminSourceRow, AdminSources, BeforeJson } from "@aihot/contracts/admin";
 import { audit, auditHistory, Conflict } from "../audit.ts";
+import { groupingReset } from "../content/provenance.ts";
 import { sql, type Db } from "../db.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
-import { invalidateStoryInputs } from "../events/derived-content.ts";
-import { resumeSourceArticles } from "../jobs/content.ts";
 import { republishKey } from "../jobs/publication.ts";
 import { normalizeUrl } from "../lib/url.ts";
 import { fetchJsonList } from "../sources/json-list.ts";
@@ -31,7 +30,7 @@ export async function listSources(f: SourceListFilters): Promise<BeforeJson<Admi
   const q = f.q?.trim() ? `%${f.q.trim()}%` : null;
   const rows = await sql<BeforeJson<AdminSourceRow>[]>`
     SELECT s.id, s.name, s.kind, s.tier, s.participation_mode, s.enabled, s.health, s.fail_count, s.interval_minutes,
-           s.last_ok_at, s.last_fetch_at, s.last_error, s.first_party, s.next_fetch_at,
+           s.last_ok_at, s.last_fetch_at, s.last_error, (s.tier = 'T1') AS first_party, s.next_fetch_at,
            (SELECT count(*)::int FROM articles a WHERE a.source_id = s.id AND a.discovered_at > now() - interval '7 days') AS items_7d,
            coalesce(selected.n, 0) AS selected_30d
     FROM sources s
@@ -54,7 +53,7 @@ export async function listSources(f: SourceListFilters): Promise<BeforeJson<Admi
 }
 
 export async function sourceDetail(id: string): Promise<BeforeJson<AdminSourceDetail> | null> {
-  const [source] = await sql<BeforeJson<AdminSource>[]>`SELECT * FROM sources WHERE id = ${id}`;
+  const [source] = await sql<BeforeJson<AdminSource>[]>`SELECT *, (tier = 'T1') AS first_party FROM sources WHERE id = ${id}`;
   if (!source) return null;
   const runs = await sql<BeforeJson<AdminSourceDetail["runs"][number]>[]>`SELECT id, started_at, finished_at, status, found_count, new_count, error, detail FROM fetch_runs WHERE source_id = ${id} ORDER BY started_at DESC LIMIT 30`;
   const items = await sql<BeforeJson<AdminSourceDetail["items"][number]>[]>`
@@ -81,7 +80,7 @@ export async function previewSource(draft: Pick<SourceRow, "id" | "kind" | "conf
   const started = Date.now();
   let candidates;
   if (source.kind === "rss") candidates = (await fetchRss(source, { force: true })).candidates;
-  else if (source.kind === "web_list") candidates = await fetchWebList(source, { preview: true });
+  else if (source.kind === "web_list") candidates = await fetchWebList(source);
   else if (source.kind === "json_list") candidates = await fetchJsonList(source);
   else if (source.kind === "x_search") candidates = (await fetchXSearch(source)).candidates;
   else throw new Error(`preview is not available for ${source.kind} sources`);
@@ -118,6 +117,8 @@ export async function updateSource(id: string, input: { patch: unknown; version:
     const [before] = await tx`SELECT * FROM sources WHERE id = ${id} FOR UPDATE`;
     if (!before) return null;
     if (new Date(before.updated_at as Date).toISOString() !== input.version) throw new Conflict("信源已被其他操作修改，请刷新后再改");
+    // Kept in the admin shape for existing clients, but no independent first-party setting remains.
+    if (patch.tier !== undefined || patch.first_party !== undefined) patch.first_party = (patch.tier ?? before.tier) === "T1";
     if (patch.config) {
       assertSupportedConfig(before.kind as SourceRow["kind"], patch.config);
       // A changed address must not be one another source already collects from. (Sources that share a
@@ -133,17 +134,18 @@ export async function updateSource(id: string, input: { patch: unknown; version:
       health = CASE WHEN ${patch.enabled ?? null}::boolean IS FALSE THEN 'paused' WHEN ${patch.enabled ?? null}::boolean IS TRUE AND health = 'paused' THEN 'unknown' ELSE health END,
       next_fetch_at = CASE WHEN ${patch.enabled ?? null}::boolean IS TRUE THEN now() ELSE next_fetch_at END
       WHERE id = ${id} RETURNING *`;
-    if (before.participation_mode !== "editorial" && after!.participation_mode === "editorial") {
-      await resumeSourceArticles(id, tx);
-    }
-    if (before.participation_mode === "editorial" && after!.participation_mode !== "editorial") {
-      const articles = await tx<{ id: string }[]>`SELECT id FROM articles WHERE source_id = ${id}`;
-      await invalidateStoryInputs(tx, articles.map((row) => row.id), new Date());
+    if (before.participation_mode !== "editorial" && patch.participation_mode === "editorial") {
+      // A heat-only decision cannot admit the first editorial judgement to selection. Previously
+      // judged revisions remain reusable; this mode edit still does not buy analysis for old material.
+      await tx`UPDATE articles a SET ${groupingReset()}
+        WHERE a.source_id = ${id} AND NOT EXISTS (
+          SELECT 1 FROM analyses an WHERE an.article_id = a.id AND an.input_revision = a.revision AND an.relevance IS NOT NULL)`;
     }
     await audit(actor, "source.update", `source:${id}`, input.reason ?? null, Object.fromEntries(keys.map((k) => [k, before[k]])), patch, { db: tx });
     // What public exits show for this source's articles is derived from these fields: re-derive them
     // all (in the worker) so a revoked licence or an isolated source stops on every exit.
-    if (keys.some((k) => PUBLICATION_FIELDS.includes(k) && JSON.stringify(before[k]) !== JSON.stringify(patch[k]))) {
+    const publisherChanged = patch.config && (before.config as Record<string, unknown>).publisherRole !== patch.config.publisherRole;
+    if (publisherChanged || keys.some((k) => PUBLICATION_FIELDS.includes(k) && JSON.stringify(before[k]) !== JSON.stringify(patch[k]))) {
       await tx`INSERT INTO settings (key, value, updated_by) VALUES (${republishKey(id)}, ${tx.json({ status: "queued", queuedAt: new Date().toISOString() })}, ${actor})
                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`;
       await enqueue(QUEUES.republishSource, { sourceId: id }, { singletonKey: id }, tx);
@@ -178,17 +180,13 @@ export function sourceIdentity(kind: string, config: Record<string, unknown>): s
     const m = /from:([A-Za-z0-9_]{1,15})/.exec(String(config.query ?? ""));
     return m ? `x:${m[1]!.toLowerCase()}` : null;
   }
-  // A WeChat account is one account whichever id names it .
+  // A WeChat account is one account whichever id names it.
   if (kind === "mp_account") {
     const id = String(config.ghid ?? config.wxid ?? "").trim().toLowerCase();
     return id ? `mp:${id}` : null;
   }
   if (!raw) return null;
-  try {
-    return normalizeUrl(String(raw).replace(/^https:\/\/r\.jina\.ai\//, "")) ?? String(raw);
-  } catch {
-    return String(raw);
-  }
+  return normalizeUrl(String(raw).replace(/^https:\/\/r\.jina\.ai\//, "")) ?? String(raw);
 }
 
 export async function findDuplicateSource(kind: string, config: Record<string, unknown>, exceptId?: string, db: Db = sql) {
@@ -200,6 +198,7 @@ export async function findDuplicateSource(kind: string, config: Record<string, u
 
 export async function createSource(input: unknown, actor: string): Promise<BeforeJson<AdminSourceCreated>> {
   const s = CreateSchema.parse(input);
+  s.first_party = s.tier === "T1";
   assertSupportedConfig(s.kind, s.config);
   return sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('admin-source-identity'))`;

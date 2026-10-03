@@ -1,6 +1,9 @@
 // Codex reset monitor DTOs: the public v1 snapshot (GET /api/v1/codex-resets) and the page data
 // the site builds from the same snapshot.
 
+/** Upstream collection cadence, also shown in the page and client guidance. */
+export const CODEX_RESET_SCAN_MINUTES = 10;
+
 export interface CodexResetContextPost {
   id: string;
   author: string;
@@ -122,3 +125,5 @@ export interface CodexResetPageData extends CodexResetsSnapshot {
 /** The site sends bodies for the selected calendar day, while v1 keeps the complete snapshot. */
 export interface CodexResetSitePage extends Omit<CodexResetPageData, "activities"> { selectedDate: string }
 export interface CodexResetDay { date: string; version: string; events: CodexResetEvent[] }
+/** What the open reset page polls: a new version (or a new day) means the page reads itself again. */
+export interface CodexResetVersion { version: string; checkedAt: string | null; today: string }

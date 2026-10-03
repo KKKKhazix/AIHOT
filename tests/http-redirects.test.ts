@@ -2,14 +2,12 @@
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { after, before, test } from "node:test";
+import { after, test } from "node:test";
 import { MockAgent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import { config } from "@aihot/backend/config";
 import { guardedFetch } from "@aihot/backend/lib/http-fetch";
 import { fetchJsonList } from "@aihot/backend/sources/json-list";
 import type { SourceRow } from "@aihot/backend/sources/types";
-import { mpArticle } from "@aihot/backend/providers/dajiala";
-import { closeDb, sql } from "@aihot/backend/db";
 
 interface Hit { method: string; url: string; headers: http.IncomingHttpHeaders; body: string }
 type Handler = (hit: Hit, res: http.ServerResponse) => void | Promise<void>;
@@ -33,15 +31,9 @@ const b = await fixture();
 const savedPrivate = config.allowPrivateNetworkFetch;
 config.allowPrivateNetworkFetch = true;
 const key = `fictional-${tag()}`;
-let budget: { per_minute: number; per_hour: number; per_day: number } | undefined;
-before(async () => {
-  [budget] = await sql`SELECT per_minute,per_hour,per_day FROM budgets WHERE service='dajiala'`;
-  await sql`UPDATE budgets SET per_minute=1000,per_hour=10000,per_day=100000 WHERE service='dajiala'`;
-});
 after(async () => {
   config.allowPrivateNetworkFetch = savedPrivate;
-  if (budget) await sql`UPDATE budgets SET per_minute=${budget.per_minute},per_hour=${budget.per_hour},per_day=${budget.per_day} WHERE service='dajiala'`;
-  await a.close(); await b.close(); await closeDb();
+  await a.close(); await b.close();
 });
 function redirect(path: string, location: string, status = 302) {
   a.routes.set(path, (_hit, res) => { res.writeHead(status, { location }); res.end("redirect"); });
@@ -160,22 +152,9 @@ test("opaque JSON-source query configuration cannot redirect to another origin",
   await assert.rejects(fetchJsonList(source), /redirect/i);
   assert.equal(b.hits.length, count);
 });
-test("Dajiala query credentials use the restricted policy through real receipt handling", async () => {
-  process.env.DAJIALA_BASE_URL = a.url; process.env.DAJIALA_KEY = key;
-  a.routes.set("/fbmain/monitor/v3/article_detail", (hit, res) => { res.writeHead(302, { location: b.url + "/provider" + new URL(hit.url, a.url).search }); res.end(); });
-  const count = b.hits.length;
-  await assert.rejects(mpArticle("https://example.org/fixture", { subject: key, identity: key }), /redirect/i);
-  assert.equal(b.hits.length, count);
-});
-
-test("opaque JSON and Dajiala query callers retain same-origin redirects", async () => {
+test("opaque JSON query callers retain same-origin redirects", async () => {
   redirect("/json-safe", "/json-final?api_key=" + key);
   a.routes.set("/json-final", (_hit, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end('[{"title":"same-origin","url":"https://example.org/safe"}]'); });
   const source: SourceRow = { id: "same-origin", name: "fixture", kind: "json_list", tier: "T1", participation_mode: "editorial", first_party: false, interval_minutes: 60, enabled: true, cursor: null, fail_count: 0, config: { url: `${a.url}/json-safe?api_key=${key}`, titlePaths: ["title"], urlTemplate: "{raw:url}" } };
   assert.equal((await fetchJsonList(source))[0]!.title, "same-origin");
-  process.env.DAJIALA_BASE_URL = a.url; process.env.DAJIALA_KEY = key;
-  a.routes.set("/fbmain/monitor/v3/article_detail", (hit, res) => { res.writeHead(302, { location: "/provider-final" + new URL(hit.url, a.url).search }); res.end(); });
-  const result = await mpArticle("https://example.org/safe", { subject: key + "-safe", identity: key + "-safe" });
-  assert.equal(result.content, "fixture");
-  assert.equal(new URL(a.hits.at(-1)!.url, a.url).searchParams.get("key"), key);
 });

@@ -1,8 +1,9 @@
 // Shared setup for the invariant tests (node --test tests/). They write rows, so they refuse to run
-// unless DATABASE_URL names a throwaway database ending in _test or _ci (CI: a freshly migrated one).
+// unless DATABASE_URL names a throwaway database ending in _test or _ci.
 // Secrets are test values set here, never real credentials; paid providers are pointed at
-// local stubs by the tests that need them, and the push valves stay off. The files share
-// one database and its paid-service budgets, so they run one at a time (package.json).
+// local stubs by the tests that need them, and the push valves stay off. npm test gives each
+// file its own copy of the database (databases.ts).
+import { createHash } from "node:crypto";
 import http from "node:http";
 
 const database = new URL(process.env.DATABASE_URL ?? "postgres://unset/unset").pathname.slice(1);
@@ -15,15 +16,18 @@ process.env.IMG_PROXY_SIGN_SECRET ??= "test-img-secret-0123456789";
 process.env.FEISHU_CONTENT_PUSH_ENABLED = "false";
 process.env.INDEXNOW_SUBMIT_ENABLED = "false";
 process.env.LOG_LEVEL ??= "error";
-// The tests were written against the named model presets AIHOT assigns to each step (each provider is
-// pointed at a local stub by the test that needs it). The open-source default is one model for every
-// step, which tests/default-model.test.ts covers.
-const AIHOT_MODELS: Record<string, string> = {
+// Paid providers are local stubs in these tests: calls and collection may run (the valves default off).
+process.env.MODEL_CALLS_ENABLED ??= "true";
+process.env.COLLECT_ENABLED ??= "true";
+// The tests were written against named model presets, one per step (each provider is pointed at a
+// local stub by the test that needs it). The open-source default is one model for every step, which
+// tests/default-model.test.ts covers.
+const PRESETS: Record<string, string> = {
   PREFILTER_MODEL: "qwen3.7-flash", SCORE_MODEL: "glm-5.3-flash-selection", UNDERSTAND_MODEL: "glm-5.3-flash", SUMMARIZE_MODEL: "deepseek-flash",
   STRUCTURE_MODEL: "qwen3.8-flash", GROUP_MODEL: "deepseek-flash", GROUP_REVIEW_MODEL: "mimo-v2.6-flash", DIGEST_MODEL: "deepseek-flash",
   REPORT_MODEL: "deepseek-flash", TRANSLATE_MODEL: "deepseek-flash", MONITOR_MODEL: "deepseek-flash",
 };
-for (const [name, model] of Object.entries(AIHOT_MODELS)) process.env[name] ??= model;
+for (const [name, model] of Object.entries(PRESETS)) process.env[name] ??= model;
 
 /**
  * A local HTTP stub standing in for a paid provider; `answer` builds every response from the request
@@ -45,6 +49,24 @@ export async function stub(answer: (hit: number, req: { url: string; body: strin
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
   const { port } = server.address() as { port: number };
   return { url: `http://127.0.0.1:${port}`, hits: () => hits, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+}
+
+/**
+ * The embeddings provider as a stub of its own (DASHSCOPE_BASE_URL), so chat stubs count only their
+ * calls. A text's vector marks the pairs of adjacent characters it contains, hashed into the model's
+ * 1,024 dimensions: texts that share wording come out close, texts that share none do not.
+ */
+export async function embeddingsStub() {
+  const vector = (text: string) => {
+    const out = Array<number>(1024).fill(0);
+    const chars = [...text.replace(/\s+/g, "")];
+    for (let i = 0; i + 1 < chars.length; i++) out[createHash("sha256").update(chars[i]! + chars[i + 1]!).digest().readUInt16BE(0) % 1024] = 1;
+    return out;
+  };
+  const server = await stub((_hit, req) => ({ data: (JSON.parse(req.body).input as string[]).map((text, index) => ({ index, embedding: vector(text) })) }));
+  process.env.DASHSCOPE_BASE_URL = `${server.url}/v1`;
+  process.env.DASHSCOPE_API_KEY = "test-key";
+  return server;
 }
 
 /** A stub answer with its own status (e.g. a provider's 503); anything else is a 200 JSON body. */

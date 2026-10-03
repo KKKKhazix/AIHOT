@@ -1,15 +1,19 @@
-import { SITE, subjectAfter, withSubject } from "@aihot/industry/site";
 import { Link, useLoaderData } from "react-router";
 import type { HotEntryView, HotResponse } from "@aihot/contracts/site";
-import { loadOr404 } from "../lib/api.server";
+import { subjectAfter, withSubject } from "@aihot/industry/site";
+import { edgeTtl, loadOr404 } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
-import { monthDayTime, shortSourceName } from "../lib/format";
+import { monthDayTime } from "../lib/format";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/Page";
 import { IconChevronDown, IconInfo } from "../components/icons";
 import { Sparkline } from "../features/hot/Sparkline";
 import { Faces } from "../features/hot/Faces";
 import { Delta } from "../features/hot/Delta";
+import { PhoneBar } from "../components/shell/PhoneBar";
+import type { Screen } from "../components/shell/screens";
+
+export const handle: Screen = { tab: "hot", name: "热点" };
 
 export async function loader({ request }: { request: Request }) {
   return { hot: await loadOr404<HotResponse>("/api/site/hot", { signal: request.signal }) };
@@ -25,7 +29,7 @@ export function meta() {
 }
 
 export function headers() {
-  return { "Cache-Control": "public, max-age=0, s-maxage=120, stale-while-revalidate=60" };
+  return edgeTtl(120);
 }
 
 const BADGES: Record<HotEntryView["badges"][number], { label: string; tone: "hot" | "accent" | "amber"; hint: string }> = {
@@ -38,9 +42,9 @@ const RANK_COLOR = ["text-rank-1", "text-rank-2", "text-rank-3"];
 const rankColor = (rank: number) => RANK_COLOR[rank - 1] ?? "text-rank-rest";
 const pad = (rank: number) => String(rank).padStart(2, "0");
 
-/** "TechCrunch、The Verge 等 4 个来源 · 7 位参与者". */
+/** "某媒体、某账号 等 4 个来源 · 7 位参与者". */
 function Voices({ e }: { e: HotEntryView }) {
-  const names = e.sourceNames.slice(0, 2).map(shortSourceName);
+  const names = e.sourceNames.slice(0, 2);
   return (
     <span className="min-w-0 text-[12.5px] leading-snug text-ink-4">
       {/* Lines break between the phrases, never inside one. */}
@@ -67,7 +71,7 @@ function Badges({ e }: { e: HotEntryView }) {
 /** The whole card opens the event; the title carries the link and stretches over the card. */
 function StoryLink({ e, className }: { e: HotEntryView; className: string }) {
   return (
-    <Link to={`/story/${e.story.publicId}`} prefetch="intent" className={`transition-colors after:absolute after:inset-0 after:content-[''] ${className}`}>
+    <Link viewTransition to={`/story/${e.story.publicId}`} prefetch="intent" className={`transition-colors after:absolute after:inset-0 after:content-[''] ${className}`}>
       {e.story.title}
     </Link>
   );
@@ -90,7 +94,7 @@ function HeatPanel({ e }: { e: HotEntryView }) {
           {peakAt >= 0 && <span> · {peakAt === e.spark.length - 1 ? "当前" : `${e.spark.length - 1 - peakAt} 小时前`}</span>}
         </span>
       </div>
-      <Sparkline values={e.spark} area stretch className="mt-2 min-h-0 w-full flex-1 text-accent" />
+      <Sparkline values={e.spark} className="mt-3 min-h-0 w-full flex-1" />
       <div className="mt-2 flex justify-between text-[11px] text-ink-4">
         <span>24 小时前</span>
         <span>现在</span>
@@ -134,13 +138,14 @@ function Lead({ e }: { e: HotEntryView }) {
               {e.latest}
             </p>
           )}
-          <div className="flex items-center gap-3">
+          {/* The voices drop under the faces when the card is too narrow for both (small phones). */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <Faces participants={e.participants} total={e.participantCount} size={24} />
             <Voices e={e} />
           </div>
         </div>
         <div className="flex w-full shrink-0 items-end justify-between gap-5 sm:ml-auto sm:w-auto sm:justify-end">
-          {!panel && <Sparkline values={e.spark} area className="h-10 w-[140px] text-accent" />}
+          {!panel && <Sparkline values={e.spark} className="h-10 w-[140px]" />}
           <div className="text-right">
             <div className="mono text-[34px] font-semibold leading-none tracking-[-0.03em] text-ink">{Math.round(e.heat)}</div>
             <div className="mt-1 text-[11.5px] text-ink-4">热度指数</div>
@@ -173,7 +178,7 @@ function Runner({ e }: { e: HotEntryView }) {
           </span>
         </div>
         <div className="flex items-end gap-3">
-          <Sparkline values={e.spark} className="h-7 w-[92px] text-accent" />
+          <Sparkline values={e.spark} className="h-7 w-[92px]" />
           <span className="mono text-[24px] font-semibold leading-none tracking-[-0.02em] text-ink">{Math.round(e.heat)}</span>
         </div>
       </div>
@@ -212,13 +217,21 @@ function Row({ e }: { e: HotEntryView }) {
       <div className="hidden items-center gap-2.5 lg:flex">
         <Faces participants={e.participants} total={e.participantCount} size={20} />
       </div>
-      <Sparkline values={e.spark} className="hidden h-7 w-[104px] text-accent lg:block" />
+      <Sparkline values={e.spark} className="hidden h-7 w-[104px] lg:block" />
       <div className="hidden flex-col items-end gap-1 lg:flex">
         <span className="mono text-[20px] font-semibold leading-none tracking-[-0.02em] text-ink">{Math.round(e.heat)}</span>
         <Delta trend={e.trend} pct={e.trendPct} />
       </div>
     </li>
   );
+}
+
+/** Opens "热度是怎么算的" at the foot of the page and brings it into view. */
+function showMethod() {
+  const method = document.getElementById("hot-method") as HTMLDetailsElement | null;
+  if (!method) return;
+  method.open = true;
+  method.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
 }
 
 export default function HotPage() {
@@ -228,7 +241,27 @@ export default function HotPage() {
   const others = rest.slice(2);
   return (
     <div className="pb-10">
-      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 pb-5 pt-5 lg:pt-1">
+      <PhoneBar
+        title="热点"
+        large
+        sub={
+          <>
+            {subjectAfter(`过去 ${hot.windowHours} 小时`, "圈")}讨论最多的 {hot.entries.length || 10} 件事
+            {hot.computedAt && (
+              <>
+                {" · "}
+                <span className="num">{monthDayTime(hot.computedAt)}</span> 更新
+              </>
+            )}
+          </>
+        }
+        actions={
+          <button type="button" onClick={showMethod} className="flex h-11 items-center gap-1 px-3 text-[14px] text-accent active:opacity-50">
+            <IconInfo size={17} /> 怎么算
+          </button>
+        }
+      />
+      <header className="hidden flex-wrap items-end justify-between gap-x-6 gap-y-2 pb-5 pt-1 lg:flex">
         <div>
           <div className="flex items-center gap-2 text-[12px] font-semibold tracking-[0.08em] text-hot">
             <span className="relative flex size-2" aria-hidden="true">
@@ -253,12 +286,12 @@ export default function HotPage() {
         </div>
       ) : (
         <>
-          <section aria-label="热度前三" className="grid gap-3 lg:grid-cols-12 lg:gap-4">
-            <div className="grid lg:col-span-7 lg:row-span-2 xl:col-span-8">
+          <section aria-label="热度前三" className="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:gap-4">
+            <div className="grid grid-cols-1 lg:col-span-7 lg:row-span-2 xl:col-span-8">
               <Lead e={lead} />
             </div>
             {runners.map((e) => (
-              <div key={e.story.publicId} className="grid lg:col-span-5 xl:col-span-4">
+              <div key={e.story.publicId} className="grid grid-cols-1 lg:col-span-5 xl:col-span-4">
                 <Runner e={e} />
               </div>
             ))}
@@ -282,7 +315,7 @@ export default function HotPage() {
         </>
       )}
 
-      <details className="disclosure group/method mt-8 text-[12px] text-ink-4">
+      <details id="hot-method" className="disclosure group/method mt-8 scroll-mt-[calc(var(--bar-h)+16px)] text-[12px] text-ink-4">
         <summary className="flex items-center gap-1.5 py-1 transition-colors hover:text-ink-2">
           <IconInfo size={15} />
           热度是怎么算的？

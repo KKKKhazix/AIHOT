@@ -4,6 +4,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { sql } from "../../db.ts";
 import { sha256, stableJson } from "../../lib/ids.ts";
+import { annotateEvaluation } from "./admission.ts";
 import { REASONS } from "./configuration.ts";
 import { cloakedModel, IdentityResolver, modelSlug } from "./identity.ts";
 import { competitionRanks } from "./rank.ts";
@@ -96,10 +97,7 @@ export async function resolveRows(result: FetchResult, dryRun = false): Promise<
     const modelId = await resolver.resolve([r.sourceModelName, ...(r.altNames ?? [])], r.baseName, { organization: r.organization, releasedAt: r.releasedAt });
     withIds.push({ ...r, modelId });
   }
-  const ids = [...new Set(withIds.map((r) => r.modelId))];
-  const slugs = new Map((await sql<{ id: string; slug: string }[]>`SELECT id, slug FROM lb_models WHERE id IN ${sql(ids.length ? ids : [""])}`).map((m) => [m.id, m.slug]));
-  for (const m of resolver.newModels) slugs.set(m.id, m.slug);
-  return { rows: selectRepresentatives(withIds, slugs), newModels: resolver.newModels };
+  return { rows: selectRepresentatives(withIds, resolver.slugsById), newModels: resolver.newModels };
 }
 
 function contentHash(result: FetchResult, rows: ResolvedRow[]): string {
@@ -120,6 +118,7 @@ function contentHash(result: FetchResult, rows: ResolvedRow[]): string {
 }
 
 export async function storeSnapshot(result: FetchResult): Promise<{ snapshotId: string; changed: boolean; rows: number; selected: number; newModels: number }> {
+  result = annotateEvaluation(result);
   const { rows, newModels } = await resolveRows(result);
   const hash = contentHash(result, rows);
   const now = new Date();

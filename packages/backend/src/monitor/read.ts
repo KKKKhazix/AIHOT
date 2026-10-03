@@ -1,12 +1,12 @@
-import { siteUrl } from "../publication/links.ts";
 // Codex reset monitor read layer: the v1 codex-resets snapshot and the /codex-reset page read the
 // same events. Announcement, in-progress, confirmation and "should have landed" stay distinct;
 // passing an announced time never turns into a confirmation.
 import { addDays, beijingDate, beijingMidnight } from "@aihot/contracts/time";
-import type { CodexCalendarMark, CodexResetMonitor, CodexResetPageData, CodexResetsSnapshot } from "@aihot/contracts/monitor";
+import type { CodexCalendarMark, CodexResetMonitor, CodexResetPageData, CodexResetsSnapshot, CodexResetVersion } from "@aihot/contracts/monitor";
 import { sql, type Db } from "../db.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { proxiedImage } from "../media/imgproxy.ts";
+import { siteUrl } from "../publication/links.ts";
 
 export const MONITOR_PAGE_URL = siteUrl("/codex-reset");
 /** After the estimated window passes: "expired_unconfirmed" first, then "likely_completed". */
@@ -64,9 +64,9 @@ interface LinkRow {
 export type PresentationStatus = "announced" | "in_progress" | "confirmed" | "expired_unconfirmed" | "likely_completed";
 
 /**
- * The window decides first (as the legacy page did): an announcement whose estimated window has passed
- * reads as late, then as likely landed, even if Tibo once said it was under way; "in progress" only
- * holds while the window is still open.
+ * The window decides first: an announcement whose estimated window has passed reads as late, then as
+ * likely landed, even if Tibo once said it was under way; "in progress" only holds while the window is
+ * still open.
  */
 export function presentationStatus(e: Pick<EventRow, "status" | "estimate" | "schedule" | "presentation">, now: number): PresentationStatus {
   if (e.status === "confirmed") return "confirmed";
@@ -92,12 +92,21 @@ export function eventTitle(type: EventRow["type"], status: EventRow["status"], s
   return credit ? "Tibo 预告将发放重置卡" : "Tibo 预告将重置额度";
 }
 
+/**
+ * A post whose claims wait for a person: the recognizer was unsure, or a claim is not quoted in the post
+ * (applyRecognition holds those back). It waits, however old, until an admin marks it reviewed; until
+ * then the verification watermark stays put, the page shows the monitor needs attention, and the admin
+ * is reminded.
+ */
+export function awaitingReviewCondition() {
+  return sql`(recognition->>'needsReview')::boolean IS TRUE AND (recognition->>'reviewed')::boolean IS NOT TRUE`;
+}
+
 async function loadHealth(db: Db = sql) {
   const state = new Map((await db<{ key: string; value: any }[]>`
-    SELECT key, value FROM monitor_state WHERE key IN ('watermarks', 'history', 'held', 'cursor')`).map((r) => [r.key, r.value]));
+    SELECT key, value FROM monitor_state WHERE key IN ('watermarks', 'history', 'cursor')`).map((r) => [r.key, r.value]));
   const [counts] = await db<{ pending: number; review: number }[]>`
-    SELECT count(*) FILTER (WHERE processed_at IS NULL) AS pending,
-           count(*) FILTER (WHERE recognition->>'needsReview' = 'true' AND coalesce(recognition->>'reviewed', 'false') <> 'true') AS review
+    SELECT count(*) FILTER (WHERE processed_at IS NULL) AS pending, count(*) FILTER (WHERE ${awaitingReviewCondition()}) AS review
     FROM monitor_posts`;
   return { state, counts: counts ?? { pending: 0, review: 0 } };
 }
@@ -184,10 +193,11 @@ function monitorJson(state: Map<string, any>, counts: { pending: number; review:
   const w = state.get("watermarks") as { lastAttemptAt?: string; lastCollectedAt?: string; lastVerifiedAt?: string } | undefined;
   if (!w) return null;
   const verified = w.lastVerifiedAt ? Date.parse(w.lastVerifiedAt) : NaN;
-  const held = Number(state.get("held")?.count ?? 0) + (state.get("cursor")?.backlog?.length ?? 0);
+  // Held windows: stretches of posts a long gap left unread, which later scans read (collectPosts).
+  const held = state.get("cursor")?.backlog?.length ?? 0;
   const age = now - verified;
-  // Unresolved work outranks a fresh check (legacy presentResetMonitor): a held window or a post
-  // waiting for a person needs attention, a post not yet processed means the picture is delayed.
+  // Unresolved work outranks a fresh check: a held window or a post waiting for a person needs
+  // attention, a post not yet processed means the picture is delayed.
   const status: CodexResetMonitor["status"] = !Number.isFinite(verified) ? "unknown"
     : held > 0 || Number(counts.review) > 0 || age > 3 * 3600_000 ? "attention"
       : Number(counts.pending) > 0 || age > 40 * 60_000 ? "delayed" : "healthy";
@@ -297,9 +307,9 @@ export async function codexResetPage(now = Date.now()): Promise<CodexResetPageDa
   const landed = marks.filter((m) => m.state !== "pending");
   const inWindow = landed.filter((m) => m.date > since && m.date <= today);
   const resetDays = [...new Set(landed.filter((m) => m.type === "direct_reset" && m.state === "confirmed" && m.date <= today).map((m) => m.date))].sort();
-  // The interval is between rounds, not between calendar days (legacy resetStats): each reset at the
-  // moment it landed (confirmation, verified day at noon, or the estimate's start when only likely),
-  // two resets on one day are two rounds, and the median keeps one decimal.
+  // The interval is between rounds, not between calendar days: each reset at the moment it landed
+  // (confirmation, verified day at noon, or the estimate's start when only likely), two resets on one
+  // day are two rounds, and the median keeps one decimal.
   const landedAt = (e: (typeof snap.events)[number]) => {
     const st = e.presentation?.status ?? (e.status === "confirmed" ? "confirmed" : "announced");
     if (st === "confirmed") return Date.parse(e.occurredOn ? `${e.occurredOn}T12:00:00+08:00` : (e.confirmedAt ?? e.createdAt!));
@@ -338,7 +348,7 @@ export async function codexResetPage(now = Date.now()): Promise<CodexResetPageDa
 }
 
 /** Cheap version probe for the page's foreground polling. */
-export async function codexResetVersion(now = Date.now()) {
+export async function codexResetVersion(now = Date.now()): Promise<CodexResetVersion> {
   // Keep clock-driven transitions in the hash, without loading posts, citations, calendars or avatars.
   type VersionEvent = Pick<EventRow, "id" | "updated_at" | "status" | "estimate" | "schedule" | "presentation">;
   const [events, [outage], health] = await Promise.all([

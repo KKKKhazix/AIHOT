@@ -4,6 +4,7 @@ import { sql } from "../db.ts";
 
 const startedAt = new Date().toISOString();
 
+/** What a process writes to `settings.heartbeat.<role>` (the runs view and the watchdog read it). */
 export type Heartbeat = {
   pid: number;
   host: string;
@@ -12,8 +13,8 @@ export type Heartbeat = {
   at: string;
 };
 
-export async function beat(role: string, detail: Record<string, unknown> = {}) {
-  const value: Heartbeat = { ...detail, pid: process.pid, host: hostname(), release: process.env.AIHOT_RELEASE ?? "dev", startedAt, at: new Date().toISOString() };
+async function beat(role: string) {
+  const value: Heartbeat = { pid: process.pid, host: hostname(), release: process.env.AIHOT_RELEASE ?? "dev", startedAt, at: new Date().toISOString() };
   await sql`INSERT INTO settings (key, value, updated_by) VALUES (${`heartbeat.${role}`}, ${sql.json(value)}, ${role})
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`;
 }

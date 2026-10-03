@@ -1,4 +1,4 @@
-// Content pushes: selected items after their release gate, and the images they need prepared first.
+// Content pushes: newly selected items, and the images they need prepared first.
 import type { PgBoss } from "pg-boss";
 import { pushSelected } from "../notify/selected.ts";
 import { prepareArticleMedia, warmShareImage } from "../media/prepare.ts";

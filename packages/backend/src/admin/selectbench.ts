@@ -1,4 +1,4 @@
-// SelectBench (docs/01 F20): selection-model comparison runs on the human gold set. Runs come from
+// SelectBench: selection-model comparison runs on the human gold set. Runs come from
 // scripts/eval-selection.ts (imported automatically) or an uploaded report; the admin compares
 // models on the same cases and browses each case.
 import type { AdminSelectBenchCases, AdminSelectBenchRuns, BeforeJson } from "@aihot/contracts/admin";
@@ -26,10 +26,10 @@ interface ModelReport {
   cases?: CaseIn[];
 }
 
-/** Accepts { meta, models } or the older report shape keyed by model name. */
+/** A report as scripts/eval-selection.ts writes it: { meta, models }. */
 export async function importSelectBenchRun(report: unknown, label: string, actor: string) {
-  const r = report as { meta?: Record<string, unknown>; models?: Record<string, ModelReport> } & Record<string, ModelReport>;
-  const models = (r.models ?? Object.fromEntries(Object.entries(r).filter(([k]) => k !== "meta"))) as Record<string, ModelReport>;
+  const r = report as { meta?: Record<string, unknown>; models?: Record<string, ModelReport> };
+  const models = r.models ?? {};
   const names = Object.keys(models).filter((m) => models[m]?.summary);
   if (!names.length) throw new Error("report has no model summaries");
   const meta = r.meta ?? {};

@@ -43,7 +43,7 @@ export interface AdminAudit {
   rows: AdminAuditRow[];
 }
 
-// Sources (F18)
+// Sources
 
 export interface AdminSourceRow {
   id: string;
@@ -121,7 +121,7 @@ export interface AdminSourcePreview {
   items: Array<{ title: string; url: string; publishedAt: Timestamp | null; excerpt: string }>;
 }
 
-// Content and events (F19)
+// Content and events
 
 export interface AdminContentRow {
   id: string;
@@ -147,6 +147,7 @@ export interface AdminPublication {
   visibility: string;
   eligible: boolean;
   selected: boolean;
+  seat: boolean;
   title: string;
   original_title: string | null;
   summary: string | null;
@@ -199,7 +200,7 @@ export interface AdminContentChain {
   history: AdminAuditEntry[];
 }
 
-// Feedback (F14)
+// Feedback
 
 export interface AdminFeedbackRow {
   id: number;
@@ -226,7 +227,7 @@ export interface AdminFeedback {
   bans: Array<{ source_hash: string; reason: string | null; created_by: string | null; created_at: Timestamp }>;
 }
 
-// Runs (F20)
+// Runs
 
 export interface AdminReceiptIssue {
   id: number;
@@ -260,6 +261,11 @@ export interface AdminRuns {
   timeline: Array<{ id: number; job: string; started_at: Timestamp; finished_at: Timestamp | null; status: string; error: string | null }>;
   queues: Array<{ name: string; state: string; n: number; oldest: Timestamp }>;
   failedJobs: Array<{ name: string; failed: number; last: Timestamp | null; last_output: string | null }>;
+  grouping: {
+    waiting: number;
+    needsAttention: number;
+    items: Array<{ articleId: string; title: string; since: Timestamp; failed: boolean; recovery: "automatic" | "receipt" | "manual"; receiptId: number | null; error: string | null }>;
+  };
   lagging: Array<{
     id: string; name: string; kind: string; health: string; fail_count: number; last_ok_at: Timestamp | null; last_fetch_at: Timestamp | null;
     next_fetch_at: Timestamp | null; interval_minutes: number; last_error: string | null;
@@ -272,7 +278,7 @@ export interface AdminRuns {
   leaderboard: { at: Timestamp; sources: Array<{ key: string; ok: boolean; at: Timestamp; lastOkAt: Timestamp | null; changed?: boolean; rows?: number; error?: string }> } | null;
 }
 
-// Reset monitor corrections (F12)
+// Reset monitor corrections
 
 export interface AdminMonitorEventPost {
   postId: string;
@@ -365,7 +371,7 @@ export interface AdminSettings {
   budgets: AdminBudget[];
 }
 
-// Models and evaluation (F20)
+// Models and evaluation
 
 export interface AdminModelUsage {
   purpose: string;

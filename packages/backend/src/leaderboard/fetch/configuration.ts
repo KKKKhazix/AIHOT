@@ -28,7 +28,8 @@ export const REASONS = {
   cloaked: "匿名测试时期的型号，尚不能把该次评测对应到已公开的固定版本。",
 } as const;
 
-const slug = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+/** Lowercase-hyphenated form of a run descriptor or a source's own name, for configuration keys. */
+export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 /** Tokens that describe how a model was run (as opposed to dates, channels or editions). */
 const CONFIG_TOKEN = /^(reasoning|non-reasoning|thinking|non-thinking|adaptive-reasoning|(x?high|medium|low|max|minimal)(-effort)?|thinking-(\d+k|minimal)|high-\d+k|default-fallback|.+-fallback|\d+|\d+-\d+)$/;

@@ -1,12 +1,12 @@
-// Vals AI Finance Agent (v2): the benchmark page embeds its data as Astro island props (each value
-// serialised as [type, value]); the overall task gives each model's accuracy with its standard error.
-// The run setting is the reported reasoning (or compute) effort; bare numbers are run settings here.
+// Vals AI Finance Agent (v2): the benchmark page names the JSON file its results load from in an Astro
+// island's props (each value serialised as [type, value]); the overall task gives each model's accuracy
+// with its standard error. The run setting is the reported reasoning (or compute) effort; bare numbers are
+// run settings here.
 import { guardedFetch } from "../../../lib/http-fetch.ts";
-import { configurationOf } from "../configuration.ts";
+import { configurationOf, slug } from "../configuration.ts";
 import type { Fetcher, ParsedRow } from "../types.ts";
 
 const PAGE = "https://www.vals.ai/benchmarks/fabv2";
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 interface Result {
   accuracy: number | null;
@@ -41,14 +41,13 @@ function revive(v: unknown): unknown {
   return value;
 }
 
-export function benchmarkView(html: string): View {
+/** The results file the benchmark page loads; its name changes with every build of the site. */
+export function benchmarkViewUrl(html: string): string {
   for (const m of html.matchAll(/<astro-island\b([^>]*)>/g)) {
-    const attrs = m[1]!;
-    if (!/component-url="[^"]*BenchmarkView[^"]*"/.test(attrs)) continue;
-    const props = /\sprops="([^"]*)"/.exec(attrs);
-    if (!props) break;
-    const parsed = JSON.parse(unescapeAttribute(props[1]!)) as Record<string, unknown>;
-    return (revive(parsed.benchmarkView) as { metadata: unknown; tasks: unknown }) as View;
+    const props = /\sprops="([^"]*)"/.exec(m[1]!);
+    if (!props) continue;
+    const url = revive((JSON.parse(unescapeAttribute(props[1]!)) as { benchmarkViewUrl?: unknown }).benchmarkViewUrl);
+    if (typeof url === "string") return new URL(url, PAGE).toString();
   }
   throw new Error("vals: benchmark data not found on the page");
 }
@@ -56,9 +55,11 @@ export function benchmarkView(html: string): View {
 export const vals: Fetcher = {
   sourceKeys: ["vals-finance-agent"],
   async fetch() {
-    const res = await guardedFetch(PAGE, { timeoutMs: 60_000, maxBytes: 32 * 1024 * 1024 });
-    if (res.status !== 200) throw new Error(`vals HTTP ${res.status}`);
-    const view = benchmarkView(res.text());
+    const page = await guardedFetch(PAGE, { timeoutMs: 60_000, maxBytes: 32 * 1024 * 1024 });
+    if (page.status !== 200) throw new Error(`vals HTTP ${page.status}`);
+    const res = await guardedFetch(benchmarkViewUrl(page.text()), { timeoutMs: 60_000, maxBytes: 32 * 1024 * 1024 });
+    if (res.status !== 200) throw new Error(`vals data HTTP ${res.status}`);
+    const view = JSON.parse(res.text()) as View;
     const overall = view.tasks.overall;
     const published = view.metadata.updated;
     const publishedAt = published ? `${published}T00:00:00.000Z` : null;
@@ -81,6 +82,8 @@ export const vals: Fetcher = {
         upperBound: r.stderr == null ? null : r.accuracy + r.stderr,
         sourcePublishedAt: publishedAt,
         metadata: {
+          benchmarkVersion: view.metadata.version,
+          sourceModelId: name,
           unit: "percent",
           harness: r.harness,
           standardError: r.stderr,

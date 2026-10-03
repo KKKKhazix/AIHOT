@@ -1,7 +1,8 @@
-// Hot ranking (docs/01 F08): attention over the last 48 hours from independent participants.
+// Hot ranking: attention over the last 48 hours from independent participants.
 // Each participant counts once per window (repeat collection does not add heat), decays with a
 // 24-hour half-life, and the source time (not collection time) places evidence in the window.
 import { sql, type Db } from "../db.ts";
+import { pickRepresentative, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity } from "../publication/representative.ts";
 import { evidenceCondition, listedCondition } from "../publication/scope.ts";
 
 /** One entry of a stored ranking; the public read layer (publication/hot.ts) re-checks it before showing it. */
@@ -25,7 +26,7 @@ export interface HotEntry {
   representativeItemId: string | null;
   representativeUrl: string | null;
   representativeSource: string | null;
-  /** 精选组 first by tier, then 氛围组; tier is absent on rankings from before 2026-09-29. */
+  /** 精选组 first by tier, then 氛围组; tier is absent on rankings stored by older versions. */
   participants: Array<{ name: string; kind: "editorial" | "signal"; tier?: string }>;
 }
 
@@ -100,7 +101,13 @@ export function behindSources(clocks: SourceClock[], at: number, grace: boolean)
   return clocks.filter((c) => c.lastOk === null || c.lastOk < at - (grace ? c.graceMs : 0)).map((c) => c.id);
 }
 
-/** Current source roles and configured owner/group identity govern every heat reader. */
+/**
+ * The heat evidence as it stands now, for every reader of story_signals: a report withdrawn since no
+ * longer counts, a source counts in its current role (editorial or signal) and an isolated one not at
+ * all, and a participant is the independent actor behind a post: an operator's media matrix (signal
+ * group), a company's own channels (owner), else the source itself. Admin changes to roles, groups and
+ * owners therefore reach the heat at once, without rewriting stored signals.
+ */
 export const currentSignals = () => sql`(
   SELECT ss.story_id, ss.article_id, s.id AS source_id, ss.observed_at, s.created_at AS source_since,
     CASE WHEN s.participation_mode = 'editorial' THEN 'editorial' ELSE 'signal' END AS kind,
@@ -111,7 +118,7 @@ export const currentSignals = () => sql`(
     END AS participant_key
   FROM story_signals ss JOIN articles a ON a.id = ss.article_id JOIN sources s ON s.id = a.source_id
   LEFT JOIN publications p ON p.article_id = ss.article_id
-  WHERE s.participation_mode <> 'isolated' AND coalesce(p.visibility, 'public') = 'public'
+  WHERE s.participation_mode <> 'isolated' AND coalesce(p.visibility, 'public') <> 'withdrawn'
     AND NOT EXISTS (SELECT 1 FROM grouping_overrides go WHERE go.article_id = ss.article_id AND go.mode = 'standalone')
     AND (s.participation_mode <> 'editorial' OR EXISTS (SELECT 1 FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id
       WHERE fa.article_id = ss.article_id AND f.story_id = ss.story_id AND ${evidenceCondition()}))
@@ -138,7 +145,6 @@ export async function heatRows(at: Date, behind: string[] = [], storyIds?: numbe
              min(observed_at) FILTER (WHERE observed_at > ${nowFrom}) AS first_at,
              coalesce(bool_or(kind = 'editorial') FILTER (WHERE observed_at > ${nowFrom}), false) AS editorial,
              max(observed_at) FILTER (WHERE observed_at <= ${prev}) AS last_prev,
-             bool_or(source_id = ANY(${behind}::text[])) FILTER (WHERE observed_at > ${nowFrom}) AS behind_current,
              bool_or(source_id = ANY(${behind}::text[])) AS behind,
              bool_or(source_since > ${prevFrom}) AS late
       FROM ${currentSignals()} cs
@@ -152,7 +158,7 @@ export async function heatRows(at: Date, behind: string[] = [], storyIds?: numbe
         coalesce(sum(${decayPrev}) FILTER (WHERE last_prev IS NOT NULL), 0) AS heat_prev,
         coalesce(sum(${decayNow}) FILTER (WHERE last_at IS NOT NULL AND ${comparable}), 0) AS heat_obs,
         coalesce(sum(${decayPrev}) FILTER (WHERE last_prev IS NOT NULL AND ${comparable}), 0) AS heat_prev_obs,
-        count(*) FILTER (WHERE last_at IS NOT NULL AND behind_current) AS behind_participants,
+        count(*) FILTER (WHERE last_at IS NOT NULL AND behind) AS behind_participants,
         count(*) FILTER (WHERE (last_at IS NOT NULL OR last_prev IS NOT NULL) AND NOT ${comparable}) AS uncomparable,
         count(*) FILTER (WHERE first_at > ${prev}) AS recent6h,
         count(*) FILTER (WHERE last_at IS NOT NULL AND editorial) AS editorial_participants,
@@ -178,15 +184,25 @@ export async function computeHotRanking(at = new Date()): Promise<{ id: number; 
   const entries: HotEntry[] = [];
   for (const r of rows) {
     if (entries.length >= 10) break;
-    const reports = await sql<{ id: string; url: string; title: string; source_name: string; first_party: boolean; selected: boolean; score: number | null; at: Date }[]>`
-      SELECT DISTINCT ON (p.article_id) p.article_id AS id, p.url, p.title, s.name AS source_name, p.first_party, p.selected, p.score,
-             coalesce(p.published_at, p.discovered_at) AS at
+    const reports = await sql<Array<RepresentativeIdentity & { id: string; url: string; title: string; source_id: string; source_name: string; selected: boolean; score: number | null; at: Date; timeline_at: Date; body_mode: "full" | "summary"; fact_id: number }>>`
+      SELECT DISTINCT ON (p.article_id) p.article_id AS id, p.url, p.title, s.id AS source_id, s.name AS source_name, p.selected, p.score, p.timeline_at, p.body_mode,
+             f.id AS fact_id, ${REPRESENTATIVE_COLUMNS}, coalesce(p.published_at, p.discovered_at) AS at
       FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
       JOIN sources s ON s.id = p.source_id
-      WHERE f.story_id = ${r.story_id} AND ${evidenceCondition()} AND ${listedCondition(at)} AND s.participation_mode = 'editorial'
-      ORDER BY p.article_id`;
+      WHERE f.story_id = ${r.story_id} AND ${evidenceCondition()} AND ${listedCondition(at)}
+      ORDER BY p.article_id, (fa.role = 'primary') DESC, f.id`;
     if (reports.length === 0) continue;
-    const rep = [...reports].sort((x, y) => Number(y.first_party) - Number(x.first_party) || Number(y.selected) - Number(x.selected) || (Number(y.score ?? 0) - Number(x.score ?? 0)))[0]!;
+    // The event is shown under its own title, linked to the fact most sources report: the launch,
+    // not the leak or teaser that came first. Between equally reported facts the earlier one stands,
+    // so a single high-scoring follow-up cannot take the link.
+    type Report = (typeof reports)[number];
+    const byFact = new Map<number, Report[]>();
+    for (const report of reports) byFact.set(report.fact_id, [...(byFact.get(report.fact_id) ?? []), report]);
+    const sourceCount = (list: Report[]) => new Set(list.map((report) => report.source_id)).size;
+    const firstSeen = (list: Report[]) => Math.min(...list.map((report) => report.timeline_at.getTime()));
+    const members = [...byFact.values()].sort((a, b) => sourceCount(b) - sourceCount(a) || firstSeen(a) - firstSeen(b) || a[0]!.fact_id - b[0]!.fact_id)[0]!;
+    const selected = members.filter((report) => report.selected);
+    const rep = pickRepresentative(selected.length ? selected : members);
     const participants = await sql<{ name: string; kind: "editorial" | "signal"; tier: string; at: Date }[]>`
       SELECT DISTINCT ON (cs.participant_key) s.name, cs.kind, s.tier, cs.observed_at AS at
       FROM ${currentSignals()} cs JOIN sources s ON s.id = cs.source_id
@@ -196,7 +212,7 @@ export async function computeHotRanking(at = new Date()): Promise<{ id: number; 
     const reporting = participants.filter((p) => p.kind === "editorial").sort((x, y) => y.at.getTime() - x.at.getTime());
     const heat = heatIndex(Number(r.heat));
     // The change against six hours before compares only participants whose sources were observed
-    // throughout (docs/01 F08); with none of the earlier ones observed there is no comparison.
+    // throughout; with none of the earlier ones observed there is no comparison.
     const prevAll = heatIndex(Number(r.heat_prev));
     const [cur, prev] = Number(r.uncomparable) > 0 ? [heatIndex(Number(r.heat_obs)), heatIndex(Number(r.heat_prev_obs))] : [heat, prevAll];
     const pct = prev > 0 ? (cur - prev) / prev : null;
@@ -282,10 +298,10 @@ export async function snapshotHeat(at = new Date()): Promise<{ stories: number; 
 }
 
 /**
- * A story's heat hour by hour for its page chart (docs/01 F07): the hours observed in full over the
+ * A story's heat hour by hour for its page chart: the hours observed in full over the
  * last `days`, each computed from the current evidence of one group of participants, those whose
  * sources were all collecting before the first plotted hour's window began, so the line compares like
- * with like across the whole plot (as the legacy chart did). No such participant: no line.
+ * with like across the whole plot. No such participant: no line.
  */
 export async function heatSeries(storyId: number, now = new Date(), days = 7): Promise<Array<{ hour: Date; heat: number; participants: number }>> {
   const hours = (await sql<{ hour: Date }[]>`
@@ -312,20 +328,4 @@ export async function heatSeries(storyId: number, now = new Date(), days = 7): P
     return { hour: new Date(hour), heat: heatIndex(heat), participants };
   });
   return series.some((p) => p.heat > 0) ? series : [];
-}
-
-/** Recomputes hourly snapshots for a story over its history (after imports or regrouping). */
-export async function backfillStoryHeat(storyId: number, hours = 7 * 24): Promise<number> {
-  const [s] = await sql<{ first: Date | null; last: Date | null }[]>`SELECT min(observed_at) AS first, max(observed_at) AS last FROM ${currentSignals()} cs WHERE story_id = ${storyId}`;
-  if (!s?.first) return 0;
-  const end = Math.floor(Math.min(Date.now(), (s.last?.getTime() ?? Date.now()) + WINDOW_HOURS * 3600000) / 3600000) * 3600000;
-  const start = Math.max(Math.floor(s.first.getTime() / 3600000) * 3600000, end - hours * 3600000);
-  const clocks = await sourceClocks();
-  let n = 0;
-  for (let t = start; t <= end; t += 3600000) {
-    const hour = new Date(t);
-    const rows = await heatRows(hour, behindSources(clocks, t, false), [storyId]);
-    n += await saveHeat(rows, hour);
-  }
-  return n;
 }

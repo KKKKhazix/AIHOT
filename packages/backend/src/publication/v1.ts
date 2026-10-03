@@ -1,10 +1,10 @@
-import { listedCondition, selectedCondition } from "./scope.ts";
 // v1 items and the selected sync (snapshot + changes), read from the same public read layer.
 import type { PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { sql, type Db } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
 import { newShortId } from "../lib/ids.ts";
 import { categoryCondition, API_ITEM_COLUMNS, API_ITEM_FROM, type ApiItemRow } from "./items.ts";
+import { listedCondition, seatedCondition } from "./scope.ts";
 import { publicMatchCondition, searchTerms, withSearchCapacity } from "./pool.ts";
 import { v1Payload, type V1ItemPayload } from "./publish.ts";
 
@@ -42,12 +42,13 @@ export async function v1Items(query: V1ItemsQuery, now = new Date()): Promise<V1
   let after: { a: number; i: string } | null = null;
   if (query.cursor) {
     const c = decodeCursor<{ a: number; i: string; c: string }>("it3", query.cursor);
-    if (c.c !== binding || !Number.isSafeInteger(c.a) || !Number.isFinite(new Date(c.a).getTime()) || typeof c.i !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(c.i)) throw new InvalidCursorError("cursor does not belong to this query");
+    if (c.c !== binding || !Number.isSafeInteger(c.a) || !Number.isFinite(new Date(c.a).getTime())
+      || typeof c.i !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(c.i)) throw new InvalidCursorError("cursor does not belong to this query");
     // The rolling window slid past the anchor: tell the client instead of returning an empty page.
     if (c.a < windowStart.getTime()) throw new InvalidCursorError("the rolling window moved past this cursor");
     after = { a: c.a, i: c.i };
   }
-  const scope = query.mode === "selected" ? selectedCondition(now) : sql`${listedCondition(now)}`;
+  const scope = query.mode === "selected" ? seatedCondition(now) : listedCondition(now);
   const terms = query.q ? searchTerms(query.q) : [];
 
   const run = (db: Db) => db<(ApiItemRow & { sort_at: Date })[]>`
@@ -77,14 +78,13 @@ export async function v1Items(query: V1ItemsQuery, now = new Date()): Promise<V1
   };
 }
 
-// ---------------------------------------------------------------------------
 // Selected sync
-// ---------------------------------------------------------------------------
 
 export class SnapshotRequiredError extends Error {}
 
-const isWatermark = (value: number) => Number.isSafeInteger(value) && value >= 0;
 const SYNC_PREFIX = "ax1"; // any other watermark answers 409
+
+const isWatermark = (value: number) => Number.isSafeInteger(value) && value >= 0;
 
 let epochCache: string | null = null;
 
@@ -99,11 +99,9 @@ export async function ledgerEpoch(): Promise<string> {
   return (epochCache = again!.value.epoch);
 }
 
-/** Highest sequence whose entries (and all earlier ones) have passed the release gate. */
-export async function effectiveWatermark(now = new Date()): Promise<number> {
-  const [row] = await sql<{ w: number }[]>`
-    SELECT coalesce((SELECT min(seq) - 1 FROM selected_ledger WHERE visible_at > ${now}),
-                    (SELECT coalesce(max(seq), 0) FROM selected_ledger)) AS w`;
+/** The ledger's latest sequence: a snapshot and a page of changes read up to it. */
+export async function ledgerWatermark(): Promise<number> {
+  const [row] = await sql<{ w: number }[]>`SELECT coalesce(max(seq), 0) AS w FROM selected_ledger`;
   return Number(row?.w ?? 0);
 }
 
@@ -146,8 +144,8 @@ export async function selectedSnapshot(q: SnapshotQuery, now = new Date()) {
       || typeof p.t !== "string" || !Number.isFinite(Date.parse(p.t))) {
       throw new SnapshotRequiredError("page token does not match this snapshot");
     }
-    // Tokens are opaque, not signed: a supplied watermark must never bypass the release gate.
-    if (p.w > await effectiveWatermark(now)) throw new SnapshotRequiredError("page watermark is ahead of released entries");
+    // Tokens are opaque, not signed: a supplied watermark must not be ahead of the ledger.
+    if (p.w > await ledgerWatermark()) throw new SnapshotRequiredError("page watermark is ahead of this ledger");
     // A readable token asked for with another projection is the request's mistake, not a lost snapshot.
     if (q.fields !== undefined && p.f !== q.fields) throw new InvalidCursorError("page token belongs to another projection");
     // Only the first page defaults to full fields; continuations inherit their original projection.
@@ -156,12 +154,12 @@ export async function selectedSnapshot(q: SnapshotQuery, now = new Date()) {
     afterId = p.a;
     asOf = p.t;
   } else {
-    w = await effectiveWatermark(now);
+    w = await ledgerWatermark();
     asOf = now.toISOString();
   }
-  // The set as of the watermark, less anything taken out of the selected set since: a withdrawal waiting
-  // behind a not-yet-released entry must not reach new snapshots. Its remove still follows in changes,
-  // which the client applies as a no-op.
+  // The set as of the watermark, less anything taken out of the selected set since (a withdrawal while
+  // the client pages through the snapshot). Its remove still follows in changes, which the client
+  // applies as a no-op.
   const rows = await sql<{ article_id: string; payload: V1ItemPayload }[]>`
     SELECT latest.article_id, ${ledgerPayload(fields === "minimal", sql`latest.payload`)} AS payload FROM (
       SELECT DISTINCT ON (article_id) article_id, op, payload FROM selected_ledger
@@ -198,11 +196,8 @@ export async function selectedChanges(q: { cursor: string; limit: number }, now 
   if (c.k !== "sync" || c.e !== epoch || !isWatermark(c.w) || (c.f !== "default" && c.f !== "minimal")) {
     throw new SnapshotRequiredError("watermark from another ledger epoch or format");
   }
-  const w = await effectiveWatermark(now);
-  if (c.w > w) {
-    const [max] = await sql<{ m: number }[]>`SELECT coalesce(max(seq), 0) AS m FROM selected_ledger`;
-    if (c.w > Number(max?.m ?? 0)) throw new SnapshotRequiredError("watermark is ahead of this ledger");
-  }
+  const w = await ledgerWatermark();
+  if (c.w > w) throw new SnapshotRequiredError("watermark is ahead of this ledger");
   // An offline client's old watermark must not redistribute content withdrawn since the upsert.
   // Keep every sequence (as a removal) so even a one-entry page advances without exposing it.
   const rows = await sql<{ seq: number; article_id: string; op: "upsert" | "remove"; changed_at: Date; payload: V1ItemPayload | null }[]>`

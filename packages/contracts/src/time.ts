@@ -60,24 +60,16 @@ export function isoWeekRange(label: string): { start: string; end: string } | nu
   return { start: startDate, end: addDays(startDate, 6) };
 }
 
+/** First and last day (YYYY-MM-DD) of a calendar month label such as 2026-09; null for anything else. */
+export function monthRange(label: string): { start: string; end: string } | null {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(label);
+  if (!m) return null;
+  const next = Number(m[2]) === 12 ? `${Number(m[1]) + 1}-01-01` : `${m[1]}-${String(Number(m[2]) + 1).padStart(2, "0")}-01`;
+  return { start: `${label}-01`, end: addDays(next, -1) };
+}
+
 export function isValidDate(date: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
   const t = Date.parse(`${date}T00:00:00Z`);
   return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === date;
-}
-
-/** Formats an instant as RFC 3339 with the +08:00 offset (used by the reset monitor API). */
-export function toBeijingIso(instant: Date | string | number): string {
-  const d = new Date(new Date(instant).getTime() + OFFSET_MS);
-  return `${d.toISOString().slice(0, 19)}+08:00`;
-}
-
-/** First and last calendar dates of a real YYYY-MM month. */
-export function monthRange(label: string): { start: string; end: string } | null {
-  if (!/^\d{4}-\d{2}$/.test(label) || !isValidDate(`${label}-01`)) return null;
-  const month = Number(label.slice(5));
-  const end = new Date(`${label}-01T00:00:00Z`);
-  end.setUTCMonth(month);
-  end.setUTCDate(0);
-  return { start: `${label}-01`, end: end.toISOString().slice(0, 10) };
 }

@@ -35,8 +35,8 @@ after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-async function read(path: string, preserveUrlFragment = false) {
-  return (await fetchRss({ config: { feedUrl: root + path, preserveUrlFragment }, participation_mode: "editorial" } as never)).candidates;
+async function read(path: string) {
+  return (await fetchRss({ config: { feedUrl: root + path }, participation_mode: "editorial" } as never)).candidates;
 }
 
 test("Atom article links honor absolute xml:base on feed, entry and link", async () => {
@@ -61,7 +61,7 @@ test("absolute alternate links and the first-link fallback keep working", async 
   assert.deepEqual(await read("/missing"), []);
 });
 
-test("fragment identities are computed from the resolved Atom article URL", async () => {
-  const items = await read("/fragments", true);
-  assert.deepEqual(items.map((item) => item.identityKey), ["url:https://publisher.example/notes#first", "url:https://publisher.example/notes#second"]);
+test("resolved Atom article URLs keep their fragments, which sources of page sections use as identity", async () => {
+  const items = await read("/fragments");
+  assert.deepEqual(items.map((item) => item.url), ["https://publisher.example/notes#first", "https://publisher.example/notes#second"]);
 });

@@ -1,8 +1,8 @@
 import { SITE } from "@aihot/industry/site";
 import { useRef } from "react";
 import { Link } from "react-router";
-import type { AdminSelectBenchRuns } from "@aihot/contracts/admin";
 import type { Route } from "./+types/selectbench";
+import type { AdminSelectBenchRuns } from "@aihot/contracts/admin";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { bj, num, pct } from "../../features/admin/format";
@@ -86,7 +86,7 @@ export default function SelectBench({ loaderData }: Route.ComponentProps) {
                   </table>
                 </div>
                 <div className="flex items-center justify-between border-t border-line px-4 py-2 text-[12.5px] text-ink-3">
-                  <span>{r.cases ? `${num(r.cases)} 条逐条结果` : "只有汇总（旧格式报告）"}</span>
+                  <span>{r.cases ? `${num(r.cases)} 条逐条结果` : "只有汇总"}</span>
                   {r.cases > 0 && <Link className="text-accent" to={`/admin/selectbench/${r.id}`}>逐条浏览</Link>}
                 </div>
               </Card>

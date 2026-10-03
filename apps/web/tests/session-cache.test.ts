@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sessionCache } from "../app/features/feed/session-cache.ts";
+import { sessionCache } from "../app/lib/session-cache.ts";
 
 // Test storage semantics at the browser boundary, including denied storage and document teardown.
 test("history cache batches writes and survives eviction, expiry and storage denial", async () => {
@@ -13,9 +13,9 @@ test("history cache batches writes and survives eviction, expiry and storage den
     setItem(key: string, value: string) { writes++; values.set(key, value); },
     removeItem(key: string) { values.delete(key); },
   };
-  const windowTarget = new EventTarget();
+  const windowTarget = Object.assign(new EventTarget(), { sessionStorage: storage });
   const documentTarget = Object.assign(new EventTarget(), { visibilityState: "visible" });
-  Object.assign(globalThis, { sessionStorage: storage, window: windowTarget, document: documentTarget });
+  Object.assign(globalThis, { window: windowTarget, document: documentTarget });
   const cache = sessionCache<{ savedAt: number; value: string }>("test:", 30_000);
   const at = Date.now();
   cache.set("first", { savedAt: at, value: "one" });
@@ -37,7 +37,7 @@ test("history cache batches writes and survives eviction, expiry and storage den
   assert.equal(values.has("test:expired"), false);
   values.set("test:broken", "{");
   assert.equal(cache.read("broken"), null);
-  Object.defineProperty(globalThis, "sessionStorage", { configurable: true, get() { throw new Error("denied"); } });
+  Object.defineProperty(windowTarget, "sessionStorage", { configurable: true, get() { throw new Error("denied"); } });
   cache.set("private", { savedAt: at, value: "memory" });
   cache.flush();
   assert.equal(cache.read("private")?.value, "memory");

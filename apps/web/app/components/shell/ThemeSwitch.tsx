@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { IconMonitor, IconMoon, IconSun } from "../icons";
-import { resolvedTheme, setThemePreference, useThemePreference, type ThemePreference } from "../../lib/local-state";
+import { applyTheme, resolvedTheme, setThemePreference, useThemePreference, type ThemePreference } from "../../lib/local-state";
 
 type Choice = "dark" | "system" | "light";
 
@@ -22,11 +22,13 @@ export function ThemeSwitch({ className = "" }: { className?: string }) {
     const nextPref: ThemePreference = key === "system" ? null : key;
     const apply = () => {
       setThemePreference(nextPref);
-      document.documentElement.setAttribute("data-theme", resolvedTheme(nextPref));
+      applyTheme(resolvedTheme(nextPref), nextPref === null);
     };
     const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
-    if (doc.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) doc.startViewTransition(apply);
-    else apply();
+    if (doc.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      delete doc.documentElement.dataset.vt; // a cross-fade, not the last page change's slide (transitions.ts)
+      doc.startViewTransition(apply);
+    } else apply();
   };
 
   return (

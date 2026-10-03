@@ -1,3 +1,5 @@
+// The open-source migrations keep their own numbers: every number is used once, and the session binding
+// migration can run again over an install that already has its columns without touching their data.
 import "./setup.ts";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -20,7 +22,7 @@ test("session binding migration follows upstream migrations with a unique number
 
 test("session binding migration preserves an already-installed binding and legacy rows", async () => {
   await sql.begin(async (tx) => {
-    // 临时表遮住真实会话表，验证旧 PR 已装过这些列时再次迁移也不会破坏数据。
+    // A temporary table hides the real one: running the migration again keeps the columns' data.
     await tx`CREATE TEMP TABLE admin_sessions (id_hash text PRIMARY KEY) ON COMMIT DROP`;
     await tx`INSERT INTO admin_sessions VALUES ('legacy')`;
     await tx.unsafe(migration);

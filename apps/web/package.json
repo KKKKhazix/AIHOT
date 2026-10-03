@@ -12,6 +12,7 @@
     "@aihot/contracts": "*",
     "@aihot/industry": "*",
     "@react-router/node": "8.4.0",
+    "highlight.js": "11.12.0",
     "isbot": "5.2.2",
     "motion": "13.4.4",
     "react": "19.3.0",

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { StoryFollowup, StoryFollowupsResponse, StoryRef } from "@aihot/contracts/site";
 import { MoreLink } from "../../components/ui/Page";
-import { relativeTime, shortSourceName } from "../../lib/format";
+import { relativeTime } from "../../lib/format";
 
 /**
  * "事件后续": the other developments of the event this report belongs to, newest first, with a link to
@@ -52,13 +52,13 @@ function Followups({items, more, story}: {items: StoryFollowup[]; more: boolean;
       <ul className="divide-y divide-line-soft">
         {items.map((d) => (
           <li key={d.factId}>
-            <Link to={`/items/${d.representative.id}`} className="group flex flex-col gap-0.5 py-2.5 sm:flex-row sm:items-baseline sm:gap-3">
+            <Link viewTransition to={`/items/${d.representative.id}`} className="group flex flex-col gap-0.5 py-2.5 sm:flex-row sm:items-baseline sm:gap-3">
               <span className="flex min-w-0 flex-1 items-baseline gap-2">
                 <span className="shrink-0 rounded-mark bg-accent-soft px-1 text-[10.5px] leading-[16px] text-accent">同事件</span>
                 <span className="min-w-0 text-[13.5px] leading-snug text-ink-2 group-hover:text-accent sm:truncate">{d.representative.title}</span>
               </span>
               <span className="shrink-0 pl-[46px] text-[12px] text-ink-4 sm:pl-0" suppressHydrationWarning>
-                {shortSourceName(d.representative.source.name)} · {relativeTime(d.representative.timelineAt)}
+                {d.representative.source.name} · {relativeTime(d.representative.timelineAt)}
               </span>
             </Link>
           </li>

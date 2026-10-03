@@ -1,6 +1,6 @@
 // LMArena human-preference boards (style-controlled text, creative writing, WebDev, vision) from the
 // official Hugging Face dataset. Ratings carry their 95% bounds; tiers come from the model name.
-import { configurationOf, peelTierSuffix, scaffolded } from "../configuration.ts";
+import { configurationOf, peelTierSuffix, scaffolded, slug } from "../configuration.ts";
 import { hfDatasetSha, hfParquetRows } from "../hf.ts";
 import type { FetchResult, Fetcher, ParsedRow } from "../types.ts";
 
@@ -13,6 +13,7 @@ interface ArenaRow {
   rating: number;
   rating_lower: number | null;
   rating_upper: number | null;
+  variance?: number | null;
   vote_count: number | null;
   rank: number | null;
   category: string;
@@ -28,8 +29,6 @@ const BOARDS: Array<{ key: string; name: string; config: string; category: strin
   { key: "arena-webdev", name: "Arena WebDev", config: "webdev", category: "overall" },
   { key: "arena-vision", name: "Arena Vision Style-Controlled", config: "vision_style_control", category: "overall" },
 ];
-
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 export function arenaConfiguration(modelName: string) {
   const paren = /^(.*?)\s*\(([^()]*)\)\s*$/.exec(modelName.trim());
@@ -74,7 +73,7 @@ export const arena: Fetcher = {
           sourceRank: r.rank,
           sampleSize: r.vote_count === null ? null : Math.round(r.vote_count),
           sourcePublishedAt: r.leaderboard_publish_date ? `${r.leaderboard_publish_date}T00:00:00.000Z` : null,
-          metadata: { lowerBound: r.rating_lower, upperBound: r.rating_upper, arenaConfig: b.config, arenaCategory: b.category, sourceLicense: r.license, originalSourceRank: r.rank, metricDirection: "HIGHER" },
+          metadata: { lowerBound: r.rating_lower, upperBound: r.rating_upper, variance: r.variance ?? null, arenaConfig: b.config, arenaCategory: b.category, sourceLicense: r.license, originalSourceRank: r.rank, metricDirection: "HIGHER" },
         };
       });
       out.push({

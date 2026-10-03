@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import type { CopyDocument, RenderedCopy } from "../../lib/markdown";
 import { ArticleLayout, RailSection } from "../../components/ui/Page";
+import { PhoneBar } from "../../components/shell/PhoneBar";
 
 /**
  * Legal and policy pages, read like articles: the document on the page in one column, its facts in the
@@ -37,6 +38,8 @@ export function CopyPage({ doc, rendered, eyebrow, footer, aside }: { doc: CopyD
     </RailSection>
   );
   return (
+    <>
+    <PhoneBar back={{ to: "/more", label: "我的" }} title={doc.title} />
     <ArticleLayout
       left={
         <>
@@ -51,9 +54,9 @@ export function CopyPage({ doc, rendered, eyebrow, footer, aside }: { doc: CopyD
         </>
       }
     >
-      <article className="pb-14 pt-5 lg:pt-2">
+      <article className="pb-14 pt-3 lg:pt-2">
         {eyebrow && <div className="mb-2.5 text-[12px] font-semibold text-accent">{eyebrow}</div>}
-        <h1 className="text-[26px] font-bold leading-[1.35] text-ink lg:text-[32px] xl:text-[36px] xl:leading-[1.3]">{doc.title}</h1>
+        <h1 data-page-title="" className="text-[26px] font-bold leading-[1.35] text-ink lg:text-[32px] xl:text-[36px] xl:leading-[1.3]">{doc.title}</h1>
         {doc.intro && <p className="mt-4 text-[15px] leading-[1.8] text-ink-3 xl:text-[16px]">{doc.intro}</p>}
         {facts.length > 0 && (
           <dl className="mt-5 grid grid-cols-1 border-y border-line text-[12.5px] sm:grid-cols-2 lg:hidden">
@@ -69,6 +72,7 @@ export function CopyPage({ doc, rendered, eyebrow, footer, aside }: { doc: CopyD
         {footer && <div className="mt-12 border-t border-line pt-5 text-[12.5px] text-ink-3">{footer}</div>}
       </article>
     </ArticleLayout>
+    </>
   );
 }
 

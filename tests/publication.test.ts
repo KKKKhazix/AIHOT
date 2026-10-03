@@ -1,43 +1,40 @@
 // Public scope and sync through the real api routes: a licence revocation or a withdrawal reaches
 // every exit, reports stop quoting withdrawn items, the hot board drops a withdrawn item at once, item
-// pages follow the site's rule, an early release keeps the selected ledger in order, a withdrawal
-// waiting behind an unreleased item leaves new snapshots at once, and snapshots answer conditional requests.
-import { config } from "@aihot/backend/config";
+// pages follow one rule, a withdrawal next to an unresolved selection leaves new snapshots
+// at once, and snapshots answer conditional requests.
 import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
-import { beijingDate, isoWeekLabel } from "@aihot/contracts/time";
+import { withSubject } from "@aihot/industry/site";
+import { beijingDate } from "@aihot/contracts/time";
 import { ogEtag } from "../apps/api/src/og/render.ts";
 import { posterEtag } from "../apps/api/src/og/poster.ts";
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import * as cheerio from "cheerio";
+import { marked } from "marked";
 import { after, before, test } from "node:test";
+import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
-import { setVisibility } from "@aihot/backend/admin/content";
+import { overrideFields, setVisibility } from "@aihot/backend/admin/content";
 import { updateSource } from "@aihot/backend/admin/sources";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle, republishSource } from "@aihot/backend/publication/publish";
 import { computeHotRanking } from "@aihot/backend/events/hot";
 import { latestHotRanking } from "@aihot/backend/publication/hot";
-import { effectiveWatermark } from "@aihot/backend/publication/v1";
 import { buildApp } from "../apps/api/src/app.ts";
 
 const T = tag();
 const SOURCE = `test-publication-${T}`;
 const BODY = `FULLTEXT-${T} `.repeat(40);
 const REPORT_KEY = `2099-12-${String(10 + Math.floor(Math.random() * 19))}`;
-const WEEKLY_KEY = isoWeekLabel(REPORT_KEY);
-const MONTHLY_KEY = REPORT_KEY.slice(0, 7);
 const app = await buildApp();
 
 before(async () => {
-  // An interrupted earlier run may have left entries behind the release gate, holding the watermark.
-  await sql`UPDATE selected_ledger SET visible_at = now() WHERE visible_at > now()`;
   await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, site_fulltext, syndicate_fulltext, next_fetch_at)
             VALUES (${SOURCE}, 'Test publication', 'rss', 'T1', 'editorial', true, true, '2100-01-01')`;
 });
 after(async () => {
-  await sql`DELETE FROM reports WHERE (kind = 'daily' AND key = ${REPORT_KEY}) OR (kind = 'weekly' AND key = ${WEEKLY_KEY}) OR (kind = 'monthly' AND key = ${MONTHLY_KEY})`;
   await app.close();
   await stopBoss();
   await closeDb();
@@ -70,6 +67,59 @@ async function get(url: string, headers: Record<string, string> = {}) {
   const res = await app.inject({ method: "GET", url, headers });
   return { status: res.statusCode, body: res.body, etag: res.headers.etag as string | undefined };
 }
+
+// Export failures to guard before changing conversion: flattened table relationships, invented
+// headings/merged cells, lost numeric units, and full text leaking after a licence reduction.
+test("Markdown preserves a table's headings, caption, links, alignment and multiline cells in both languages", async () => {
+  const id = await article();
+  const table = '<table><caption>Benchmark results</caption><thead><tr><th>Model</th><th align="right">Score</th></tr></thead><tbody><tr><td><a href="https://example.com/model">A|B</a></td><td>90<br>±1</td></tr></tbody></table>';
+  await sql`UPDATE articles SET language = 'en', body_html = ${table} WHERE id = ${id}`;
+  await sql`INSERT INTO translations (article_id, revision, body_html, body_text, origin) VALUES (${id}, 1, ${table.replace('Benchmark results', '基准结果').replace('Model', '模型').replace('Score', '分数')}, '基准结果', 'source')`;
+  await publishArticle(id, released());
+  const response = await get(`/items/${id}/markdown`);
+  assert.equal(response.status, 200);
+  const $ = cheerio.load(marked.parse(response.body, { async: false, gfm: true }));
+  assert.equal($('table').length, 2, 'both original and translated tables survive export');
+  assert.deepEqual($('table th').toArray().map((node) => $(node).text()), ['模型', '分数', 'Model', 'Score']);
+  assert.equal($('table th').last().attr('align'), 'right');
+  assert.equal($('table td a').last().text(), 'A|B');
+  assert.equal($('table td a').last().attr('href'), 'https://example.com/model');
+  assert.equal($('table td').last().find('br').length, 1);
+  assert.ok($.text().includes('基准结果') && $.text().includes('Benchmark results'));
+});
+
+test("Markdown retains tables that cannot be represented without changing their meaning", async () => {
+  const id = await article();
+  const html = '<table><tr><td>Region</td><td>Value</td></tr><tr><td>CN</td><td>1</td></tr></table><table><tr><th colspan="2">Merged</th></tr><tr><td rowspan="2">A</td><td>2</td></tr><tr><td>3</td></tr></table><table><tr><th>Example</th></tr><tr><td><pre><code class="language-python">print(1)\nprint(2)</code></pre></td></tr></table>';
+  await sql`UPDATE articles SET language = 'zh', body_html = ${html} WHERE id = ${id}`;
+  await publishArticle(id, released());
+  const $ = cheerio.load(marked.parse((await get(`/items/${id}/markdown`)).body, { async: false, gfm: true }));
+  assert.equal($('table').length, 3);
+  assert.equal($('table').first().find('th').length, 0, 'a data row must not become an invented heading');
+  assert.equal($('th[colspan="2"]').text(), 'Merged');
+  assert.equal($('td[rowspan="2"]').text(), 'A');
+  assert.equal($('table pre code').text(), 'print(1)\nprint(2)');
+});
+
+test("Markdown retains numeric superscripts, subscripts and fenced code while respecting full-text permission", async () => {
+  const id = await article();
+  const html = '<p>Compute 10<sup>24</sup> FLOP; H<sub>2</sub>O.</p><pre><code class="language-python">print(2 ** 3)\n</code></pre>';
+  await sql`UPDATE articles SET language = 'zh', body_html = ${html} WHERE id = ${id}`;
+  await publishArticle(id, released());
+  const response = await get(`/items/${id}/markdown`);
+  const $ = cheerio.load(marked.parse(response.body, { async: false, gfm: true }));
+  assert.equal($('sup').text(), '24');
+  assert.equal($('sub').text(), '2');
+  assert.equal($('pre code').attr('class'), 'language-python');
+  assert.equal($('pre code').text(), 'print(2 ** 3)\n');
+  await sql`UPDATE sources SET site_fulltext = false WHERE id = ${SOURCE}`;
+  await publishArticle(id, released());
+  const limited = await get(`/items/${id}/markdown`);
+  assert.equal(limited.status, 200);
+  assert.ok(limited.body.includes('SUMMARY-'));
+  assert.ok(!limited.body.includes('FLOP') && !limited.body.includes('print(2'));
+  await sql`UPDATE sources SET site_fulltext = true WHERE id = ${SOURCE}`;
+});
 
 test("site reading sends one language while exports retain both, including after withdrawal", async () => {
   const id = await article();
@@ -133,7 +183,7 @@ test("a withdrawn item leaves every report exit", async () => {
   assert.ok((await get(`/api/v1/dailies/${REPORT_KEY}`)).body.includes(`QUOTED-${T}`), "the report quotes the item before");
 
   await setVisibility(id, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
-  for (const url of [`/api/v1/dailies/${REPORT_KEY}`, `/api/site/reports/daily/${REPORT_KEY}`]) {
+  for (const url of [`/api/v1/dailies/${REPORT_KEY}`, `/api/site/reports/daily/${REPORT_KEY}`, `/api/v1/agent/daily/${REPORT_KEY}`, "/api/v1/agent/daily"]) {
     const res = await get(url);
     assert.equal(res.status, 200, url);
     assert.ok(!res.body.includes(`QUOTED-${T}`) && !res.body.includes(`original-${T}`), `${url} still quotes the withdrawn item`);
@@ -145,144 +195,75 @@ test("a withdrawn item leaves every report exit", async () => {
   }
 });
 
-test("weekly v1 exposes published issues with stable lookup, caching and withdrawal filtering", async () => {
-  const id = await article();
-  await publishArticle(id, released());
-  const content = {
-    overview: `OVERVIEW-${T}`,
-    themes: [{
-      heading: "模型",
-      summary: `THEME-${T}`,
-      storyRefs: [{
-        itemId: id,
-        title: `WEEKLY-LEAD-${T}`,
-        summary: `WEEKLY-QUOTED-${T}`,
-        sourceUrl: `https://example.com/weekly-original-${T}`,
-        sourceName: "Test",
-        publishedAt: new Date().toISOString(),
-      }],
-    }],
-    storyOrder: [id],
-  };
-  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at, origin)
-            VALUES ('weekly', ${WEEKLY_KEY}, now() - interval '7 days', now(), ${sql.json(content as never)}, now(), 'manual')
-            ON CONFLICT (kind, key) DO UPDATE SET content = EXCLUDED.content, generated_at = EXCLUDED.generated_at`;
-
-  const list = await get("/api/v1/weeklies?limit=1");
-  assert.equal(list.status, 200);
-  assert.ok(list.body.includes(WEEKLY_KEY) && list.body.includes(`WEEKLY-LEAD-${T}`));
-
-  const detail = await get(`/api/v1/weeklies/${WEEKLY_KEY}`);
-  assert.equal(detail.status, 200);
-  assert.ok(detail.body.includes(`WEEKLY-QUOTED-${T}`) && detail.body.includes(`weekly-original-${T}`));
-  assert.ok(detail.etag);
-  assert.equal((await get(`/api/v1/weeklies/${WEEKLY_KEY}`, { "if-none-match": detail.etag! })).status, 304);
-
-  const latest = await get("/api/v1/weeklies/latest");
-  assert.equal(latest.status, 200);
-  assert.ok(latest.body.includes(WEEKLY_KEY));
-
-  assert.equal((await get("/api/v1/weeklies/2099-W00")).status, 400);
-  assert.equal((await get("/api/v1/weeklies/2098-W01")).status, 404);
-
-  await setVisibility(id, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
-  const withdrawn = await get(`/api/v1/weeklies/${WEEKLY_KEY}`);
-  assert.equal(withdrawn.status, 200);
-  assert.ok(!withdrawn.body.includes(`WEEKLY-QUOTED-${T}`) && !withdrawn.body.includes(`WEEKLY-LEAD-${T}`) && !withdrawn.body.includes(`weekly-original-${T}`));
-});
-
-test("monthly v1 exposes published issues with stable lookup, caching and withdrawal filtering", async () => {
-  const id = await article();
-  await publishArticle(id, released());
-  const content = {
-    overview: `OVERVIEW-${T}`,
-    themes: [{
-      heading: "模型",
-      summary: `THEME-${T}`,
-      storyRefs: [{
-        itemId: id,
-        title: `MONTHLY-LEAD-${T}`,
-        summary: `MONTHLY-QUOTED-${T}`,
-        sourceUrl: `https://example.com/monthly-original-${T}`,
-        sourceName: "Test",
-        publishedAt: new Date().toISOString(),
-      }],
-    }],
-    storyOrder: [id],
-  };
-  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at, origin)
-            VALUES ('monthly', ${MONTHLY_KEY}, now() - interval '7 days', now(), ${sql.json(content as never)}, now(), 'manual')
-            ON CONFLICT (kind, key) DO UPDATE SET content = EXCLUDED.content, generated_at = EXCLUDED.generated_at`;
-
-  const list = await get("/api/v1/monthlies?limit=1");
-  assert.equal(list.status, 200);
-  assert.ok(list.body.includes(MONTHLY_KEY) && list.body.includes(`MONTHLY-LEAD-${T}`));
-
-  const detail = await get(`/api/v1/monthlies/${MONTHLY_KEY}`);
-  assert.equal(detail.status, 200);
-  assert.ok(detail.body.includes(`MONTHLY-QUOTED-${T}`) && detail.body.includes(`monthly-original-${T}`));
-  assert.ok(detail.etag);
-  assert.equal((await get(`/api/v1/monthlies/${MONTHLY_KEY}`, { "if-none-match": detail.etag! })).status, 304);
-
-  const latest = await get("/api/v1/monthlies/latest");
-  assert.equal(latest.status, 200);
-  assert.ok(latest.body.includes(MONTHLY_KEY));
-
-  assert.equal((await get("/api/v1/monthlies/2099-13")).status, 400);
-  assert.equal((await get("/api/v1/monthlies/2098-01")).status, 404);
-
-  await setVisibility(id, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
-  const withdrawn = await get(`/api/v1/monthlies/${MONTHLY_KEY}`);
-  assert.equal(withdrawn.status, 200);
-  assert.ok(!withdrawn.body.includes(`MONTHLY-QUOTED-${T}`) && !withdrawn.body.includes(`MONTHLY-LEAD-${T}`) && !withdrawn.body.includes(`monthly-original-${T}`));
-});
-
-test("a withdrawal takes down only the stories citing it, including secondary memberships", async () => {
+test("story changes refresh share images and a withdrawal takes down only the stories citing it", async () => {
   const id = await article();
   await publishArticle(id, released());
   const stories = [await storyFor(id), await storyFor(id, "mention")];
   const other = await article();
   await publishArticle(other, released());
   const unrelated = await storyFor(other);
-  for (const story of stories) {
-    assert.ok((await get(`/api/site/stories/${story}`)).body.includes(id));
-    assert.ok((await get(`/api/v1/stories/${story}`)).body.includes(id));
+  const imageUrl = `/og/stories/${stories[0]}.png`;
+  const image = await app.inject({ method: "GET", url: imageUrl });
+  assert.equal(image.statusCode, 200);
+  assert.equal(image.headers["content-type"], "image/png");
+  const cachedImage = await app.inject({ method: "GET", url: imageUrl, headers: { "if-none-match": String(image.headers.etag) } });
+  assert.equal(cachedImage.statusCode, 304);
+  for (const response of [image, cachedImage]) {
+    assert.equal(response.headers["cache-control"], "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600");
+    assert.equal(response.headers["x-accel-expires"], "300", "a proxy in front keeps its copy for five minutes");
+  }
+  await sql`UPDATE stories SET title = 'Corrected event identity' WHERE public_id = ${stories[0]!}`;
+  const corrected = await app.inject({ method: "GET", url: imageUrl, headers: { "if-none-match": String(image.headers.etag) } });
+  assert.equal(corrected.statusCode, 200);
+  assert.notEqual(corrected.headers.etag, image.headers.etag, "the earlier image validator cannot retain a corrected title");
+  assert.notDeepEqual(corrected.rawPayload, image.rawPayload);
+  for (const [index, story] of stories.entries()) {
+    for (const prefix of ["/api/site/stories/", "/api/v1/stories/", "/api/v1/agent/stories/"]) {
+      const response = await get(`${prefix}${story}`);
+      assert.equal(response.status, index === 0 ? 200 : 404, "mention-only links do not make a factual public event");
+      if (index === 0) assert.ok(response.body.includes(id));
+    }
   }
 
   await setVisibility(id, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
+  assert.equal((await get(imageUrl, { "if-none-match": String(corrected.headers.etag) })).status, 404, "the old image validator cannot bypass withdrawal");
   for (const story of stories) {
     assert.equal((await get(`/api/site/stories/${story}`)).status, 404);
     assert.equal((await get(`/api/v1/stories/${story}`)).status, 404);
+    assert.equal((await get(`/api/v1/agent/stories/${story}?limit=3`)).status, 404);
   }
   assert.equal((await get(`/api/site/stories/${unrelated}`)).status, 200);
 });
 
 test("a withdrawn item leaves the hot board and the hot APIs at once, not at the next ranking", async () => {
+  const publicId = randomUUID();
   const [story] = await sql<{ id: number }[]>`
-    INSERT INTO stories (public_id, title, first_report_at, latest_at) VALUES (${randomUUID()}, ${`HOT-${T}`}, now() - interval '2 hours', now()) RETURNING id`;
+    INSERT INTO stories (public_id, title, first_report_at, latest_at) VALUES (${publicId}, ${`HOT-${T}`}, now() - interval '2 hours', now()) RETURNING id`;
   const [fact] = await sql<{ id: number }[]>`INSERT INTO facts (public_id, story_id, title) VALUES (${`fact-${T}`}, ${story!.id}, ${`HOT-${T}`}) RETURNING id`;
-  const secondSource = `${SOURCE}-hot-b`;
-  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, site_fulltext, syndicate_fulltext, next_fetch_at)
-            VALUES (${secondSource}, 'Test independent source', 'rss', 'T1', 'editorial', true, true, '2100-01-01')`;
-  for (const [index, id] of [await article(), await article()].entries()) {
-    const sourceId = index === 0 ? SOURCE : secondSource;
-    await sql`UPDATE articles SET source_id = ${sourceId} WHERE id = ${id}`;
+  // Two independent participants (heat counts sources, not reports).
+  const second = `${SOURCE}-hot-b`;
+  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at) VALUES (${second}, 'Test publication B', 'rss', 'T1', 'editorial', '2100-01-01')`;
+  for (const [i, id] of [await article(), await article()].entries()) {
+    if (i) await sql`UPDATE articles SET source_id = ${second} WHERE id = ${id}`;
     await sql`INSERT INTO fact_articles (fact_id, article_id, role) VALUES (${fact!.id}, ${id}, 'report')`;
     await sql`INSERT INTO story_signals (story_id, article_id, participant_key, source_id, kind, observed_at)
-              VALUES (${story!.id}, ${id}, ${`participant-${id}`}, ${sourceId}, 'editorial', now() - interval '1 hour')`;
+              VALUES (${story!.id}, ${id}, ${`participant-${id}`}, ${i ? second : SOURCE}, 'editorial', now() - interval '1 hour')`;
     await publishArticle(id, released());
   }
   await computeHotRanking();
   const rep = (await latestHotRanking())!.entries.find((e) => e.storyId === story!.id)?.representativeItemId;
   assert.ok(rep, "the story is on the board with a representative item");
-  const exits = ["/api/v1/hot-topics", "/api/site/hot"];
+  // The machine exits name the item; the hot board names the event it stands for.
+  const exits = ["/api/v1/hot-topics", "/api/v1/agent/hot?limit=3"];
   for (const url of exits) assert.ok((await get(url)).body.includes(rep!), `${url} shows the item before`);
+  assert.ok((await get("/api/site/hot")).body.includes(publicId), "/api/site/hot shows the event before");
 
   await setVisibility(rep!, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
   for (const url of exits) assert.ok(!(await get(url)).body.includes(rep!), `${url} still shows the withdrawn item`);
+  assert.ok(!(await get("/api/site/hot")).body.includes(publicId), "/api/site/hot still shows the event of the withdrawn item");
 });
 
-test("item pages follow the live rule: unsummarised editorial items keep one, hot_signal items have none", async () => {
+test("item pages follow one rule: unsummarised editorial items keep one, hot_signal items have none", async () => {
   const SIGNAL = `${SOURCE}-signal`;
   await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, site_fulltext, syndicate_fulltext, next_fetch_at)
             VALUES (${SIGNAL}, 'Test signal', 'rss', 'T1', 'hot_signal', true, false, '2100-01-01')`;
@@ -314,27 +295,11 @@ test("item pages follow the live rule: unsummarised editorial items keep one, ho
   assert.ok(!storyPage.body.includes(signal) && !storyPage.body.includes(`SIGNAL-SUMMARY-${T}`), "and not the hot_signal one");
 });
 
-test("an early release keeps the selected ledger in order", async () => {
+test("unresolved selection does not delay a withdrawal or its sync watermark", async () => {
   const x = await article();
   await publishArticle(x, released());
   const y = await article();
-  await publishArticle(y); // still behind the release gate
-  await setVisibility(x, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
-  await sql`UPDATE articles SET grouped_at = now() WHERE id = ${y}`;
-  await publishArticle(y); // grouped: released now
-
-  const [entry] = await sql<{ seq: number }[]>`SELECT max(seq)::int AS seq FROM selected_ledger WHERE article_id = ${y}`;
-  assert.ok((await effectiveWatermark()) >= entry!.seq, "the sync watermark covers the released item");
-  const snapshot = await get("/api/v1/selected/snapshot?fields=minimal&limit=1000");
-  assert.ok(snapshot.body.includes(y), "released item is in the snapshot");
-  assert.ok(!snapshot.body.includes(x), "withdrawn item is not");
-});
-
-test("a withdrawal waiting behind an unreleased item leaves new snapshots at once, and changes still carry both", async () => {
-  const x = await article();
-  await publishArticle(x, released());
-  const y = await article();
-  await publishArticle(y); // behind the release gate: the watermark stays before it
+  await publishArticle(y); // unresolved: no selected ledger entry yet
   await setVisibility(x, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
 
   for (const url of ["/api/v1/selected/snapshot?fields=minimal&limit=1000"]) {
@@ -342,15 +307,15 @@ test("a withdrawal waiting behind an unreleased item leaves new snapshots at onc
     assert.ok(!body.includes(x), `${url} still lists the withdrawn item`);
     assert.ok(!body.includes(y), `${url} lists an item before its release`);
   }
-  // A client that saved this snapshot's watermark receives y and x's removal once y is released.
+  // This snapshot already includes the withdrawal; completing y adds only y afterwards.
   const snapshot = JSON.parse((await get("/api/v1/selected/snapshot?fields=minimal&limit=1000")).body) as { cursor: string };
-  await sql`UPDATE articles SET grouped_at = now() WHERE id = ${y}`;
+  await sql`UPDATE articles SET grouping_status = 'complete', grouped_at = now() WHERE id = ${y}`;
   await publishArticle(y);
   const changes = JSON.parse((await get(`/api/v1/selected/changes?cursor=${encodeURIComponent(snapshot.cursor)}&limit=100`)).body) as {
     changes: Array<{ op: string; id?: string; item?: { id: string } }>;
   };
   const ours = changes.changes.map((c) => `${c.op}:${c.id ?? c.item?.id}`).filter((c) => c.endsWith(x) || c.endsWith(y));
-  assert.deepEqual(ours, [`upsert:${y}`, `remove:${x}`]);
+  assert.deepEqual(ours, [`upsert:${y}`]);
 });
 
 test("snapshots answer 304 to their own ETag", async () => {
@@ -358,6 +323,29 @@ test("snapshots answer 304 to their own ETag", async () => {
     const first = await get(url);
     assert.ok(first.etag, `${url} has an ETag`);
     assert.equal((await get(url, { "if-none-match": first.etag! })).status, 304, url);
+  }
+});
+
+// Failure cases: an offline client resumes before a withdrawal; a one-entry page must not send the
+// old content and wait for a later remove; both field projections must advance.
+test('historical sync never redistributes withdrawn content, even on a one-entry page', async () => {
+  for (const visibility of ['withdrawn', 'summary-only'] as const) {
+    for (const fields of ['minimal', 'default']) {
+      const start = JSON.parse((await get(`/api/v1/selected/snapshot?fields=${fields}`)).body).cursor;
+      const id = await article();
+      await publishArticle(id, released());
+      await setVisibility(id, { visibility, reason: 'test offline sync', version: 0 }, 'test');
+      for (const [prefix, limit] of [['v1', 'limit']]) {
+        const response = await get(`/api/${prefix}/selected/changes?${limit}=1&cursor=${encodeURIComponent(start)}`);
+        assert.equal(response.status, 200);
+        const page = JSON.parse(response.body);
+        assert.equal(page.changes[0].op, 'remove', `${prefix} ${fields} ${visibility}`);
+        assert.equal(page.changes[0].id, id);
+        assert.equal(page.changes[0].item, undefined);
+        assert.notEqual(page.cursor, start, 'redacting a historical upsert must still advance');
+        assert.equal(page.hasMore, true, 'the later removal is still resumable');
+      }
+    }
   }
 });
 
@@ -379,14 +367,26 @@ test("v1 story retains website content and fallback ordering without the website
     firstReportAt: v1.firstReportAt, latestAt: v1.latestAt, digest: v1.digest, digestUpdatedAt: v1.digestUpdatedAt },
   { publicId: site.publicId, title: site.title, sourceCount: site.sourceCount, reportCount: site.reportCount,
     firstReportAt: site.firstReportAt, latestAt: site.latestAt, digest: site.digest, digestUpdatedAt: site.digestUpdatedAt });
-  assert.equal(v1.latest, 'Latest development fallback');
-  assert.deepEqual(v1.reports, site.timeline.slice(0, 50).map((r: any) => ({ id: r.id, title: r.title, summary: r.summary,
-    source: { name: r.source.name, firstParty: r.source.firstParty }, publishedAt: r.publishedAt,
-    links: { aihot: `${config.siteUrl}/items/${r.id}`, original: r.originalUrl } })));
-  await sql`UPDATE publications SET visible_after = now() + interval '1 day' WHERE article_id = ${second}`;
-  const gated = JSON.parse((await get(`/api/v1/stories/${publicId}`)).body).story;
-  assert.deepEqual(gated.reports.map((r: any) => r.id), [first]);
-  assert.equal(gated.latest, `FACT-${T}`);
+  assert.equal(v1.latest, site.latest);
+  assert.equal(site.latestReport.id, second);
+  assert.deepEqual(v1.reports.map(({ links: { original: _, ...links }, ...r }: any) => ({ ...r, links })), site.timeline.slice(0, 50).map((r: any) => ({ id: r.id, title: r.title, summary: r.summary,
+    source: { name: r.source.name, firstParty: r.source.firstParty }, publishedAt: r.publishedAt, links: { aihot: `${config.siteUrl}/items/${r.id}` } })));
+});
+
+test('event neighbors disappear when their last readable evidence is withdrawn', async () => {
+  const id = await article();
+  const neighborId = await article();
+  await publishArticle(id, released());
+  await publishArticle(neighborId, released());
+  const current = await storyFor(id);
+  const neighbor = await storyFor(neighborId);
+  await sql`INSERT INTO story_links (story_id, other_id, relation)
+    SELECT s.id, n.id, 'related' FROM stories s, stories n WHERE s.public_id = ${current} AND n.public_id = ${neighbor}`;
+  const exits = [`/api/site/stories/${current}`, `/api/v1/stories/${current}`, `/api/v1/agent/stories/${current}`];
+  for (const url of exits) assert.ok((await get(url)).body.includes(neighbor), 'public neighbor is linked');
+  await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${neighborId}`;
+  assert.equal((await get(`/api/v1/stories/${neighbor}`)).status, 404);
+  for (const url of exits) assert.ok(!(await get(url)).body.includes(neighbor), `${url} must not advertise an unreadable neighbor`);
 });
 
 
@@ -418,8 +418,8 @@ test("share images keep detail metadata and access rules while conditional reads
   const id = await article();
   await publishArticle(id, released());
   const d = JSON.parse((await get(`/api/site/items/${id}`)).body);
-  const kicker = d.category ? CATEGORY_LABELS[d.category as keyof typeof CATEGORY_LABELS] : "AI 动态";
-  const source = d.source.name.replace(/（[^）]*）\s*$/, "");
+  const kicker = d.category ? CATEGORY_LABELS[d.category as keyof typeof CATEGORY_LABELS] : withSubject("动态");
+  const source = d.source.name;
   const date = beijingDate(d.timelineAt);
   const card = { kicker, title: d.title, subtitle: d.summary, meta: `${source} · ${date}`,
     badge: d.selected && d.score !== null ? { value: String(Math.round(d.score)), label: "精选评分" } : null };
@@ -484,43 +484,46 @@ test("minimal sync projection preserves snapshot fields, pagination bindings and
   assert.ok(removed.changes.some((c: any) => c.op === 'remove' && c.id === id));
 });
 
-// Failure cases: an offline client resumes before a withdrawal; a one-entry page must not send the
-// old content and wait for a later remove; both field projections and legacy clients must advance.
-test('historical sync never redistributes withdrawn content, even on a one-entry page', async () => {
-  for (const visibility of ['withdrawn', 'summary-only'] as const) {
-    for (const fields of ['minimal', 'default']) {
-      const start = JSON.parse((await get(`/api/v1/selected/snapshot?fields=${fields}`)).body).cursor;
-      const id = await article();
-      await publishArticle(id, released());
-      await setVisibility(id, { visibility, reason: 'test offline sync', version: 0 }, 'test');
-      for (const [prefix, limit] of [['v1', 'limit']]) {
-        const response = await get(`/api/${prefix}/selected/changes?${limit}=1&cursor=${encodeURIComponent(start)}`);
-        assert.equal(response.status, 200);
-        const page = JSON.parse(response.body);
-        assert.equal(page.changes[0].op, 'remove', `${prefix} ${fields} ${visibility}`);
-        assert.equal(page.changes[0].id, id);
-        assert.equal(page.changes[0].item, undefined);
-        assert.notEqual(page.cursor, start, 'redacting a historical upsert must still advance');
-        assert.equal(page.hasMore, true, 'the later removal is still resumable');
-      }
-    }
+// Failure cases: a new client receives an obsolete revision that its watermark already skips;
+// a correction between snapshot pages changes the snapshot's watermark or leaks into its old view.
+test("a new selected snapshot includes corrections already covered by its watermark", async () => {
+  const id = await article();
+  await publishArticle(id, released());
+  const title = '已经核实的更正标题';
+  await overrideFields(id, { fields: { title }, reason: 'correct before snapshot', version: 0 }, 'test');
+  for (const fields of ['default', 'minimal']) {
+    const response = await get(`/api/v1/selected/snapshot?fields=${fields}&limit=1000`);
+    assert.equal(response.status, 200);
+    const snapshot = JSON.parse(response.body);
+    assert.equal(snapshot.items.find((item: { id: string }) => item.id === id)?.title, title,
+      'the snapshot must contain the corrected revision, not its first publication');
+    const changes = await get(`/api/v1/selected/changes?cursor=${encodeURIComponent(snapshot.cursor)}`);
+    assert.equal(changes.status, 200);
+    assert.deepEqual(JSON.parse(changes.body).changes, [], 'changes cannot repair a stale revision already behind the snapshot watermark');
   }
 });
 
-test('event neighbors disappear when their last readable evidence is withdrawn or still gated', async () => {
-  const id = await article();
-  const neighborId = await article();
-  await publishArticle(id, released());
-  await publishArticle(neighborId, released());
-  const current = await storyFor(id);
-  const neighbor = await storyFor(neighborId);
-  await sql`INSERT INTO story_links (story_id, other_id, relation)
-    SELECT s.id, n.id, 'related' FROM stories s, stories n WHERE s.public_id = ${current} AND n.public_id = ${neighbor}`;
-  const exits = [`/api/site/stories/${current}`, `/api/v1/stories/${current}`, `/api/v1/agent/stories/${current}`];
-  for (const url of exits) assert.ok((await get(url)).body.includes(neighbor), 'public neighbor is linked');
-  for (const gated of [true, false]) {
-    await sql`UPDATE publications SET visible_after = now() + interval '1 hour', visibility = ${gated ? 'public' : 'withdrawn'} WHERE article_id = ${neighborId}`;
-    assert.equal((await get(`/api/v1/stories/${neighbor}`)).status, 404);
-    for (const url of exits) assert.ok(!(await get(url)).body.includes(neighbor), `${url} must not advertise an unreadable neighbor`);
-  }
+test("a correction between snapshot pages arrives through changes after the fixed snapshot", async () => {
+  const ids = [await article(), await article()];
+  for (const id of ids) await publishArticle(id, released());
+  const first = JSON.parse((await get('/api/v1/selected/snapshot?fields=minimal&limit=1')).body);
+  assert.ok(first.nextPage);
+  const id = ids.find((id) => !first.items.some((item: { id: string }) => item.id === id))!;
+  const oldTitle = JSON.parse((await get(`/api/site/items/${id}`)).body).title;
+  const title = '翻页期间刚刚核实的更正标题';
+  await overrideFields(id, { fields: { title }, reason: 'correct during snapshot', version: 0 }, 'test');
+
+  const continuation = await get(`/api/v1/selected/snapshot?limit=1000&page=${encodeURIComponent(first.nextPage)}`);
+  assert.equal(continuation.status, 200);
+  const next = JSON.parse(continuation.body);
+  assert.equal(next.hasMore, false);
+  assert.equal(next.cursor, first.cursor, 'every page retains the original watermark despite later publication');
+  assert.equal(next.items.find((item: { id: string }) => item.id === id)?.title, oldTitle,
+    'the continued snapshot retains the revision from its original watermark');
+
+  const changes = await get(`/api/v1/selected/changes?cursor=${encodeURIComponent(next.cursor)}`);
+  assert.equal(changes.status, 200);
+  assert.deepEqual(JSON.parse(changes.body).changes.map((change: { op: string; item: { id: string; title: string } }) =>
+    ({ op: change.op, id: change.item.id, title: change.item.title })), [{ op: 'upsert', id, title }],
+  'the client applies the correction once after finishing the original snapshot');
 });

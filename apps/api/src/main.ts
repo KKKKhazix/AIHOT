@@ -23,7 +23,6 @@ const shutdown = async () => {
   if (stopping) return;
   stopping = true;
   await app.close();
-
   await closeDb();
   process.exit(0);
 };

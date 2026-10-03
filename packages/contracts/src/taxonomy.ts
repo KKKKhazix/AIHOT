@@ -47,5 +47,3 @@ export const LEADERBOARD_BOARD_LABELS: Record<LeaderboardBoardKey, string> = {
 
 /** Article ids. Also the local-data import validation pattern. */
 export const ARTICLE_ID_PATTERN = /^[a-zA-Z0-9_-]{1,80}$/;
-
-export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -1,21 +1,19 @@
 // Merging stories: facts and heat evidence move into the surviving story, and the old
 // public id keeps answering as an alias. Editors merge from the admin; grouping merges when two
 // stories turn out to be one (consolidate in group.ts).
-import { lockStoryMembership } from "./derived-content.ts";
 import { sql } from "../db.ts";
 import { audit } from "../audit.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { publishArticle } from "../publication/publish.ts";
 
-/** Merges `fromId` into `intoId`; null when either story is missing or already merged (nothing changes then). */
+/** Null when missing/already merged, or when grouping would change an editor-confirmed identity. */
 export async function mergeStoryInto(fromId: number, intoId: number, reason: string, actor: string): Promise<{ moved: number } | null> {
   if (fromId === intoId) throw new Error("cannot merge a story into itself");
   const articles = await sql.begin(async (tx) => {
-    await lockStoryMembership(tx);
-    await tx`SELECT id FROM stories WHERE id=ANY(${[fromId, intoId]}::bigint[]) ORDER BY id FOR UPDATE`;
-    const [from] = await tx<{ public_id: string; merged_into: number | null }[]>`SELECT public_id, merged_into FROM stories WHERE id = ${fromId} FOR UPDATE`;
-    const [into] = await tx<{ merged_into: number | null }[]>`SELECT merged_into FROM stories WHERE id = ${intoId} FOR UPDATE`;
+    const [from] = await tx<{ public_id: string; merged_into: number | null; origin: string }[]>`SELECT public_id, merged_into, origin FROM stories WHERE id = ${fromId} FOR UPDATE`;
+    const [into] = await tx<{ merged_into: number | null; origin: string }[]>`SELECT merged_into, origin FROM stories WHERE id = ${intoId} FOR UPDATE`;
     if (!from || !into || from.merged_into || into.merged_into) return null;
+    if (actor === "grouping" && (from.origin === "manual" || into.origin === "manual")) return null;
     await tx`UPDATE facts SET story_id = ${intoId}, updated_at = now() WHERE story_id = ${fromId}`;
     // A report with evidence in both stories keeps one row: (story, article) is unique.
     await tx`INSERT INTO story_signals (story_id, article_id, participant_key, source_id, kind, observed_at)

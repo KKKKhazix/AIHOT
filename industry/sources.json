@@ -1,5 +1,5 @@
 {
-  "$comment": "示范信源：首次启动时导入（scripts/seed.ts），已存在的不会被覆盖。之后在后台“信源”里增删改。字段说明见 docs/customize.md。",
+  "$comment": "示范信源：首次启动时导入（scripts/seed.ts），已存在的不会被覆盖。之后在后台“信源”里新建、修改和暂停。字段说明见 docs/customize.md。",
   "sources": [
     {
       "id": "rss-openai-news",
@@ -12,7 +12,6 @@
         }
       },
       "tier": "T1",
-      "first_party": true,
       "owner_entity_id": "openai",
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -33,7 +32,6 @@
         }
       },
       "tier": "T1",
-      "first_party": true,
       "owner_entity_id": "google",
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -54,7 +52,6 @@
         }
       },
       "tier": "T1",
-      "first_party": true,
       "owner_entity_id": "google",
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -76,7 +73,6 @@
         }
       },
       "tier": "T1",
-      "first_party": true,
       "owner_entity_id": "hugging-face",
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -98,7 +94,6 @@
         }
       },
       "tier": "T1",
-      "first_party": true,
       "owner_entity_id": "microsoft",
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -120,7 +115,6 @@
         }
       },
       "tier": "T1",
-      "first_party": true,
       "owner_entity_id": "nvidia",
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -141,7 +135,6 @@
         }
       },
       "tier": "T1",
-      "first_party": true,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -163,7 +156,6 @@
         }
       },
       "tier": "T1",
-      "first_party": true,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -184,7 +176,6 @@
         }
       },
       "tier": "T1",
-      "first_party": true,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -205,7 +196,6 @@
         }
       },
       "tier": "T1",
-      "first_party": true,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 180,
@@ -226,7 +216,6 @@
         }
       },
       "tier": "T2",
-      "first_party": false,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 60,
@@ -247,7 +236,6 @@
         }
       },
       "tier": "T2",
-      "first_party": false,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 60,
@@ -268,7 +256,6 @@
         }
       },
       "tier": "T2",
-      "first_party": false,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 60,
@@ -289,7 +276,6 @@
         }
       },
       "tier": "T2",
-      "first_party": false,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -310,7 +296,6 @@
         }
       },
       "tier": "T2",
-      "first_party": false,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 60,
@@ -331,7 +316,6 @@
         }
       },
       "tier": "T2",
-      "first_party": false,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
@@ -352,7 +336,6 @@
         }
       },
       "tier": "T2",
-      "first_party": false,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 180,
@@ -374,7 +357,6 @@
         }
       },
       "tier": "T2",
-      "first_party": false,
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 180,

@@ -2,7 +2,7 @@
 // loading bodies, translations, related stories or signed media that never appear on these cards.
 import type { CategoryKey } from '@aihot/contracts/taxonomy';
 import { sql } from '../db.ts';
-import { hasItemPage } from './rules.ts';
+import { hasItemPage, publicSourceName } from './rules.ts';
 
 export async function loadItemShare(id: string) {
   const [row] = await sql<{
@@ -14,5 +14,5 @@ export async function loadItemShare(id: string) {
   if (!row || !hasItemPage({ visibility: row.visibility, sourceMode: row.source_mode })) return null;
   return { id: row.id, title: row.title, summary: row.summary, category: row.category, selected: row.selected,
     score: row.score === null ? null : Math.round(Number(row.score)), timelineAt: row.timeline_at.toISOString(),
-    source: { name: row.source_name } };
+    source: { name: publicSourceName(row.source_name) } };
 }

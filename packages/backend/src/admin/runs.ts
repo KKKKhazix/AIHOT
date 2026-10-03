@@ -1,18 +1,19 @@
-// Runs view (docs/01 F20): task timeline, queue backlog, source lag, error classes, process
+// Runs view: task timeline, queue backlog, source lag, error classes, process
 // heartbeats, and the receipts and deliveries whose outcome needs an operator (resolved in
 // operations/recover.ts and notify/deliver.ts).
 import type { AdminRuns, BeforeJson } from "@aihot/contracts/admin";
 import { sql } from "../db.ts";
-type Heartbeat = Omit<AdminRuns["processes"][number], "role" | "alive">;
+import type { Heartbeat } from "../operations/heartbeat.ts";
 import { audit } from "../audit.ts";
 import { failureGroupSql, requeueFailed } from "../jobs/content.ts";
+import { groupingOverview, waitingSelectedNews } from "../operations/grouping.ts";
 
 const STALE_HEARTBEAT_MS = 3 * 60_000;
 
 type Runs = BeforeJson<AdminRuns>;
 
 export async function runsOverview(): Promise<Runs> {
-  const [heartbeats, latest, timeline, queues, failedJobs, lagging, receipts, receiptIssues, deliveries, errors, ingest, leaderboard] = await Promise.all([
+  const [heartbeats, latest, timeline, queues, failedJobs, lagging, receipts, receiptIssues, deliveries, errors, ingest, leaderboard, grouping] = await Promise.all([
     sql<{ key: string; value: Heartbeat; updated_at: Date }[]>`SELECT key, value, updated_at FROM settings WHERE key LIKE 'heartbeat.%' ORDER BY key`,
     sql<Runs["jobs"]>`
       WITH latest AS (
@@ -53,6 +54,7 @@ export async function runsOverview(): Promise<Runs> {
     sql<Runs["ingest"]>`SELECT client, kind, status, left(error, 200) AS error, summary, created_at FROM ingest_events ORDER BY created_at DESC LIMIT 20`,
     sql<{ value: { at: string; sources: Record<string, { ok: boolean; at: string; lastOkAt: string | null; changed?: boolean; rows?: number; error?: string }> } }[]>`
       SELECT value FROM settings WHERE key = 'leaderboard.fetch'`,
+    waitingSelectedNews(),
   ]);
   // Articles waiting to retry after a passing provider problem (they are not failed).
   const [retrying] = await sql<{ n: number; next: Date | null }[]>`
@@ -70,6 +72,7 @@ export async function runsOverview(): Promise<Runs> {
     timeline,
     queues,
     failedJobs,
+    grouping: groupingOverview(grouping, now),
     lagging,
     receipts: { counts: Object.fromEntries(receipts.map((r) => [r.status, r.n])), issues: receiptIssues },
     deliveries,

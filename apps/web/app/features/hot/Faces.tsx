@@ -1,19 +1,18 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { HotParticipant } from "@aihot/contracts/site";
-import { shortSourceName } from "../../lib/format";
 import { SourceAvatar } from "../../components/ui/SourceAvatar";
 
 /**
  * Who is talking about a hot story: overlapping faces of the 精选组 sources in the order the server
  * gives (T1, T1.5, T2), then a count for everyone else, 氛围组 included. Hover lists every name; where
- * the faces are their own control (not inside a link), a tap or Enter opens the list, as the legacy
- * list's <details> did, so phones and keyboards reach it too.
+ * the faces are their own control (not inside a link), a tap or Enter opens the list, so phones and
+ * keyboards reach it too.
  */
 export function Faces({ participants, total, size = 24, max = 6, interactive = true }: { participants: HotParticipant[]; total: number; size?: number; max?: number; interactive?: boolean }) {
   const shown = participants.filter((p) => p.kind === "editorial").slice(0, max);
   const rest = total - shown.length;
-  const names = participants.map((p) => shortSourceName(p.name)).join("、");
+  const names = participants.map((p) => p.name).join("、");
   const faces = (
     <>
       {shown.map((p, i) => (
@@ -91,13 +90,13 @@ function FacesButton({ participants, total, names, children }: { participants: H
           {editorial.length > 0 && (
             <>
               <span className="block text-[11.5px] font-semibold text-ink-4">精选组</span>
-              <span className="mt-0.5 block">{editorial.map((p) => shortSourceName(p.name)).join("、")}</span>
+              <span className="mt-0.5 block">{editorial.map((p) => p.name).join("、")}</span>
             </>
           )}
           {signal.length > 0 && (
             <>
               <span className={`block text-[11.5px] font-semibold text-ink-4 ${editorial.length ? "mt-2" : ""}`}>氛围组</span>
-              <span className="mt-0.5 block">{signal.map((p) => shortSourceName(p.name)).join("、")}</span>
+              <span className="mt-0.5 block">{signal.map((p) => p.name).join("、")}</span>
             </>
           )}
           {more > 0 && <span className="mt-2 block text-[11.5px] text-ink-4">另有 {more} 位未列出</span>}

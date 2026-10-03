@@ -1,7 +1,7 @@
 // EQ-Bench creative writing (v3, Elo) and long-form writing (score out of 100). The site embeds each
 // leaderboard as CSV in a JS file; the site repository's head commit dates the data.
 import { guardedFetch } from "../../../lib/http-fetch.ts";
-import { configurationOf } from "../configuration.ts";
+import { configurationOf, slug } from "../configuration.ts";
 import { headCommit } from "../github.ts";
 import { parseCsv } from "../csv.ts";
 import type { FetchResult, Fetcher, ParsedRow } from "../types.ts";
@@ -10,8 +10,6 @@ const BOARDS = [
   { key: "eq-creative", name: "Creative Writing v3", file: "creative_writing.js", column: "elo_score", version: "creative-writing-v3", page: "https://eqbench.com/creative_writing.html" },
   { key: "eq-longform", name: "Longform Writing", file: "creative_writing_longform.js", column: "overall_score_100", version: "longform-v1.11", page: "https://eqbench.com/creative_writing_longform.html" },
 ];
-
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 /** First template literal holding a CSV that starts with model_name. */
 function leaderboardCsv(js: string): Array<Record<string, string>> {

@@ -8,10 +8,11 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequestListener } from "@react-router/node";
 import { isApiOwned, resolveRedirect } from "@aihot/contracts/http-policy";
+import { API_BASE_URL } from "./app/lib/api.server.ts";
 
-const PORT = Number(process.env.WEB_PORT || process.env.PORT || 3000);
+const PORT = Number(process.env.WEB_PORT || 3000);
 const HOST = process.env.WEB_HOST || "127.0.0.1";
-const API = new URL(process.env.API_BASE_URL || "http://127.0.0.1:3001");
+const API = new URL(API_BASE_URL);
 /**
  * Whether a reverse proxy in front (Caddy, nginx) records the visitor in X-Forwarded-For. Without one
  * the header is never believed: a visitor could name any address and slip past the api's per-visitor
@@ -77,7 +78,10 @@ const server = createServer((req, res) => {
   });
 });
 
-/** Public navigation returns all matched loaders, so `_routes` never changes a cached answer. */
+/**
+ * The one writer of page cache headers: a route only says how long shared caches may keep it (edgeTtl).
+ * Public navigation returns all matched loaders, so `_routes` never changes a cached answer.
+ */
 function pageCache(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) {
   const url = new URL(req.url ?? "/", "http://web.local");
   const pathname = decodeURIComponent(url.pathname).replace(/\.data$/, "");
@@ -110,9 +114,8 @@ function pageCache(req: import("node:http").IncomingMessage, res: import("node:h
       res.setHeader("X-Accel-Expires", seconds > 0 ? expires : "0");
       // Reuse intent-prefetched data in the browser within the same shared-cache deadline (capped).
       // Never serve it beyond that deadline, including while revalidating or on an error.
-      const directives = cc.split(",").map((value) => value.trim()).filter((value) => !/^(?:max-age|s-maxage|stale-while-revalidate|stale-if-error|must-revalidate)(?:=|$)/i.test(value));
       res.setHeader("Cache-Control", seconds > 0
-        ? `${directives.join(", ")}, max-age=${Math.min(seconds, BROWSER_MAX_SECONDS)}, s-maxage=${seconds}, must-revalidate`
+        ? `public, max-age=${Math.min(seconds, BROWSER_MAX_SECONDS)}, s-maxage=${seconds}, must-revalidate`
         : "no-cache");
     }
     return typeof messageOrHeaders === "string" ? writeHead(status, messageOrHeaders) : writeHead(status);

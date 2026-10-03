@@ -1,9 +1,10 @@
 // Reader-facing leaderboard vocabulary: evaluation sources, board copy, score formats and brand marks.
 // Scoring weights and eligibility never come from here; they come from the computation run.
 import type { LeaderboardBoardKey } from "@aihot/contracts/taxonomy";
-import type { LbBrand, LbScoreFormat, LbSourceStatus } from "@aihot/contracts/leaderboard";
-import registryData from "./source-registry.json" with { type: "json" };
+import type { LbBoardMeta, LbBrand, LbScoreFormat, LbSourceStatus } from "@aihot/contracts/leaderboard";
 import { SITE } from "@aihot/industry/site";
+import registryData from "./source-registry.json" with { type: "json" };
+import { providerSlugOf } from "./providers.ts";
 
 export interface RegistrySource {
   key: string;
@@ -46,51 +47,34 @@ export function sourceKeyOfUnit(unit: string): string {
   return unit.split(":")[0]!;
 }
 
-export interface BoardCopy {
-  key: LeaderboardBoardKey;
-  name: string;
-  title: string;
-  description: string;
-  howToRead: string;
-}
+const GENERAL_READING = `${SITE.name} 评分越高，表示本榜综合表现越强；评分不是正确率，具体能力可查看分项成绩。`;
 
-const GENERAL_READING = "综合多家公开评测，不同模型的参评覆盖不同。";
-
-export const BOARD_COPY: Record<LeaderboardBoardKey, BoardCopy> = {
+/** Page copy of each board; board names are LEADERBOARD_BOARD_LABELS. */
+export const BOARD_COPY: Record<LeaderboardBoardKey, Pick<LbBoardMeta, "title" | "description" | "howToRead">> = {
   overall: {
-    key: "overall",
-    name: "综合",
     title: `${SITE.name} 大模型排行榜`,
-    description: "汇集多种能力的真实评测，找到综合表现更强的模型。",
+    description: `在统一单型号口径下比较公开评测，展示 ${SITE.name} 评分、参考位次与各项原始成绩。`,
     howToRead: GENERAL_READING,
   },
   coding: {
-    key: "coding",
-    name: "编程",
     title: `编程模型排行榜 · ${SITE.name}`,
     description: "从写代码到改仓库，看模型能不能把软件做出来。",
     howToRead: GENERAL_READING,
   },
   reasoning: {
-    key: "reasoning",
-    name: "推理",
     title: `推理模型排行榜 · ${SITE.name}`,
     description: "数学、逻辑与陌生规则，看模型能不能想明白新问题。",
     howToRead: GENERAL_READING,
   },
   knowledge: {
-    key: "knowledge",
-    name: "知识",
     title: `知识模型排行榜 · ${SITE.name}`,
     description: "事实问答与研究生级科学知识，看知识掌握与回答准确性。",
     howToRead: "当前知识榜采用 Epoch 的两项评测，来自同一家机构。",
   },
   professional: {
-    key: "professional",
-    name: "专业办公",
     title: `专业办公模型排行榜 · ${SITE.name}`,
     description: "金融分析、法律咨询与银行业务，看专业任务能否完成。",
-    howToRead: "当前覆盖金融分析、专业咨询与银行业务，尚不能代表所有文档、表格和演示文稿任务。",
+    howToRead: "当前覆盖金融分析与专业咨询，尚不能代表全部办公任务；统一工具流程中的成绩可以参与比较。",
   },
 };
 
@@ -115,6 +99,7 @@ export function formatScore(value: number | null | undefined, format: LbScoreFor
   return grouping.format(value);
 }
 
+// Every model mark lives in assets/model-providers (served at /model-providers/) and is chosen here.
 // Model-family marks win over company marks: a Qwen mark identifies Qwen, not Alibaba.
 const FAMILY_MARKS: Array<[RegExp, string]> = [
   [/^claude/, "anthropic.svg"],
@@ -126,8 +111,10 @@ const FAMILY_MARKS: Array<[RegExp, string]> = [
   [/^(hy-|hunyuan)/, "tencent.svg"],
   [/^(seed|doubao)/, "bytedance.svg"],
   [/^(glm|chatglm)/, "z-ai.svg"],
+  [/^mimo/, "xiaomi-mimo.svg"],
 ];
 
+/** Genuine company marks, used when no family mark applies. */
 const PROVIDER_MARKS: Record<string, string> = {
   openai: "openai.svg",
   meta: "meta.svg",
@@ -135,13 +122,15 @@ const PROVIDER_MARKS: Record<string, string> = {
   mistral: "mistral.svg",
   nvidia: "nvidia.svg",
   "z-ai": "z-ai.svg",
+  "thinking-machines": "thinking-machines.png",
 };
 
 export function modelBrand(slug: string, providerSlug: string | null, provider: string | null, name: string): LbBrand {
   const family = FAMILY_MARKS.find(([re]) => re.test(slug))?.[1];
-  const file = family ?? (providerSlug ? PROVIDER_MARKS[providerSlug] : undefined);
+  const company = providerSlugOf({ name, provider, provider_slug: providerSlug });
+  const file = family ?? (company ? PROVIDER_MARKS[company] : undefined);
   const label = (provider && provider !== "其他" ? provider : name).replace(/[^\p{L}\p{N}]/gu, "");
-  return { src: file ? `/model-providers/${file}` : null, monogram: label.slice(0, 1).toUpperCase() || "?", raster: false };
+  return { src: file ? `/model-providers/${file}` : null, monogram: label.slice(0, 1).toUpperCase() || "?", raster: !!file?.endsWith(".png") };
 }
 
 // eqbench.svg and livebench.png carry raster artwork; they get a plate in dark mode.

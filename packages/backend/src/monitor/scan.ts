@@ -1,21 +1,19 @@
-import { SITE } from "@aihot/industry/site";
 // Tibo post collection for the reset monitor (SocialData, paid). Posts and their reply/quote
 // context are stored before the cursor moves; recognition runs afterwards in publication order.
-// Normal cadence is 5 minutes, as the public v1 description states; after an outage or an
-// announcement it is 3 minutes for a while.
+// Incremental ten-minute scans overlap by fifteen minutes to include late-indexed replies.
 import { sql } from "../db.ts";
 import type { CodexResetContextPost } from "@aihot/contracts/monitor";
+import { SITE } from "@aihot/industry/site";
 import { shutdownSignal } from "../jobs/queue.ts";
 import { getTweet, searchTweets, tweetText, type SdTweet } from "../providers/socialdata.ts";
 import { ProviderRejectedError } from "../providers/receipts.ts";
 import { deliverContent } from "../notify/deliver.ts";
 import { applyRecognition } from "./assemble.ts";
 import { recognizePost, type ContextInput, type OpenEventInput } from "./recognize.ts";
-import { bjIso, codexResetsSnapshot, MONITOR_PAGE_URL } from "./read.ts";
+import { awaitingReviewCondition, bjIso, codexResetsSnapshot, MONITOR_PAGE_URL } from "./read.ts";
 
 export const AUTHOR = "thsottiaux";
-const NORMAL_EVERY_MS = 5 * 60_000;
-const HOT_EVERY_MS = 3 * 60_000;
+const OVERLAP_MS = 15 * 60_000;
 const MAX_PAGES = 5;
 const PUSH_MAX_AGE_MS = 36 * 3600_000;
 
@@ -35,15 +33,6 @@ async function touchWatermarks(patch: Record<string, string>) {
 
 const idGreater = (a: string, b: string) => (a.length !== b.length ? a.length > b.length : a > b);
 
-/** Whether a scan is due now (called every few minutes by the scheduler). */
-export async function scanDue(now = Date.now()): Promise<boolean> {
-  const hot = await getState<{ until: string }>("hot");
-  const w = await getState<{ lastAttemptAt?: string }>("watermarks");
-  const last = w?.lastAttemptAt ? Date.parse(w.lastAttemptAt) : 0;
-  const every = hot && Date.parse(hot.until) > now ? HOT_EVERY_MS : NORMAL_EVERY_MS;
-  return now - last >= every - 30_000;
-}
-
 async function contextOf(t: SdTweet, subject: string): Promise<Array<ContextInput & { url: string }>> {
   const out: Array<ContextInput & { url: string }> = [];
   const push = (x: SdTweet, relation: "reply" | "quote") =>
@@ -51,7 +40,8 @@ async function contextOf(t: SdTweet, subject: string): Promise<Array<ContextInpu
   if (t.quoted_status) push(t.quoted_status, "quote");
   let parentId = t.in_reply_to_status_id_str ?? null;
   for (let depth = 0; parentId && depth < 2; depth++) {
-    const parent = await getTweet(parentId, { purpose: "monitor.context", subject });
+    const [stored] = await sql<{ tweet: SdTweet | null }[]>`SELECT raw->'tweet' AS tweet FROM monitor_posts WHERE id = ${parentId}`;
+    const parent = stored?.tweet ?? await getTweet(parentId, { purpose: "monitor.context", subject });
     if (!parent) break;
     push(parent, "reply");
     if (parent.quoted_status && depth === 0) push(parent.quoted_status, "quote");
@@ -74,10 +64,12 @@ async function storePost(t: SdTweet) {
  * The collection cursor: the newest post read, and the stretches a long gap left unread. A scan reads
  * at most five pages from the newest post down; when there is more, the rest of that stretch (down to
  * the post the previous scan stopped at) is kept with its page cursor and read by later ticks, so a
- * stop longer than five pages never skips posts (the legacy monitor kept its unfinished pages too).
+ * stop longer than five pages never skips posts.
  */
 interface Cursor {
   sinceId: string | null;
+  /** Start of the last successful live scan; lookback never advances live coverage. */
+  scannedThrough?: string;
   backlog?: Array<{ next: string | null; stopAt: string | null; query?: string; beforeId?: string | null }>;
 }
 
@@ -86,8 +78,16 @@ export async function collectPosts(opts: { lookbackHours?: number } = {}): Promi
   const started = new Date();
   await touchWatermarks({ lastAttemptAt: started.toISOString() });
   const cursor = (await getState<Cursor>("cursor")) ?? { sinceId: null };
-  const since = opts.lookbackHours ? Math.floor((Date.now() - opts.lookbackHours * 3600_000) / 1000) : null;
-  const query = since ? `from:${AUTHOR} since_time:${since}` : `from:${AUTHOR}`;
+  let covered = cursor.scannedThrough ? Date.parse(cursor.scannedThrough) : null;
+  if (covered === null && cursor.sinceId && !opts.lookbackHours) {
+    // A cursor written before time-based scans holds only the newest id (sites deployed earlier still
+    // have one): start from that post's time, without cutting off a long outage or the overlap behind it.
+    const [last] = await sql<{ published_at: Date }[]>`SELECT published_at FROM monitor_posts WHERE id = ${cursor.sinceId}`;
+    covered = last?.published_at.getTime() ?? null;
+  }
+  const since = opts.lookbackHours ? Math.floor((started.getTime() - opts.lookbackHours * 3600_000) / 1000)
+    : covered !== null ? Math.floor((covered - OVERLAP_MS) / 1000) : null;
+  const query = since !== null ? `from:${AUTHOR} since_time:${since}` : `from:${AUTHOR}`;
   const window = new Date(Math.floor(Date.now() / 60_000) * 60_000).toISOString();
   const found: SdTweet[] = [];
   let pages = 0;
@@ -119,9 +119,10 @@ export async function collectPosts(opts: { lookbackHours?: number } = {}): Promi
   };
 
   const backlog = [...(cursor.backlog ?? [])];
-  const more = await read(query, null, since ? null : cursor.sinceId, MAX_PAGES);
+  const stopAt = since !== null ? null : cursor.sinceId;
+  const more = await read(query, null, stopAt, MAX_PAGES);
   // Initial scans and lookbacks also have unread tails. Keep the exact query for their cursors.
-  if (more.next) backlog.push({ ...more, stopAt: since ? null : cursor.sinceId, query });
+  if (more.next) backlog.push({ ...more, stopAt, query });
   // Older stretches next, oldest first, within one more scan's worth of pages.
   let budget = MAX_PAGES;
   for (const gap of backlog) {
@@ -153,7 +154,11 @@ export async function collectPosts(opts: { lookbackHours?: number } = {}): Promi
     stored++;
   }
   const newest = found.reduce<string | null>((m, t) => (!m || idGreater(t.id_str, m) ? t.id_str : m), cursor.sinceId);
-  const next: Cursor = { sinceId: newest, backlog: backlog.filter((g) => g.next !== "") };
+  const next: Cursor = {
+    ...cursor,
+    ...(!opts.lookbackHours ? { sinceId: newest, scannedThrough: started.toISOString() } : {}),
+    backlog: backlog.filter((g) => g.next !== ""),
+  };
   if (!next.backlog?.length) delete next.backlog;
   if (JSON.stringify(next) !== JSON.stringify(cursor)) await setState("cursor", next);
   await touchWatermarks({ lastCollectedAt: started.toISOString() });
@@ -192,9 +197,9 @@ interface PushPost {
 }
 
 /**
- * One card per post, however many resets it speaks of (the legacy notification): the conclusion
- * first, each reset's expected time (or confirmation time, or withdrawal), the audience, the outage it
- * follows, the question a short reply answers, Tibo's words in Chinese and the links.
+ * One card per post, however many resets it speaks of: the conclusion first, each reset's expected time
+ * (or confirmation time, or withdrawal), the audience, the outage it follows, the question a short reply
+ * answers, Tibo's words in Chinese and the links.
  */
 function resetPostCard(post: PushPost, entries: Array<{ eventId: string; action: NotifyAction }>, snapshot: Awaited<ReturnType<typeof codexResetsSnapshot>>, withdrawn: Map<string, { type: string }>) {
   type Event = (typeof snapshot.events)[number];
@@ -325,28 +330,23 @@ export async function flushResetPushes(): Promise<number> {
   return pushed;
 }
 
-/** One scheduled tick: scan when due, process what was stored, push what is owed, then move the verified watermark. */
-export async function monitorTick(opts: { force?: boolean; lookbackHours?: number } = {}) {
-  // Both cron queues share one session lock. Model/network calls hold no database transaction;
-  // process exit releases the lock, so a stale persistent lease cannot stop monitoring.
+/** One scheduled run: collect (or look back), process what was stored, push what is owed, then move the verified watermark. */
+export async function monitorTick(opts: { lookbackHours?: number } = {}) {
+  // The ten-minute scan and the daily lookback are separate schedules that both run at 04:40; one waits
+  // for the other, so their cursor updates cannot interleave. A session lock, because model and network
+  // calls hold no database transaction; process exit releases it, so a stale lock cannot stop monitoring.
   const connection = await sql.reserve();
   try {
-    // The once-daily lookback waits; ordinary minute ticks can skip an overlapping run.
-    if (opts.lookbackHours) await connection`SELECT pg_advisory_lock(hashtext('monitor.tick'))`;
-    else {
-      const [lock] = await connection`SELECT pg_try_advisory_lock(hashtext('monitor.tick')) AS acquired`;
-      if (!lock!.acquired) return { skipped: true };
-    }
+    await connection`SELECT pg_advisory_lock(hashtext('monitor.tick'))`;
     try { return await tick(opts); }
     finally { await connection`SELECT pg_advisory_unlock(hashtext('monitor.tick'))`; }
   } finally { connection.release(); }
 }
 
-async function tick(opts: { force?: boolean; lookbackHours?: number }) {
-  if (!opts.force && !opts.lookbackHours && !(await scanDue())) return { skipped: true };
+async function tick(opts: { lookbackHours?: number }) {
   const started = new Date();
-  // A failed collection still lets the posts already stored be read and told (as the legacy scan did);
-  // the failure is raised after that, and the round is not counted as verified.
+  // A failed collection still lets the posts already stored be read and told; the failure is raised
+  // after that, and the round is not counted as verified.
   let collected: Awaited<ReturnType<typeof collectPosts>> | null = null;
   let collectError: unknown = null;
   try {
@@ -360,13 +360,11 @@ async function tick(opts: { force?: boolean; lookbackHours?: number }) {
   const pushed = await flushResetPushes();
   if (collectError) throw collectError;
   const [pending] = await sql<{ n: number; review: number }[]>`
-    SELECT count(*) FILTER (WHERE processed_at IS NULL)::int AS n,
-      count(*) FILTER (WHERE recognition->>'needsReview' = 'true' AND coalesce(recognition->>'reviewed', 'false') <> 'true')::int AS review
+    SELECT count(*) FILTER (WHERE processed_at IS NULL)::int AS n, count(*) FILTER (WHERE ${awaitingReviewCondition()})::int AS review
     FROM monitor_posts WHERE author = ${AUTHOR}`;
-  // Verified in full only with nothing waiting: no post unprocessed, no window held back, no stretch of
+  // Verified in full only with nothing waiting: no post unprocessed or waiting for review, no stretch of
   // posts still unread behind a long gap.
-  const held = Number((await getState<{ count?: number }>("held"))?.count ?? 0);
-  const complete = !pending?.n && !pending?.review && !held && !backlog;
+  const complete = !pending?.n && !pending?.review && !backlog;
   if (complete) await touchWatermarks({ lastVerifiedAt: started.toISOString() });
   return { ...collected, ...result, pushed, pending: pending?.n ?? 0, verifiedAt: complete ? bjIso(started) : null };
 }

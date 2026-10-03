@@ -37,7 +37,7 @@ test('hot covers follow current visibility and full-text rights within one ranki
     const hot = await loadHot();
     assert.equal(hot.entries.length,1,'the public representative keeps the story on the same ranking');
     const url = hot.entries[0]!.cover?.url;
-    return url ? new URL(url,'http://localhost:3000').searchParams.get('u') : null;
+    return url ? new URL(url,'http://localhost').searchParams.get('u') : null;
   };
   assert.equal(await cover(),'https://example.org/primary.png');
   await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = 'cover-primary'`;

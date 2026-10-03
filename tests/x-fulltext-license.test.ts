@@ -1,12 +1,15 @@
+// An X post's own text, its translation, the post it quotes and its media are its body: the site shows
+// them only when the source allows full text (site_fulltext), full RSS only when it may also syndicate.
+// Every other exit keeps the item with its licensed summary.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { after, before, test } from "node:test";
+import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { updateSource } from "@aihot/backend/admin/sources";
 import { upsertMaterial, type XPostData } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
-import { fetchItemsByIds, toFeedItemSummary, toItemSummary } from "@aihot/backend/publication/items";
+import { ITEM_COLUMNS, ITEM_FROM, toFeedItemSummary, type ItemRow } from "@aihot/backend/publication/items";
 import { publishArticle, republishSource } from "@aihot/backend/publication/publish";
 import { buildApp } from "../apps/api/src/app.ts";
 
@@ -16,16 +19,10 @@ const stories: string[] = [];
 const quotes: string[] = [];
 let n = 0;
 
-before(async () => {
-  await sql`INSERT INTO topics (slug, name, grp, tags, definition, related, position)
-    VALUES (${T}, '许可测试', 'field', ${[T]}, '本地测试', ${[]}, 9999)`;
-});
-
 after(async () => {
   await app.close();
   await stopBoss();
   try {
-    await sql`DELETE FROM topics WHERE slug = ${T}`;
     await sql`DELETE FROM articles WHERE source_id LIKE ${`${T}-%`}`;
     await sql`DELETE FROM sources WHERE id LIKE ${`${T}-%`}`;
     if (stories.length) {
@@ -48,11 +45,11 @@ async function fixture(options: {
   const tweet = `${Date.now()}${n}0`;
   const quote = `${Date.now()}${n}1`;
   quotes.push(quote);
-  const main = `F01-MAIN-${key}`;
-  const zh = options.translation === "same" ? main : `F01-ZH-${key}`;
-  const quoted = `F01-QUOTED-${key}`;
-  const quotedZh = options.translation === "same" ? quoted : `F01-QUOTED-ZH-${key}`;
-  const media = `F01-MEDIA-${key}`;
+  const main = `X-MAIN-${key}`;
+  const zh = options.translation === "same" ? main : `X-ZH-${key}`;
+  const quoted = `X-QUOTED-${key}`;
+  const quotedZh = options.translation === "same" ? quoted : `X-QUOTED-ZH-${key}`;
+  const media = `X-MEDIA-${key}`;
   const summary = options.summary === false ? null : `摘要-${key}`;
   const kind = options.kind ?? "x_search";
   const url = kind === "x_search" ? `https://x.com/license/status/${tweet}` : `https://example.org/${key}`;
@@ -110,7 +107,6 @@ async function summaryDetail(f: Fixture) {
     assert.equal(detail.id, f.id);
     assert.equal(detail.summary, f.summary);
     assert.equal(detail.links.original, f.url);
-    assert.ok(detail.source.iconUrl, "来源图标仍属于获准元数据");
     noContent(response.body, f);
     assert.equal(detail.x, null);
     assert.equal(detail.body, null);
@@ -129,17 +125,16 @@ async function summaryMarkdown(f: Fixture) {
 }
 
 async function summaryLists(f: Fixture) {
-  const paths = [`/api/site/timeline?tag=${f.key}`, `/api/site/pool?tag=${f.key}`, `/api/site/topics/${T}`,
-    `/api/site/groups/${f.fact}/reports`, `/api/site/stories/${f.story}/developments`];
-  for (const path of paths) {
+  // The group's report list carries titles and sources only, no summaries.
+  for (const [path, summary] of [[`/api/site/timeline?tag=${f.key}`, true], [`/api/site/pool?tag=${f.key}`, true], [`/api/site/groups/${f.fact}/reports`, false]] as const) {
     const response = await get(path);
     assert.ok(response.body.includes(f.id), `${path} 确实包含目标条目`);
-    assert.ok(response.body.includes(f.summary!), `${path} 保留摘要`);
+    if (summary) assert.ok(response.body.includes(f.summary!), `${path} 保留摘要`);
     noContent(response.body, f);
   }
-  const row = (await fetchItemsByIds([f.id])).get(f.id)!;
-  assert.equal(toItemSummary(row).x, null);
-  assert.equal(toFeedItemSummary(row).x, null);
+  // Topic pages and the other card lists share this projection.
+  const [row] = await sql<ItemRow[]>`SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id = ${f.id}`;
+  assert.equal(toFeedItemSummary(row!).x, null);
 }
 
 async function feedItem(path: string, f: Fixture) {

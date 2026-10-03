@@ -1,14 +1,19 @@
-import { SITE, withSubject } from "@aihot/industry/site";
 import { useEffect, useState } from "react";
 import { useLoaderData, useRevalidator } from "react-router";
-import type { CodexResetEvent, CodexResetSitePage, CodexResetDay } from "@aihot/contracts/monitor";
-import { loadOr404 } from "../lib/api.server";
+import { CODEX_RESET_SCAN_MINUTES, type CodexResetEvent, type CodexResetSitePage, type CodexResetDay, type CodexResetVersion } from "@aihot/contracts/monitor";
+import { SITE } from "@aihot/industry/site";
+import { edgeTtl, loadOr404 } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
 import { PostCard } from "../features/monitor/PostCard";
 import { ResetCalendar } from "../features/monitor/ResetCalendar";
-import { bjDate, bjTime, dayWord, durationText, monthDay, stamp, typeName, windowText } from "../features/monitor/format";
+import { bjDate, bjTime, dayWord, durationText, stamp, typeName, windowText } from "../features/monitor/format";
+import { monthDay } from "../lib/format";
 import { IconChevronDown, IconChevronRight } from "../components/icons";
 import { useEntrance } from "../lib/hydration";
+import { PhoneBar } from "../components/shell/PhoneBar";
+import type { Screen } from "../components/shell/screens";
+
+export const handle: Screen = { tab: "me", name: "Tibo 监控" };
 
 export async function loader({ request, params }: { request: Request; params: { date?: string } }) {
   const [data, day] = await Promise.all([
@@ -28,13 +33,17 @@ export function meta() {
 }
 
 export function headers() {
-  return { "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=60" };
+  return edgeTtl(30);
 }
 
 const POLL_MS = 60_000;
 
-/** Low-frequency version check while the page is in the foreground. */
-function useVersionPolling(version: string) {
+/**
+ * Low-frequency version check while the page is in the foreground. A new version (events, statuses,
+ * the outage and its recovery) or a new day reloads the page data; a newer check alone only moves the
+ * "最近检查" time, without reading everything again.
+ */
+function useVersionPolling(version: string, today: string, onChecked: (checkedAt: string | null) => void) {
   const revalidator = useRevalidator();
   useEffect(() => {
     let stopped = false;
@@ -45,8 +54,10 @@ function useVersionPolling(version: string) {
       try {
         const res = await fetch("/api/site/codex-reset/version", { cache: "no-store", signal: request.signal });
         if (!res.ok) return;
-        const v = (await res.json()) as { version: string };
-        if (!stopped && v.version !== version) revalidator.revalidate();
+        const v = (await res.json()) as CodexResetVersion;
+        if (stopped) return;
+        if (v.version !== version || v.today !== today) revalidator.revalidate();
+        else onChecked(v.checkedAt);
       } catch {
         // offline: try again next tick
       } finally {
@@ -62,7 +73,7 @@ function useVersionPolling(version: string) {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [version, revalidator]);
+  }, [version, today, revalidator]);
 }
 
 function scopeText(e: CodexResetEvent) {
@@ -77,6 +88,8 @@ function Hero({ d, now }: { d: CodexResetSitePage; now: number }) {
   const shell = "cr-wash grid items-center gap-5 rounded-sheet border border-line-strong p-4 sm:p-6 lg:grid-cols-2 lg:gap-8 lg:p-8";
   if (!e) {
     const last = d.lastLanded;
+    const lastDate = last?.occurredOn ? `${monthDay(last.occurredOn)}到账`
+      : last?.confirmedAt ? `${monthDay(bjDate(last.confirmedAt))}确认` : "到账日期未确定";
     return (
       <section className={shell} style={{ "--tone": last ? "var(--ok-ink)" : "var(--ink-4)" } as React.CSSProperties}>
         <div className="min-w-0">
@@ -85,9 +98,16 @@ function Hero({ d, now }: { d: CodexResetSitePage; now: number }) {
             当前没有等待生效的重置
           </p>
           <h2 className="mt-3 text-[20px] font-[650] leading-[1.25] text-ink sm:text-[24px]">
-            {d.stats.lastResetDate ? `上一次额度重置在 ${monthDay(d.stats.lastResetDate)}` : "暂无重置记录"}
+            {last?.status === "confirmed"
+              ? `上一次${last.type === "reset_credit" ? "重置卡发放" : "额度重置"}：${lastDate}`
+              : last?.title ?? "暂无重置记录"}
           </h2>
-          <p className="mt-2 text-[13px] leading-[1.75] text-ink-4">不预测尚未宣布的下一次重置。Tibo 一旦宣布，这里会显示预计生效时间与原帖。</p>
+          <p className="mt-2 text-[13px] leading-[1.75] text-ink-4">
+            {last?.confirmedAt && !last.occurredOn && "确认帖日期不代表精确到账时间。"}
+            {last?.confirmationBasis === "receipt_review"
+              ? "已通过账户核验。尚未收录 Tibo 对本轮的完成确认，实际到账时间以账户显示为准。"
+              : "不预测尚未宣布的下一次重置。Tibo 一旦宣布，这里会显示预计生效时间与原帖。"}
+          </p>
           {d.outage && (
             <p className="mt-4 border-t border-line pt-4 text-[13px] leading-[1.75] text-ink-3">
               线索：{dayWord(bjDate(d.outage.publishedAt!), d.today)} {bjTime(d.outage.publishedAt!)} Tibo 确认 Codex 故障
@@ -168,6 +188,26 @@ function Hero({ d, now }: { d: CodexResetSitePage; now: number }) {
   );
 }
 
+/** The rhythm over the last 90 days: resets, credits, the median gap, the last reset. */
+function Stats({ stats }: { stats: CodexResetSitePage["stats"] }) {
+  const items = [
+    { label: "近 90 天额度重置", value: `${stats.resets90} 次` },
+    { label: "近 90 天发重置卡", value: `${stats.credits90} 次` },
+    { label: "重置间隔中位数", value: stats.medianIntervalDays === null ? "—" : `${stats.medianIntervalDays} 天` },
+    { label: "上次额度重置", value: stats.lastResetDate ? monthDay(stats.lastResetDate) : "—" },
+  ];
+  return (
+    <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-card border border-line bg-line sm:grid-cols-4">
+      {items.map((i) => (
+        <div key={i.label} className="bg-surface px-4 py-3">
+          <dt className="text-[12px] text-ink-4">{i.label}</dt>
+          <dd className="num mt-1 text-[18px] font-semibold text-ink">{i.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /** Tibo's usual hours: 16:30–21:30 Pacific, i.e. 07:30–12:30 Beijing the next morning. */
 const USUAL_FROM = 7 * 60 + 30;
 const USUAL_TO = 12 * 60 + 30;
@@ -178,13 +218,16 @@ const MONITOR_DOT = { healthy: "bg-ok-ink", delayed: "bg-amber-ink", attention: 
 
 export default function CodexResetPage() {
   const d = useLoaderData<typeof loader>();
-  useVersionPolling(d.version);
-  const m = d.monitor;
+  const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  useEffect(() => setCheckedAt(null), [d.version, d.monitor?.lastVerifiedAt]);
+  useVersionPolling(d.version, d.today, setCheckedAt);
+  const m = d.monitor ? { ...d.monitor, lastVerifiedAt: checkedAt ?? d.monitor.lastVerifiedAt } : null;
   return (
     <div className="pb-8">
-      <header className="flex flex-col gap-1 pb-4 pt-5 lg:flex-row lg:items-end lg:justify-between lg:pt-1">
+      <PhoneBar back={{ to: "/more", label: "我的" }} title="Tibo重置监控" />
+      <header className="flex flex-col gap-1 pb-4 pt-3 lg:flex-row lg:items-end lg:justify-between lg:pt-1">
         <div>
-          <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">Tibo重置监控</h1>
+          <h1 data-page-title="" className="text-[24px] font-semibold leading-[1.3] text-ink">Tibo重置监控</h1>
           <p className="mt-1.5 text-[13px] text-ink-3">Codex 额度重置与重置卡发放：什么时候生效、给谁、Tibo 原话</p>
         </div>
         <p className="text-[12px] text-ink-4">全部为北京时间 · UTC+8</p>
@@ -200,11 +243,11 @@ export default function CodexResetPage() {
           </span>
           <span className="text-[12px] text-ink-4">来源与规则</span>
         </summary>
-        <div className="grid gap-x-8 gap-y-[18px] pb-6 pt-1.5 text-[12px] leading-[1.9] text-ink-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-8 gap-y-[18px] pb-6 pt-1.5 text-[12px] leading-[1.9] text-ink-4 md:grid-cols-2">
           <p><strong className="font-semibold text-ink-3">有原话就按原话。</strong>Tibo 写了时间（如 “6pm PST”“next hour”“end of day”），按太平洋时间换算成北京时间，并多留一两个小时——他的确认帖通常比说的时间晚一点。只写了日期的，按他以往的习惯落在当天太平洋时间傍晚。</p>
           <p><strong className="font-semibold text-ink-3">没写时间就按习惯。</strong>Tibo 多在太平洋时间 16:30–21:30 按下重置按钮，也就是北京时间第二天早上 07:30–12:30。{d.confirmMinutes.length ? `近 ${d.confirmMinutes.length} 次确认中有 ${d.confirmMinutes.filter(inUsual).length} 次在这个时段。` : ""}推算只是参考，以 Tibo 的确认和你 Codex 里的用量为准。</p>
-          <p><strong className="font-semibold text-ink-3">已生效、应已生效、等待中。</strong>Tibo 发帖确认才算“已生效”；预计时间过去几个小时仍没有确认帖，显示“应已生效”——他宣布过的重置以往都兑现了，只是常常不再发确认。重置卡与额度重置分开记录，发卡不代表额度已恢复。</p>
-          <p><strong className="font-semibold text-ink-3">持续跟踪 Tibo 的公开帖子。</strong>平时每 5 分钟检查一次，Tibo 确认故障或宣布重置后改为每 3 分钟。只有明确的重置或发卡消息才会推送飞书群。个人额度和重置卡余额请在 Codex 内查看。</p>
+          <p><strong className="font-semibold text-ink-3">已生效、应已生效、等待中。</strong>Tibo 发帖确认或经账户到账核实后，标为“已生效”，并注明确认依据；确认帖日期不代表精确到账时间。预计时间过去几个小时仍没有确认，显示“应已生效”，不等于已确认。重置卡与额度重置分开记录，发卡不代表额度已恢复。</p>
+          <p><strong className="font-semibold text-ink-3">持续跟踪 Tibo 的公开帖子。</strong>每 {CODEX_RESET_SCAN_MINUTES} 分钟检查一次。只有明确的重置或发卡消息才会推送飞书群。个人额度和重置卡余额请在 Codex 内查看。</p>
         </div>
       </details>
 
@@ -248,6 +291,7 @@ function LiveMonitor({ d }: { d: CodexResetSitePage & { serverNow: number } }) {
   }, [d.version]);
   return <>
     <Hero d={d} now={now} />
+    <Stats stats={d.stats} />
     <ResetCalendar key={d.selectedDate} selectedDate={d.selectedDate} version={d.version} marks={d.calendar} events={d.events} today={d.today} historyFrom={d.historyFrom} now={now} avatar={d.authorAvatar} />
   </>;
 }

@@ -44,7 +44,7 @@ export interface GuardedFetchOptions {
   maxBytes?: number;
   /** Follow redirects manually so every hop passes the SSRF guard. */
   maxRedirects?: number;
-  /** URL 可能含凭据时显式限制为原始来源；不能放宽自动识别的敏感请求。 */
+  /** Keeps every hop on the original origin when the URL itself may carry credentials (never relaxes the automatic rule). */
   redirectPolicy?: "same-origin";
   /** "egress" by default; see EgressRoute. */
   route?: EgressRoute;
@@ -74,7 +74,7 @@ export async function guardedFetch(input: string, opts: GuardedFetchOptions = {}
   const maxBytes = opts.maxBytes ?? 8 * 1024 * 1024;
   const headers = new Headers({ "user-agent": DEFAULT_UA, "accept-language": "zh-CN,zh;q=0.9,en;q=0.8", ...(opts.headers ?? {}) });
   const publicHeaders = new Set(["accept", "accept-language", "accept-encoding", "user-agent", "cache-control", "if-modified-since", "if-none-match", "range", "if-range"]);
-  // 未知自定义头和请求体可能携带凭据，整个跳转链都保留最初的来源边界。
+  // Unknown custom headers and request bodies may carry credentials: the whole redirect chain keeps the first origin.
   const originBound = opts.redirectPolicy === "same-origin" || opts.body !== undefined || Object.keys(opts.headers ?? {}).some((name) => !publicHeaders.has(name.toLowerCase()));
   const initialOrigin = url.origin;
   let method = (opts.method ?? "GET").toUpperCase();
@@ -82,7 +82,7 @@ export async function guardedFetch(input: string, opts: GuardedFetchOptions = {}
   for (let hop = 0; ; hop++) {
     const res = await undiciFetch(url, {
       method,
-      headers,
+      headers: Object.fromEntries(headers),
       body: requestBody,
       redirect: "manual",
       dispatcher: dispatcherFor(proxied(url, route)),

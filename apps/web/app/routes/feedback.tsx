@@ -1,16 +1,20 @@
-import { SITE, withSubject } from "@aihot/industry/site";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
+import { SITE } from "@aihot/industry/site";
 import { Presence } from "../components/ui/Presence";
+import { edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
-import { KEYS } from "../lib/local-state";
+import { KEYS, lastPage, readJson, writeRaw } from "../lib/local-state";
 import { IconCheck, IconClose, IconImage } from "../components/icons";
 import { RingMark } from "../components/Logo";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
+import { PhoneBar } from "../components/shell/PhoneBar";
+import type { Screen } from "../components/shell/screens";
 
-/** Shared caches may keep this page for five minutes. */
+export const handle: Screen = { tab: "me", name: "反馈" };
+
 export function headers() {
-  return { "Cache-Control": "public, max-age=0, s-maxage=300, stale-while-revalidate=600" };
+  return edgeTtl(300);
 }
 
 export function meta() {
@@ -24,23 +28,14 @@ interface Draft {
 }
 
 function readDraft(): Draft | null {
-  try {
-    const raw = localStorage.getItem(KEYS.feedbackDraft);
-    if (!raw) return null;
-    const d = JSON.parse(raw);
-    return typeof d === "object" && d ? { content: String(d.content ?? ""), email: String(d.email ?? ""), pageUrl: String(d.pageUrl ?? "") } : null;
-  } catch {
-    return null;
-  }
+  const value = readJson(KEYS.feedbackDraft);
+  if (!value || typeof value !== "object") return null;
+  const d = value as Record<string, unknown>;
+  return { content: String(d.content ?? ""), email: String(d.email ?? ""), pageUrl: String(d.pageUrl ?? "") };
 }
 
 function writeDraft(d: Draft | null) {
-  try {
-    if (d === null) localStorage.removeItem(KEYS.feedbackDraft);
-    else localStorage.setItem(KEYS.feedbackDraft, JSON.stringify({ ...d, savedAt: new Date().toISOString() }));
-  } catch {
-    // storage unavailable: the form still works
-  }
+  writeRaw(KEYS.feedbackDraft, d && JSON.stringify({ ...d, savedAt: new Date().toISOString() }));
 }
 
 const TIPS = ["出问题的页面或文章链接", "你看到了什么，原本想做什么", "有截图更好，记得先遮盖敏感信息"];
@@ -65,6 +60,20 @@ function FeedbackAside() {
   );
 }
 
+/**
+ * Some phones report a JPEG as image/jpg, or give no type at all: the file name decides then. The
+ * server checks the picture's real bytes either way.
+ */
+function screenshotType(file: File): string {
+  const type = file.type.trim().toLowerCase();
+  if (type === "image/jpg") return "image/jpeg";
+  if (type && type !== "application/octet-stream") return type;
+  if (/\.png$/i.test(file.name)) return "image/png";
+  if (/\.jpe?g$/i.test(file.name)) return "image/jpeg";
+  if (/\.webp$/i.test(file.name)) return "image/webp";
+  return type;
+}
+
 const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_TEXT = 2000;
 
@@ -78,8 +87,12 @@ export default function FeedbackPage() {
 
   useEffect(() => {
     const saved = readDraft();
-    if (saved) setDraft((d) => ({ ...saved, pageUrl: d.pageUrl || saved.pageUrl }));
-    else if (!params.get("from") && document.referrer.startsWith(location.origin)) setDraft((d) => ({ ...d, pageUrl: document.referrer }));
+    // The page the reader was on before coming here (tracked across in-site navigation, "更多" skipped);
+    // a document the browser opened fresh falls back to its referrer.
+    const before = params.get("from") ? null : (lastPage() ?? (document.referrer.startsWith(location.origin) ? document.referrer : null));
+    const from = before ? new URL(before, location.origin).href : null;
+    if (saved) setDraft((d) => ({ ...saved, pageUrl: d.pageUrl || from || saved.pageUrl }));
+    else if (from) setDraft((d) => ({ ...d, pageUrl: from }));
   }, []);
   useEffect(() => {
     const t = setTimeout(() => writeDraft(draft.content || draft.email ? draft : null), 400);
@@ -91,9 +104,11 @@ export default function FeedbackPage() {
     return () => URL.revokeObjectURL(shot.url);
   }, [shot]);
 
-  const pick = (file: File | null | undefined) => {
-    if (!file) return;
-    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return setState({ kind: "error", message: "截图需要是 PNG、JPEG 或 WebP。" });
+  const pick = (picked: File | null | undefined) => {
+    if (!picked) return;
+    const type = screenshotType(picked);
+    if (!/^image\/(png|jpeg|webp)$/.test(type)) return setState({ kind: "error", message: "截图需要是 PNG、JPEG 或 WebP。" });
+    const file = type === picked.type ? picked : new File([picked], picked.name, { type });
     if (file.size > MAX_IMAGE) return setState({ kind: "error", message: "截图原图不超过 5 MB。" });
     setShot({ file, url: URL.createObjectURL(file) });
     setState({ kind: "idle" });
@@ -153,9 +168,11 @@ export default function FeedbackPage() {
   const label = "mb-2 block text-[13px] font-semibold text-ink";
   const canSend = draft.content.trim().length >= 2 && state.kind !== "sending";
   return (
+    <>
+    <PhoneBar back={{ to: "/more", label: "我的" }} title="意见反馈" />
     <ReadingLayout aside={<FeedbackAside />}>
       <header>
-        <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">说说你的想法</h1>
+        <h1 data-page-title="" className="text-[24px] font-semibold leading-[1.3] text-ink">说说你的想法</h1>
         <p className="mt-2 text-[14.5px] leading-relaxed text-ink-3">发现 bug、想要的功能、看不顺眼的地方，都可以告诉我，我都会看到。</p>
       </header>
 
@@ -247,7 +264,7 @@ export default function FeedbackPage() {
         <div className="flex flex-col-reverse gap-4 border-t border-line-soft bg-bg-sunk/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:bg-bg-muted/30">
           <p className="text-[12px] leading-relaxed text-ink-4 sm:max-w-[400px]">
             请勿提交密钥、身份证件或与问题无关的敏感信息。提交即表示你知悉反馈内容、选填邮箱、页面信息和截图将按
-            <Link to="/privacy" className="text-accent hover:underline">
+            <Link viewTransition to="/privacy" className="text-accent hover:underline">
               隐私说明
             </Link>
             处理。
@@ -263,5 +280,6 @@ export default function FeedbackPage() {
         </div>
       </form>
     </ReadingLayout>
+    </>
   );
 }

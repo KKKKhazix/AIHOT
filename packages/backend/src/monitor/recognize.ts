@@ -1,7 +1,7 @@
-import { SITE } from "@aihot/industry/site";
 // Recognition of Tibo's posts: the model translates and states what the post claims; code checks
 // the boundaries (kinds, actions, times, relations) independent of wording.
 import { z } from "zod";
+import { SITE } from "@aihot/industry/site";
 import { modelFor } from "../editorial/models.ts";
 import { chatJson } from "../providers/llm.ts";
 import { pacificParts } from "./time.ts";

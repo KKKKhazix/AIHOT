@@ -1,6 +1,6 @@
-import { FEATURES } from "@aihot/industry/features";
 import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
+import { FEATURES } from "@aihot/industry/features";
 import { OAUTH_PROBE_PATHS, resolveRedirect } from "@aihot/contracts/http-policy";
 import { sql } from "@aihot/backend/db";
 import { registerSite } from "./routes/site.ts";
@@ -10,26 +10,22 @@ import { registerAdminAuth } from "./routes/admin-auth.ts";
 import { registerAdmin } from "./routes/admin.ts";
 import { registerIngest } from "./routes/ingest.ts";
 import { registerV1, registerV1Fallbacks } from "./routes/v1.ts";
+import { registerAgent } from "./routes/agent.ts";
 import { registerMedia } from "./routes/media.ts";
 import { registerFeeds } from "./routes/feeds.ts";
 import { registerStatic } from "./routes/static.ts";
-import { registerAgent } from "./routes/agent.ts";
 import { registerMcp } from "./routes/mcp.ts";
 import { sendProblem } from "./http/respond.ts";
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: { level: process.env.LOG_LEVEL || "info", redact: ["req.headers.authorization", "req.headers.cookie"] },
-    // Access logs never record query strings (tokens, actors).
+    // Access logs never record query strings (tokens).
     disableRequestLogging: true,
     trustProxy: true,
     genReqId: () => randomUUID(),
     bodyLimit: 10 * 1024 * 1024,
     routerOptions: { ignoreTrailingSlash: false, maxParamLength: 300 },
-  });
-
-  app.addHook("onRequest", async (req) => {
-    req.requestId = req.id;
   });
 
   app.addHook("onResponse", async (req, reply) => {
@@ -69,12 +65,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerOg(app);
   registerAdminAuth(app);
   registerAdmin(app);
-
   registerIngest(app);
   registerV1(app);
   registerAgent(app);
   registerMedia(app);
-
   registerFeeds(app);
   registerStatic(app);
   registerMcp(app);
@@ -88,11 +82,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   app.setErrorHandler((error, req, reply) => {
-    req.log.error({ err: error }, "unhandled");
     const status = (error as { statusCode?: number }).statusCode ?? 500;
     if (status === 400 || status === 413 || status === 415) {
+      // A malformed or oversized request is the client's: one line, no stack trace in the error log.
+      req.log.info({ status, code: (error as { code?: string }).code }, "request refused");
       return sendProblem(req, reply, { status: status === 400 ? 400 : status, code: "invalid_request", detail: "The request could not be processed." });
     }
+    req.log.error({ err: error }, "unhandled");
     return sendProblem(req, reply, { status: 503, code: "temporarily_unavailable", detail: "Temporarily unavailable.", retryAfter: 30 });
   });
 

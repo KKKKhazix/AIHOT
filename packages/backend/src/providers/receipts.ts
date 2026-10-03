@@ -1,4 +1,4 @@
-// Paid requests (models, SocialData, Jina, Dajiala) go through here.
+// Paid requests (models, SocialData, Jina; historical Dajiala records retained) go through here.
 //
 // 1. A logical request has a stable key bound to task, input revision, provider, model, prompt and config.
 // 2. Before calling, a placeholder row and an attempt row are persisted; budgets count attempts.
@@ -24,8 +24,8 @@ export class ReceiptBusyError extends Error {}
 
 export class ReceiptUnknownError extends Error {
   readonly receiptId: number;
-  constructor(receiptId: number, message: string) {
-    super(message);
+  constructor(receiptId: number, message: string, options?: ErrorOptions) {
+    super(message, options);
     this.receiptId = receiptId;
   }
 }
@@ -39,6 +39,15 @@ export class ProviderRejectedError extends Error {
     this.status = status;
     this.retryable = retryable;
   }
+}
+
+/**
+ * The HTTP rule for every provider: an answer outside 2xx means the request was not taken. Rate limits
+ * and server errors may pass; any other status is a refusal the same request would meet again.
+ */
+export function assertAccepted(service: string, status: number, body: string): void {
+  if (status >= 200 && status < 300) return;
+  throw new ProviderRejectedError(`${service} HTTP ${status}: ${body.slice(0, 500)}`, status, status === 429 || status >= 500);
 }
 
 export interface CallOutcome {
@@ -162,6 +171,8 @@ export async function paidRequest(req: ReceiptRequest, call: () => Promise<CallO
       await tx`UPDATE receipts SET status = ${status}, error = ${message}, updated_at = now() WHERE id = ${receiptId}`;
       await tx`UPDATE receipt_attempts SET status = ${status}, error = ${message}, latency_ms = ${Date.now() - started}, finished_at = now() WHERE id = ${attemptId}`;
     });
+    // The first transport failure needs the same durable identity as a later unknown-result retry.
+    if (status === "unknown") throw new ReceiptUnknownError(receiptId, message, { cause: error });
     throw error;
   }
 

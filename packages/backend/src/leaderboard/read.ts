@@ -1,27 +1,30 @@
-import { SITE } from "@aihot/industry/site";
 // Leaderboard read layer: every leaderboard page reads the latest published run through here.
 // Page reads never compute rankings; they only format what the run stored.
-import { LEADERBOARD_PUBLIC_BOARDS, type LeaderboardBoardKey } from "@aihot/contracts/taxonomy";
+import { LEADERBOARD_BOARD_LABELS, LEADERBOARD_PUBLIC_BOARDS, type LeaderboardBoardKey } from "@aihot/contracts/taxonomy";
 import type {
   LbBoardEntry,
   LbBoardResponse,
+  LbBrand,
   LbComparison,
-  LbConfidence,
   LbEvidenceGroup,
   LbEvidenceItem,
   LbModelDetail,
   LbModelRef,
   LbPrice,
+  LbRulesData,
   LbRunInfo,
   LbSourceDetail,
   LbSourceRow,
   LbSourcesResponse,
   LbSourceSummary,
-  LbStability,
 } from "@aihot/contracts/leaderboard";
 import { sql } from "../db.ts";
+import { hasPublishedError } from "./method/consensus.ts";
+import { SCORE_VERSION } from "./method/score.ts";
+import { admissionOf } from "./fetch/admission.ts";
 import { cloakedModel } from "./fetch/identity.ts";
 import { boardSubset, modelAccess } from "./access.ts";
+import { providerSlugOf } from "./providers.ts";
 import {
   BOARD_COPY,
   BOARD_LIMIT,
@@ -47,11 +50,9 @@ interface ModelRow {
 interface RankingRow {
   model_id: string;
   rank: number;
-  score: number;
+  score: number | null;
   coverage: number | null;
-  confidence: string | null;
-  metric_count: number | null;
-  detail: { stability?: LbStability; sourceCount?: number; operatorCount?: number } | null;
+  detail: { scoreVersion?: string; sourceCount?: number; operatorCount?: number; unknownErrorCount?: number } | null;
 }
 
 interface SignalRow {
@@ -63,6 +64,7 @@ interface SignalRow {
 }
 
 interface RegistryEntry {
+  budget?: string;
   family: string;
   weight: number;
   operator: string;
@@ -98,7 +100,6 @@ interface BoardView {
   comparisons: Record<string, ComparisonRaw[]>;
   sourceCount: number;
   operatorCount: number;
-  modelCount: number;
 }
 
 interface RunView {
@@ -110,6 +111,7 @@ interface RunView {
   boards: Map<string, BoardView>;
   pageSlugs: Set<string>;
   evidence: Record<string, EvidenceMeta>;
+  exclusions: Record<string, string>;
   /** Scored units each model has evidence in (whether or not it qualified for a board). */
   unitsBySlug: Map<string, string[]>;
   sourceWeights: Map<string, number>;
@@ -164,7 +166,7 @@ async function buildRunView(runId: string): Promise<RunView> {
   };
 
   const rankingRows = await sql<Array<RankingRow & { board: string }>>`
-    SELECT board, model_id, rank, score, coverage, confidence, metric_count, detail FROM lb_rankings WHERE run_id = ${runId} ORDER BY board, rank`;
+    SELECT board, model_id, rank, score, coverage, detail FROM lb_rankings WHERE run_id = ${runId} ORDER BY board, rank`;
   const modelIds = [...new Set(rankingRows.map((r) => r.model_id))];
   const modelRows = await sql<ModelRow[]>`
     SELECT id, slug, name, provider, provider_slug, released_at, context_window_tokens FROM lb_models WHERE id = ANY(${modelIds})`;
@@ -193,7 +195,6 @@ async function buildRunView(runId: string): Promise<RunView> {
       comparisons: output.comparisons ?? {},
       sourceCount: new Set(active.map(([unit]) => sourceKeyOfUnit(unit))).size,
       operatorCount: new Set(active.map(([, r]) => r.operator)).size,
-      modelCount: entries.length,
     });
   }
 
@@ -203,8 +204,8 @@ async function buildRunView(runId: string): Promise<RunView> {
     for (const e of [...boardSubset(entries), ...boardSubset(entries, true), ...boardSubset(entries, false, true), ...boardSubset(entries, true, true)]) pageSlugs.add(e.slug);
   }
 
-  const priceRows = await sql<{ model_id: string; currency: "CNY" | "USD"; input: number | null; output: number | null; cached_input: number | null; source_url: string | null; verified_on: Date | null; note: string | null }[]>`
-    SELECT model_id, currency, input, output, cached_input, source_url, verified_on, note FROM lb_prices WHERE kind = 'official' AND model_id = ANY(${modelIds})`;
+  const priceRows = await sql<{ model_id: string; currency: "CNY" | "USD"; input: number | null; output: number | null; cached_input: number | null; source_url: string | null; note: string | null }[]>`
+    SELECT model_id, currency, input, output, cached_input, source_url, note FROM lb_prices WHERE kind = 'official' AND model_id = ANY(${modelIds})`;
   const rate = info.fx?.rate ?? null;
   const toCny = (v: number | null, currency: string) => (v == null ? null : currency === "CNY" ? v : rate ? v * rate : null);
   const prices = new Map<string, LbPrice>(
@@ -219,21 +220,21 @@ async function buildRunView(runId: string): Promise<RunView> {
         outputCny: toCny(p.output, p.currency),
         cachedCny: toCny(p.cached_input, p.currency),
         officialUrl: p.source_url,
-        verifiedOn: p.verified_on ? p.verified_on.toISOString().slice(0, 10) : null,
         note: p.note,
       },
     ]),
   );
 
   const sourceWeights = new Map<string, number>();
-  for (const s of summary.sources ?? []) sourceWeights.set(s.key, Number(s.weight));
+  for (const s of summary.sources ?? []) sourceWeights.set(s.key, (sourceWeights.get(s.key) ?? 0) + Number(s.weight));
   const sourceOrder = SOURCE_GROUPS.flatMap((g) => g.sources.map((s) => s.key));
-  const sources = (summary.sources ?? []) as Array<{ key: string; evidenceBudgetKey: string }>;
+  const overallEvidence = Object.entries(boards.get("overall")?.registry ?? {});
   const budgets = ((summary.budgets ?? []) as Array<{ key: string; name: string; weight: number }>).map((b) => ({
     ...b,
-    sources: sources.filter((s) => s.evidenceBudgetKey === b.key)
-      .sort((a, c) => sourceOrder.indexOf(a.key) - sourceOrder.indexOf(c.key))
-      .map((s) => registrySource(s.key)?.source.name ?? s.key),
+    sources: overallEvidence.filter(([, s]) => s.budget === b.key && s.weight > 0)
+      .map(([unit]) => sourceKeyOfUnit(unit))
+      .sort((a, c) => sourceOrder.indexOf(a) - sourceOrder.indexOf(c))
+      .map((key) => registrySource(key)?.source.name ?? key).filter((name, i, all) => all.indexOf(name) === i),
   }));
 
   const evidence = (consensus.evidence ?? {}) as Record<string, EvidenceMeta>;
@@ -253,6 +254,7 @@ async function buildRunView(runId: string): Promise<RunView> {
     boards,
     pageSlugs,
     evidence,
+    exclusions: consensus.exclusions ?? {},
     unitsBySlug,
     sourceWeights,
     budgets,
@@ -265,10 +267,19 @@ export function invalidateLeaderboard() {
   cached = null;
 }
 
-function confidenceOf(entry: RankingRow): LbConfidence {
-  // Reproduces the published labels: sensitive rankings are low confidence; otherwise broad coverage is high.
-  if (entry.detail?.stability?.sensitive) return "LOW";
-  return (entry.coverage ?? 0) >= 0.7 ? "HIGH" : "MEDIUM";
+function evidenceCoverage(view: RunView, board: BoardView | undefined, slug: string): number {
+  return Object.entries(board?.registry ?? {}).reduce((sum, [unit, r]) => sum + (view.evidence[`${unit}:${slug}`] ? r.weight : 0), 0);
+}
+
+function missingDimensions(view: RunView, board: BoardView, slug: string): string[] {
+  const measured = new Set(Object.entries(board.registry).filter(([u]) => !!view.evidence[`${u}:${slug}`]).map(([, r]) => r.budget));
+  const relevant = board.key === "overall" ? view.budgets : view.budgets.filter(b => Object.values(board.registry).some(r => r.budget === b.key));
+  return relevant.filter(b => !measured.has(b.key)).map(b => b.name);
+}
+
+/** Old stored indices retain their old meaning; never silently relabel them as the new score. */
+function rating(entry: RankingRow | null | undefined): number | null {
+  return entry?.detail?.scoreVersion === SCORE_VERSION && entry.score !== null && Number.isFinite(entry.score) ? entry.score : null;
 }
 
 function modelRef(view: RunView, m: ModelRow): LbModelRef {
@@ -281,14 +292,6 @@ function modelRef(view: RunView, m: ModelRow): LbModelRef {
   };
 }
 
-function boardTabs() {
-  return LEADERBOARD_PUBLIC_BOARDS.map((key) => ({
-    key,
-    name: BOARD_COPY[key].name,
-    href: key === "overall" ? "/leaderboard" : `/leaderboard/category/${key}`,
-  }));
-}
-
 export async function loadBoard(key: LeaderboardBoardKey): Promise<LbBoardResponse | null> {
   const view = await runView();
   const board = view.boards.get(key);
@@ -298,26 +301,39 @@ export async function loadBoard(key: LeaderboardBoardKey): Promise<LbBoardRespon
       const m = view.modelsById.get(e.model_id)!;
       return {
         rank: e.rank,
-        score: e.score,
+        score: rating(e),
         model: modelRef(view, m),
-        sourceCount: e.detail?.sourceCount ?? e.metric_count ?? 0,
+        sourceCount: e.detail?.sourceCount ?? 0,
         coverage: e.coverage ?? 0,
-        confidence: confidenceOf(e),
-        stability: e.detail?.stability ?? null,
         price: view.prices.get(m.id) ?? null,
         access: modelAccess(m),
       };
     });
-  const copy = BOARD_COPY[key];
   return {
     run: view.info,
-    board: { ...copy, sourceCount: board.sourceCount, operatorCount: board.operatorCount, modelCount: board.modelCount },
-    tabs: boardTabs(),
+    board: { key, name: LEADERBOARD_BOARD_LABELS[key], ...BOARD_COPY[key], sourceCount: board.sourceCount, operatorCount: board.operatorCount },
     entries: boardSubset(entries),
     filterEntries: [...new Map([...boardSubset(entries, true), ...boardSubset(entries, false, true), ...boardSubset(entries, true, true)]
       .filter((e) => e.rank > BOARD_LIMIT).map((e) => [e.model.slug, e])).values()].sort((a, b) => a.rank - b.rank),
-    pending: key === "overall" ? [] : pendingModels(view, board),
+    pending: pendingModels(view, board),
   };
+}
+
+/**
+ * The mark of a company's best model on the overall board that readers can open (it has a page), for
+ * its topic: null when it has none there or no run is published.
+ */
+export async function providerMark(providerSlug: string): Promise<LbBrand | null> {
+  let view: RunView;
+  try {
+    view = await runView();
+  } catch (error) {
+    if (error instanceof NoLeaderboardRun) return null;
+    throw error;
+  }
+  const best = (view.boards.get("overall")?.entries ?? [])
+    .find((e) => view.pageSlugs.has(e.slug) && providerSlugOf(view.modelsById.get(e.model_id)!) === providerSlug);
+  return best ? modelRef(view, view.modelsById.get(best.model_id)!).brand : null;
 }
 
 /**
@@ -326,7 +342,11 @@ export async function loadBoard(key: LeaderboardBoardKey): Promise<LbBoardRespon
  */
 function pendingModels(view: RunView, board: BoardView): LbBoardResponse["pending"] {
   const units = Object.entries(board.registry).filter(([, r]) => r.weight > 0).map(([unit]) => unit);
-  return (view.boards.get("overall")?.entries ?? [])
+  const candidates = board.key === "overall"
+    ? [...new Map(LEADERBOARD_PUBLIC_BOARDS.filter(k => k !== "overall")
+      .flatMap(k => (view.boards.get(k)?.entries ?? []).filter(e => e.rank <= 10)).map(e => [e.slug, e])).values()]
+    : view.boards.get("overall")?.entries ?? [];
+  return candidates
     .filter((e) => e.rank <= 10 && !board.bySlug.has(e.slug))
     .map((e) => ({
       model: modelRef(view, view.modelsById.get(e.model_id)!),
@@ -341,9 +361,12 @@ function signalFormat(unit: string, board: BoardView) {
 }
 
 interface ScoreDetailRow {
+  metric_key: string;
   snapshot_id: string;
   configuration_key: string;
   raw_score: number | null;
+  lower_bound: number | null;
+  upper_bound: number | null;
   source_rank: number | null;
   source_model_name: string | null;
   configuration_label: string | null;
@@ -352,7 +375,7 @@ interface ScoreDetailRow {
 }
 
 function usageLabel(status: string | undefined) {
-  if (status === "ranked") return "已计入综合排名";
+  if (status === "ranked") return "综合比较证据";
   if (status === "cross_reference") return "交叉参考";
   return "仅供参考";
 }
@@ -380,10 +403,11 @@ export async function loadModel(slug: string): Promise<LbModelDetail | null> {
     const e = view.boards.get(key)?.bySlug.get(slug);
     return {
       key,
-      name: BOARD_COPY[key].name,
+      name: LEADERBOARD_BOARD_LABELS[key],
       rank: e?.rank ?? null,
-      score: e?.score ?? null,
-      sourceCount: e?.detail?.sourceCount ?? e?.metric_count ?? 0,
+      score: rating(e),
+      coverage: e?.coverage ?? evidenceCoverage(view, view.boards.get(key), slug),
+      sourceCount: e?.detail?.sourceCount ?? new Set(Object.keys(view.boards.get(key)?.registry ?? {}).filter(u => view.evidence[`${u}:${slug}`]).map(sourceKeyOfUnit)).size,
       onBoard: !!e && e.rank <= BOARD_LIMIT,
     };
   });
@@ -395,11 +419,11 @@ export async function loadModel(slug: string): Promise<LbModelDetail | null> {
   const metas = units.map((unit) => view.evidence[`${unit}:${slug}`]).filter((e): e is EvidenceMeta => !!e);
   const details = metas.length
     ? await sql<ScoreDetailRow[]>`
-        SELECT snapshot_id, configuration_key, raw_score, source_rank, source_model_name, configuration_label, selection_reason, metadata
+        SELECT metric_key, snapshot_id, configuration_key, raw_score, lower_bound, upper_bound, source_rank, source_model_name, configuration_label, selection_reason, metadata
         FROM lb_scores WHERE model_id = ${m.id} AND snapshot_id = ANY(${[...new Set(metas.map((e) => e.snapshotId))]})`
     : [];
   const detailFor = (meta: EvidenceMeta | undefined) =>
-    meta ? details.find((d) => d.snapshot_id === meta.snapshotId && d.configuration_key === meta.configuration) ?? null : null;
+    meta ? details.find((d) => d.snapshot_id === meta.snapshotId && d.configuration_key === meta.configuration && d.metric_key === (meta.unit.startsWith("livebench-coding:") ? "livebench-coding" : meta.unit)) ?? null : null;
 
   const itemsBySource = new Map<string, LbEvidenceItem>();
   for (const unit of units) {
@@ -452,7 +476,14 @@ export async function loadModel(slug: string): Promise<LbModelDetail | null> {
         ORDER BY metric_key, configuration_priority DESC`
     : [];
   const reasons = new Map(excludedRows.map((r) => [sourceKeyOfUnit(r.metric_key), r.selection_reason ?? "该配置不能代表单个公开模型。"]));
+  for (const k of missing) if (view.exclusions[`${k}:${slug}`]) reasons.set(k, view.exclusions[`${k}:${slug}`]!);
   const nameOf = (k: string) => registrySource(k)?.source.name ?? k;
+  // A run stores the unknown-error count only for the models it ranks overall; any other model's
+  // count comes from its own results, by the method's rule.
+  const publishedError = (unit: string) => {
+    const row = detailFor(view.evidence[`${unit}:${slug}`]);
+    return row?.raw_score != null && hasPublishedError({ score: row.raw_score, lowerBound: row.lower_bound, upperBound: row.upper_bound }, overall!.registry[unit]!);
+  };
 
   return {
     run: view.info,
@@ -461,10 +492,11 @@ export async function loadModel(slug: string): Promise<LbModelDetail | null> {
     price: view.prices.get(m.id) ?? null,
     overall: {
       rank: overallEntry?.rank ?? null,
-      score: overallEntry?.score ?? null,
+      score: rating(overallEntry),
       onBoard: !!overallEntry && overallEntry.rank <= BOARD_LIMIT,
-      confidence: overallEntry ? confidenceOf(overallEntry) : null,
-      stability: overallEntry?.detail?.stability ?? null,
+      coverage: overallEntry?.coverage ?? evidenceCoverage(view, overall, slug),
+      unknownErrorCount: overallEntry?.detail?.unknownErrorCount ?? units.filter((unit) => !publishedError(unit)).length,
+      missingDimensions: overall ? missingDimensions(view, overall, slug) : view.budgets.map(b => b.name),
     },
     categories,
     metricCount: itemsBySource.size,
@@ -493,7 +525,7 @@ function nearbyComparisons(view: RunView, board: BoardView, slug: string, rank: 
         const reg = registrySource(sourceKey);
         return {
           sourceKey,
-          sourceName: reg?.source.name ?? sourceKey,
+          sourceName: `${reg?.source.name ?? sourceKey}${unit.endsWith(":direct") ? " · 直接编程" : unit.endsWith(":agentic") ? " · 工具编程" : ""}`,
           officialUrl: reg?.source.officialUrl ?? null,
           mine: formatScore(rowsOf.get(slug)!.score, format),
           theirs: formatScore(rowsOf.get(c.slug)!.score, format),
@@ -558,19 +590,19 @@ export async function loadSource(key: string): Promise<LbSourceDetail | null> {
 
   let rows: LbSourceRow[] = [];
   if (showRows) {
-    type ScoreRow = { source_rank: number | null; source_model_name: string | null; raw_score: number | null; configuration_label: string | null; model_id: string; slug: string; name: string; provider: string | null; selected_for_product: boolean; selection_reason: string | null };
+    type ScoreRow = { metadata: Record<string,unknown>; configuration_key: string; source_rank: number | null; source_model_name: string | null; raw_score: number | null; configuration_label: string | null; model_id: string; slug: string; name: string; provider: string | null; selected_for_product: boolean; selection_reason: string | null };
     // One row per model: its representative run, or — when the rules exclude every run of it (another
     // model finishing some tasks, a pre-release build) — its top run, marked as not counted.
     const scoreRows = s.allRows
       ? await sql<ScoreRow[]>`
-          SELECT c.source_rank, c.source_model_name, c.raw_score, c.configuration_label, c.model_id, m.slug, m.name, m.provider, c.selected_for_product, c.selection_reason
+          SELECT c.metadata, c.configuration_key, c.source_rank, c.source_model_name, c.raw_score, c.configuration_label, c.model_id, m.slug, m.name, m.provider, c.selected_for_product, c.selection_reason
           FROM lb_scores c JOIN lb_models m ON m.id = c.model_id
           WHERE c.snapshot_id = ${snapshot.id}
           ORDER BY c.source_rank NULLS LAST, c.raw_score DESC NULLS LAST
           LIMIT ${BOARD_LIMIT * 2}`
       : await sql<ScoreRow[]>`
           SELECT * FROM (
-            SELECT DISTINCT ON (c.model_id, c.metric_key) c.source_rank, c.source_model_name, c.raw_score, c.configuration_label, c.model_id, m.slug, m.name, m.provider, c.selected_for_product, c.selection_reason
+            SELECT DISTINCT ON (c.model_id, c.metric_key) c.metadata, c.configuration_key, c.source_rank, c.source_model_name, c.raw_score, c.configuration_label, c.model_id, m.slug, m.name, m.provider, c.selected_for_product, c.selection_reason
             FROM lb_scores c JOIN lb_models m ON m.id = c.model_id
             WHERE c.snapshot_id = ${snapshot.id} AND c.raw_score IS NOT NULL
             ORDER BY c.model_id, c.metric_key, c.selected_for_product DESC, c.configuration_priority DESC NULLS LAST
@@ -588,7 +620,8 @@ export async function loadSource(key: string): Promise<LbSourceDetail | null> {
       display: formatScore(r.raw_score, format),
       configurationLabel: r.configuration_label,
       modelSlug: view.pageSlugs.has(r.slug) ? r.slug : null,
-      excluded: s.allRows || r.selected_for_product ? null : r.selection_reason ?? "该配置不能代表单个公开模型。",
+      excluded: s.allRows ? null : !r.selected_for_product ? r.selection_reason ?? "该配置不能代表单个公开模型。"
+        : admissionOf(key, {sourceModelName: r.source_model_name ?? r.name, configurationKey: r.configuration_key, metadata: {...snapshot.metadata,...r.metadata}}).reason,
     }));
   }
   const lastSeen = typeof snapshot?.metadata.lastSeenAt === "string" ? snapshot.metadata.lastSeenAt : null;
@@ -598,13 +631,12 @@ export async function loadSource(key: string): Promise<LbSourceDetail | null> {
       ...summary,
       fullName: s.fullName ?? s.name,
       area: s.area ?? null,
-      group: { key: reg.group.key, name: reg.group.name },
       officialUrl: s.officialUrl,
       what: s.what,
       usage: s.usage,
       limits: s.limits,
       license: s.license,
-      attribution: s.attribution ?? `成绩由 ${s.operator} 发布，原始分数与 ${SITE.name} 共识分使用不同尺度，不能直接相加。`,
+      attribution: s.attribution ?? `成绩由 ${s.operator} 发布，各项原始分数使用不同尺度，不能直接相加；参考位次采用公开的分差标准化规则。`,
     },
     upstreamAt: showRows ? snapshot.published_at?.toISOString() ?? null : null,
     syncedAt: showRows ? lastSeen ?? snapshot.fetched_at.toISOString() : null,
@@ -619,12 +651,6 @@ export async function loadSource(key: string): Promise<LbSourceDetail | null> {
   };
 }
 
-export interface LbRulesData {
-  run: LbRunInfo;
-  budgets: Array<{ key: string; name: string; weight: number; sources: string[] }>;
-  anchors: string[];
-}
-
 /** Budget table and anchors for the rules page, straight from the run. */
 export async function loadRulesData(): Promise<LbRulesData> {
   const view = await runView();
@@ -637,14 +663,11 @@ export async function unmarkedBoardModels(): Promise<string[]> {
   return [...view.pageSlugs].map((slug) => view.models.get(slug)).filter((m): m is ModelRow => !!m && !modelRef(view, m).brand.src).map((m) => m.name);
 }
 
-export async function leaderboardUrls(): Promise<string[]> {
+/** For the sitemap: every source page and every model page readers can open; none before a run is published. */
+export async function leaderboardDetailUrls(): Promise<string[]> {
   try {
     const view = await runView();
     return [
-      "/leaderboard",
-      ...LEADERBOARD_PUBLIC_BOARDS.filter((k) => k !== "overall").map((k) => `/leaderboard/category/${k}`),
-      "/leaderboard/sources",
-      "/leaderboard/rules",
       ...SOURCE_GROUPS.flatMap((g) => g.sources.map((s) => `/leaderboard/sources/${s.key}`)),
       ...[...view.pageSlugs].map((slug) => `/leaderboard/${slug}`),
     ];

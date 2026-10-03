@@ -1,4 +1,5 @@
-// 期号按完整的现存同类刊物计算，导航只保留最近 400 期。
+// Issue numbers count the complete series of existing issues of a kind, while navigation keeps only
+// the newest 400: the 401st daily is still 第 401 期 on its page, in the index and in v1.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";

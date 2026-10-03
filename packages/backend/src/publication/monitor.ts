@@ -2,8 +2,7 @@ import type { CodexResetPageData, CodexResetSitePage, CodexResetDay } from "@aih
 import { codexResetPage } from "../monitor/read.ts";
 
 export function siteCodexResetPage(page: CodexResetPageData, date?: string): CodexResetSitePage {
-  const latest = page.calendar.reduce((day, mark) => mark.date > day ? mark.date : day, page.calendar[0]?.date ?? page.today);
-  const selectedDate = date ?? (page.calendar.some((m) => m.date === page.today) || latest > page.today ? page.today : latest);
+  const selectedDate = date ?? page.today;
   const ids = new Set(page.calendar.filter((m) => m.date === selectedDate).map((m) => m.eventId));
   const { activities: _activities, ...rest } = page;
   return { ...rest, selectedDate, events: page.events.filter((e) => ids.has(e.id)) };

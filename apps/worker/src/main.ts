@@ -17,7 +17,7 @@ assertProductionSecrets([["auth", "IMG_PROXY_SIGN_SECRET"]]);
 await ensureContentTargets();
 const boss = await getBoss();
 await registerContentJobs(boss);
-if (process.env.COLLECT_ENABLED !== "false") await registerSourceJobs(boss);
+if (process.env.COLLECT_ENABLED === "true") await registerSourceJobs(boss);
 await registerEventJobs(boss);
 await registerNotifyJobs(boss);
 await registerPublicationJobs(boss);

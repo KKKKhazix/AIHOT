@@ -1,8 +1,9 @@
-// Content diagnostics and corrections (F19). Find any item by id, URL or title and see its whole
+// Content diagnostics and corrections. Find any item by id, URL or title and see its whole
 // chain: source → discoveries → revisions → model receipts → decisions → publication and sync
 // ledger → grouping → deliveries. Visibility changes and manual corrections go through editorial
 // overrides with a version check, are re-projected to every public exit, and are audited.
 import { z } from "zod";
+import { correctReportClassification } from "../reports/correct.ts";
 import type { AdminContentChain, AdminContentRow, AdminPublication, BeforeJson } from "@aihot/contracts/admin";
 import { ARTICLE_ID_PATTERN, CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { sql, type Tx } from "../db.ts";
@@ -150,8 +151,12 @@ export async function overrideFields(id: string, input: { fields: unknown; clear
       ON CONFLICT (article_id) DO UPDATE SET fields = EXCLUDED.fields, reason = EXCLUDED.reason, version = editorial_overrides.version + 1, updated_by = EXCLUDED.updated_by, updated_at = now()`;
     const published = await publishArticleTx(tx, id);
     if (published?.changed) {
+      const changedFields = new Set([...Object.keys(fields), ...(input.clear ?? [])]);
+      if (changedFields.has("category") || changedFields.has("tags")) await correctReportClassification(tx, id, input.reason);
       const [st] = await tx<{ story_id: number | null }[]>`SELECT story_id FROM publications WHERE article_id = ${id}`;
-      if (st?.story_id) await enqueue(QUEUES.digest, { storyId: st.story_id, afterCorrection: true }, { singletonKey: `story:${st.story_id}:correction` }, tx);
+      if (st?.story_id && [...changedFields].some(k => k !== "category" && k !== "tags")) {
+        await enqueue(QUEUES.digest, { storyId: st.story_id }, { singletonKey: `story:${st.story_id}` }, tx);
+      }
     }
     await audit(actor, "content.override", `content:${id}`, input.reason, before.fields, next, { db: tx });
     return published;

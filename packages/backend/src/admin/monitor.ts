@@ -1,9 +1,10 @@
-// Reset monitor corrections (F12/F19): edit an event, confirm it from a receipt review (a reader's
+// Reset monitor corrections: edit an event, confirm it from a receipt review (a reader's
 // or our own account showing the reset when Tibo never posted "done"), withdraw or restore it, and
 // move a post between events. Public exits (page, v1 snapshot, version probe) follow updated_at.
 import type { AdminMonitorEvents, AdminMonitorPosts, BeforeJson } from "@aihot/contracts/admin";
 import { z } from "zod";
 import { sql, type Tx } from "../db.ts";
+import { awaitingReviewCondition } from "../monitor/read.ts";
 import { estimateFor, manualSchedule, type Schedule } from "../monitor/time.ts";
 import { audit, Conflict } from "../audit.ts";
 
@@ -25,7 +26,7 @@ export async function listMonitorPosts(opts: { filter?: "relevant" | "review" | 
   const filter = opts.filter ?? "relevant";
   const where =
     filter === "pending" ? sql`p.processed_at IS NULL`
-    : filter === "review" ? sql`(p.recognition->>'needsReview')::boolean IS TRUE AND (p.recognition->>'reviewed')::boolean IS NOT TRUE`
+    : filter === "review" ? awaitingReviewCondition()
     : filter === "relevant" ? sql`(p.recognition->>'relevant')::boolean IS TRUE`
     : sql`true`;
   const rows = await sql<BeforeJson<AdminMonitorPosts["rows"][number]>[]>`

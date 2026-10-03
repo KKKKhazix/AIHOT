@@ -1,14 +1,24 @@
-// Moving between reports: the archive column on desktop, a tab row and recent-issue chips on phones.
+// Moving between reports: the archive column on desktop; on phones the kind switch in the bar
+// (ReportLayout) and recent-issue chips under it.
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import type { ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
+import type { ReportNavigationEntry, ReportNavigationResponse, ReportKind } from "@aihot/contracts/site";
 import { PillTabs } from "../../components/ui/Tabs";
 import { IconChevronRight } from "../../components/icons";
 import { KINDS, KIND_LABEL, KIND_PATH, archiveGroups, archiveMark, chipLabel, reportPath } from "./format";
 
-/** 日报 / 周报 / 月报 as the site's pill switch, spread across the column. */
-function KindSwitch({ kind }: { kind: ReportKind }) {
-  return <PillTabs fill layoutId="report-kind" label="切换日报、周报、月报" active={kind} items={KINDS.map((k) => ({ key: k, label: KIND_LABEL[k], to: KIND_PATH[k] }))} />;
+/** 日报 / 周报 / 月报 as the site's pill switch: spread across the archive column, or compact in the phone bar (opening at the top). */
+export function KindSwitch({ kind, phone = false }: { kind: ReportKind; phone?: boolean }) {
+  return (
+    <PillTabs
+      fill={!phone}
+      size={phone ? "sm" : "md"}
+      layoutId={phone ? "report-kind-phone" : "report-kind"}
+      label="切换日报、周报、月报"
+      active={kind}
+      items={KINDS.map((k) => ({ key: k, label: KIND_LABEL[k], to: KIND_PATH[k], resetScroll: phone }))}
+    />
+  );
 }
 
 /** Desktop archive column: every issue of this kind, grouped, the current one highlighted. */
@@ -47,7 +57,7 @@ function ArchiveGroup({ g, kind, current, initiallyOpen }: {
     const controller = new AbortController();
     fetch(`/api/site/reports/daily/months/${g.id}`, { signal: controller.signal })
       .then((r) => r.ok ? r.json() : null)
-      .then((data: { items: ReportNavigationEntry[] } | null) => { if (data && !controller.signal.aborted) setLoaded(data.items); })
+      .then((data: ReportNavigationResponse | null) => { if (data && !controller.signal.aborted) setLoaded(data.items); })
       .catch(() => {});
     return () => controller.abort();
   }, [open, kind, g.id, loaded]);
@@ -87,31 +97,27 @@ function ArchiveGroup({ g, kind, current, initiallyOpen }: {
   );
 }
 
-/** Phone header: kind tabs, then the three latest issues and a way further back. */
+/** Phones, under the bar: the three latest issues and a way further back. */
 export function ReportPhoneNav({ kind, index, current, today }: { kind: ReportKind; index: ReportNavigationEntry[]; current: string | null; today: string }) {
   const recent = index.slice(0, 3);
   const earlier = kind === "daily" ? "/daily/archive" : "#report-history";
-  const chip = "inline-flex h-9 shrink-0 items-center rounded-full border px-4 text-[13px] transition-colors";
+  const chip = "inline-flex h-11 shrink-0 items-center rounded-full border px-4 text-[13px] transition-colors";
+  if (recent.length === 0) return null;
   return (
-    <div className="pt-3 lg:hidden">
-      <PillTabs fill layoutId="report-kind-phone" label="切换日报、周报、月报" active={kind} items={KINDS.map((k) => ({ key: k, label: KIND_LABEL[k], to: KIND_PATH[k] }))} />
-      {recent.length > 0 && (
-        <div className="scrollbar-none -mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1">
-          {recent.map((e) => {
-            const on = e.key === current;
-            return (
-              <Link key={e.key} to={reportPath(kind, e.key)} aria-current={on ? "page" : undefined} className={`${chip} ${on ? "border-ink bg-ink font-semibold text-bg" : "border-line-strong bg-surface text-ink-2 active:bg-bg-sunk"}`}>
-                {chipLabel(kind, e.key, index, today)}
-              </Link>
-            );
-          })}
-          {index.length > 3 && (
-            <Link to={earlier} className={`${chip} border-line-strong bg-surface text-ink-2 active:bg-bg-sunk`}>
-              更早
-            </Link>
-          )}
-        </div>
+    <nav aria-label={`最近的${KIND_LABEL[kind]}`} className="scrollbar-none bleed flex gap-2 overflow-x-auto pb-1 pt-1.5 lg:hidden">
+      {recent.map((e) => {
+        const on = e.key === current;
+        return (
+          <Link key={e.key} to={reportPath(kind, e.key)} aria-current={on ? "page" : undefined} className={`${chip} ${on ? "border-ink bg-ink font-semibold text-bg" : "border-line-strong bg-surface text-ink-2 active:bg-bg-sunk"}`}>
+            {chipLabel(kind, e.key, index, today)}
+          </Link>
+        );
+      })}
+      {index.length > 3 && (
+        <Link to={earlier} viewTransition={kind === "daily"} className={`${chip} border-line-strong bg-surface text-ink-2 active:bg-bg-sunk`}>
+          更早
+        </Link>
       )}
-    </div>
+    </nav>
   );
 }

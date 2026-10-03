@@ -1,10 +1,9 @@
-// External collection scripts push items here (docs/sources.md). They use the ingest
-// token (never an admin session) and their own rate limit.
+// External collection scripts push items here (docs/sources.md). They use the ingest token (never an
+// admin session) and their own rate limit, kept in the process: no proxy in front limits it.
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { credential } from "@aihot/backend/config";
 import { IngestError, ingestItems } from "@aihot/backend/ingest/items";
-
 
 const PLACEHOLDER = /^(|changeme|change-me|placeholder|xxx+|todo|test|dev|your[-_]?token.*)$/i;
 
@@ -38,7 +37,7 @@ export function registerIngest(app: FastifyInstance) {
     if (!authorized(req)) return unauthorized(reply);
     if (limited(`items:${req.ip}`, 10)) return reply.code(429).header("Retry-After", "60").send({ ok: false, error: "rate limited" });
     try {
-      return await ingestItems(req.body);
+      return await ingestItems((req.body ?? {}) as never);
     } catch (error) {
       if (error instanceof IngestError) return reply.code(error.status).send({ ok: false, error: error.message });
       req.log.error({ err: error }, "ingest items failed");

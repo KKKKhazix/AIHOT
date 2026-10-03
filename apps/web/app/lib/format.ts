@@ -1,15 +1,13 @@
 import { beijingDate, beijingTime, beijingWeekday } from "@aihot/contracts/time";
 
-export { beijingDate, beijingTime, beijingWeekday };
+/** "9月28日" of a calendar date (YYYY-MM-DD). */
+export function monthDay(date: string): string {
+  return `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`;
+}
 
-export function dayLabel(date: string, today: string): string {
-  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
-  const base = `${m}月${d}日`;
-  if (date === today) return `今天 · ${base}`;
-  const diff = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86400000);
-  if (diff === 1) return `昨天 · ${base}`;
-  if (y !== Number(today.slice(0, 4))) return `${y}年${base}`;
-  return base;
+/** "周六" of a calendar date (YYYY-MM-DD). */
+export function weekdayShort(date: string): string {
+  return beijingWeekday(date).replace("星期", "周");
 }
 
 export function relativeTime(iso: string, now = Date.now()): string {
@@ -31,18 +29,10 @@ export function fullDateTime(iso: string): string {
 
 /** "9月24日 10:51" (Beijing), for lists that span days. */
 export function monthDayTime(iso: string): string {
-  const [, m, d] = beijingDate(iso).split("-").map(Number) as [number, number, number];
-  return `${m}月${d}日 ${beijingTime(iso)}`;
-}
-
-/** "X：Ethan Mollick (@emollick)" → "Ethan Mollick"; other sources keep their name. */
-export function shortSourceName(name: string): string {
-  const m = /^X[:：]\s*(.+?)\s*\(@[^)]+\)\s*$/.exec(name);
-  if (m) return m[1]!.replace(/（.*?）/g, "").trim();
-  return name.replace(/（RSS）|（网页）|（API）/g, "").trim();
+  return `${monthDay(beijingDate(iso))} ${beijingTime(iso)}`;
 }
 
 export function sourceInitial(name: string): string {
-  const s = shortSourceName(name).replace(/^[^\p{L}\p{N}]+/u, "");
+  const s = name.replace(/^[^\p{L}\p{N}]+/u, "");
   return (s[0] ?? "A").toUpperCase();
 }

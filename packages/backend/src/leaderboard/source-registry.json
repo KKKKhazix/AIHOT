@@ -1,12 +1,5 @@
 {
-  "_note": "Reader-facing registry of leaderboard evaluation sources. Keys are public identities (/leaderboard/sources/{key}). Status and copy verified against the live /leaderboard/sources pages on 2026-09-26. Scoring weights come from the computation run, not from this file.",
-  "statuses": {
-    "ranked": "参与排名",
-    "cross_reference": "交叉参考",
-    "observing": "观察中",
-    "reference_only": "仅供参考",
-    "awaiting": "等待成绩"
-  },
+  "_note": "Reader-facing source identities and current method explanations. Public keys never change. Effective weights and calibration availability come from the published computation run.",
   "groups": [
     {
       "key": "general",
@@ -15,7 +8,7 @@
       "sources": [
         {
           "key": "artificial-analysis",
-          "status": "ranked",
+          "status": "cross_reference",
           "name": "AA Index",
           "fullName": "Artificial Analysis Intelligence Index",
           "operator": "Artificial Analysis",
@@ -23,8 +16,8 @@
           "logo": "artificial-analysis-purple-2026.svg",
           "officialUrl": "https://artificialanalysis.ai/data-api/docs",
           "what": "只取官方 Artificial Analysis Intelligence Index；接口中的性能与价格字段不计分。",
-          "usage": "综合任务证据占 30%；已核对 v4.3 的 10 项底层评测，与现役专项没有重复计票。整项保留，不将聚合分冒充单项成绩。",
-          "limits": "缺少 API key 时整张来源退出本轮，不补 50 分；严禁用网页抓取替代，展示时必须署名并保留指数版本。",
+          "usage": "综合指数保留交叉参考；不与专项证据叠加投票。使用其他型号回退的成绩也不作为底层单型号证据。",
+          "limits": "聚合指数包含多种任务和运行条件，不能从总分拆出独立证据。须保留指数版本、配置与上游署名；仅使用授权 API。",
           "license": "API 数据展示或分享须显著署名；再分发权与定制条款须另行取得并遵守 Terms of Use"
         },
         {
@@ -43,7 +36,7 @@
         },
         {
           "key": "arena-text",
-          "status": "ranked",
+          "status": "cross_reference",
           "name": "Arena Text",
           "fullName": "Arena Text Style-Controlled",
           "operator": "LMArena",
@@ -51,21 +44,21 @@
           "logo": "arena.svg",
           "officialUrl": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset",
           "what": "只取官方发布快照中的 Text Overall style-controlled 主榜，不抓取 arena.ai 实时页面。",
-          "usage": "真人偏好预算 10% 分为整体 5% 和创作 5%；与 Arena 的编程和视觉评测仍共用证据家族。按官方成绩数据时间判断新旧。",
-          "limits": "人类偏好受风格、用户结构和提示分布影响。整体与创作分类存在重叠投票，共享原有真人偏好预算，不视为两家独立评测机构。",
+          "usage": "整体文本榜仅交叉参考；创作分类已单独使用，不再叠加整体票。",
+          "limits": "人类偏好受风格、用户结构和提示分布影响；整体与分类存在重叠。",
           "license": "CC BY 4.0"
         },
         {
           "key": "arena-webdev",
-          "status": "ranked",
+          "status": "reference_only",
           "name": "Arena WebDev",
           "operator": "LMArena",
           "description": "同样是真人盲选，比的是网页好不好用、能不能交付。",
           "logo": "arena.svg",
           "officialUrl": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset",
-          "what": "只取官方发布快照中的 WebDev 总榜，不抓取 arena.ai 实时页面；与 Text 共同构成一张 Arena 家族票。",
-          "usage": "编程与设计预算中的 2.4%；在审美分类衡量网页作品偏好，不等同代码正确率。仍与 Arena 其他任务共用证据家族。",
-          "limits": "与 Text 存在偏好构念相关性。",
+          "what": "读取官方发布的 WebDev / Code Arena 快照，保留上游型号与配置。",
+          "usage": "保留原始成绩供参考；当前尚未核实所有型号使用相同固定工具流程，因此不参与底层型号排序。",
+          "limits": "不能把不同专用 Agent 或不同执行流程的交付表现直接归因于底层型号；待共同协议范围核实后再评估。",
           "license": "CC BY 4.0"
         },
         {
@@ -77,11 +70,14 @@
           "logo": "livebench.png",
           "officialUrl": "https://livebench.ai/#/?cats=Language%2CIF&ft=1",
           "what": "先分别计算 Language、IF 的分类成绩，再各占 50% 求平均，最后保留一位小数。两项均分与官网单独选择某一类的成绩不同。Language 衡量语言理解，IF 衡量指令与格式约束，不据此评价小说文笔。",
-          "usage": "保留综合榜写作与表达预算中的 3%；不进入文学创作的写作分类。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "两项均分衡量组合表现，不能当成 Language 单项成绩。官方页面切换分类或是否包含微调模型时，分数与排序会随之变化。组织参与方 Abacus.AI 同时开发 Smaug 模型，其独家成绩需要其他独立来源补充。",
           "license": "Apache 2.0",
-          "attribution": "分项成绩由 LiveBench 发布，AIHOT 按上述两类等权汇总并排序。两项均分与 AIHOT 共识分使用不同尺度，不能直接相加。",
-          "components": { "note": "Language + IF 各占 50%，使用未舍入的分项成绩求平均。", "label": "两项均分" }
+          "attribution": "分项成绩由 LiveBench 发布，本站按上述两类等权汇总并排序。各项分数尺度不同，不能直接相加；参考排序采用固定参照尺度。",
+          "components": {
+            "note": "Language + IF 各占 50%，使用未舍入的分项成绩求平均。",
+            "label": "两项均分"
+          }
         },
         {
           "key": "arena-creative-writing",
@@ -93,7 +89,7 @@
           "logo": "arena.svg",
           "officialUrl": "https://arena.ai/leaderboard/text/creative-writing",
           "what": "读取官方数据集 text_style_control 的 creative_writing 分类，采用风格控制后的 Bradley–Terry 分与置信区间；不借用整体文本或职业写作分类成绩。",
-          "usage": "正式计分；从原有真人偏好 10% 中拆分 5%，整体文本保留 5%，总预算不增加。与其他 Arena 任务共用证据家族。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "开放用户提示由分类器归类，并非全部为长篇小说或中文创作；投票包含个人偏好。与 Arena 整体文本及职业写作分类存在重叠，不能作为额外独立机构。",
           "license": "CC BY 4.0 · Arena 官方 Hugging Face leaderboard-dataset；保留署名、来源链接并说明聚合改动。"
         },
@@ -224,7 +220,7 @@
           "logo": "eqbench.svg",
           "officialUrl": "https://eqbench.com/creative_writing.html",
           "what": "官方 CSV 内嵌于数据脚本，采用 Elo；Sonnet 4.6 判胜负，风格、重复率和 rubric 不重复计票。",
-          "usage": "正式计分；两张写作榜合计占 6%，不按题数或模型数增加权重。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "以英文写作为主，依赖模型裁判；同一裁判和相关任务共用预算，不代表中文文笔。",
           "license": "MIT · EQ-bench-site README 元数据声明"
         },
@@ -237,7 +233,7 @@
           "logo": "eqbench.svg",
           "officialUrl": "https://eqbench.com/creative_writing_longform.html",
           "what": "采用 overall_score_100；八章长文的情节与表达评分，裁判偏好作为局限披露。",
-          "usage": "正式计分；两张写作榜合计占 6%，不按题数或模型数增加权重。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "以英文写作为主，依赖模型裁判；同一裁判和相关任务共用预算，不代表中文文笔。",
           "license": "MIT · EQ-bench-site README 元数据声明"
         }
@@ -258,13 +254,13 @@
           "logo": "deepswe.svg",
           "officialUrl": "https://deepswe.datacurve.ai/",
           "what": "只取 pass@1；统一 harness 内按预先固定的推理档位优先级选代表配置。",
-          "usage": "编程与设计预算中的 3.6%；固定受控系统与版本。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "仍是模型＋mini-swe-agent 的系统表现；大版本变化必须隔离快照。",
           "license": "官方公开结构化结果；仅管理员私有观察，公开前复核许可"
         },
         {
           "key": "taptap-maker",
-          "status": "ranked",
+          "status": "reference_only",
           "name": "TapTap Maker",
           "fullName": "TapTap Maker Benchmark",
           "operator": "TapTap Maker",
@@ -273,8 +269,8 @@
           "logo": "taptap-maker.svg",
           "officialUrl": "https://maker.taptap.cn/leaderboard/",
           "what": "只取官方 main_board 的 L2 通过率；成本、速度、Held-out 和分类分不再次投票。同一基础模型按固定推理档位优先级选代表行，选择不看分数。",
-          "usage": "编程与设计预算中的 3.6%；固定引擎和 L2 指标。",
-          "limits": "单引擎、单语言，不能推广到其他技术栈；不同模型可能使用不同 agent 驱动；闭源 harness 不能逐题复算。",
+          "usage": "仅供参考：现有结果混合不同 agent driver，不能作为相同执行流程下的底层型号比较。",
+          "limits": "单引擎、单语言，不能推广到其他技术栈；不同模型可能使用不同 agent 驱动；闭源 harness 不能逐题复算。 当前采用的执行驱动不同，不计入单型号排序。",
           "license": "官方公开结果；公开再展示保留官方署名，完整再分发授权仍以易玩／TapTap 条款为准"
         },
         {
@@ -286,12 +282,15 @@
           "description": "Coding + Agentic Coding 两项均分，各占 50%。",
           "logo": "livebench.png",
           "officialUrl": "https://livebench.ai/#/?cats=Coding%2CAgentic+Coding&ft=1",
-          "what": "先分别计算 Coding、Agentic Coding 的分类成绩，再各占 50% 求平均，最后保留一位小数。两项均分与官网单独选择某一类的成绩不同。",
-          "usage": "两项均分作为一份证据参与排名，各专项共用 LiveBench 证据家族；Global Average 仅供参考，不重复计票。",
+          "what": "读取 Coding 和 Agentic Coding 的未舍入分项成绩。直接编程与统一工具编程分别进入计算；本来源页保留两项均分，模型页同时展示分项。",
+          "usage": "直接编程与工具编程按不同任务题族分别比较，同属编程领域；不把二者均分再次计票。",
           "limits": "两项均分衡量组合表现，不能当成 Coding 单项成绩。官方页面切换分类或是否包含微调模型时，分数与排序会随之变化。组织参与方 Abacus.AI 同时开发 Smaug 模型，其独家成绩需要其他独立来源补充。",
           "license": "Apache 2.0",
-          "attribution": "分项成绩由 LiveBench 发布，AIHOT 按上述两类等权汇总并排序。两项均分与 AIHOT 共识分使用不同尺度，不能直接相加。",
-          "components": { "note": "Coding + Agentic Coding 各占 50%，使用未舍入的分项成绩求平均。", "label": "两项均分" }
+          "attribution": "分项成绩由 LiveBench 发布，本站按上述两类等权汇总并排序。各项分数尺度不同，不能直接相加；参考排序采用固定参照尺度。",
+          "components": {
+            "note": "Coding + Agentic Coding 各占 50%，使用未舍入的分项成绩求平均。",
+            "label": "两项均分"
+          }
         },
         {
           "key": "hyper-tau",
@@ -453,11 +452,14 @@
           "logo": "livebench.png",
           "officialUrl": "https://livebench.ai/#/?cats=Reasoning%2CMathematics&ft=1",
           "what": "先分别计算 Reasoning、Mathematics 的分类成绩，再各占 50% 求平均，最后保留一位小数。两项均分与官网单独选择某一类的成绩不同。",
-          "usage": "两项均分作为一份证据参与排名，各专项共用 LiveBench 证据家族；Global Average 仅供参考，不重复计票。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "两项均分衡量组合表现，不能当成 Reasoning 单项成绩。官方页面切换分类或是否包含微调模型时，分数与排序会随之变化。组织参与方 Abacus.AI 同时开发 Smaug 模型，其独家成绩需要其他独立来源补充。",
           "license": "Apache 2.0",
-          "attribution": "分项成绩由 LiveBench 发布，AIHOT 按上述两类等权汇总并排序。两项均分与 AIHOT 共识分使用不同尺度，不能直接相加。",
-          "components": { "note": "Reasoning + Mathematics 各占 50%，使用未舍入的分项成绩求平均。", "label": "两项均分" }
+          "attribution": "分项成绩由 LiveBench 发布，本站按上述两类等权汇总并排序。各项分数尺度不同，不能直接相加；参考排序采用固定参照尺度。",
+          "components": {
+            "note": "Reasoning + Mathematics 各占 50%，使用未舍入的分项成绩求平均。",
+            "label": "两项均分"
+          }
         },
         {
           "key": "simplebench",
@@ -483,7 +485,7 @@
           "logo": "epoch.svg",
           "officialUrl": "https://epoch.ai/benchmarks/frontiermath-tiers-1-3-v2",
           "what": "只用 v2 的 Tiers 1–3；旧版题目和 Tier 4 不混入同一指标。",
-          "usage": "正式计分；同题家族共用固定预算。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "正式计分；同题家族共用固定预算。",
           "license": "CC BY 4.0 · Epoch AI 自行评测数据"
         },
@@ -497,7 +499,7 @@
           "logo": "epoch.svg",
           "officialUrl": "https://epoch.ai/benchmarks/frontiermath-tier-4-v2",
           "what": "独立保存 Tier 4，和 Tiers 1–3 共用数学证据预算；保留样本误差。",
-          "usage": "正式计分；同题家族共用固定预算。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "正式计分；同题家族共用固定预算。",
           "license": "CC BY 4.0 · Epoch AI 自行评测数据"
         },
@@ -511,7 +513,7 @@
           "logo": "epoch.svg",
           "officialUrl": "https://epoch.ai/benchmarks/chess-puzzles",
           "what": "生成的棋局以 Stockfish 标准答案判分；输入为棋局文本，不归入视觉理解。",
-          "usage": "正式计分；同题家族共用固定预算。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "正式计分；同题家族共用固定预算。",
           "license": "CC BY 4.0 · Epoch AI 自行评测数据"
         },
@@ -525,7 +527,7 @@
           "logo": "epoch.svg",
           "officialUrl": "https://epoch.ai/benchmarks/mystery-game-puzzles",
           "what": "只取 Epoch 标准协议的 mean_score；题目不公开这一限制明确保留。",
-          "usage": "正式计分；同题家族共用固定预算。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "正式计分；同题家族共用固定预算。",
           "license": "CC BY 4.0 · Epoch AI 自行评测数据"
         },
@@ -659,7 +661,7 @@
           "logo": "epoch.svg",
           "officialUrl": "https://epoch.ai/benchmarks/simple-qa-verified",
           "what": "只取 Epoch 自行复跑的 mean_score，采用固定推理档位；不读取 ECI 或 Best score 聚合列。",
-          "usage": "正式计分；同题家族共用固定预算。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "正式计分；同题家族共用固定预算。",
           "license": "CC BY 4.0 · Epoch AI 自行评测数据"
         },
@@ -673,7 +675,7 @@
           "logo": "epoch.svg",
           "officialUrl": "https://epoch.ai/benchmarks/gpqa-diamond",
           "what": "只取 Epoch 自行复跑的 mean_score，保留推理档位与标准误。198 道科学知识题需要推理，但不能代表全部世界知识。",
-          "usage": "正式计分；同题家族共用固定预算。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "正式计分；同题家族共用固定预算。",
           "license": "CC BY 4.0 · Epoch AI 自行评测数据"
         }
@@ -695,7 +697,7 @@
           "logo": "mercor.svg",
           "officialUrl": "https://www.mercor.com/apex/apex-agents-leaderboard/",
           "what": "固定 1.1 数据集和官方 Loop 环境，采用 Pass@1 及其对应误差，按预先固定的推理档位选配置。Mean Score 是评分项平均完成度，不混作任务完成率。",
-          "usage": "固定 1.1 版官方 Loop 的 Pass@1，独占工具与办公预算中的 4%；另 2% 用于统一环境的银行业务任务。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "限投行、咨询、法律任务；原页未提供逐型号评测日期，少量运行缺失的原因尚未公开。不能将此分数解释为所有办公工作的可靠性。",
           "license": "官方公开结果；数据与代码许可不等于榜单再分发授权"
         },
@@ -709,8 +711,8 @@
           "logo": "vals.svg",
           "officialUrl": "https://www.vals.ai/benchmarks/fabv2",
           "what": "只取 Finance Agent v2 官方 Overall 正确率。",
-          "usage": "行业专业任务预算 3%；目前直接测金融，不宣称已经覆盖全部行业。",
-          "limits": "私有题不能逐题复算；与 APEX 同属办公任务，必须共用一组预算。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
+          "limits": "私有题不能逐题复算；与 APEX 同属办公任务，必须共用一组预算。 官方披露存在跨型号回退的具体配置排除；同型号检索调用与评判模型分开核验。",
           "license": "官方公开结果；公开再展示保留官方署名，完整再分发授权仍以 Vals 条款为准"
         },
         {
@@ -835,7 +837,7 @@
           "logo": "sierra.png",
           "officialUrl": "https://taubench.com/leaderboard/?benchmark=knowledge",
           "what": "只比较官方 standard 银行业务、v1.0.1、alltools 和 GPT-5.2 用户模拟器；采用 pass@1。不同工具、提示、模拟器、语音模式与自定义系统不混排。",
-          "usage": "正式计分；占工具与办公预算 2%，Mercor APEX 共用的两个环境合计调整为 4%。金融业务不代表已经覆盖法律、电商等全部行业。",
+          "usage": "等待统一单型号协议和可比原始成绩；目前不计分，不挪用缺失成绩。",
           "limits": "成绩属于固定银行任务系统，依赖模拟用户与工具协议；不是所有职业的通用正确率。",
           "license": "MIT · Sierra Research tau2-bench 官方仓库；保留来源署名。"
         },
@@ -968,7 +970,7 @@
           "logo": "arena.svg",
           "officialUrl": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset",
           "what": "只读取官方数据集 vision_style_control 的 overall；不含图像生成或图像编辑。",
-          "usage": "视觉预算 6%；仍是人类偏好证据，不能等同严格图像准确率。",
+          "usage": "通过单型号协议核验后，在所属能力领域的题族份额内参与参考排序；同题族的测量不增加题族总份额。实际生效份额见当前计算记录。",
           "limits": "人类偏好受风格、用户结构和提示分布影响。整体与创作分类存在重叠投票，共享原有真人偏好预算，不视为两家独立评测机构。",
           "license": "CC BY 4.0"
         },
@@ -1002,7 +1004,7 @@
           "logo": "artificial-analysis-purple-2026.svg",
           "officialUrl": "https://artificialanalysis.ai/models/multilingual",
           "what": "只取官方多语言指数字段，不拆单语子分再投一次。",
-          "usage": "多语言预算 6%；接口没有多语言字段时整块空置，不借用英文综合分。",
+          "usage": "多语言领域保留 12.5% 份额；没有可比的专项成绩时空置，不借用英文综合指数。",
           "limits": "Free 接口若未暴露该字段，本问本轮空置；不得用网页抓取替代。",
           "license": "API 数据展示或分享须显著署名；再分发权与定制条款须另行取得并遵守 Terms of Use"
         },

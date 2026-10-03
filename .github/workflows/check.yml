@@ -1,5 +1,5 @@
 # Checks on GitHub-hosted runners: install, typecheck, web build, the web and backend tests on a fresh
-# PostgreSQL, the built site's smoke check, and the Docker image brought up with docker compose.
+# PostgreSQL, the built site's smoke check on the empty database, and the Docker image brought up with docker compose.
 # Only GitHub-owned actions, pinned to a full commit SHA.
 name: Check
 
@@ -63,12 +63,12 @@ jobs:
       - name: Web tests
         run: node --test apps/web/tests/*.test.ts
 
-      - name: Migrate and seed topics
-        run: |
-          node scripts/migrate.ts
-          node scripts/seed.ts --topics-only
+      # Each test file runs on its own copy of aihot_ci (tests/databases.ts), which the run migrates and
+      # leaves empty; the smoke check then reads that empty database.
+      - name: Backend tests
+        run: npm test
       - name: Smoke check of the built site
-        # The site itself runs with collection and model calls off (the tests below use local stubs).
+        # The site itself runs with collection and model calls off (the tests above use local stubs).
         env:
           COLLECT_ENABLED: "false"
           MODEL_CALLS_ENABLED: "false"
@@ -78,9 +78,6 @@ jobs:
           for i in $(seq 1 60); do curl -fsS -o /dev/null http://127.0.0.1:3000/api/health 2>/dev/null && break; sleep 1; done
           node scripts/smoke.ts --base http://127.0.0.1:3000
           node scripts/mcp-check.ts http://127.0.0.1:3000/api/mcp
-      # After the smoke check, which reads an empty database: these write their own rows.
-      - name: Backend tests
-        run: npm test
       - name: Server logs
         if: failure()
         run: tail -n 60 "$RUNNER_TEMP/api.log" "$RUNNER_TEMP/web.log" 2>/dev/null || true

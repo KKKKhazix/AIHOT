@@ -6,11 +6,11 @@ import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { SITE } from "@aihot/industry/site";
 import { FEATURES } from "@aihot/industry/features";
+import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT, config } from "@aihot/backend/config";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
-import { sitemapSnapshot } from "@aihot/backend/publication/sitemap";
-import { cacheUntil } from "./site.ts";
+import { sitemapXml } from "@aihot/backend/publication/sitemap";
 import { llmsTxt, loadLlmsAvailability } from "@aihot/backend/publication/llms";
 
 const REF = path.join(REPO_ROOT, "reference");
@@ -87,11 +87,12 @@ function manifest() {
   };
 }
 
-/** The OpenAPI document with this deployment's name, address and categories. */
+/** The OpenAPI document with this deployment's name, address and categories, and the public interface version. */
 let openApi: string | null = null;
 async function openApiJson(): Promise<string> {
   if (openApi) return openApi;
   const raw = (await readFile(path.join(REF, "public-v1.openapi.json"), "utf8"))
+    .replaceAll("{{version}}", PUBLIC_INTERFACE_VERSION)
     .replaceAll("{{siteName}}", JSON.stringify(SITE.name).slice(1, -1))
     .replaceAll("{{siteUrl}}", JSON.stringify(config.siteUrl).slice(1, -1))
     .replaceAll("{{categoryList}}", JSON.stringify(CATEGORY_KEYS.join(", ")).slice(1, -1));
@@ -112,9 +113,8 @@ async function openApiJson(): Promise<string> {
 export function registerStatic(app: FastifyInstance) {
   app.get("/sitemap.xml", async (req, reply) => {
     try {
-      const data = await sitemapSnapshot();
-      const cacheControl = cacheUntil(reply, 300, data.refreshAt).replace(/(^|, )max-age=\d+/, "$1max-age=0");
-      return sendTextWithEtag(req, reply, data.xml, { etagPrefix: "sitemap", cacheControl: `${cacheControl}, must-revalidate`, contentType: "application/xml" });
+      const xml = await sitemapXml();
+      return sendTextWithEtag(req, reply, xml, { etagPrefix: "sitemap", cacheControl: "public, max-age=0, s-maxage=300, must-revalidate", contentType: "application/xml" });
     } catch (error) {
       req.log.error({ err: error }, "sitemap unavailable");
       return reply.code(503).header("Retry-After", "300").header("Cache-Control", "no-store").send("Sitemap temporarily unavailable");
@@ -124,7 +124,8 @@ export function registerStatic(app: FastifyInstance) {
   app.get("/llms.txt", async (req, reply) => {
     const text = llmsTxt(await loadLlmsAvailability());
     applyPublicHeaders(reply, { cors: false });
-    return sendTextWithEtag(req, reply, text, { etagPrefix: "llms", cacheControl: "public, s-maxage=3600, stale-while-revalidate=86400", contentType: "text/plain; charset=utf-8" });
+    // Cached like /openapi-v1.json: a release that adds an ability is described everywhere within minutes.
+    return sendTextWithEtag(req, reply, text, { etagPrefix: "llms", cacheControl: "public, max-age=300, stale-while-revalidate=3600", contentType: "text/plain; charset=utf-8" });
   });
 
   app.get("/robots.txt", (req, reply) => sendTextWithEtag(req, reply, robotsTxt(), { etagPrefix: "robots", cacheControl: "public, max-age=3600", contentType: "text/plain; charset=utf-8" }));

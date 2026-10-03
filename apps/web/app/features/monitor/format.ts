@@ -1,5 +1,6 @@
 // Beijing-time wording for the reset monitor. Inputs are ISO strings with +08:00.
 import { addDays } from "@aihot/contracts/time";
+import { monthDay } from "../../lib/format";
 
 export function bjDate(iso: string): string {
   return iso.slice(0, 10);
@@ -7,10 +8,6 @@ export function bjDate(iso: string): string {
 
 export function bjTime(iso: string): string {
   return iso.slice(11, 16);
-}
-
-export function monthDay(date: string): string {
-  return `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`;
 }
 
 /** 今天 / 明天 / 昨天 / 9月12日 */

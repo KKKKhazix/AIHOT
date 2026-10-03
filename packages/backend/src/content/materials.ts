@@ -1,9 +1,11 @@
 // The single entrance for new material from every channel (collectors, external reports, imports).
 // It owns identity, revisions and the timeline rule, so no entrance can bypass them.
-import { sql, type Db } from "../db.ts";
+import { sql, type Db, type Tx } from "../db.ts";
 import { newArticleId, sha256 } from "../lib/ids.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
 import { collapseWhitespace } from "../lib/text.ts";
+import { publishArticleTx } from "../publication/publish.ts";
+import { groupingReset, reconcileMaterialSource } from "./provenance.ts";
 
 export interface MediaItem {
   kind: "image" | "video";
@@ -55,6 +57,8 @@ export interface MaterialResult {
   created: boolean;
   revised: boolean;
   backfill: boolean;
+  /** Provenance moved an unanalysed signal into editorial processing, without a material revision. */
+  processingNeeded?: boolean;
 }
 
 // Material first discovered more than this long after its source time is archived by source time,
@@ -156,18 +160,33 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
              VALUES (${newId}, 1, ${hash}, ${title}, ${m.bodyText ?? null})`;
     await db`INSERT INTO article_discoveries (article_id, source_id, via, discovered_at)
              VALUES (${newId}, ${m.sourceId}, ${m.via}, ${discoveredAt}) ON CONFLICT DO NOTHING`;
+    await reconcileMaterialSource(db, newId, { sourceId: m.sourceId, author: m.author });
     return { articleId: newId, created: true, revised: false, backfill: t.backfill };
   }
 
-  const [existing] = await db<{ id: string; source_id: string; revision: number; content_hash: string | null; backfill: boolean; title: string; body_text: string | null; excerpt: string | null }[]>`
-    SELECT id, source_id, revision, content_hash, backfill, title, body_text, excerpt FROM articles WHERE identity_key = ${identityKey} FOR UPDATE`;
+  const [existing] = await db<{ id: string; source_id: string; revision: number; content_hash: string | null; backfill: boolean; title: string; body_text: string | null; excerpt: string | null; participation_mode: string }[]>`
+    SELECT a.id, a.source_id, a.revision, a.content_hash, a.backfill, a.title, a.body_text, a.excerpt, s.participation_mode
+    FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.identity_key = ${identityKey} FOR UPDATE OF a`;
   await db`INSERT INTO article_discoveries (article_id, source_id, via, discovered_at)
            VALUES (${existing!.id}, ${m.sourceId}, ${m.via}, ${discoveredAt}) ON CONFLICT DO NOTHING`;
   const unchanged: MaterialResult = { articleId: existing!.id, created: false, revised: false, backfill: existing!.backfill };
+  // Configuration may have gained a verified publisher since this same discovery channel last
+  // saw the URL. Reconcile before accepting any of that channel's material changes.
+  if (await reconcileMaterialSource(db, existing!.id, { sourceId: m.sourceId, author: m.author })) {
+    if (existing!.participation_mode !== "editorial") {
+      const [pending] = await db`SELECT 1 FROM articles a JOIN sources s ON s.id = a.source_id
+        WHERE a.id = ${existing!.id} AND s.participation_mode = 'editorial'
+          AND NOT EXISTS (SELECT 1 FROM analyses an WHERE an.article_id = a.id AND an.input_revision = a.revision AND an.relevance IS NOT NULL)`;
+      if (pending) unchanged.processingNeeded = true;
+    }
+    return unchanged;
+  }
   // Another source listing the same material (an aggregator, a translated mirror, a hot signal) is a
   // discovery only: its title and summary are its own rendering, and taking them made the article flip
   // between the two sources' versions on every fetch. Only the article's own source revises it.
-  if (existing!.source_id !== m.sourceId) return unchanged;
+  if (existing!.source_id !== m.sourceId) {
+    return unchanged;
+  }
   // What the row will hold after this report: a listing without body keeps the stored (extracted) body.
   const bodyText = m.bodyText ?? existing!.body_text;
   const excerpt = m.excerpt ?? existing!.excerpt;
@@ -192,19 +211,35 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   // Nor is the stored version with other characters lost in transit, or with them restored.
   if (sameBarringLoss(existing!.title, title) && sameBarringLoss(existing!.body_text, bodyText) && sameBarringLoss(existing!.excerpt, excerpt)) return unchanged;
 
-  const [row] = await db<{ revision: number }[]>`
-    UPDATE articles SET
-      title = ${title}, author = coalesce(${m.author ?? null}, author), language = coalesce(${m.language ?? null}, language),
+  const media = m.media ? sql.json(m.media as never) : null;
+  await reviseMaterial(db, existing!.id, {
+    set: sql`title = ${title}, author = coalesce(${m.author ?? null}, author), language = coalesce(${m.language ?? null}, language),
       source_updated_at = ${m.sourceUpdatedAt ?? null}, excerpt = coalesce(${m.excerpt ?? null}, excerpt),
       body_text = coalesce(${m.bodyText ?? null}, body_text), body_html = coalesce(${m.bodyHtml ?? null}, body_html),
       body_status = CASE WHEN ${m.bodyText ?? null}::text IS NULL THEN body_status ELSE ${m.bodyStatus ?? "ok"} END,
-      media = CASE WHEN ${m.media ? db.json(m.media as never) : null}::jsonb IS NULL THEN media ELSE ${m.media ? db.json(m.media as never) : null}::jsonb END,
-      x_post = coalesce(${m.xPost ? db.json(m.xPost as never) : null}, x_post),
-      revision = revision + 1, content_hash = ${next}, processing_state = 'new',
-      processing_attempts = 0, processing_retry_at = NULL, processing_error = NULL, processing_queued_at = NULL, updated_at = now()
-    WHERE id = ${existing!.id}
+      media = CASE WHEN ${media}::jsonb IS NULL THEN media ELSE ${media}::jsonb END,
+      x_post = coalesce(${m.xPost ? sql.json(m.xPost as never) : null}, x_post)`,
+    hash: next, title, bodyText,
+  });
+  return { articleId: existing!.id, created: false, revised: true, backfill: existing!.backfill };
+}
+
+/**
+ * A new revision of stored material, from a report or from body extraction: `set` writes the new
+ * content, and everything decided on the old content starts over (analysis and its retry count,
+ * grouping, the "adds value" check). The caller holds the row lock and has found the content changed.
+ */
+export async function reviseMaterial(db: Db, articleId: string, revision: { set: ReturnType<typeof sql>; hash: string; title: string; bodyText: string | null }): Promise<void> {
+  const [row] = await db<{ revision: number }[]>`
+    UPDATE articles SET ${revision.set}, revision = revision + 1, content_hash = ${revision.hash}, ${groupingReset()},
+      processing_state = 'new', processing_attempts = 0, processing_retry_at = NULL, processing_error = NULL, processing_queued_at = NULL,
+      updated_at = now()
+    WHERE id = ${articleId}
     RETURNING revision`;
   await db`INSERT INTO article_revisions (article_id, revision, content_hash, title, body_text)
-           VALUES (${existing!.id}, ${row!.revision}, ${next}, ${title}, ${bodyText})`;
-  return { articleId: existing!.id, created: false, revised: true, backfill: existing!.backfill };
+           VALUES (${articleId}, ${row!.revision}, ${revision.hash}, ${revision.title}, ${revision.bodyText})`;
+  // Only withdraw an existing projection; the first publication still belongs to completed analysis.
+  if ((await db`SELECT 1 FROM publications WHERE article_id = ${articleId}`).length) {
+    await publishArticleTx(db as Tx, articleId);
+  }
 }

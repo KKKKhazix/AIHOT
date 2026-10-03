@@ -6,7 +6,6 @@ import path from "node:path";
 import sharp from "sharp";
 import { config } from "../config.ts";
 import { guardedFetch, type GuardedResponse } from "../lib/http-fetch.ts";
-
 import { IMAGE_WIDTHS } from "./renditions.ts";
 
 const CACHE_DIR = path.join(config.dataDir, "imgcache");
@@ -119,7 +118,6 @@ export function decodeIco(buf: Buffer): Buffer | { raw: Buffer; width: number; h
   }
   return null;
 }
-
 
 /** The cached rendition of an image for a mode, fetched and resized on first use. */
 export function produceImage(url: string, mode: string): Promise<PreparedImage> {

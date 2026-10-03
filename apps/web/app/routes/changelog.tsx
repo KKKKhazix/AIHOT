@@ -1,28 +1,26 @@
-import { SITE, withSubject } from "@aihot/industry/site";
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { ChangelogRelease, ChangelogResponse } from "@aihot/contracts/site";
+import { SITE } from "@aihot/industry/site";
 import { Link, useLoaderData } from "react-router";
-import { apiGet } from "../lib/api.server";
+import { apiGet, edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
 import { setChangelogSeen } from "../lib/local-state";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
 import { IconChevronRight } from "../components/icons";
 import { Inline, dateHeading } from "../features/changelog/text";
+import { PhoneBar } from "../components/shell/PhoneBar";
+import type { Screen } from "../components/shell/screens";
 
-/** Shared caches may keep this page for five minutes. */
+export const handle: Screen = { tab: "me", name: "更新日志" };
+
 export function headers() {
-  return { "Cache-Control": "public, max-age=0, s-maxage=300, stale-while-revalidate=600" };
+  return edgeTtl(300);
 }
 
-interface Release {
-  date: string;
-  time: string;
-  kind: "更新" | "优化" | "公告" | "下线";
-  title: string;
-  body: string[];
-}
+type Release = ChangelogRelease;
 
 export async function loader({ request }: { request: Request }) {
-  return apiGet<{ latestVersion: string; releases: Release[] }>("/api/site/changelog", { signal: request.signal });
+  return apiGet<ChangelogResponse>("/api/site/changelog", { signal: request.signal });
 }
 
 export function meta() {
@@ -114,7 +112,7 @@ export default function ChangelogPage() {
       </AsideCard>
       <AsideCard title="有想法或遇到问题">
         <p className="text-[13px] leading-[1.75] text-ink-3">想要的功能、用着不顺的地方，都可以在反馈页告诉我们。</p>
-        <Link to="/feedback" prefetch="intent" className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline">
+        <Link viewTransition to="/feedback" prefetch="intent" className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline">
           去反馈 <IconChevronRight size={14} />
         </Link>
       </AsideCard>
@@ -122,48 +120,50 @@ export default function ChangelogPage() {
   );
 
   return (
+    <>
+    <PhoneBar back={{ to: "/more", label: "我的" }} title="更新日志" />
     <ReadingLayout aside={aside}>
       <header className="pb-6">
-        <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">更新日志</h1>
+        <h1 data-page-title="" className="text-[24px] font-semibold leading-[1.3] text-ink">更新日志</h1>
         <p className="mt-1.5 text-[13px] text-ink-3">新功能、调整、下线，都写在这里。</p>
       </header>
       <div className="space-y-4">
         {[...groups.entries()].map(([date, releases]) => {
           const h = dateHeading(date);
-          const plain = releases;
           return (
-            <Fragment key={date}>
-              {plain.length > 0 && (
-                <section id={`d-${date}`} className="card scroll-mt-6 px-5 lg:px-7">
-                  <h2 className="flex items-baseline gap-3 border-b border-line-soft py-4">
-                    <time dateTime={date} className="text-[18px] font-bold text-ink">
-                      {h.label}
-                    </time>
-                    <span className="text-[12px] text-ink-4">{h.weekday}</span>
-                  </h2>
-                  <ol>
-                    {plain.map((r) => (
-                      <li key={`${r.date}-${r.time}-${r.title}`} className="grid gap-x-8 gap-y-2 border-b border-line-soft py-5 last:border-b-0 sm:grid-cols-[88px_minmax(0,1fr)]">
-                        <div className="flex items-center gap-3 sm:block">
-                          <span className="mono block text-[12.5px] text-ink-3">{r.time}</span>
-                          <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-4 sm:mt-1.5">
-                            <span className={`size-1.5 rounded-full ${KIND_DOT[r.kind]}`} aria-hidden="true" />
-                            {r.kind}
-                          </span>
-                        </div>
-                        <article className="min-w-0 sm:border-l sm:border-line sm:pl-8">
-                          <h3 className="text-[15px] font-bold leading-snug text-ink">{r.title}</h3>
-                          <ReleaseBody lines={r.body} />
-                        </article>
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-              )}
-            </Fragment>
+            <section key={date} id={`d-${date}`} className="card scroll-mt-[calc(var(--bar-h)+1.5rem)] px-5 lg:px-7">
+              <h2 className="flex items-baseline gap-3 border-b border-line-soft py-4">
+                <time dateTime={date} className="text-[18px] font-bold text-ink">
+                  {h.label}
+                </time>
+                <span className="text-[12px] text-ink-4">{h.weekday}</span>
+              </h2>
+              <ol>
+                {releases.map((r) => (
+                  <li
+                    key={`${r.date}-${r.time}-${r.title}`}
+                    className={`grid gap-x-8 gap-y-2 border-b border-line-soft py-5 last:border-b-0 sm:grid-cols-[88px_minmax(0,1fr)] ${r.urgent ? "-mx-5 border-l-4 border-l-hot bg-hot-soft pl-4 pr-5 lg:-mx-7 lg:pl-6 lg:pr-7" : ""}`}
+                  >
+                    <div className="flex items-center gap-3 sm:block">
+                      <span className="mono block text-[12.5px] text-ink-3">{r.time}</span>
+                      <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-4 sm:mt-1.5">
+                        <span className={`size-1.5 rounded-full ${r.urgent ? "bg-hot" : KIND_DOT[r.kind]}`} aria-hidden="true" />
+                        {r.kind}
+                      </span>
+                    </div>
+                    <article className={`min-w-0 sm:border-l sm:pl-8 ${r.urgent ? "sm:border-hot/40" : "sm:border-line"}`}>
+                      {r.urgent && <span className="mb-2 inline-flex rounded-full bg-hot px-2.5 py-0.5 text-[12px] font-semibold text-white">重要</span>}
+                      <h3 className={`text-[15px] font-bold leading-snug ${r.urgent ? "text-hot" : "text-ink"}`}>{r.title}</h3>
+                      <ReleaseBody lines={r.body} />
+                    </article>
+                  </li>
+                ))}
+              </ol>
+            </section>
           );
         })}
       </div>
     </ReadingLayout>
+    </>
   );
 }

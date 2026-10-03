@@ -152,7 +152,7 @@ const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
 const OWN_PROXY = /^(?:https?:\/\/[^/?#]+)?\/api\/img-proxy\?/i;
 
 /**
- * The image an address of our own image proxy stands for. Legacy bodies were saved with the proxy's
+ * The image an address of our own image proxy stands for. Older bodies were saved with the proxy's
  * relative address (`/api/img-proxy?u=…&exp=…&sig=…`); resolved against the article's own site it
  * pointed nowhere. The source image is the `u` it wraps, signed again when a page is served.
  */
@@ -161,18 +161,6 @@ export function unwrapProxyUrl(src: string): string {
   if (!OWN_PROXY.test(s)) return src;
   const u = new URLSearchParams(s.slice(s.indexOf("?") + 1).replace(/&amp;/g, "&")).get("u");
   return u && /^https?:\/\//i.test(u) ? u : src;
-}
-
-/** Stored bodies: every image and video poster wrapped in our proxy points at its source again. */
-export function unwrapProxiedImages(html: string): string {
-  // Quoted attribute values may hold a ">" (an alt text), so a tag ends only outside quotes.
-  return html.replace(/<(?:img|video)\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (tag) =>
-    tag.replace(/(\s(?:src|poster)=")([^"]*)(")/gi, (match, pre: string, value: string, post: string) => {
-      const url = value.replace(/&amp;/g, "&");
-      const unwrapped = unwrapProxyUrl(url);
-      return unwrapped === url ? match : `${pre}${unwrapped.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}${post}`;
-    }),
-  );
 }
 
 function resolveUrl(href: string, base?: string): string {
@@ -184,13 +172,88 @@ function resolveUrl(href: string, base?: string): string {
   }
 }
 
-/** Plain paragraphs to HTML, for sources that only give text (X posts, translations). */
-export function textToHtml(text: string): string {
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+// A bare address ends at whitespace, CJK text, full-width punctuation or emoji; trailing sentence
+// punctuation belongs to the sentence, not the link.
+const BARE_URL = /https?:\/\/[^\s<>"^`{|}　-〿㐀-䶿一-鿿＀-￯぀-ヿ가-힯☀-➿️‍\u{1f300}-\u{1faff}]+/gu;
+const TRAILING_PUNCT = /[.,;:!?*'"”’»…、。，；：！？）\]】}」』》]+$/;
+const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\))/g;
+
+/** An address without a closing bracket it never opened ("(see https://a.b/c)" keeps its ")"). */
+function balanced(url: string): string {
+  let u = url;
+  while (u.endsWith(")") && (u.match(/\(/g)?.length ?? 0) < (u.match(/\)/g)?.length ?? 0)) u = u.slice(0, -1);
+  return u;
+}
+
+function link(href: string, text: string): string {
+  return `<a href="${escHtml(href)}" target="_blank" rel="noopener noreferrer nofollow">${escHtml(text)}</a>`;
+}
+
+/** Escaped text with its bare addresses made into links. */
+function linkify(text: string): string {
+  let out = "";
+  let last = 0;
+  for (const m of text.matchAll(BARE_URL)) {
+    const url = balanced(m[0].replace(TRAILING_PUNCT, ""));
+    if (!/^https?:\/\/[^/]+\.[^/]/.test(url)) continue;
+    out += escHtml(text.slice(last, m.index)) + link(url, url);
+    last = m.index + url.length;
+  }
+  return out + escHtml(text.slice(last));
+}
+
+/** Inline code, **bold** and [text](url), then bare addresses; everything else escaped. */
+function inline(text: string): string {
   return text
+    .split(INLINE)
+    .map((part, i) => {
+      if (i % 2 === 0) return linkify(part);
+      if (part.startsWith("`")) return `<code>${escHtml(part.slice(1, -1))}</code>`;
+      if (part.startsWith("**")) return `<strong>${linkify(part.slice(2, -2))}</strong>`;
+      const m = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(part)!;
+      return link(m[2]!, m[1]!);
+    })
+    .join("");
+}
+
+const LIST_ITEM = /^[ \t]*([-*+•]|\d+[.)])[ \t]+/;
+const ORDERED = /^[ \t]*\d+[.)][ \t]+/;
+const QUOTE = /^[ \t]*>[ \t]?/;
+const HEADING = /^(#{1,6})[ \t]+(.+)$/;
+
+/** One blank-line separated block: fenced code, a quote, a list, a heading, or a paragraph. */
+function block(para: string): string {
+  if (para.startsWith("```")) {
+    const code = para.replace(/^```[^\n]*\n?/, "").replace(/\n?```$/, "");
+    return `<pre><code>${escHtml(code)}</code></pre>`;
+  }
+  const lines = para.split("\n").filter((l) => l.trim());
+  if (lines.length && lines.every((l) => QUOTE.test(l))) return `<blockquote><p>${lines.map((l) => inline(l.replace(QUOTE, ""))).join("<br>")}</p></blockquote>`;
+  if (lines.length > 1 && lines.every((l) => LIST_ITEM.test(l))) {
+    const tag = ORDERED.test(lines[0]!) ? "ol" : "ul";
+    return `<${tag}>${lines.map((l) => `<li>${inline(l.replace(LIST_ITEM, ""))}</li>`).join("")}</${tag}>`;
+  }
+  const heading = lines.length === 1 ? HEADING.exec(lines[0]!) : null;
+  if (heading) {
+    const level = Math.min(heading[1]!.length + 1, 6);
+    return `<h${level}>${inline(heading[2]!)}</h${level}>`;
+  }
+  return `<p>${para.split("\n").map(inline).join("<br>")}</p>`;
+}
+
+/**
+ * Plain text to HTML, for sources that only give text (X posts, translations): paragraphs and line
+ * breaks, the few Markdown marks people type (code, bold, links, lists, quotes, headings) and safe
+ * links for bare addresses. The text is never taken as HTML.
+ */
+export function textToHtml(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
     .split(/\n{2,}/)
     .map((para) => para.trim())
     .filter(Boolean)
-    .map((para) => `<p>${esc(para).replace(/\n/g, "<br>")}</p>`)
+    .map(block)
     .join("");
 }

@@ -1,6 +1,6 @@
 // Time windows for reset announcements. Tibo speaks in Pacific time ("6pm PST" means Pacific local
 // time, daylight saving included); the site shows Beijing time. The schedule restates his words; the
-// estimate is AIHOT's landing window and is always labelled as such.
+// estimate is the site's own landing window and is always labelled as such.
 
 const PACIFIC = "America/Los_Angeles";
 const HOUR = 3600_000;
@@ -98,7 +98,7 @@ function estimate(from: Date, through: Date, basis: EstimateBasis, reason: strin
 }
 
 /**
- * AIHOT's landing window for an unconfirmed announcement. A model window is accepted only when it
+ * The site's landing window for an unconfirmed announcement. A model window is accepted only when it
  * is well-formed and does not contradict the stated time; otherwise the stated time (plus a
  * one-to-two-hour allowance) or his usual timing is used.
  */
@@ -122,7 +122,7 @@ export function estimateFor(opts: { schedule: Schedule | null; announcedAt: Date
   }
   if (schedule && schedule.precision === "deadline") {
     // "Within the hour", "by 8pm": any time from the announcement (at most a day ahead) until a little
-    // after the deadline, not a window that only starts at the deadline (legacy estimate).
+    // after the deadline, not a window that only starts at the deadline.
     const deadline = new Date(schedule.through).getTime();
     const from = Math.min(Math.max(announcedAt.getTime(), deadline - 24 * HOUR), deadline);
     return estimate(new Date(from), new Date(deadline + HOUR), "source", "按原帖给出的截止时间换算成北京时间，并预留一点延迟。");
@@ -174,8 +174,8 @@ export function resolveStatedTime(w: StatedWords, postAt: Date): StatedTime | nu
   }
   if (w.clock) {
     if (w.clockThrough) return { precision: "window", date: day, from: w.clock, through: w.clockThrough };
-    // "by 8pm" stays a deadline and "around 2:30pm" approximate (the legacy schedule kept both); a plain
-    // clock time ("landing 2:30pm") is shown as the hour after it.
+    // "by 8pm" stays a deadline and "around 2:30pm" approximate; a plain clock time ("landing 2:30pm")
+    // is shown as the hour after it.
     const precision = w.precision === "deadline" || w.precision === "approximate" ? w.precision : "exact";
     return { precision, date: day, from: w.clock, through: null };
   }

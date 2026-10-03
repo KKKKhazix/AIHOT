@@ -1,5 +1,4 @@
-// Hugging Face dataset access: parquet files read at a pinned revision (hyparquet, pure JS), with the
-// datasets-server JSON API as a fallback. From the server, huggingface.co goes through the egress proxy.
+// Hugging Face dataset access: parquet files read at a pinned revision (hyparquet, pure JS).
 import { parquetReadObjects } from "hyparquet";
 import { guardedFetch } from "../../lib/http-fetch.ts";
 
@@ -21,18 +20,4 @@ export async function hfDatasetSha(dataset: string): Promise<string | null> {
   const res = await guardedFetch(`https://huggingface.co/api/datasets/${dataset}`, { timeoutMs: 30_000 });
   if (res.status !== 200) return null;
   return (JSON.parse(res.text()) as { sha?: string }).sha ?? null;
-}
-
-/** All rows of a config/split matching an equality filter, 100 per request. */
-export async function hfFilterRows<T>(dataset: string, config: string, split: string, where: string): Promise<T[]> {
-  const out: T[] = [];
-  for (let offset = 0; offset < 20_000; offset += 100) {
-    const url = `https://datasets-server.huggingface.co/filter?${new URLSearchParams({ dataset, config, split, where, offset: String(offset), length: "100" })}`;
-    const res = await guardedFetch(url, { timeoutMs: 30_000, maxBytes: 8 * 1024 * 1024 });
-    if (res.status !== 200) throw new Error(`datasets-server ${config}/${split} HTTP ${res.status}: ${res.text().slice(0, 200)}`);
-    const body = JSON.parse(res.text()) as { rows: Array<{ row: T }>; num_rows_total: number };
-    out.push(...body.rows.map((r) => r.row));
-    if (out.length >= body.num_rows_total || !body.rows.length) break;
-  }
-  return out;
 }

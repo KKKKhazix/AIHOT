@@ -1,9 +1,9 @@
-import { SITE } from "@aihot/industry/site";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
+import { SITE } from "@aihot/industry/site";
 import { Wordmark } from "../Logo";
 import { useChangelogSeen } from "../../lib/local-state";
-import { SIDEBAR, tabIsActive, type NavItem } from "./nav";
+import { SIDEBAR, sidebarIsActive, type NavItem } from "./nav";
 import { ThemeSwitch } from "./ThemeSwitch";
 
 /** True while the changelog has an entry newer than the one this reader last opened. */
@@ -17,8 +17,7 @@ export function useChangelogDot(latestVersion: string | null): boolean {
 
 function SideLink({ item, dot }: { item: NavItem; dot: boolean }) {
   const { pathname } = useLocation();
-  // Weekly and monthly reports belong to the daily report entry, as the phone tab bar has it.
-  const isActive = tabIsActive(item, pathname);
+  const isActive = sidebarIsActive(item, pathname);
   const Icon = item.icon;
   return (
     <Link

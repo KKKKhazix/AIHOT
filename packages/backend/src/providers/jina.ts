@@ -2,38 +2,29 @@
 // proxy, always behind receipts and the per-minute/hour/day budget (any zero stops it).
 import { credential } from "../config.ts";
 import { guardedFetch } from "../lib/http-fetch.ts";
-import { paidRequest, ProviderRejectedError } from "./receipts.ts";
+import { assertAccepted, paidRequest } from "./receipts.ts";
 
-export interface JinaPage {
-  title: string | null;
-  url: string | null;
-  publishedTime: string | null;
-  markdown: string;
-}
-
-export function parseJinaText(text: string): JinaPage {
-  const header = text.split(/\nMarkdown Content:\n/)[0] ?? "";
-  const body = text.includes("\nMarkdown Content:\n") ? text.split(/\nMarkdown Content:\n/).slice(1).join("\nMarkdown Content:\n") : text;
-  const field = (name: string) => new RegExp(`^${name}:\\s*(.+)$`, "m").exec(header)?.[1]?.trim() ?? null;
-  return { title: field("Title"), url: field("URL Source"), publishedTime: field("Published Time"), markdown: body.trim() };
-}
+/** Jina's answer starts with header lines (Title, URL Source, Published Time); the page follows this line. */
+const CONTENT = "\nMarkdown Content:\n";
 
 /**
- * Reads a page through Jina. The receipt key is the target URL plus the day, so a same-day retry of an
- * article's body or detail reuses it. A listing passes its fetch `round` instead: with the day key each
- * listing was read once a day and every later fetch saw the morning's page, while a key that changed on
- * every call would pay again for a request whose outcome is unknown.
+ * Reads a page through Jina: `raw` is the whole answer, `markdown` the page after its header lines.
+ * The receipt key is the target URL plus the day, so a same-day retry of an article's body or detail
+ * reuses it. A listing is read afresh on every fetch (`perRead`): with the day key every later fetch saw
+ * the morning's page. Each such read has a receipt of its own, so after one whose outcome is unknown the
+ * next fetch pays for a new read instead of waiting on it.
  */
 export async function jinaRead(
   targetUrl: string,
-  opts: { purpose: string; subject: string; format?: "markdown" | "html"; cacheToleranceSeconds?: number; round?: string },
-): Promise<JinaPage & { receiptId: number; raw: string }> {
+  opts: { purpose: string; subject: string; format?: "markdown" | "html"; cacheToleranceSeconds?: number; perRead?: boolean },
+): Promise<{ markdown: string; raw: string; receiptId: number }> {
   const key = credential("collectors", "JINA_API_KEY");
   if (!key) throw new Error("JINA_API_KEY is not configured");
   const base = (credential("collectors", "JINA_BASE_URL") ?? "https://r.jina.ai").replace(/\/$/, "");
   // A listing whose freshness matters (xAI news) caps how old Jina's cached rendering may be.
   const tolerance: Record<string, string> = Number.isInteger(opts.cacheToleranceSeconds) && opts.cacheToleranceSeconds! >= 0 ? { "x-cache-tolerance": String(opts.cacheToleranceSeconds) } : {};
-  const day = opts.round ?? new Date().toISOString().slice(0, 10);
+  const now = new Date().toISOString();
+  const day = opts.perRead ? now : now.slice(0, 10);
   const receipt = await paidRequest(
     { service: "jina", model: null, purpose: opts.purpose, subject: opts.subject, identity: { url: targetUrl, day, format: opts.format ?? "markdown" }, requestSummary: { url: targetUrl } },
     async () => {
@@ -42,11 +33,8 @@ export async function jinaRead(
         timeoutMs: 60_000,
         maxBytes: 6 * 1024 * 1024,
       });
-      if (res.status === 401 || res.status === 402 || res.status === 403 || res.status === 422 || res.status === 400) {
-        throw new ProviderRejectedError(`jina HTTP ${res.status}`, res.status, false);
-      }
-      if (res.status === 429 || res.status >= 500) throw new ProviderRejectedError(`jina HTTP ${res.status}`, res.status, true);
       const text = res.text();
+      assertAccepted("jina", res.status, text);
       // Billed in tokens; estimated at about ¥0.36 per million. Without the usage header nothing is guessed.
       const tokens = Number(res.headers.get("x-usage-tokens")) || null;
       const cost = tokens ? { amount: (tokens / 1e6) * 0.36, currency: "CNY", basis: "estimated" as const } : null;
@@ -54,5 +42,6 @@ export async function jinaRead(
     },
   );
   const raw = String((receipt.response as { text?: string })?.text ?? "");
-  return { ...parseJinaText(raw), receiptId: receipt.receiptId, raw };
+  const at = raw.indexOf(CONTENT);
+  return { markdown: (at < 0 ? raw : raw.slice(at + CONTENT.length)).trim(), raw, receiptId: receipt.receiptId };
 }

@@ -1,6 +1,7 @@
 // Cron-style schedules (Asia/Shanghai). Each run is recorded in job_runs; missed slots run once.
 import type { PgBoss } from "pg-boss";
 import { FEATURES } from "@aihot/industry/features";
+import { CODEX_RESET_SCAN_MINUTES } from "@aihot/contracts/monitor";
 import { credential } from "@aihot/backend/config";
 import { ensureQueue, recordRun } from "@aihot/backend/jobs/queue";
 import { sweepUnprocessed } from "@aihot/backend/jobs/content";
@@ -9,9 +10,8 @@ import { adaptIntervals, scheduleDueSources } from "@aihot/backend/sources/colle
 import { scheduleMpReconcile } from "@aihot/backend/sources/mp";
 import { refreshSourceIcons } from "@aihot/backend/sources/icons";
 import { computeHotRanking, snapshotHeat } from "@aihot/backend/events/hot";
-import { refreshStoryStatuses } from "@aihot/backend/events/digest";
 import { linkRelatedStories } from "@aihot/backend/events/consolidate";
-import { catchUpReports, composeDaily, composeMonthly, composeWeekly, dueDaily, dueWeekly, dueMonthly } from "@aihot/backend/reports/compose";
+import { composeDueReports } from "@aihot/backend/reports/compose";
 import { runLeaderboardRound } from "@aihot/backend/leaderboard/method/run";
 import { refreshLeaderboard } from "@aihot/backend/leaderboard/fetch/refresh";
 import { monitorTick } from "@aihot/backend/monitor/scan";
@@ -30,7 +30,7 @@ interface Scheduled {
   missed?: "skip" | "once";
 }
 
-const collecting = process.env.COLLECT_ENABLED !== "false";
+const collecting = process.env.COLLECT_ENABLED === "true";
 
 export const SCHEDULES: Scheduled[] = [
   { name: "content.sweep", cron: "*/5 * * * *", run: sweepUnprocessed },
@@ -38,30 +38,19 @@ export const SCHEDULES: Scheduled[] = [
   { name: "content.translate", cron: "*/5 * * * *", run: () => translatePending() },
   { name: "hot.rank", cron: "*/5 * * * *", run: () => computeHotRanking() },
   { name: "hot.snapshot", cron: "2 * * * *", run: () => snapshotHeat() },
-  { name: "stories.status", cron: "7 * * * *", run: refreshStoryStatuses },
   { name: "stories.links", cron: "12 * * * *", run: linkRelatedStories },
-  { name: "reports.daily", cron: "0 8 * * *", missed: "once", run: () => composeDaily(dueDaily()) },
-  { name: "reports.weekly", cron: "0 10 * * 1", missed: "once", run: () => composeWeekly(dueWeekly()) },
-  {
-    name: "reports.monthly",
-    cron: "30 10 1 * *",
-    missed: "once",
-    run: () => composeMonthly(dueMonthly()),
-  },
-  { name: "reports.catch-up", cron: "15 * * * *", run: () => catchUpReports() },
+  // Every issue that is due and not written yet: a daily from 08:00, a weekly from Monday 10:00, a monthly
+  // from the 1st 10:30, each on the half hour it falls due; a missed or failed one at the next run.
+  { name: "reports.compose", cron: "0,30 * * * *", missed: "once", run: () => composeDueReports() },
   { name: "ops.retention", cron: "30 3 * * *", missed: "once", run: () => dailyRetention() },
   { name: "sources.icons", cron: "40 4 * * *", missed: "once", run: () => refreshSourceIcons() },
   // IndexNow for new indexable pages (off unless INDEXNOW_SUBMIT_ENABLED).
   { name: "seo.indexnow", cron: "50 5 * * *", missed: "once", run: () => submitIndexNow() },
   // Work a stopped process left half way becomes visible, and unknown paid requests get their one
-  // automatic release, before the alerts look.
-  {
-    name: "ops.recover",
-    cron: "*/10 * * * *",
-    run: recoverStaleWork,
-  },
+  // automatic release; ops.alerts runs in parallel and sees the result by its next run at the latest.
+  { name: "ops.recover", cron: "*/10 * * * *", run: () => recoverStaleWork() },
   { name: "ops.alerts", cron: "*/10 * * * *", run: () => checkAlerts() },
-  // One message with the follow-ups that do not touch readers (nothing when there are none).
+  // One message with other follow-ups and their actual impact (nothing when there are none).
   { name: "ops.digest", cron: "0 9 * * *", missed: "once", run: () => sendDigest() },
   // Feedback that did not reach the internal Feishu chat when it was sent (off with FEISHU_INTERNAL_ENABLED).
   { name: "feedback.forward", cron: "*/10 * * * *", run: () => forwardPendingFeedback() },
@@ -80,11 +69,12 @@ export const SCHEDULES: Scheduled[] = [
         { name: "sources.mp-reconcile", cron: "*/15 * * * *", run: () => scheduleMpReconcile() },
       ]
     : []),
-  // Codex reset monitor: checked every minute, scanned every 5 (every 3 while hot). It reads X through
-  // SocialData, so without that key there is nothing to run.
+  // Codex reset monitor: every ten minutes as the pages state, and the last 48 hours read again once a day;
+  // the 04:40 runs of both take turns (monitorTick). It reads X through SocialData, so without that key
+  // there is nothing to run.
   ...(collecting && FEATURES.codexResetMonitor && credential("collectors", "SOCIALDATA_API_KEY")
     ? [
-        { name: "monitor.tick", cron: "* * * * *", run: () => monitorTick() },
+        { name: "monitor.tick", cron: `*/${CODEX_RESET_SCAN_MINUTES} * * * *`, run: () => monitorTick() },
         { name: "monitor.lookback", cron: "40 4 * * *", run: () => monitorTick({ lookbackHours: 48 }) },
       ]
     : []),
@@ -98,9 +88,10 @@ export async function registerSchedules(boss: PgBoss) {
     // Schedules fire at minute boundaries; a 15 s pickup keeps them on time with a third of the polling.
     await boss.work(queue, { pollingIntervalSeconds: 15 }, async () => recordRun(s.name, s.run));
   }
-  // A schedule removed from the table (a module switched off) must not keep firing from an earlier run.
-  const names = new Set(SCHEDULES.map((s) => `cron.${s.name}`));
-  for (const existing of await boss.getSchedules()) {
-    if (existing.name.startsWith("cron.") && !names.has(existing.name)) await boss.unschedule(existing.name);
+  // pg-boss keeps a schedule until it is unscheduled: one dropped from this list (or switched off) would go
+  // on queueing jobs nobody works.
+  const current = new Set(SCHEDULES.map((s) => `cron.${s.name}`));
+  for (const old of await boss.getSchedules()) {
+    if (old.name.startsWith("cron.") && !current.has(old.name)) await boss.unschedule(old.name, old.key);
   }
 }

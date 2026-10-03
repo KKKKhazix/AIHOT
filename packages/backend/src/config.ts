@@ -9,8 +9,6 @@ export const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
 
 const env = process.env;
 
-export const isProduction = env.NODE_ENV === "production";
-
 function str(name: string, fallback?: string): string {
   const value = env[name];
   if (value !== undefined && value !== "") return value;
@@ -32,29 +30,27 @@ function bool(name: string, fallback: boolean): boolean {
   return value === "1" || value.toLowerCase() === "true";
 }
 
+export const isProduction = env.NODE_ENV === "production";
 
 export const config = {
   databaseUrl: str("DATABASE_URL", "postgres://127.0.0.1:5432/aihot"),
   apiPort: int("API_PORT", 3001),
-  webPort: int("WEB_PORT", 3000),
-  apiBaseUrl: str("API_BASE_URL", "http://127.0.0.1:3001"),
   // Every generated absolute link uses this address, whatever Host a request arrives with.
   siteUrl: str("SITE_URL", SITE.defaultUrl).replace(/\/+$/, ""),
-  selectedVisibleAfterSeconds: int("SELECTED_VISIBLE_AFTER_SECONDS", 180),
   egressProxyUrl: env.EGRESS_PROXY_URL || null,
   allowPrivateNetworkFetch: bool("ALLOW_PRIVATE_NETWORK_FETCH", false),
   feishuContentPushEnabled: bool("FEISHU_CONTENT_PUSH_ENABLED", false),
   indexNowSubmitEnabled: bool("INDEXNOW_SUBMIT_ENABLED", false),
   /** IndexNow key (32 hex characters); without one nothing is submitted and no key file is served. */
   indexNowKey: /^[0-9a-f]{32}$/.test(env.INDEXNOW_KEY ?? "") ? env.INDEXNOW_KEY! : null,
-  imgProxyRequireSig: bool("IMG_PROXY_REQUIRE_SIG", true),
   /** Optional directory of per-group dotenv files (models.env, collectors.env, …); normally everything is in .env. */
   credentialsDir: env.AIHOT_CREDENTIALS_DIR || null,
   dataDir: str("AIHOT_DATA_DIR", path.join(REPO_ROOT, ".data")),
   // Name of this deployment in alerts ("production" sends them without a prefix).
   environmentName: str("AIHOT_ENVIRONMENT", isProduction ? "production" : "development"),
-  // Model calls are live unless explicitly disabled (tests, replays).
-  modelCallsEnabled: bool("MODEL_CALLS_ENABLED", true),
+  // External-action valve: off unless the environment turns it on, like COLLECT_ENABLED (read by the
+  // worker). .env.example turns both on.
+  modelCallsEnabled: bool("MODEL_CALLS_ENABLED", false),
   devAdmin: env.DEV_AUTH_ROLE === "admin" ? { displayName: env.DEV_AUTH_DISPLAY_NAME || "Dev Admin" } : null,
   /** The admin password (at least 12 characters). Feishu sign-in below is optional. */
   adminPassword: env.ADMIN_PASSWORD || null,

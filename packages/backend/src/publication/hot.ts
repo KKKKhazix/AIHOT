@@ -1,68 +1,70 @@
-// Reading the latest published hot ranking. The web shows heat values; machine exits only ranks.
+// The latest hot ranking through the public read layer. A stored entry is shown only while its
+// representative is still listed evidence of the story (regrouping or a withdrawal can undo it before
+// the next ranking); the web shows heat values, machine exits only ranks (stories.ts).
 import type { HotParticipant, HotStripEntry } from "@aihot/contracts/site";
 import { sql } from "../db.ts";
-import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
-
 import { storedHotRanking, tierRank, type HotEntry, type HotRanking } from "../events/hot.ts";
+import { cached, cachedByKey, SHARED_ONLY } from "../lib/cache.ts";
+import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
+import { publicSourceName } from "./rules.ts";
 import { evidenceCondition, listedCondition } from "./scope.ts";
+import { storyTexts } from "./story-text.ts";
+
+/** Faces are the 精选组 sources, T1 before T1.5 before T2; the rest (and 氛围组) count in "+N". */
 const MAX_FACES = 6;
 
+// Concurrent reads are shared, nothing more: public words follow withdrawals and regrouping at once.
+const ranking = cached(queryLatestHotRanking, SHARED_ONLY);
+
 export function latestHotRanking(): Promise<HotRanking | null> {
-  return queryLatestHotRanking();
+  return ranking.get();
 }
 
 async function queryLatestHotRanking(): Promise<HotRanking | null> {
   const row = await storedHotRanking();
   if (!row) return null;
-  const ids = row.entries.map(e => e.storyId);
-  const current = ids.length ? await sql<{ id: number; title: string; article_id: string | null; url: string | null; source_name: string | null }[]>`
-    SELECT st.id,st.title,rep.article_id,rep.url,rep.source_name FROM stories st
-    LEFT JOIN LATERAL (
-      SELECT p.article_id,p.url,s.name AS source_name FROM facts f JOIN fact_articles fa ON fa.fact_id=f.id
-      JOIN publications p ON p.article_id=fa.article_id JOIN sources s ON s.id=p.source_id
-      WHERE f.story_id=st.id AND ${listedCondition(new Date())} AND ${evidenceCondition()} AND s.participation_mode='editorial'
-      ORDER BY p.first_party DESC,p.selected DESC,p.score DESC NULLS LAST,p.article_id LIMIT 1
-    ) rep ON true WHERE st.id=ANY(${ids}::bigint[]) AND st.merged_into IS NULL` : [];
-  const byId = new Map(current.map(s => [s.id, s]));
-  // 榜单保留热度快照，文字和代表稿每次按当前权限读取，不复用嵌入的旧标题。
-  const entries = row.entries.flatMap(e => {
-    const story = byId.get(e.storyId);
-    return story?.article_id ? [{ ...e, title: story.title, representativeItemId: story.article_id,
-      representativeUrl: story.url, representativeSource: story.source_name }] : [];
+  const now = new Date();
+  const entries = row.entries;
+  const current = entries.length ? await sql<{ story_id: number; article_id: string; story_title: string; url: string; source_name: string }[]>`
+    SELECT DISTINCT ON (f.story_id, p.article_id) f.story_id, p.article_id, st.title AS story_title, p.url, s.name AS source_name
+    FROM facts f JOIN stories st ON st.id = f.story_id JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
+    JOIN sources s ON s.id = p.source_id
+    WHERE f.story_id IN ${sql(entries.map((entry) => entry.storyId))} AND p.article_id IN ${sql(entries.map((entry) => entry.representativeItemId ?? ""))}
+      AND ${evidenceCondition()} AND ${listedCondition(now)}
+    ORDER BY f.story_id, p.article_id, (fa.role = 'primary') DESC, f.id` : [];
+  const valid = new Map(current.map((report) => [`${report.story_id}:${report.article_id}`, report]));
+  // Regrouping can invalidate a saved representative before the next heat refresh. Do not link the
+  // event to a report it no longer holds; the next normal ranking can choose its replacement.
+  const visible = entries.flatMap((entry) => {
+    const report = valid.get(`${entry.storyId}:${entry.representativeItemId}`);
+    return report ? [{ ...entry, title: report.story_title, representativeUrl: report.url, representativeSource: report.source_name }] : [];
   });
-  return { id: row.id, computedAt: row.computedAt, ruleVersion: row.ruleVersion, entries, coverage: row.coverage };
+  return { ...row, entries: visible };
 }
 
-// 头像沿用榜单缓存；可能因撤回变化的事件文字每次重新读取。
 interface Extras {
   faces: Map<string, string | null>;
+  texts: Map<number, { summary: string | null; latest: string | null }>;
 }
-let extrasCache: { rankingId: number; extras: Extras } | null = null;
-const extrasPending = new Map<number, Promise<Extras>>();
 
-async function readExtras(ranking: HotRanking): Promise<Extras> {
-  if (extrasCache?.rankingId === ranking.id) return extrasCache.extras;
-  const pending = extrasPending.get(ranking.id);
-  if (pending) return pending;
-  const load = queryExtras(ranking);
-  extrasPending.set(ranking.id, load);
-  try { return await load; }
-  finally { extrasPending.delete(ranking.id); }
-}
+const readExtras = cachedByKey((ranking: HotRanking) => String(ranking.id), queryExtras, { ...SHARED_ONLY, maxKeys: 4 });
 
 async function queryExtras(ranking: HotRanking): Promise<Extras> {
   const ids = ranking.entries.map((e) => e.storyId);
-  const faces = await sql<{ name: string; icon_url: string | null; avatar: string | null }[]>`
+  const [faces, texts] = await Promise.all([
+    // A participant's face: the source's icon, else the avatar on that account's latest post in the story.
+    sql<{ name: string; icon_url: string | null; avatar: string | null }[]>`
       SELECT DISTINCT ON (s.id) s.name, s.icon_url, a.x_post->>'avatarUrl' AS avatar
       FROM story_signals ss JOIN sources s ON s.id = ss.source_id
       LEFT JOIN articles a ON a.id = ss.article_id AND a.x_post ? 'avatarUrl'
       WHERE ss.story_id = ANY(${ids}::bigint[])
-      ORDER BY s.id, (a.id IS NULL), a.discovered_at DESC`;
-  const extras: Extras = {
+      ORDER BY s.id, (a.id IS NULL), a.discovered_at DESC`,
+    storyTexts(ids),
+  ]);
+  return {
     faces: new Map(faces.map((f) => [f.name, f.icon_url ?? f.avatar])),
+    texts: new Map([...texts].map(([id, t]) => [id, { summary: t.digest ?? t.summary, latest: t.latest?.title ?? null }])),
   };
-  extrasCache = { rankingId: ranking.id, extras };
-  return extras;
 }
 
 /**
@@ -70,21 +72,21 @@ async function queryExtras(ranking: HotRanking): Promise<Extras> {
  * (精选组 by tier, a real face before an initial within a tier, then 氛围组), the digest and the latest turn.
  */
 export async function rankingExtras(ranking: HotRanking) {
-  const [stable, rows] = await Promise.all([
-    readExtras(ranking),
-    sql<{ id: number; digest: string | null; summary: string | null; latest: string | null }[]>`
-      SELECT id,digest,summary,latest FROM stories WHERE id=ANY(${ranking.entries.map(e => e.storyId)}::bigint[])`,
-  ]);
-  const { faces } = stable;
-  const texts = new Map(rows.map(r => [r.id, { summary: r.digest ?? r.summary, latest: r.latest }]));
+  const { faces, texts } = await readExtras(ranking);
   return {
     participants: (e: HotEntry): HotParticipant[] => {
       const people = e.participants
         .map((p, i) => ({ p, i, icon: faces.get(p.name) ?? null }))
         .sort((x, y) => Number(y.p.kind === "editorial") - Number(x.p.kind === "editorial") || tierRank(x.p.tier) - tierRank(y.p.tier) || Number(!!y.icon) - Number(!!x.icon) || x.i - y.i);
+      // A publisher's blog and its X account share a public name: listed once, with the first face.
+      const named = new Map<string, (typeof people)[number]>();
+      for (const person of people) {
+        const name = publicSourceName(person.p.name);
+        if (!named.has(name)) named.set(name, person);
+      }
       // Every name stays for the tooltip; only visible Faces need srcSet.
-      return people.map(({ p, icon }, i): HotParticipant => {
-        const person: HotParticipant = { name: p.name, kind: p.kind, iconUrl: proxiedImage(icon, "avatar") };
+      return [...named].map(([name, { p, icon }], i): HotParticipant => {
+        const person: HotParticipant = { name, kind: p.kind, iconUrl: proxiedImage(icon, "avatar") };
         const srcSet = p.kind === "editorial" && i < MAX_FACES ? proxiedImageSet(icon, "avatar") : undefined;
         if (srcSet) person.iconSrcSet = srcSet;
         return person;

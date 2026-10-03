@@ -3,8 +3,9 @@ import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
 import { isApiOwned, resolveRedirect } from "@aihot/contracts/http-policy";
+import { API_BASE_URL } from "./app/lib/api.server.ts";
 
-const API = new URL(process.env.API_BASE_URL || "http://127.0.0.1:3001");
+const API = new URL(API_BASE_URL);
 
 /** Development stand-in for the production web server: the shared redirect table and api-owned path routing. */
 function devEdge(): Plugin {
@@ -48,11 +49,9 @@ export default defineConfig({
   build: {
     rolldownOptions: {
       output: {
-        // A page used to load 15–30 small shared chunks (a third of all edge requests were JS files).
-        // Framework code stays one stable chunk across releases; app code that at least four public
-        // routes share is one chunk (7–10 files a page, and less JavaScript than before on every page
-        // but the three smallest, measured 2026-09-29); the rest keeps automatic splitting. Motion is
-        // left to the admin pages.
+        // A page used to load 15–30 small shared chunks. Framework code stays one stable chunk across
+        // releases; app code that at least four public routes share is one chunk (7–10 files a page);
+        // the rest keeps automatic splitting. Motion is left to the admin pages.
         codeSplitting: {
           groups: [
             { name: "framework", test: /node_modules[\\/](?:react|react-dom|scheduler|react-router|@react-router|cookie|set-cookie-parser|turbo-stream)[\\/]/, priority: 30 },

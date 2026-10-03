@@ -1,7 +1,7 @@
 import { SITE } from "@aihot/industry/site";
 import { Form, Link, useNavigate, useSearchParams } from "react-router";
-import type { AdminContentRow, AdminContentSearch } from "@aihot/contracts/admin";
 import type { Route } from "./+types/content";
+import type { AdminContentRow, AdminContentSearch } from "@aihot/contracts/admin";
 import { adminGet } from "../../lib/admin.server";
 import { VISIBILITY_LABEL } from "../../features/admin/labels";
 import { AdminPage, Badge, Button, Card, DataTable, Empty, Input, Time } from "../../features/admin/ui";

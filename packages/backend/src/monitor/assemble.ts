@@ -1,13 +1,12 @@
-import { completeReceipt } from "../providers/receipts.ts";
 // Turns a recognized post into monitor facts: events (announce → progress → confirm, amend,
-// withdraw), the post's activity role, outage links and the hot-scanning window. Code decides what
+// withdraw), the post's activity role and outage links. Code decides what
 // a proposition may change; the model's wording never confirms anything on its own.
 import { sql, type Tx } from "../db.ts";
+import { completeReceipt } from "../providers/receipts.ts";
 import type { Proposition, Recognition } from "./recognize.ts";
 import { estimateFor, resolveStatedTime, scheduleFrom, type Schedule } from "./time.ts";
 
 const HOUR = 3600_000;
-export const HOT_WINDOW_MS = 8 * HOUR;
 const OUTAGE_LINK_MS = 18 * HOUR;
 /** "in about an hour", "in the next hour or so", "shortly" are approximate; "in the next few hours" is a deadline. */
 const HEDGED = /\b(about|around|approximately|roughly|shortly|soon|or so)\b|~|-ish\b/i;
@@ -154,7 +153,7 @@ export async function applyRecognition(postId: string, rec: Recognition): Promis
     const held = claimed.filter((p) => !quotedInPost(p.excerpt, post.text) || rec.needsReview);
     const accepted = claimed
       .filter((p) => !held.includes(p))
-      // Several rounds only when Tibo states the number (product owner, 2026-09-27).
+      // Several rounds only when Tibo states the number.
       .map((p) => (p.count > 1 && !STATED_COUNT.test(p.excerpt) ? { ...p, count: 1 } : p));
     const applied: Applied = { eventIds: [], notify: [] };
     // Events this post itself created, by kind: a later sentence repeating the same reset joins it.
@@ -294,13 +293,9 @@ export async function applyRecognition(postId: string, rec: Recognition): Promis
         activity = coalesce(${activity ? tx.json(activity as never) : null}, activity),
         outage = coalesce(${outage ? tx.json(outage as never) : null}, outage), processed_at = now()
       WHERE id = ${postId}`;
-
-    // Scan every few minutes for a while after an outage or an announcement.
-    if (rec.outage === "outage" || applied.notify.some((n) => n.action === "announce")) {
-      await tx`INSERT INTO monitor_state (key, value) VALUES ('hot', ${tx.json({ until: new Date(postAt.getTime() + HOT_WINDOW_MS).toISOString() })})
-               ON CONFLICT (key) DO UPDATE SET value = CASE WHEN (monitor_state.value->>'until')::timestamptz > (EXCLUDED.value->>'until')::timestamptz THEN monitor_state.value ELSE EXCLUDED.value END, updated_at = now()`;
-    }
+    // The paid recognition is complete once its result is committed with the post.
     await completeReceipt(tx, rec.receiptId);
+
     return applied;
   });
 }

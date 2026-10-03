@@ -1,14 +1,14 @@
 // Public read layer, item level. Every exit (site API, v1, RSS, MCP, sitemap) reads
-// items through these functions; visibility, release gate and body licences are applied here.
+// items through these columns and views; which rows are public is decided by scope.ts.
 import type { CategoryKey, ChannelKey } from "@aihot/contracts/taxonomy";
-import type { FeedItemSummary, ItemSummary, MediaView, SourceKind, XPostView } from "@aihot/contracts/site";
+import type { FeedItemSummary, ItemSummary, MediaView, XPostView } from "@aihot/contracts/site";
 import { sql, type Db } from "../db.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
-import { displayTags } from "./rules.ts";
+import { displayTags, publicSourceName } from "./rules.ts";
+import { seatedCondition } from "./scope.ts";
 
 export interface ItemRow {
   id: string;
-  revision: number;
   title: string;
   original_title: string | null;
   summary: string | null;
@@ -17,29 +17,20 @@ export interface ItemRow {
   tags: string[];
   score: number | null;
   selected: boolean;
-  eligible: boolean;
   channel: "news" | "x";
   url: string;
   published_at: Date | null;
   discovered_at: Date;
   timeline_at: Date;
-  /** Reading-group anchor for a selected item (timeline_at otherwise). */
-  sort_at: Date;
-  first_party: boolean;
+  /** Holds its fact's selected seat (publish.ts settleSeats). */
+  seat: boolean;
   visibility: string;
   body_mode: "full" | "summary";
-  syndicate: boolean;
   indexable: boolean;
-  visible_after: Date | null;
-  backfill: boolean;
   fact_id: number | null;
-  story_id: number | null;
-  source_id: string;
   source_name: string;
-  source_kind: SourceKind;
   /** Participation mode of the source now (editorial, hot_signal, isolated). */
   source_mode: string;
-  source_icon: string | null;
   x_post: Record<string, any> | null;
   author: string | null;
   language: string | null;
@@ -52,19 +43,19 @@ export interface ItemRow {
 
 /** Columns every item listing selects. Internal judgement details never leave this layer. */
 export const ITEM_COLUMNS = sql`
-  p.article_id AS id, p.revision, p.title, p.original_title, p.summary, p.reason, p.category, p.tags, p.score,
-  p.selected, p.eligible, p.channel, p.url, p.published_at, p.discovered_at, p.timeline_at, p.sort_at, p.first_party, p.visibility,
-  p.body_mode, p.syndicate, p.indexable, p.visible_after, p.backfill, p.fact_id, p.story_id,
-  s.id AS source_id, s.name AS source_name, s.kind AS source_kind, s.participation_mode AS source_mode, s.icon_url AS source_icon,
+  p.article_id AS id, p.title, p.original_title, p.summary, p.reason, p.category, p.tags, p.score,
+  p.selected, p.seat, p.channel, p.url, p.published_at, p.discovered_at, p.timeline_at, p.visibility,
+  p.body_mode, p.indexable, p.fact_id, s.name AS source_name, s.participation_mode AS source_mode,
   a.x_post, a.author, a.language,
   st.public_id::text AS story_public_id, st.title AS story_title,
   CASE WHEN p.channel = 'x' THEN tr.body_text END AS zh_text, qt.text_zh AS quoted_zh`;
 
 /** Public API listings never render article bodies, X media or story metadata. */
 export type ApiItemRow = Pick<ItemRow, "id" | "title" | "original_title" | "summary" | "source_name" | "url" | "published_at" | "discovered_at" | "category" | "score" | "selected" | "reason">;
+/** `selected` is the machine meaning: the report holds its fact's selected seat (scope.ts seatedCondition). */
 export const API_ITEM_COLUMNS = sql`
   p.article_id AS id, p.title, p.original_title, p.summary, s.name AS source_name, p.url,
-  p.published_at, p.discovered_at, p.category, p.score, p.selected, p.reason`;
+  p.published_at, p.discovered_at, p.category, p.score, (p.selected AND p.seat) AS selected, p.reason`;
 export const API_ITEM_FROM = sql`FROM publications p JOIN sources s ON s.id = p.source_id`;
 
 /** A translation of an older revision is left out: the original changed after it (the worker translates it again). */
@@ -78,7 +69,7 @@ export const ITEM_FROM = sql`
 
 export function channelCondition(channel: ChannelKey | null | undefined) {
   if (!channel || channel === "all") return sql``;
-  if (channel === "firstParty") return sql`AND p.first_party`;
+  if (channel === "firstParty") return sql`AND p.source_id IN (SELECT id FROM sources WHERE tier = 'T1')`;
   return sql`AND p.channel = ${channel}`;
 }
 
@@ -94,19 +85,15 @@ export function tagCondition(tag: string | null | undefined) {
   return sql`AND p.tags @> ${[tag]}::text[]`;
 }
 
-export function topicCondition(topicTags: string[] | null | undefined) {
-  if (!topicTags || topicTags.length === 0) return sql``;
-  return sql`AND p.tags && ${topicTags}::text[]`;
-}
-
 function mediaView(m: Record<string, any>, mode: "card" | "thumb" | "full" = "thumb", responsive = false): MediaView | null {
   const url = proxiedImage(m.url, mode);
   if (!url) return null;
+  const srcSet = responsive ? proxiedImageSet(m.poster ?? m.url, mode === "full" ? "body" : "card") : null;
   return {
     kind: m.kind === "video" ? "video" : "image",
     url,
     ...(responsive && mode !== "full" ? { fullUrl: proxiedImage(m.url, "full")! } : {}),
-    ...(responsive && proxiedImageSet(m.poster ?? m.url, mode === "full" ? "body" : "card") ? { srcSet: proxiedImageSet(m.poster ?? m.url, mode === "full" ? "body" : "card")! } : {}),
+    ...(srcSet ? { srcSet } : {}),
     width: typeof m.width === "number" ? m.width : null,
     height: typeof m.height === "number" ? m.height : null,
     alt: m.alt ?? null,
@@ -126,11 +113,12 @@ export function xView(row: Pick<ItemRow, "x_post" | "zh_text"> & Partial<Pick<It
   const media = ((x.media ?? []) as Array<Record<string, any>>)
     .map((raw) => ({ raw, view: mediaView(raw, compact || !responsive ? "thumb" : "full", responsive) }))
     .filter((entry): entry is { raw: Record<string, any>; view: MediaView } => entry.view !== null);
+  const avatarSrcSet = responsive ? proxiedImageSet(x.avatarUrl, "avatar") : null;
   return {
     authorName: String(x.authorName ?? x.handle ?? ""),
     handle: String(x.handle ?? ""),
     avatarUrl: proxiedImage(x.avatarUrl, "avatar"),
-    ...(responsive && proxiedImageSet(x.avatarUrl, "avatar") ? { avatarSrcSet: proxiedImageSet(x.avatarUrl, "avatar")! } : {}),
+    ...(avatarSrcSet ? { avatarSrcSet } : {}),
     text: String(x.text ?? ""),
     translation: row.zh_text && row.zh_text.trim() !== String(x.text ?? "").trim() ? row.zh_text : null,
     quoted,
@@ -140,24 +128,16 @@ export function xView(row: Pick<ItemRow, "x_post" | "zh_text"> & Partial<Pick<It
   };
 }
 
+/** The shared public article; its X post is added as each answer shows it. */
 export function toItemSummary(row: ItemRow): ItemSummary {
-  const x = row.channel === "x" && row.body_mode === "full" ? xView(row, true) : null;
   return {
     id: row.id,
-    revision: row.revision,
     title: row.title,
     originalTitle: row.original_title,
     summary: row.summary,
     reason: row.selected ? row.reason : null,
-    source: {
-      id: row.source_id,
-      name: row.source_name,
-      kind: row.source_kind,
-      firstParty: row.first_party,
-      iconUrl: proxiedImage(row.source_icon, "avatar"),
-      ...(proxiedImageSet(row.source_icon, "avatar") ? { iconSrcSet: proxiedImageSet(row.source_icon, "avatar")! } : {}),
-    },
-    links: { aihot: `/items/${row.id}`, original: row.url },
+    source: { name: publicSourceName(row.source_name) },
+    links: { original: row.url },
     publishedAt: row.published_at?.toISOString() ?? null,
     discoveredAt: row.discovered_at.toISOString(),
     timelineAt: row.timeline_at.toISOString(),
@@ -167,27 +147,49 @@ export function toItemSummary(row: ItemRow): ItemSummary {
     selected: row.selected,
     channel: row.channel,
     story: row.story_public_id ? { publicId: row.story_public_id, title: row.story_title ?? "" } : null,
-    x,
   };
 }
 
 /** Project the shared public article into the exact fields a site card renders. */
 export function toFeedItemSummary(row: ItemRow): FeedItemSummary {
   const item = toItemSummary(row);
+  // An X post's own text and media are its body: shown only where the source allows full text.
+  const x = row.channel === "x" && row.body_mode === "full" ? xView(row, true) : null;
   return {
     id: item.id, title: item.title, summary: item.summary, reason: item.reason,
-    source: { name: item.source.name }, publishedAt: item.publishedAt, timelineAt: item.timelineAt,
+    source: item.source, publishedAt: item.publishedAt, timelineAt: item.timelineAt,
     category: item.category, tags: item.tags, score: item.score, selected: item.selected, channel: item.channel,
-    x: item.x ? {
-      authorName: item.x.authorName, handle: item.x.handle, avatarUrl: item.x.avatarUrl,
-      ...(item.x.avatarSrcSet ? { avatarSrcSet: item.x.avatarSrcSet } : {}), media: item.x.media,
-      quoted: item.x.quoted ? { authorName: item.x.quoted.authorName, handle: item.x.quoted.handle, text: item.x.quoted.text, translation: item.x.quoted.translation } : null,
+    x: x ? {
+      authorName: x.authorName, handle: x.handle, avatarUrl: x.avatarUrl,
+      ...(x.avatarSrcSet ? { avatarSrcSet: x.avatarSrcSet } : {}), media: x.media,
+      quoted: x.quoted ? { authorName: x.quoted.authorName, handle: x.quoted.handle, text: x.quoted.text, translation: x.quoted.translation } : null,
     } : null,
   };
 }
 
-export async function fetchItemsByIds(ids: string[], db: Db = sql): Promise<Map<string, ItemRow>> {
-  if (ids.length === 0) return new Map();
-  const rows = await db<ItemRow[]>`SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id IN ${db(ids)}`;
-  return new Map(rows.map((r) => [r.id, r]));
+/**
+ * An article written in Chinese: its language says so, or its text opens in Chinese and it is not marked
+ * English (the translator's rule, editorial/translate.ts). Every exit shows such a body as it is.
+ */
+export function isChineseBody(a: { language?: string | null; body_text?: string | null }): boolean {
+  return a.language === "zh" || (/[一-鿿]/.test(a.body_text?.slice(0, 400) ?? "") && a.language !== "en");
+}
+
+/** The complete Chinese translation an export (Markdown, full RSS) carries; a page also shows a partial one. */
+export function exportTranslation(a: { language?: string | null; body_text?: string | null; tr_html?: string | null; tr_complete?: boolean | null }): string | null {
+  return !isChineseBody(a) && a.tr_html && a.tr_complete ? a.tr_html : null;
+}
+
+/**
+ * For listed rows that are selected but yield their fact's seat: the report holding it, by row id.
+ * (The home timeline folds these into reading groups; flat lists say which report stands for them.)
+ */
+export async function seatHolders(rows: ItemRow[], now: Date, db: Db = sql): Promise<Map<string, { id: string; title: string }>> {
+  const yielding = rows.filter((r) => r.selected && !r.seat && r.fact_id !== null);
+  if (!yielding.length) return new Map();
+  const holders = await db<{ fact_id: number; id: string; title: string }[]>`
+    SELECT p.fact_id, p.article_id AS id, p.title FROM publications p
+    WHERE p.fact_id IN ${db([...new Set(yielding.map((r) => r.fact_id!))])} AND ${seatedCondition(now)}`;
+  const byFact = new Map(holders.map((h) => [Number(h.fact_id), { id: h.id, title: h.title }]));
+  return new Map(yielding.flatMap((r) => (byFact.has(Number(r.fact_id)) ? [[r.id, byFact.get(Number(r.fact_id))!] as const] : [])));
 }

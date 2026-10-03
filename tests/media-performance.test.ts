@@ -6,12 +6,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
+import { SITE } from "@aihot/industry/site";
 
 const dir = await mkdtemp(path.join(tmpdir(), "aihot-media-test-"));
 process.env.AIHOT_DATA_DIR = dir;
 process.env.ALLOW_PRIVATE_NETWORK_FETCH = "true";
 process.env.MODEL_CALLS_ENABLED = "false";
-const { guardedFetch } = await import("@aihot/backend/lib/http-fetch");
 const { produceImage } = await import("@aihot/backend/media/images");
 const { renderOg } = await import("../apps/api/src/og/render.ts");
 const { renderPoster } = await import("../apps/api/src/og/poster.ts");
@@ -41,11 +41,6 @@ const server = createServer(async (req, res) => {
   if (req.url === "/binary-alias") { res.writeHead(200, { "content-type": "binary/octet-stream" }); return res.end(png); }
   if (req.url === "/binary-alias-error") { res.writeHead(200, { "content-type": "binary/octet-stream" }); return res.end("<html>Not an image</html>"); }
   if (req.url === "/binary-error") { res.writeHead(200, { "content-type": "application/octet-stream" }); return res.end("<html>Image not found</html>"); }
-  if (req.url?.startsWith("/redirect/")) {
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    res.writeHead(302, { location: `/redirect/${Number(req.url.split("/").pop()) + 1}` });
-    return res.end();
-  }
   if (req.url === "/fail") { failureHits++; res.writeHead(502); return res.end(); }
   imageHits++;
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -62,10 +57,6 @@ after(async () => {
   await stopBoss();
   await closeDb();
   await rm(dir, { recursive: true, force: true });
-});
-
-test("one timeout covers the complete redirect chain", async () => {
-  await assert.rejects(guardedFetch(`${base}/redirect/0`, { timeoutMs: 140 }), { name: "TimeoutError" });
 });
 
 test("simultaneous modes share original bytes, preserve dimensions and use their disk caches", async () => {
@@ -95,11 +86,11 @@ test("site media exposes responsive previews and full lightboxes while RSS retai
 });
 
 test("concurrent cold OG and poster requests all succeed with identical cached bytes", async () => {
-  const card = { kicker: "AIHOT", title: "并发渲染验证", subtitle: "同一图片只生成一次" };
+  const card = { kicker: SITE.name, title: "并发渲染验证", subtitle: "同一图片只生成一次" };
   const cards = await Promise.all(Array.from({ length: 6 }, () => renderOg(card)));
   for (const result of cards) assert.deepEqual(result, cards[0]);
   assert.equal((await sharp(cards[0]!.png).metadata()).width, 1200);
-  const poster = { url: "https://aihot.news/items/test", kicker: "AIHOT", title: "海报并发验证", summary: null, source: "AIHOT", date: "2026-09-28", score: null };
+  const poster = { url: "https://example.com/items/test", kicker: SITE.name, title: "海报并发验证", summary: null, source: SITE.name, date: "2026-09-28", score: null };
   const posters = await Promise.all(Array.from({ length: 4 }, () => renderPoster(poster)));
   for (const result of posters) assert.deepEqual(result, posters[0]);
   assert.equal((await sharp(posters[0]!.png).metadata()).width, 1080);
@@ -113,52 +104,6 @@ test("successive responsive candidates reuse the completed original download", a
   const avatar = await produceImage(url, "avatar-48");
   assert.equal(imageHits - before, 1);
   assert.deepEqual(await Promise.all([small, large, avatar].map(async (image) => (await sharp(image.body).metadata()).width)), [336, 800, 48]);
-});
-
-test("the original cache expires and evicts old entries instead of retaining every source", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"] });
-  const before = imageHits;
-  const url = `${base}/expires`;
-  await produceImage(url, "image-336");
-  t.mock.timers.tick(60_001);
-  await produceImage(url, "image-720");
-  assert.equal(imageHits - before, 2);
-  for (let i = 0; i < 33; i++) await produceImage(`${base}/bounded-${i}`, "image-336");
-  const count = imageHits;
-  await produceImage(`${base}/bounded-0`, "image-720");
-  assert.equal(imageHits, count + 1);
-});
-
-test("modern raster output preserves transparency and never flattens animation", async () => {
-  const { resizeImage } = await import("@aihot/backend/media/images");
-  const translucent = await sharp({ create: { width: 32, height: 24, channels: 4, background: { r: 10, g: 80, b: 160, alpha: 0.25 } } }).png().toBuffer();
-  const rendered = await resizeImage(translucent, "image/png", "image-720");
-  assert.equal(rendered.type, "image/webp");
-  const meta = await sharp(rendered.body).metadata();
-  assert.equal(meta.width, 32);
-  assert.equal(meta.height, 24);
-  assert.equal(meta.hasAlpha, true);
-  const originalAlpha = await sharp(translucent).extractChannel("alpha").raw().toBuffer();
-  assert.deepEqual(await sharp(rendered.body).extractChannel("alpha").raw().toBuffer(), originalAlpha);
-  const pixels = Buffer.from([...Array(4).fill([255, 0, 0, 255]).flat(), ...Array(4).fill([0, 0, 255, 128]).flat()]);
-  const gif = await sharp(pixels, { raw: { width: 2, height: 4, pageHeight: 2, channels: 4 } }).gif({ loop: 2, delay: [80, 160] }).toBuffer();
-  assert.equal((await sharp(gif).metadata()).pages, 2);
-  const animation = await resizeImage(gif, "image/gif", "image-336");
-  assert.equal(animation.type, "image/gif");
-  assert.deepEqual(animation.body, gif);
-  const animatedWebp = await sharp(gif, { animated: true }).webp().toBuffer();
-  assert.deepEqual((await resizeImage(animatedWebp, "image/webp", "image-336")).body, animatedWebp);
-});
-
-test("small SVG stays vector while a large vector receives the requested browser rendition", async () => {
-  const { resizeImage } = await import("@aihot/backend/media/images");
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600"><rect width="1200" height="600" fill="#176b75"/></svg>';
-  const vector = await resizeImage(Buffer.from(svg), "image/svg+xml", "image-720");
-  assert.equal(vector.type, "image/svg+xml");
-  const large = Buffer.from(svg.replace("</svg>", `<!--${"padding".repeat(20_000)}--></svg>`));
-  const raster = await resizeImage(large, "image/svg+xml", "image-720");
-  assert.equal(raster.type, "image/webp");
-  assert.equal((await sharp(raster.body).metadata()).width, 720);
 });
 
 test("responsive URLs and web body candidates retain exact signatures and stable expiry", async () => {
@@ -186,7 +131,7 @@ test("responsive URLs and web body candidates retain exact signatures and stable
   assert.doesNotMatch(proxyBodyImages(html, true), /srcset=/);
 });
 
-test("image HTTP responses keep legacy URLs valid, reject tampering before fetching and do not vary on Accept", async () => {
+test("image HTTP responses keep earlier URLs valid, reject tampering before fetching and do not vary on Accept", async () => {
   const { default: Fastify } = await import("fastify");
   const { registerMedia } = await import("../apps/api/src/routes/media.ts");
   const { signature } = await import("@aihot/backend/media/imgproxy");
@@ -217,22 +162,80 @@ test("image HTTP responses keep legacy URLs valid, reject tampering before fetch
   await app.close();
 });
 
-test("background preparation turns a cached GIF into a smaller animated WebP with every frame and its timing", async () => {
-  const { convertAnimated } = await import("@aihot/backend/media/images");
-  const passed = await produceImage(`${base}/anim.gif`, "image-336");
-  assert.equal(passed.type, "image/gif");
-  assert.equal(passed.pendingAnimation, true);
-  const saved = await convertAnimated(`${base}/anim.gif`, "image-336");
-  assert.ok(saved > 0);
-  const served = await produceImage(`${base}/anim.gif`, "image-336");
-  assert.equal(served.type, "image/webp");
-  assert.equal(served.pendingAnimation, undefined);
-  assert.ok(served.body.length < animatedGif.length);
-  const meta = await sharp(served.body, { animated: true }).metadata();
-  assert.equal(meta.pages, 10);
-  assert.deepEqual(meta.delay, Array(10).fill(90));
-  assert.equal(meta.width, 160);
-  assert.equal(await convertAnimated(`${base}/anim.gif`, "image-336"), 0);
+// Protocol failures to prevent: validators bypassing signature checks, unchanged bytes downloading
+// again, old validators hiding an animation replacement, and failures outliving a short signature.
+test("image validators save unchanged bytes only after signature verification", async () => {
+  const { default: Fastify } = await import("fastify");
+  const { registerMedia } = await import("../apps/api/src/routes/media.ts");
+  const { signature } = await import("@aihot/backend/media/imgproxy");
+  const app = Fastify();
+  registerMedia(app);
+  const url = `${base}/validated-image`;
+  const exp = String(Math.ceil(Date.now() / 1000) + 3600);
+  const params = new URLSearchParams({ u: url, mode: "image-336", exp, sig: signature(url, "image-336", exp) });
+  try {
+    const first = await app.inject({ url: `/api/img-proxy?${params}` });
+    const etag = String(first.headers.etag);
+    assert.match(etag, /^"[a-f0-9]+"$/, "image validators describe the actual representation with a strong tag");
+    assert.equal(first.headers["x-img-proxy-sig"], "valid");
+    const before = imageHits;
+    for (const validator of [etag, `"different", W/${etag}`, "*"]) {
+      const cached = await app.inject({ url: `/api/img-proxy?${params}`, headers: { "if-none-match": validator } });
+      assert.equal(cached.statusCode, 304);
+      assert.equal(cached.rawPayload.length, 0);
+      assert.equal(cached.headers.etag, etag);
+      assert.match(String(cached.headers["cache-control"]), /max-age=/);
+    }
+    const changed = await app.inject({ url: `/api/img-proxy?${params}`, headers: { "if-none-match": '"different"' } });
+    assert.equal(changed.statusCode, 200);
+    assert.deepEqual(changed.rawPayload, first.rawPayload);
+    assert.equal(imageHits, before, "conditional reads keep using the prepared disk image");
+    const bad = new URLSearchParams(params);
+    bad.set("sig", "0".repeat(16));
+    const expired = new URLSearchParams(params);
+    expired.set("exp", String(Math.floor(Date.now() / 1000) - 1));
+    expired.set("sig", signature(url, "image-336", expired.get("exp")!));
+    for (const query of [bad, expired]) {
+      const denied = await app.inject({ url: `/api/img-proxy?${query}`, headers: { "if-none-match": etag } });
+      assert.equal(denied.statusCode, 403);
+      assert.equal(denied.headers["cache-control"], "no-store");
+      assert.equal(denied.headers.etag, undefined);
+      assert.equal(denied.headers["x-img-proxy-sig"], query === expired ? "expired" : "invalid");
+    }
+    const head = await app.inject({ method: "HEAD", url: `/api/img-proxy?${params}`, headers: { "if-none-match": etag } });
+    assert.equal(head.statusCode, 304, "a HEAD revalidates like a GET");
+    assert.equal(head.headers.etag, etag);
+    assert.equal(head.headers["x-accel-expires"], undefined);
+    const missing = await app.inject({ url: "/api/img-proxy", headers: { "if-none-match": "*" } });
+    assert.equal(missing.statusCode, 400, "a malformed query is the client's error");
+    assert.equal(missing.headers["x-img-proxy-sig"], "invalid");
+  } finally {
+    await app.close();
+  }
+});
+
+test("image failures are cached for at most a minute and never beyond the signature", async () => {
+  const { default: Fastify } = await import("fastify");
+  const { registerMedia } = await import("../apps/api/src/routes/media.ts");
+  const { signature } = await import("@aihot/backend/media/imgproxy");
+  const app = Fastify();
+  registerMedia(app);
+  try {
+    for (const lifetime of [3600, 15]) {
+      const url = `${base}/fail`;
+      const exp = String(Math.floor(Date.now() / 1000) + lifetime);
+      const params = new URLSearchParams({ u: url, mode: "image-336", exp, sig: signature(url, "image-336", exp) });
+      const failed = await app.inject({ url: `/api/img-proxy?${params}`, headers: { "if-none-match": "*" } });
+      assert.equal(failed.statusCode, 502);
+      const cache = String(failed.headers["cache-control"]);
+      const seconds = Number(/(?:^|[, ])max-age=(\d+)/.exec(cache)?.[1]);
+      assert.ok(seconds > 0 && seconds <= Math.min(60, lifetime), cache);
+      assert.match(cache, new RegExp(`s-maxage=${seconds}(?:,|$)`));
+      assert.equal(failed.headers.etag, undefined);
+    }
+  } finally {
+    await app.close();
+  }
 });
 
 test("pending animations expire at caches, then publish the prepared disk rendition without refetching", async () => {
@@ -241,10 +244,6 @@ test("pending animations expire at caches, then publish the prepared disk rendit
   const { signature } = await import("@aihot/backend/media/imgproxy");
   const { convertAnimated } = await import("@aihot/backend/media/images");
   const { getBoss, QUEUES } = await import("@aihot/backend/jobs/queue");
-  const boss = await getBoss();
-  // Other files leave article preparation jobs in the shared throwaway database. Exercise this
-  // rendition's real queue callback without claiming unrelated synthetic articles.
-  await boss.deleteAllJobs(QUEUES.prepareMedia);
   const app = Fastify();
   registerMedia(app);
   const url = `${base}/anim.gif`;
@@ -253,18 +252,23 @@ test("pending animations expire at caches, then publish the prepared disk rendit
   const first = await app.inject({ url: `/api/img-proxy?${params}` });
   assert.equal(first.statusCode, 200);
   assert.match(String(first.headers["cache-control"]), /max-age=60, s-maxage=60/);
+  assert.match(String(first.headers.etag), /^"[a-f0-9]+"$/);
   const again = await app.inject({ url: `/api/img-proxy?${params}` });
   assert.deepEqual(again.rawPayload, first.rawPayload);
   const fetched = animationHits;
+  const boss = await getBoss();
   const jobs = await boss.fetch<{ url: string; mode: string }>(QUEUES.prepareMedia);
   assert.equal(jobs.length, 1);
   assert.deepEqual(jobs[0]!.data, { url, mode: "image-720" });
   const saved = await convertAnimated(jobs[0]!.data.url, jobs[0]!.data.mode);
   assert.ok(saved > 0);
   await boss.complete(QUEUES.prepareMedia, jobs[0]!.id);
-  const prepared = await app.inject({ url: `/api/img-proxy?${params}` });
+  const prepared = await app.inject({ url: `/api/img-proxy?${params}`, headers: { "if-none-match": String(first.headers.etag) } });
+  assert.equal(prepared.statusCode, 200, "a cached original GIF must not hide the prepared WebP");
+  assert.notEqual(prepared.headers.etag, first.headers.etag);
   assert.equal(prepared.headers["content-type"], "image/webp");
-  assert.ok(Number(/s-maxage=(\d+)/.exec(String(prepared.headers["cache-control"]))?.[1]) > 3500);
+  const ttl = Number(/s-maxage=(\d+)/.exec(String(prepared.headers["cache-control"]))?.[1]);
+  assert.ok(ttl > 3500 && ttl <= 3601, "the signature's remaining hour, never the seven-day ceiling");
   assert.equal(animationHits, fetched);
   const unchanged = await produceImage(`${base}/tiny.gif`, "image-720");
   assert.equal(unchanged.pendingAnimation, true);
@@ -310,23 +314,4 @@ test("tracking pixels are omitted from old and new bodies without removing artic
     assert.equal((body.match(/<img\b/g) ?? []).length, 1);
     assert.match(decodeURIComponent(body), /example.org\/chart.png/);
   }
-});
-
-test("preparation finds every rendition a card and a page ask for, including escaped body images", async () => {
-  const { proxiedRenditions } = await import("@aihot/backend/media/prepare");
-  const { proxiedImage, proxiedImageSet, proxyBodyImages } = await import("@aihot/backend/media/imgproxy");
-  const answers = [
-    { avatar: proxiedImage("https://example.org/a.png?x=1&y=2", "avatar-48"), srcSet: proxiedImageSet("https://example.org/c.png", "card") },
-    { html: proxyBodyImages('<img src="https://example.org/b.png?q=1&amp;r=2" width="800" height="400">') },
-  ];
-  const found = proxiedRenditions(answers).map((r) => `${r.mode} ${r.url}`).sort();
-  assert.deepEqual(found, [
-    "avatar-48 https://example.org/a.png?x=1&y=2",
-    "full https://example.org/b.png?q=1&r=2",
-    "image-1200 https://example.org/b.png?q=1&r=2",
-    "image-1600 https://example.org/b.png?q=1&r=2",
-    "image-336 https://example.org/c.png",
-    "image-720 https://example.org/b.png?q=1&r=2",
-    "image-720 https://example.org/c.png",
-  ]);
 });

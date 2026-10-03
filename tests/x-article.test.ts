@@ -56,7 +56,6 @@ before(async () => {
                     ${sql.json({ initializedAt: new Date().toISOString(), lastTweetId: String(BASE) })}, '2100-01-01')`;
 });
 after(async () => {
-  await sql`UPDATE sources SET enabled = false WHERE id = ${SOURCE}`;
   await socialdata.close();
   await stopBoss();
   await closeDb();
@@ -86,6 +85,19 @@ test("a post that links an X Article waits for extraction, which brings the arti
   const again = await upsertMaterial({ ...tweetToCandidate(post(WITH_ARTICLE, "777")), sourceId: SOURCE, via: "fetch" });
   assert.equal(again.revised, false);
   assert.equal((await sql<{ revision: number }[]>`SELECT revision FROM articles WHERE id = ${id}`)[0]!.revision, 2);
+});
+
+test("extracting the same article again (an admin re-run) neither repeats it nor makes a revision", async () => {
+  const id = await idOf(WITH_ARTICLE);
+  const [before] = await sql<{ body_text: string; revision: number }[]>`SELECT body_text, revision FROM articles WHERE id = ${id}`;
+  for (let i = 0; i < 2; i++) {
+    await sql`UPDATE articles SET body_status = 'pending' WHERE id = ${id}`;
+    assert.equal(await extractArticleBody(id), "ok");
+  }
+  const [after] = await sql<{ body_text: string; revision: number; body_status: string }[]>`SELECT body_text, revision, body_status FROM articles WHERE id = ${id}`;
+  assert.equal(after!.body_text, before!.body_text);
+  assert.equal(after!.revision, before!.revision);
+  assert.equal(after!.body_status, "ok");
 });
 
 test("an article that cannot be fetched is flagged to the model, not passed off as a complete body", async () => {

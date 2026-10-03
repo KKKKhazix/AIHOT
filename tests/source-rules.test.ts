@@ -1,6 +1,6 @@
 // Every rule a source's config names is applied, and a name the collector does not implement fails the
-// fetch. Configs that carried adapters and detail rules a collector does not implement used to fall
-// back silently (junk titles, RSS entries outside the source's URL rules, dates from the wrong place).
+// fetch. Configs used to name adapters and detail rules the collectors never had, and they fell back
+// silently (junk titles, RSS entries outside the source's URL rules, dates from the wrong place).
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -8,7 +8,7 @@ import { after, before, test } from "node:test";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { stopBoss } from "@aihot/backend/jobs/queue";
-import { extractArticleBody, readable } from "@aihot/backend/content/extract";
+import { extractArticleBody } from "@aihot/backend/content/extract";
 import { collectSource } from "@aihot/backend/sources/collect";
 import { updateSource } from "@aihot/backend/admin/sources";
 
@@ -66,9 +66,7 @@ const SOURCES = {
   jina: { kind: "web_list", config: { url: `https://r.jina.ai/${base}/jlist-${T}`, parseMode: "markdown", allowUrlPrefixes: [`${base}/j/`], detail: { maxFetches: 5, titleRegex: "^# (.+)$" } } },
 };
 const id = (name: keyof typeof SOURCES) => `test-rules-${name}-${T}`;
-let savedJina: Array<{ per_minute: number; per_hour: number; per_day: number }> = [];
 before(async () => {
-  savedJina = await sql`SELECT per_minute, per_hour, per_day FROM budgets WHERE service = 'jina'`;
   await sql`UPDATE budgets SET per_minute = 1000, per_hour = 10000, per_day = 100000 WHERE service = 'jina'`;
   const cursor = sql.json({ initializedAt: new Date().toISOString() });
   for (const [name, s] of Object.entries(SOURCES)) {
@@ -77,7 +75,6 @@ before(async () => {
   }
 });
 after(async () => {
-  for (const b of savedJina) await sql`UPDATE budgets SET per_minute = ${b.per_minute}, per_hour = ${b.per_hour}, per_day = ${b.per_day} WHERE service = 'jina'`;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await stopBoss();
   await closeDb();
@@ -132,8 +129,9 @@ test("detail HTML supplies the ordinary extracted body once, while short pages k
     SELECT id, url, body_html, body_text, body_status FROM articles WHERE source_id = ${id("detail")} ORDER BY url`;
   const [short, full] = rows;
   assert.equal(short!.body_status, "pending", "an unconfirmed body retains the original extraction fallback");
-  const expected = readable(pages[`/p/b-${T}`]!(base), `${base}/p/b-${T}`)!;
-  assert.deepEqual([full!.body_html, full!.body_text, full!.body_status], [expected.html, expected.text, "ok"]);
-  assert.equal(await extractArticleBody(full!.id, false), "skipped");
+  assert.equal(full!.body_status, "ok");
+  assert.equal(full!.body_text, `Detail heading B ${T} ${ARTICLE_BODY.trim()}`);
+  assert.ok(full!.body_html?.includes(`<p>${ARTICLE_BODY}</p>`), "the saved body keeps the article paragraph");
+  assert.equal(await extractArticleBody(full!.id), "skipped");
   assert.equal(pageReads.get(`/p/b-${T}`), 1, "known listings and extraction never download the same confirmed body again");
 });

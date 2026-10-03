@@ -1,18 +1,7 @@
 // Shared HTTP helpers: Problem JSON, public API headers, ETag / 304, strict query parsing.
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { NO_STORE, PUBLIC_API_CORS } from "@aihot/contracts/http-policy";
-
-declare module "fastify" {
-  interface FastifyRequest {
-    requestId: string;
-  }
-}
-
-export function requestIdOf(req: FastifyRequest): string {
-  if (!req.requestId) req.requestId = randomUUID();
-  return req.requestId;
-}
 
 const PROBLEM_TITLES: Record<number, string> = {
   400: "Bad request",
@@ -36,14 +25,13 @@ export interface ProblemInit {
 }
 
 export function sendProblem(req: FastifyRequest, reply: FastifyReply, p: ProblemInit) {
-  const requestId = requestIdOf(req);
   const body: Record<string, unknown> = {
     type: p.type ?? `/problems/${p.code.replace(/_/g, "-")}`,
     title: p.title ?? PROBLEM_TITLES[p.status] ?? "Error",
     status: p.status,
     detail: p.detail,
     code: p.code,
-    requestId,
+    requestId: req.id,
   };
   if (p.retryAfter !== undefined) {
     body.retryAfter = p.retryAfter;
@@ -52,7 +40,7 @@ export function sendProblem(req: FastifyRequest, reply: FastifyReply, p: Problem
   return reply
     .code(p.status)
     .header("Content-Type", "application/problem+json")
-    .header("X-Request-Id", requestId)
+    .header("X-Request-Id", req.id)
     .header("Cache-Control", p.cacheControl ?? NO_STORE)
     .send(Buffer.from(JSON.stringify(body)));
 }
@@ -70,7 +58,7 @@ export function weakEtag(prefix: string, body: string): string {
   return `W/"${prefix}-${createHash("sha256").update(body).digest("hex").slice(0, 16)}"`;
 }
 
-function etagMatches(header: string | undefined, etag: string): boolean {
+export function etagMatches(header: string | undefined, etag: string): boolean {
   if (!header) return false;
   const strip = (t: string) => t.trim().replace(/^W\//, "");
   return header.split(",").some((t) => t.trim() === "*" || strip(t) === strip(etag));
@@ -81,12 +69,12 @@ function etagMatches(header: string | undefined, etag: string): boolean {
  * `etagOf` names the content the tag stands for when the body also carries per-request values
  * (a snapshot's `asOf`), so unchanged content still answers 304.
  */
-export function sendJsonWithEtag(req: FastifyRequest, reply: FastifyReply, body: unknown, opts: { etagPrefix: string; cacheControl: string; contentType?: string; etagOf?: unknown }) {
+export function sendJsonWithEtag(req: FastifyRequest, reply: FastifyReply, body: unknown, opts: { etagPrefix: string; cacheControl: string; etagOf?: unknown }) {
   const text = opts.etagOf === undefined ? JSON.stringify(body) : undefined;
   const etag = weakEtag(opts.etagPrefix, text ?? JSON.stringify(opts.etagOf));
   reply.header("ETag", etag).header("Cache-Control", opts.cacheControl).header("Vary", "Accept-Encoding");
   if (etagMatches(req.headers["if-none-match"], etag)) return reply.code(304).send();
-  return reply.header("Content-Type", opts.contentType ?? "application/json; charset=utf-8").send(text ?? JSON.stringify(body));
+  return reply.header("Content-Type", "application/json; charset=utf-8").send(text ?? JSON.stringify(body));
 }
 
 export function sendTextWithEtag(req: FastifyRequest, reply: FastifyReply, text: string, opts: { etagPrefix: string; cacheControl: string; contentType: string }) {

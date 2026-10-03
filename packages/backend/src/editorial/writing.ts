@@ -13,7 +13,7 @@ export const UNDERSTAND_SYSTEM = promptText("understand");
 export const MAX_BODY_CHARS = 60_000;
 const capBody = (s: string) => (s.length > MAX_BODY_CHARS ? s.slice(0, MAX_BODY_CHARS) : s);
 
-// ── Text helpers ─────────────────────────────────────────────────────────────────────────────
+// Text helpers
 
 export function clampText(s: string, maxChars: number): string {
   const codepoints = Array.from(s);
@@ -70,7 +70,7 @@ export function needsShortTweetTranslation(text: string): boolean {
   return englishRuns.some((run) => run.replace(/\s+/g, "").length >= 10);
 }
 
-// ── The material as the prefilter and the content understanding read it ─────────────────────
+// The material as the prefilter and the content understanding read it
 
 /** The post is an X Article's link whose article could not be fetched. */
 const unfetchedXArticle = (a: AnalyzeInputArticle) => !!a.xPost && a.bodyStatus !== "ok" && onlyXArticleLink(String(a.xPost.text ?? ""));
@@ -128,7 +128,7 @@ export function missingEvidence(a: AnalyzeInputArticle): boolean {
 export const understandUser = (a: AnalyzeInputArticle) =>
   ["请按系统规则理解以下单篇材料，一次返回全部六个字段。", renderContext(a, { annotateQuoted: true })].join("\n\n");
 
-// ── Identity context and guard ────────────────────────────────────────────────────────────────
+// Identity context and guard
 
 const lexiconName = (id: string) => IDENTITY_LEXICON.find((e) => e.id === id)?.name ?? null;
 
@@ -230,7 +230,7 @@ export function enforceIdentity(input: TranslateInput, copy: { titleZh: string; 
   };
 }
 
-// ── Answer-first summary length ──────────────────────────────────────────────────────────────
+// Answer-first summary length
 
 export function compactAnswerFirstSummary(summary: string, maxChars = 190): string {
   const text = summary.trim().replace(/\s*\n+\s*/g, " ");
@@ -271,7 +271,7 @@ export function finalizeCopy(input: TranslateInput, copy: { titleZh: string; sum
   return enforceIdentity(input, { titleZh: copy.titleZh, summaryZh });
 }
 
-// ── Title/summary prompts for items the content understanding does not write ─────────────────
+// Title/summary prompts for items the content understanding does not write
 
 const sourceName = (name?: string) => name?.trim() || "（未注明）";
 

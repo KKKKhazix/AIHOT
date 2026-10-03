@@ -1,7 +1,7 @@
 import { SITE } from "@aihot/industry/site";
 import { Form, Link, useSearchParams } from "react-router";
-import type { AdminAudit, AdminAuditRow } from "@aihot/contracts/admin";
 import type { Route } from "./+types/audit";
+import type { AdminAudit, AdminAuditRow } from "@aihot/contracts/admin";
 import { adminGet } from "../../lib/admin.server";
 import { bj } from "../../features/admin/format";
 import { AdminPage, Card, DataTable, Input, Json, Pager } from "../../features/admin/ui";

@@ -13,8 +13,8 @@ let starting: Promise<PgBoss> | null = null;
 export interface JobData {
   "content.analyze": { articleId: string; attemptTag?: string };
   "content.extract-body": { articleId: string };
-  "events.group": { articleId: string; signalOnly?: boolean; force?: boolean };
-  "events.digest": { storyId: number; afterCorrection?: boolean };
+  "events.group": { articleId: string; signalOnly?: boolean };
+  "events.digest": { storyId: number };
   "sources.fetch": { sourceId: string; force?: boolean };
   "sources.fetch-x": { key: string; sourceIds: string[] };
   "sources.mp": { sourceId: string; reason?: "schedule" | "manual" };
@@ -75,7 +75,7 @@ export async function getBoss(): Promise<PgBoss> {
   return starting;
 }
 
-/** The longest single paid call (a translation batch, 180 s) plus margin; systemd waits longer. */
+/** The longest single paid call (a translation batch, 180 s) plus margin; Docker waits longer (stop_grace_period). */
 export const STOP_TIMEOUT_MS = 195_000;
 
 export async function stopBoss(): Promise<void> {

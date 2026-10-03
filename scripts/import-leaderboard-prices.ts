@@ -1,5 +1,6 @@
-// Rewrites the official API prices (lb_prices kind='official') from a price file, by default the one in
-// database/seeds. The scheduled refresh only fills in missing prices; run this after updating the file.
+// Rewrites the official API prices (lb_prices kind='official') from the dated price files in
+// database/seeds (a newer file's entry wins), or from one given file. The scheduled refresh only fills in
+// missing prices; run this after adding or changing a file.
 //   node --env-file=.env scripts/import-leaderboard-prices.ts [prices.json]
 import { closeDb } from "@aihot/backend/db";
 import { importOfficialPrices } from "@aihot/backend/leaderboard/prices";

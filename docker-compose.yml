@@ -35,7 +35,7 @@ services:
       timeout: 5s
       retries: 30
 
-  # Applies the database migrations and seeds the topics and demo sources, then exits.
+  # Applies the database migrations and seeds the demo sources and the leaderboard directory, then exits.
   setup:
     <<: *app
     restart: "no"

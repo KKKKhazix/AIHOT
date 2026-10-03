@@ -3,12 +3,12 @@
 // ("unknown") is never retried automatically; content older than a target's enabled_at is never
 // back-filled. FEISHU_CONTENT_PUSH_ENABLED is the safety valve: off, deliveries are recorded as
 // skipped and nothing leaves the process.
+import { z } from "zod";
 import { audit, Conflict } from "../audit.ts";
 import { config, credential } from "../config.ts";
 import { sql } from "../db.ts";
 import { postWebhook } from "./feishu.ts";
 import { selectedContent } from "./selected-content.ts";
-import { z } from "zod";
 
 export interface DeliveryRequest {
   subjectKind: "codex_reset" | "selected";
@@ -57,6 +57,9 @@ async function sendDelivery(id: number, url: string, card: unknown): Promise<{ s
 }
 
 export async function deliverContent(req: DeliveryRequest): Promise<Array<{ target: string; status: string }>> {
+  // A selected article may acquire a different fact after correction. Its own previous delivery
+  // still counts, even when the dedupe key changes. Reset amendments retain their separate keys.
+  const sentSubjects = req.subjectKind === "selected" ? [req.subjectId, ...(req.siblings ?? [])] : (req.siblings ?? []);
   const targets = await sql<{ key: string }[]>`SELECT key FROM notify_targets WHERE purpose = 'content' AND enabled
     AND (${req.targetKey ?? null}::text IS NULL OR key = ${req.targetKey ?? null}) ORDER BY key`;
   const results: Array<{ target: string; status: string }> = [];
@@ -72,9 +75,9 @@ export async function deliverContent(req: DeliveryRequest): Promise<Array<{ targ
       const [t] = await tx<Target[]>`SELECT key, kind, enabled_at, config_ref FROM notify_targets
         WHERE key = ${target.key} AND purpose = 'content' AND enabled FOR UPDATE`;
       if (!t || (t.enabled_at && req.contentAt < t.enabled_at)) return null;
-      if (req.siblings?.length) {
+      if (sentSubjects.length) {
         const [told] = await tx`SELECT 1 FROM deliveries WHERE target_key = ${t.key} AND subject_kind = ${req.subjectKind}
-          AND subject_id = ANY(${req.siblings}::text[]) AND status IN ('pending', 'sent', 'unknown', 'sending') LIMIT 1`;
+          AND subject_id = ANY(${sentSubjects}::text[]) AND status IN ('pending', 'sent', 'unknown', 'sending') LIMIT 1`;
         if (told) return null;
       }
       const [row] = await tx<{ id: number }[]>`

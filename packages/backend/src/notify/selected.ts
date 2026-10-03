@@ -31,8 +31,8 @@ export async function pushSelected(articleId: string, now = new Date()): Promise
   if (lease && lease.holder !== articleId && !r.fact_id) return { status: "retry", after: new Date(now.getTime() + 2 * 60_000), reason: "same title in flight" };
 
   const dedupeKey = r.fact_id ? `selected:fact:${r.fact_id}` : `selected:article:${articleId}`;
-  // Reports grouped into this fact after one of them was sent under an earlier fact still count as sent
-  // (the legacy push looked for sent or uncertain siblings among the current members).
+  // Reports grouped into this fact after one of them was sent under an earlier fact still count as sent:
+  // a sent or uncertain sibling among the current members stops the push.
   const siblings = r.fact_id
     ? (await sql<{ article_id: string }[]>`SELECT article_id FROM fact_articles WHERE fact_id = ${r.fact_id} AND article_id <> ${articleId}`).map((x) => x.article_id)
     : [];

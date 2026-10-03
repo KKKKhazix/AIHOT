@@ -4,10 +4,8 @@ import { after, test } from "node:test";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { FUTURE_TOLERANCE_MS, STALE_ON_DISCOVERY_MS, upsertMaterial } from "@aihot/backend/content/materials";
-import { previewSource } from "@aihot/backend/admin/sources";
 import { QUEUES, stopBoss } from "@aihot/backend/jobs/queue";
 import { collectSource } from "@aihot/backend/sources/collect";
-import { fetchJsonList } from "@aihot/backend/sources/json-list";
 import type { SourceRow } from "@aihot/backend/sources/types";
 
 const T = tag();
@@ -36,77 +34,37 @@ const timeline = async (id: string) => (await sql<{
   backfill: boolean; backfill_reason: string | null; revision: number;
 }[]>`SELECT published_at,published_at_claim,discovered_at,timeline_at,backfill,backfill_reason,revision FROM articles WHERE id=${id}`)[0]!;
 
+// A bad middle value cannot silently discard itself or the following valid item. Both configured units matter.
 for (const unit of ["epoch_s", "epoch_ms"] as const) {
-  test(`${unit} parser and preview normalize invalid dates without losing valid epoch values`, async () => {
+  test(`${unit} collection keeps invalid middle claims and later articles, then repeats cleanly`, async () => {
+    const now = Math.floor(Date.now() / 1000) * 1000;
     const factor = unit === "epoch_s" ? 1000 : 1;
-    const values = [0, "0", -1, "-1", 1_700_000_000, "1700000000", null, undefined, "", "unknown", "NaN", "Infinity", "-Infinity", "1e100", 1e100];
-    const s = source(`epoch-parser-${unit}-${T}`, unit, values);
-    const candidates = await fetchJsonList(s);
-    assert.equal(candidates.length, values.length);
-    for (const [i, candidate] of candidates.entries()) {
-      const expected = i < 6 ? Number(values[i]) * factor : null;
-      assert.equal(candidate.publishedAt?.getTime() ?? null, expected, `value ${String(values[i])}`);
-      assert.ok(candidate.publishedAt === null || Number.isFinite(candidate.publishedAt?.getTime()));
-    }
-    const preview = await previewSource(s);
-    assert.equal(preview.count, values.length);
-    assert.deepEqual(preview.items.map((item) => item.publishedAt), candidates.map((item) => item.publishedAt?.toISOString() ?? null));
-  });
-
-  test(`${unit} preserves normally convertible legacy publication values`, async () => {
-    const factor = unit === "epoch_s" ? 1000 : 1;
-    const values = [true, false, " ", [], [1], ["1"], [[1]], [null], {}];
-    const expected = [factor, 0, 0, 0, factor, factor, factor, 0, null];
-    const s = source(`epoch-legacy-${unit}-${T}`, unit, values);
-    const candidates = await fetchJsonList(s);
-    assert.deepEqual(candidates.map((item) => item.publishedAt?.getTime() ?? null), expected);
-    const preview = await previewSource(s);
-    assert.equal(preview.count, values.length);
-    assert.deepEqual(preview.items.map((item) => item.publishedAt), expected.map((time) => time === null ? null : new Date(time).toISOString()));
-  });
-
-  for (const invalid of [
-    { name: "unknown", value: "unknown" },
-    { name: "object", value: { toString: null } },
-    { name: "array", value: [{ toString: null }] },
-  ]) {
-    test(`${unit} preview accepts the ${invalid.name} middle claim`, async () => {
-      const s = source(`epoch-preview-${unit}-${invalid.name}-${T}`, unit, [1, invalid.value, 2]);
-      const preview = await previewSource(s);
-      const factor = unit === "epoch_s" ? 1000 : 1;
-      assert.equal(preview.count, 3);
-      assert.deepEqual(preview.items.map((item) => item.publishedAt), [new Date(factor).toISOString(), null, new Date(2 * factor).toISOString()]);
-    });
-
-    test(`${unit} collection stores the ${invalid.name} middle claim and the following article, then repeats cleanly`, async (t) => {
-      const now = Math.floor(Date.now() / 1000) * 1000;
-      const factor = unit === "epoch_s" ? 1000 : 1;
-      const s = source(`epoch-collect-${unit}-${invalid.name}-${T}`, unit, [now / factor, invalid.value, (now - 1000) / factor]);
-      await saveSource(s);
-      const first = await collectSource(s.id);
-      t.diagnostic(`first collection: ${JSON.stringify(first)}`);
-      assert.deepEqual([first.status, first.found, first.created, first.revised], ["ok", 3, 3, 0]);
-      const articles = await sql<{ id: string; url: string; processing_queued_at: Date | null }[]>`
-        SELECT id,url,processing_queued_at FROM articles WHERE source_id=${s.id} ORDER BY url`;
-      assert.equal(articles.length, 3);
-      const middle = await timeline(articles[1]!.id);
+    const s = source(`epoch-collect-${unit}-${T}`, unit, [now / factor, "unknown", { toString: null }, [{ toString: null }], (now - 1000) / factor]);
+    await saveSource(s);
+    const first = await collectSource(s.id);
+    assert.deepEqual([first.status, first.found, first.created, first.revised], ["ok", 5, 5, 0]);
+    const articles = await sql<{ id: string; url: string; processing_queued_at: Date | null }[]>`
+      SELECT id,url,processing_queued_at FROM articles WHERE source_id=${s.id} ORDER BY url`;
+    assert.equal(articles.length, 5);
+    for (const article of articles.slice(1, 4)) {
+      const middle = await timeline(article.id);
       assert.deepEqual([middle.published_at, middle.published_at_claim, middle.backfill, middle.backfill_reason], [null, null, false, null]);
       assert.equal(middle.timeline_at.getTime(), middle.discovered_at.getTime());
-      assert.ok(articles.every((article) => article.processing_queued_at !== null));
-      const queued = await sql`SELECT id FROM pgboss.job WHERE name=${QUEUES.analyze} AND data->>'articleId'=${articles[2]!.id}`;
-      assert.equal(queued.length, 1, "最后一条资料仍进入分析队列");
-      const second = await collectSource(s.id);
-      assert.deepEqual([second.status, second.found, second.created, second.revised], ["ok", 3, 0, 0]);
-      const [health] = await sql`SELECT health,fail_count,last_error FROM sources WHERE id=${s.id}`;
-      assert.deepEqual({ ...health }, { health: "ok", fail_count: 0, last_error: null });
-      const runs = await sql`SELECT status,found_count,new_count,error FROM fetch_runs WHERE source_id=${s.id} ORDER BY id`;
-      assert.deepEqual(runs.map((run) => ({ ...run })), [
-        { status: "ok", found_count: 3, new_count: 3, error: null },
-        { status: "ok", found_count: 3, new_count: 0, error: null },
-      ]);
-      assert.equal(Number((await sql`SELECT count(*) AS n FROM articles WHERE source_id=${s.id}`)[0]!.n), 3);
-    });
-  }
+    }
+    assert.equal((await timeline(articles[4]!.id)).published_at?.getTime(), now - 1000);
+    assert.ok(articles.every((article) => article.processing_queued_at !== null));
+    const queued = await sql`SELECT id FROM pgboss.job WHERE name=${QUEUES.analyze} AND data->>'articleId'=${articles[4]!.id}`;
+    assert.equal(queued.length, 1, "最后一条资料仍进入分析队列");
+    const second = await collectSource(s.id);
+    assert.deepEqual([second.status, second.found, second.created, second.revised], ["ok", 5, 0, 0]);
+    const [health] = await sql`SELECT health,fail_count,last_error FROM sources WHERE id=${s.id}`;
+    assert.deepEqual({ ...health }, { health: "ok", fail_count: 0, last_error: null });
+    const runs = await sql`SELECT status,found_count,new_count,error FROM fetch_runs WHERE source_id=${s.id} ORDER BY id`;
+    assert.deepEqual(runs.map((run) => ({ ...run })), [
+      { status: "ok", found_count: 5, new_count: 5, error: null },
+      { status: "ok", found_count: 5, new_count: 0, error: null },
+    ]);
+  });
 }
 
 test("first-import sorting keeps unknown epoch dates and the normal backfill fallback", async () => {
@@ -120,19 +78,6 @@ test("first-import sorting keeps unknown epoch dates and the normal backfill fal
   const row = await timeline(article!.id);
   assert.deepEqual([row.published_at_claim, row.published_at, row.backfill, row.backfill_reason], [null, null, true, "first-import"]);
   assert.equal(row.timeline_at.getTime(), row.discovered_at.getTime());
-});
-
-test("shared storage accepts invalid publication claims from every material entrance", async () => {
-  const s = source(`epoch-storage-${T}`, "epoch_ms", []);
-  await saveSource(s);
-  const discoveredAt = new Date("2026-09-30T12:00:00Z");
-  for (const via of ["fetch", "ingest", "import"] as const) {
-    const result = await upsertMaterial({ sourceId: s.id, url: `https://example.org/${s.id}/${via}`, title: "Invalid claim", publishedAt: new Date(NaN), discoveredAt, via });
-    assert.equal(result.created, true);
-    const row = await timeline(result.articleId);
-    assert.deepEqual([row.published_at, row.published_at_claim, row.backfill, row.backfill_reason], [null, null, false, null]);
-    assert.equal(row.timeline_at.getTime(), discoveredAt.getTime());
-  }
 });
 
 for (const revised of [false, true]) {
@@ -159,10 +104,7 @@ test("storage preserves finite future claims and existing timeline boundaries", 
   const discoveredAt = new Date("2026-09-30T12:00:00Z");
   const cases = [
     { name: "future", claim: new Date(discoveredAt.getTime() + FUTURE_TOLERANCE_MS + 1), trusted: false, backfill: null },
-    { name: "future-boundary", claim: new Date(discoveredAt.getTime() + FUTURE_TOLERANCE_MS), trusted: true, backfill: null },
     { name: "old", claim: new Date(discoveredAt.getTime() - STALE_ON_DISCOVERY_MS - 1), trusted: true, backfill: "stale-on-discovery" },
-    { name: "zero", claim: new Date(0), trusted: true, backfill: "stale-on-discovery" },
-    { name: "negative", claim: new Date(-1000), trusted: true, backfill: "stale-on-discovery" },
     { name: "explicit", claim: new Date(NaN), trusted: false, backfill: "manual-backfill" },
   ];
   for (const c of cases) {

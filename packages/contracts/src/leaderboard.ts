@@ -1,8 +1,6 @@
 // First-party leaderboard DTOs (/api/site/leaderboard*). Not a public API.
 import type { LeaderboardBoardKey } from "./taxonomy.ts";
 
-/** HIGH 较充分 · MEDIUM 持续积累 · LOW 证据敏感. */
-export type LbConfidence = "HIGH" | "MEDIUM" | "LOW";
 export type LbSourceStatus = "ranked" | "cross_reference" | "observing" | "reference_only" | "awaiting";
 
 export const LB_SOURCE_STATUS_LABELS: Record<LbSourceStatus, string> = {
@@ -11,12 +9,6 @@ export const LB_SOURCE_STATUS_LABELS: Record<LbSourceStatus, string> = {
   observing: "观察中",
   reference_only: "仅供参考",
   awaiting: "等待成绩",
-};
-
-export const LB_CONFIDENCE_LABELS: Record<LbConfidence, string> = {
-  HIGH: "较充分",
-  MEDIUM: "持续积累",
-  LOW: "证据敏感",
 };
 
 export interface LbBrand {
@@ -38,7 +30,6 @@ export interface LbPrice {
   output: number | null;
   cached: number | null;
   officialUrl: string | null;
-  verifiedOn: string | null;
   /** Why a checked model has no prices, e.g. the vendor sells no paid API for it. */
   note: string | null;
 }
@@ -56,29 +47,12 @@ export interface LbRunInfo {
   fx: LbFx | null;
 }
 
-export interface LbStability {
-  from: number;
-  to: number;
-  fixedFrom: number;
-  fixedTo: number;
-  scenarios: number;
-  sensitive: boolean;
-  incomplete: number;
-  unavailable: number;
-}
-
 export interface LbModelRef {
   slug: string;
   name: string;
   provider: string | null;
   releasedAt: string | null;
   brand: LbBrand;
-}
-
-export interface LbBoardTab {
-  key: LeaderboardBoardKey;
-  name: string;
-  href: string;
 }
 
 export interface LbBoardMeta {
@@ -89,17 +63,15 @@ export interface LbBoardMeta {
   howToRead: string;
   sourceCount: number;
   operatorCount: number;
-  modelCount: number;
 }
 
 export interface LbBoardEntry {
   rank: number;
-  score: number;
+  /** The site's 0–100 relative index; null for a run without the current scoring method. */
+  score: number | null;
   model: LbModelRef;
   sourceCount: number;
   coverage: number;
-  confidence: LbConfidence;
-  stability: LbStability | null;
   price: LbPrice | null;
   access: { domestic: boolean; weightsUrl: string | null };
 }
@@ -107,11 +79,10 @@ export interface LbBoardEntry {
 export interface LbBoardResponse {
   run: LbRunInfo;
   board: LbBoardMeta;
-  tabs: LbBoardTab[];
   entries: LbBoardEntry[];
   /** Additional ranked models needed by the filters, each subset still capped at 30. */
   filterEntries: LbBoardEntry[];
-  /** Category boards: overall top-10 models not on this board yet, with how many of its evaluations have them. */
+  /** Leaders of the overall/category boards whose evidence does not yet qualify them for this board. */
   pending: Array<{ model: LbModelRef; sources: number }>;
 }
 
@@ -151,6 +122,7 @@ export interface LbCategoryResult {
   rank: number | null;
   score: number | null;
   sourceCount: number;
+  coverage: number;
   onBoard: boolean;
 }
 
@@ -179,7 +151,14 @@ export interface LbModelDetail {
   historical: boolean;
   model: LbModelRef & { contextWindowTokens: number | null; weightsUrl: string | null };
   price: LbPrice | null;
-  overall: { rank: number | null; score: number | null; onBoard: boolean; confidence: LbConfidence | null; stability: LbStability | null };
+  overall: {
+    rank: number | null;
+    score: number | null;
+    onBoard: boolean;
+    coverage: number;
+    missingDimensions: string[];
+    unknownErrorCount: number;
+  };
   categories: LbCategoryResult[];
   metricCount: number;
   evidence: LbEvidenceGroup[];
@@ -229,7 +208,6 @@ export interface LbSourceDetail {
   source: LbSourceSummary & {
     fullName: string;
     area: string | null;
-    group: { key: string; name: string };
     officialUrl: string | null;
     what: string;
     usage: string;
@@ -245,4 +223,11 @@ export interface LbSourceDetail {
   /** Rows are agent systems (one per configuration), not one representative per model. */
   systemRows: boolean;
   rowsNote: string | null;
+}
+
+/** The rules page: each capability budget with the evaluations the run used in it, and the reference models. */
+export interface LbRulesData {
+  run: LbRunInfo;
+  budgets: Array<{ key: string; name: string; weight: number; sources: string[] }>;
+  anchors: string[];
 }

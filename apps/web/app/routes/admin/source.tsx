@@ -1,8 +1,8 @@
 import { SITE } from "@aihot/industry/site";
 import { useState } from "react";
 import { Link } from "react-router";
-import type { AdminSource, AdminSourceDetail, AdminSourcePreview } from "@aihot/contracts/admin";
 import type { Route } from "./+types/source";
+import type { AdminSource, AdminSourceDetail, AdminSourcePreview } from "@aihot/contracts/admin";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { bj, duration, num } from "../../features/admin/format";
@@ -166,7 +166,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
                   {Object.entries(MODE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Select>
               </Field>
-              <Field label="等级">
+              <Field label="等级" hint="仅 T1 为一手信源">
                 <Select value={draft.tier} onChange={(e) => setDraft({ ...draft, tier: e.target.value })}>
                   {Object.entries(TIER_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Select>
@@ -182,7 +182,6 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
               </Field>
               <div className="flex flex-col justify-end gap-2 text-[13px] text-ink-2">
                 {([
-                  ["first_party", "一手信源（官方账号或官网）"],
                   ["site_fulltext", "站内可展示全文"],
                   ["syndicate_fulltext", "对外接口可带全文"],
                 ] as const).map(([k, label]) => (

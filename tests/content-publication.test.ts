@@ -13,7 +13,7 @@ import { candidates } from "@aihot/backend/reports/edition";
 import { composeStoryDigest, DIGEST_PROMPT_VERSION, DIGEST_SYSTEM, DigestSchema } from "@aihot/backend/events/digest";
 import { chatJson } from "@aihot/backend/providers/llm";
 import { computeHotRanking } from "@aihot/backend/events/hot";
-import { detachFromFact, moveToFact } from "@aihot/backend/events/corrections";
+import { detachFromFact, moveToFact, rewriteStoryDigest } from "@aihot/backend/events/corrections";
 import { overrideFields, setVisibility } from "@aihot/backend/admin/content";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { latestHotRanking } from "@aihot/backend/publication/hot";
@@ -203,6 +203,29 @@ test("digest input excludes mentions, preserves scoped conditions, and ignores g
   assert.equal(provider.hits(), beforeClear, "clearing an empty story does not call a model");
   const [cleared] = await sql`SELECT digest, latest FROM stories WHERE id=${g.storyId}`;
   assert.deepEqual({ ...cleared }, { digest: null, latest: null });
+});
+
+// A prompt change reaches a story only when its reports change; the rewrite writes it again now, from the
+// current reports without the previous digest, and is audited.
+test("rewriting a story digest uses the current reports and prompt and is audited", async () => {
+  const s = await source("digest-rewrite", "T1");
+  const g = await story();
+  await report(s, g, { title: "Dots 对话不计费", hours: 3 });
+  assert.equal((await composeStoryDigest(g.storyId)).updated, true);
+  const calls = provider.hits();
+  assert.equal((await composeStoryDigest(g.storyId)).updated, false, "unchanged reports keep the digest");
+  assert.equal(provider.hits(), calls);
+  const [before] = await sql`SELECT version FROM stories WHERE id=${g.storyId}`;
+  const result = await rewriteStoryDigest(g.storyId, "digest prompt changed", "ops-script");
+  assert.equal(result.updated, true);
+  assert.equal(provider.hits(), calls + 1);
+  assert.match(digestPrompt, /请只依据下面这些报道的当前内容重写综述/);
+  assert.ok(!digestPrompt.includes("上一版综述"), "a rewrite does not start from the previous digest");
+  const [after] = await sql`SELECT version FROM stories WHERE id=${g.storyId}`;
+  assert.equal(after!.version, before!.version + 1);
+  const [entry] = await sql`SELECT actor, reason, after FROM audit_log WHERE action='story.rewrite-digest' AND subject=${`story:${g.storyId}`}`;
+  assert.deepEqual([entry!.actor, entry!.reason, entry!.after.updated], ["ops-script", "digest prompt changed", true]);
+  await assert.rejects(rewriteStoryDigest(-1, "missing", "ops-script"), /story not found/);
 });
 
 // Recovery failures: restoring identical evidence must restore the saved digest without another

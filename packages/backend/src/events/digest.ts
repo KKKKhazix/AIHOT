@@ -18,8 +18,17 @@ export const DigestSchema = z.object({
   digest: z.string().min(10).max(2000),
 });
 
-/** Production and the real-sample evaluation use this same input builder. */
-export function buildStoryDigestInput(story: { title: string; digest: string | null }, reports: DigestReport[], opts: { corrected: boolean; knownArticleIds?: string[] }) {
+/** Sampling of every digest request. */
+export const DIGEST_SAMPLING = { temperature: 0.3, maxTokens: 1200 };
+
+/** Oldest first; reports from the same moment keep the order digestReports returned them in. */
+export const byReportTime = (a: { at: Date }, b: { at: Date }) => a.at.getTime() - b.at.getTime();
+
+/**
+ * The digest request's input, from one story's reports in byReportTime order. The evaluation
+ * (scripts/eval-story-digests.ts) sends this, the system prompt and the sampling above as they are.
+ */
+export function buildStoryDigestInput(story: { title: string; digest: string | null }, reports: Omit<DigestReport, "story_id">[], opts: { corrected: boolean; knownArticleIds?: string[] }) {
   const known = new Set(opts.knownArticleIds ?? []);
   const lines = reports.slice(-40).map((r) => `${opts.corrected || known.has(r.id) ? "" : "【新】"}报道 ${r.id}｜事实 ${r.fact_id}｜${beijingDate(r.at)} ${beijingTime(r.at)}｜${r.source_name}${r.first_party ? "（一手）" : ""}｜${r.title}｜${r.summary ?? ""}\n事实条件与来源证据：${JSON.stringify(digestFactEvidence(r))}`);
   return opts.corrected
@@ -27,7 +36,12 @@ export function buildStoryDigestInput(story: { title: string; digest: string | n
     : `事件当前标题：${story.title}\n${story.digest ? `上一版综述：${story.digest}\n` : ""}\n报道（按时间，标【新】的是上一版之后的新报道）：\n${lines.join("\n")}`;
 }
 
-export async function composeStoryDigest(storyId: number): Promise<{ updated: boolean; version?: number }> {
+/**
+ * A story's digest from its current reports. `rewrite` (rewriteStoryDigest) writes it again from the reports
+ * as they are now with the current prompt, as after a correction: a new wording otherwise reaches a story
+ * only when its reports change.
+ */
+export async function composeStoryDigest(storyId: number, opts: { rewrite?: boolean } = {}): Promise<{ updated: boolean; version?: number }> {
   const [story] = await sql<{ id: number; title: string; digest: string | null; version: number; origin: string }[]>`
     SELECT id, title, digest, version, origin FROM stories WHERE id = ${storyId} AND merged_into IS NULL`;
   if (!story) return { updated: false };
@@ -37,26 +51,26 @@ export async function composeStoryDigest(storyId: number): Promise<{ updated: bo
       WHERE id = ${storyId} AND version = ${story.version} AND merged_into IS NULL AND (digest IS NOT NULL OR latest IS NOT NULL)`;
     return { updated: cleared.count > 0 };
   }
-  reports.sort((a, b) => a.at.getTime() - b.at.getTime());
+  reports.sort(byReportTime);
   const ids = reports.map((r) => r.id).sort();
   // What this version is written from: the reports and what they currently say (corrections included).
   const inputsHash = digestInputsHash(reports);
   const [last] = await sql<{ article_ids: string[]; inputs_hash: string | null; digest: string; receipt_id: number | null }[]>`
     SELECT article_ids, inputs_hash, digest, receipt_id FROM story_digests WHERE story_id = ${storyId} ORDER BY version DESC LIMIT 1`;
   const sameReports = !!last && JSON.stringify([...last.article_ids].sort()) === JSON.stringify(ids);
-  if (story.digest !== null && sameReports && last!.inputs_hash === inputsHash) return { updated: false };
+  if (!opts.rewrite && story.digest !== null && sameReports && last!.inputs_hash === inputsHash) return { updated: false };
   // Same reports, different content: an editor corrected one. A report gone from the story (withdrawn,
   // or regrouped elsewhere) likewise. Rewrite from the reports as they are now, without the previous
   // digest, so a corrected or withdrawn fact does not survive as "earlier reports said".
   const dropped = !!last && last.article_ids.some((id) => !ids.includes(id));
-  const corrected = sameReports || dropped;
+  const corrected = opts.rewrite === true || sameReports || dropped;
   const user = buildStoryDigestInput(story, reports, { corrected, knownArticleIds: last?.article_ids });
   const latest = reports[reports.length - 1]!.title;
   // A withdrawal clears the public projection but retains its history. Restoring exactly the same
   // evidence reuses that digest through the normal version/input checks, without another model call.
-  const res = last?.inputs_hash === inputsHash ? { data: { title: "", digest: last.digest }, receiptId: last.receipt_id } : await chatJson({
+  const res = !opts.rewrite && last?.inputs_hash === inputsHash ? { data: { title: "", digest: last.digest }, receiptId: last.receipt_id } : await chatJson({
     model: await modelFor("digest"), purpose: "story_digest", subject: `story:${storyId}@${ids.length}`, promptVersion: DIGEST_PROMPT_VERSION,
-    system: DIGEST_SYSTEM, user, schema: DigestSchema, temperature: 0.3, maxTokens: 1200,
+    system: DIGEST_SYSTEM, user, schema: DigestSchema, ...DIGEST_SAMPLING,
   });
   const version = story.version + 1;
   const updated = await sql.begin(async (tx) => {

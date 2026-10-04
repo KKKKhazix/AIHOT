@@ -21,7 +21,7 @@ export interface DigestReport {
 }
 
 /** Conditions stay next to their object and source quote; no ownership is inferred from subject tags. */
-export function digestFactEvidence(report: DigestReport) {
+export function digestFactEvidence(report: Omit<DigestReport, "story_id">) {
   const fact = report.structured_fact && typeof report.structured_fact === "object" ? report.structured_fact as Record<string, unknown> : {};
   const conditions = Array.isArray(fact.conditions) ? fact.conditions.flatMap((condition) => {
     if (!condition || typeof condition !== "object") return [];

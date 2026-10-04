@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import {
   parseRelationGoldJsonl,
   relationMetrics,
-  safeReportNamePart,
   sampleRelationGold,
   storyTieMetrics,
   type RelationPrediction,
 } from "../scripts/eval-relations-core.ts";
+import { safeReportNamePart } from "../scripts/eval-tools.ts";
 
 const report = (title: string) => ({
   title,

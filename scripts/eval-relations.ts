@@ -7,19 +7,18 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { REPO_ROOT } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
-import { modelFor } from "@aihot/backend/editorial/models";
 import { PAIR_SYSTEM, PairSchema, RELATE_PROMPT_VERSION, pairUser } from "@aihot/backend/events/relate";
-import { MODELS, ModelOutputError, chatJson } from "@aihot/backend/providers/llm";
+import { ModelOutputError, chatJson } from "@aihot/backend/providers/llm";
 import { completeReceipt } from "@aihot/backend/providers/receipts";
 import {
   parseRelationGoldJsonl,
   relationMetrics,
-  safeReportNamePart,
   sampleRelationGold,
   storyTieMetrics,
   toReportView,
   type RelationPrediction,
 } from "./eval-relations-core.ts";
+import { evalModels, pmap, positiveInt, safeReportNamePart, usageFor } from "./eval-tools.ts";
 
 const { values } = parseArgs({
   options: {
@@ -32,40 +31,6 @@ const { values } = parseArgs({
     thresholds: { type: "string", default: "0.75,0.8" },
   },
 });
-
-async function pmap<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  await Promise.all(Array.from({ length: limit }, async () => {
-    while (next < items.length) {
-      const index = next++;
-      out[index] = await fn(items[index]!);
-    }
-  }));
-  return out;
-}
-
-function positiveInt(value: string, name: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`--${name} must be a positive integer`);
-  return parsed;
-}
-
-async function usageFor(receiptIds: number[]) {
-  const ids = [...new Set(receiptIds)];
-  if (!ids.length) return { tokensIn: 0, tokensOut: 0, avgLatencyMs: 0 };
-  const [usage] = await sql<{ tin: number; tout: number; latency: number }[]>`
-    SELECT
-      sum(coalesce((usage->>'prompt_tokens')::int, (usage->>'input_tokens')::int, 0)) AS tin,
-      sum(coalesce((usage->>'completion_tokens')::int, (usage->>'output_tokens')::int, 0)) AS tout,
-      avg(latency_ms) AS latency
-    FROM receipt_attempts WHERE receipt_id IN ${sql(ids)}`;
-  return {
-    tokensIn: Number(usage?.tin ?? 0),
-    tokensOut: Number(usage?.tout ?? 0),
-    avgLatencyMs: Math.round(Number(usage?.latency ?? 0)),
-  };
-}
 
 async function main() {
   const n = positiveInt(values.n!, "n");
@@ -81,11 +46,7 @@ async function main() {
   const sample = sampleRelationGold(rows, { split: values.split, n, seed });
   if (!sample.length) throw new Error(`no cases for split ${values.split}`);
 
-  const models = values.models
-    ? values.models.split(",").map((model) => model.trim()).filter(Boolean)
-    : [await modelFor("groupReview")];
-  if (!models.length) throw new Error("--models did not name any models");
-  for (const model of models) if (!MODELS[model]) throw new Error(`unknown model ${model}`);
+  const models = await evalModels(values.models, "groupReview");
 
   const report: Record<string, unknown> = {};
   for (const model of models) {

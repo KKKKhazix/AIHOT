@@ -11,7 +11,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { DEPLOYMENT } from "@aihot/site";
 import { REPO_ROOT } from "@aihot/backend/config";
-import { closeDb, sql } from "@aihot/backend/db";
+import { closeDb } from "@aihot/backend/db";
 import {
   SELECTION_PROMPT_VERSION,
   buildScoreInput,
@@ -22,8 +22,8 @@ import {
   type AnalysisRun,
   type AnalyzeInputArticle,
 } from "@aihot/backend/editorial/analyze";
-import { modelFor } from "@aihot/backend/editorial/models";
 import { importSelectBenchRun } from "@aihot/backend/admin/selectbench";
+import { evalModels, pmap, positiveInt, safeReportNamePart, usageFor } from "./eval-tools.ts";
 
 // Without options: the site's gold set (site.ts DEPLOYMENT.selectionGold), else the whole of .data/gold.jsonl
 // (up to 200 cases), swept over a wide range of thresholds.
@@ -65,7 +65,8 @@ function rng(seed: number) {
 const rand = rng(Number(values.seed));
 const pool = values.split === "all" ? rows : rows.filter((r) => r.samplingContext?.benchmarkSplit === values.split);
 const shuffled = pool.map((r) => ({ r, k: rand() })).sort((a, b) => a.k - b.k).map((x) => x.r);
-const sample = shuffled.slice(0, Number(values.n));
+const sample = shuffled.slice(0, positiveInt(values.n!, "n"));
+const concurrency = positiveInt(values.concurrency!, "concurrency");
 
 function toInput(r: GoldRow): AnalyzeInputArticle {
   const m = r.material;
@@ -87,43 +88,7 @@ function toInput(r: GoldRow): AnalyzeInputArticle {
   };
 }
 
-async function pmap<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let i = 0;
-  await Promise.all(Array.from({ length: limit }, async () => {
-    while (i < items.length) {
-      const idx = i++;
-      out[idx] = await fn(items[idx]!);
-    }
-  }));
-  return out;
-}
-
-function safeReportNamePart(value: string): string {
-  const safe = value.trim().replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
-  return safe || "all";
-}
-
-async function usageFor(receiptIds: number[]) {
-  const ids = [...new Set(receiptIds)];
-  if (!ids.length) return { tokensIn: 0, tokensOut: 0, avgLatencyMs: 0 };
-  const [usage] = await sql<{ tin: number; tout: number; latency: number }[]>`
-    SELECT
-      sum(coalesce((usage->>'prompt_tokens')::int, (usage->>'input_tokens')::int, 0)) AS tin,
-      sum(coalesce((usage->>'completion_tokens')::int, (usage->>'output_tokens')::int, 0)) AS tout,
-      avg(latency_ms) AS latency
-    FROM receipt_attempts WHERE receipt_id IN ${sql(ids)}`;
-  return {
-    tokensIn: Number(usage?.tin ?? 0),
-    tokensOut: Number(usage?.tout ?? 0),
-    avgLatencyMs: Math.round(Number(usage?.latency ?? 0)),
-  };
-}
-
-const models = values.models
-  ? values.models.split(",").map((model) => model.trim()).filter(Boolean)
-  : [await modelFor("score")];
-if (!models.length) throw new Error("--models did not name any models");
+const models = await evalModels(values.models, "score");
 
 const report: Record<string, unknown> = {};
 for (const model of models) {
@@ -131,7 +96,7 @@ for (const model of models) {
   // Two gold cases can have different source metadata / thresholds while rendering the same score prompt.
   // Share only that score result (including a failure); prefilter and threshold semantics remain per case.
   const scoreRequests = new Map<string, Promise<{ scores: AnalysisRun["scores"]; receiptIds: number[]; error: string | null }>>();
-  const results = await pmap(sample, Number(values.concurrency), async (r) => {
+  const results = await pmap(sample, concurrency, async (r) => {
     const input = toInput(r);
     const receiptIds: number[] = [];
     try {

@@ -3,7 +3,8 @@
 //   {{name}}     a value the calling step passes (plus siteName, from site/site.ts)
 //   {{> file}}   another prompt file, inserted as it is (shared rules)
 // A missing value or file is an error, never a silent blank. Versions are content hashes, so a receipt
-// and the admin's model page always say which wording produced a result.
+// and the admin's model page always say which wording produced a result. A wording that is not a file
+// of the pack yet (a candidate under evaluation) renders by the same two forms.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -24,27 +25,42 @@ function raw(name: string): string {
   return text;
 }
 
-/** The file with its includes expanded, and the names of every file it read. */
-function expand(name: string, seen: string[] = []): { text: string; used: string[] } {
-  if (seen.includes(name)) throw new Error(`prompt include cycle: ${[...seen, name].join(" → ")}`);
-  const used = [name];
-  const text = raw(name).replace(TOKEN, (token, include: string | undefined, key: string) => {
+/** `text` with its includes expanded, and the names of every file it read. */
+function expandText(text: string, seen: string[]): { text: string; used: string[] } {
+  const used: string[] = [];
+  const expanded = text.replace(TOKEN, (token, include: string | undefined, key: string) => {
     if (!include) return token;
-    const inner = expand(key, [...seen, name]);
+    const inner = expand(key, seen);
     used.push(...inner.used);
     return inner.text;
   });
-  return { text, used };
+  return { text: expanded, used };
 }
 
-/** A prompt with its values filled in. */
-export function promptText(name: string, values: Record<string, string> = {}): string {
+/** The file with its includes expanded, and the names of every file it read. */
+function expand(name: string, seen: string[] = []): { text: string; used: string[] } {
+  if (seen.includes(name)) throw new Error(`prompt include cycle: ${[...seen, name].join(" → ")}`);
+  const inner = expandText(raw(name), [...seen, name]);
+  return { text: inner.text, used: [name, ...inner.used] };
+}
+
+function fill(name: string, text: string, values: Record<string, string>): string {
   const all: Record<string, string> = { siteName: SITE.name, ...values };
-  return expand(name).text.replace(TOKEN, (_token, _include, key: string) => {
+  return text.replace(TOKEN, (_token, _include, key: string) => {
     const value = all[key];
     if (value === undefined) throw new Error(`prompt ${name}: no value for {{${key}}}`);
     return value;
   });
+}
+
+/** A prompt with its values filled in. */
+export function promptText(name: string, values: Record<string, string> = {}): string {
+  return fill(name, expand(name).text, values);
+}
+
+/** Wording given as text instead of a pack file, rendered like one; `label` names it in errors. */
+export function promptFromText(label: string, text: string, values: Record<string, string> = {}): string {
+  return fill(label, expandText(text, []).text, values);
 }
 
 /** `name@hash` over the files a prompt reads, so any edit shows up as a new version. */

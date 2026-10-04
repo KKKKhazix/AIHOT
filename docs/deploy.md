@@ -75,6 +75,13 @@ docker compose run --rm setup && docker compose up -d
 
 分享图预热现在直接复用后端渲染器，不再请求固定的本机端口。Docker Compose 已移除没有代码读取的 `LOCAL_ROUTER_URL`；自行维护的 Compose 文件也可以删去该项。分享图地址、格式和缓存约定保持不变。
 
+#### 事件概览的写法与综述评测（2026 年 10 月 4 日）
+
+公开接口版本仍是 4.0.0，没有迁移，不需要增加环境变量或修改站点配置。
+
+- **事件概览换了写法**：`industry/prompts/story-digest.md` 改成第一句讲清核心变化和目前的结论，再补必要背景，分成短段，不按日期复述下方的时间线，不评论报道本身，也不再写死行业。自己改过这份提示词的，合并时对照新文件。已有综述不会被批量重写，随新报道逐步换成新写法；想让某几个事件立即重写，见 [综述评测](story-digest-evaluation.md) 的最后一节（`rewriteStoryDigest`，每个事件一次模型调用）。
+- **综述评测工具**：`scripts/eval-story-digests.ts` 从库里导出真实事件，在同一批事件上把现有提示词和候选提示词并排跑，见 [综述评测](story-digest-evaluation.md)。三个评测脚本共用 `scripts/eval-tools.ts`；`eval-selection.ts` 的 `--n`、`--concurrency` 和模型名写错时直接报错。
+
 #### 数据库读取优化（2026 年 10 月 4 日）
 
 公开接口版本仍是 4.0.0，接口内容、搜索权重和事件候选范围不变，无需增加环境变量或修改站点配置。新增的 `0056_analyses_composite_id_idx.sql`、`0056_publications_pool_category_timeline_idx.sql` 和 `0057_publications_pool_channel_timeline_idx.sql` 并发建立查询索引；按上面的更新步骤等待 setup 完成即可。迁移不重写文章或已有向量，也不重新调用模型。迁移按完整文件名记录，编号相同的不同文件都会各自执行。

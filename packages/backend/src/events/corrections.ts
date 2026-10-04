@@ -8,6 +8,7 @@ import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { groupingReset } from "../content/provenance.ts";
 import { publishArticle, publishArticleTx } from "../publication/publish.ts";
 import { recordSignal, resetAutomatic } from "./group.ts";
+import { composeStoryDigest } from "./digest.ts";
 import { mergeStoryInto } from "./merge.ts";
 import { emit } from "../modules.ts";
 
@@ -95,6 +96,18 @@ export async function mergeStories(fromId: number, intoId: number, reason: strin
   const found = await sql<{ id: number }[]>`SELECT id FROM stories WHERE id IN (${fromId}, ${intoId})`;
   if (found.length < 2) throw new Error("story not found");
   throw new Conflict("两个事件都必须是未合并的事件");
+}
+
+/**
+ * Writes one story's digest again from its current reports with the current prompt (after the digest
+ * prompt changed). Unchanged prompt and reports reuse the paid answer; the model call happens here.
+ */
+export async function rewriteStoryDigest(storyId: number, reason: string, actor: string) {
+  const [before] = await sql<{ digest: string | null; version: number }[]>`SELECT digest, version FROM stories WHERE id = ${storyId} AND merged_into IS NULL`;
+  if (!before) throw new Error("story not found");
+  const result = await composeStoryDigest(storyId, { rewrite: true });
+  await audit(actor, "story.rewrite-digest", `story:${storyId}`, reason, before, result);
+  return result;
 }
 
 /**

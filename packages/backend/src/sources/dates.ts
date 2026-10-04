@@ -1,4 +1,10 @@
 // Published dates as list pages, articles and JSON lists print them, read the same on every host.
+import type { SourceRow } from "./types.ts";
+
+/** The offset a source's article pages print their dates in: its detail rules' own, else its listing's. */
+export function articleUtcOffset(config: SourceRow["config"]): string | undefined {
+  return config.detail?.publishedAtUtcOffset ?? config.publishedAtUtcOffset;
+}
 
 /** A time followed by its zone: "10:00Z", "10:00:00+08:00", "10:00:00 +0000", "10:00:00 GMT". */
 const EXPLICIT_ZONE = /\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(?:Z|[+-]\d{2}:?\d{2}|GMT|UTC)\b/i;

@@ -5,6 +5,8 @@
 // the database (databases.ts).
 import { createHash } from "node:crypto";
 import http from "node:http";
+import { beijingAt } from "@aihot/contracts/time";
+import { EDITION_TIMES } from "@aihot/site";
 import { DEFAULTS, PRESETS } from "@aihot/site/models";
 
 const database = new URL(process.env.DATABASE_URL ?? "postgres://unset/unset").pathname.slice(1);
@@ -103,3 +105,6 @@ export function gate<T = void>() {
 
 /** A short unique tag for the rows a test creates. */
 export const tag = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+
+/** `seconds` after the site's edition time of a report kind on a Beijing date (EDITION_TIMES), so tests follow the site's schedule. */
+export const editionAt = (kind: keyof typeof EDITION_TIMES, date: string, seconds = 0) => new Date(beijingAt(date, EDITION_TIMES[kind]).getTime() + seconds * 1000);

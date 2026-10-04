@@ -1,7 +1,7 @@
 // Reports: a scheduled run that starts late still writes the issue it was due for, never one whose
 // window is still open; an issue with nothing in it is refused rather than published empty; and an
 // older weekly that froze no summaries shows the cited articles' public summaries.
-import { tag } from "./setup.ts";
+import { editionAt, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
@@ -10,8 +10,7 @@ import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
 import { loadReport } from "@aihot/backend/publication/reports";
 import { composeDaily, dueDaily, dueMonthly, dueWeekly } from "@aihot/backend/reports/compose";
-import { beijingAt } from "@aihot/contracts/time";
-import { EDITION_TIMES, SITE } from "@aihot/site";
+import { SITE } from "@aihot/site";
 
 const T = tag();
 const SOURCE = `test-reports-${T}`;
@@ -22,18 +21,15 @@ after(async () => {
   await closeDb();
 });
 
-/** `minutes` after the site's edition time on a Beijing date. */
-const at = (date: string, time: string, minutes = 0) => new Date(beijingAt(date, time).getTime() + minutes * 60_000);
-
 test("a late run writes the issue that was due, not today's", () => {
-  assert.equal(dueDaily(at("2026-09-29", EDITION_TIMES.daily, 0.1)), "2026-09-29");
-  assert.equal(dueDaily(at("2026-09-30", EDITION_TIMES.daily, -1)), "2026-09-29", "the 29th's run delayed until just before the next issue");
-  assert.equal(dueWeekly(at("2026-09-28", EDITION_TIMES.weekly)), "2026-W39");
-  assert.equal(dueWeekly(at("2026-10-05", EDITION_TIMES.weekly, -1)), "2026-W39", "Monday before its edition time: the next week is not due yet");
-  assert.equal(dueWeekly(at("2026-10-05", EDITION_TIMES.weekly, 1)), "2026-W40");
-  assert.equal(dueMonthly(at("2026-10-01", EDITION_TIMES.monthly)), "2026-09");
-  assert.equal(dueMonthly(at("2026-10-01", EDITION_TIMES.monthly, -1)), "2026-08");
-  assert.equal(dueMonthly(at("2027-01-15", EDITION_TIMES.monthly)), "2026-12");
+  assert.equal(dueDaily(editionAt("daily", "2026-09-29", 6)), "2026-09-29");
+  assert.equal(dueDaily(editionAt("daily", "2026-09-30", -60)), "2026-09-29", "the 29th's run delayed until just before the next issue");
+  assert.equal(dueWeekly(editionAt("weekly", "2026-09-28")), "2026-W39");
+  assert.equal(dueWeekly(editionAt("weekly", "2026-10-05", -60)), "2026-W39", "Monday before its edition time: the next week is not due yet");
+  assert.equal(dueWeekly(editionAt("weekly", "2026-10-05", 60)), "2026-W40");
+  assert.equal(dueMonthly(editionAt("monthly", "2026-10-01")), "2026-09");
+  assert.equal(dueMonthly(editionAt("monthly", "2026-10-01", -60)), "2026-08");
+  assert.equal(dueMonthly(editionAt("monthly", "2027-01-15")), "2026-12");
 });
 
 test("a daily with nothing in its window is refused, not published empty", async () => {

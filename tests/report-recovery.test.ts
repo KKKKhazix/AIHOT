@@ -1,6 +1,6 @@
 // Failure cases: automatic runs rewrite published issues; report/receipt commits split; empty gaps
 // starve later daily/weekly/monthly issues or make a failed run look successful. All use a local model stub.
-import { stub, tag } from "./setup.ts";
+import { editionAt, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
@@ -24,18 +24,20 @@ beforeEach(async () => {
 });
 after(async () => { await provider.close(); await stopBoss(); await closeDb(); });
 
-async function item(at: string) {
+/** A selected item in the window of the daily issue dated `date`, half a day before its edition time. */
+async function item(date: string) {
   const id = `recovery-${tag()}`;
+  const at = editionAt("daily", date, -12 * 3600);
   await sql`INSERT INTO articles (id, source_id, identity_key, url, title, discovered_at, timeline_at)
-    VALUES (${id}, ${SOURCE}, ${id}, 'https://example.com/report', ${id}, ${new Date(at)}, ${new Date(at)})`;
+    VALUES (${id}, ${SOURCE}, ${id}, 'https://example.com/report', ${id}, ${at}, ${at})`;
   await sql`INSERT INTO publications (article_id, title, source_id, channel, url, discovered_at, timeline_at, sort_at, eligible, selected, visible_after, visibility, score)
-    VALUES (${id}, ${id}, ${SOURCE}, 'news', 'https://example.com/report', ${new Date(at)}, ${new Date(at)}, ${new Date(at)}, true, true, ${new Date(at)}, 'public', 90)`;
+    VALUES (${id}, ${id}, ${SOURCE}, 'news', 'https://example.com/report', ${at}, ${at}, ${at}, true, true, ${at}, 'public', 90)`;
   return id;
 }
 const report = async (kind: string, key: string) => (await sql`SELECT content, revision, generated_at FROM reports WHERE kind = ${kind} AND key = ${key}`)[0];
 
 test("automatic retries preserve all three published issue kinds; explicit corrections keep a revision", async () => {
-  const id = await item("2024-02-01T12:00:00Z");
+  const id = await item("2024-02-02");
   for (const [kind, key, compose] of [
     ["daily", "2024-02-02", composeDaily], ["weekly", "2024-W05", composeWeekly], ["monthly", "2024-02", composeMonthly],
   ] as const) {
@@ -54,7 +56,7 @@ test("automatic retries preserve all three published issue kinds; explicit corre
 });
 
 test("report publication and its receipt commit together and recovery reuses the response", async () => {
-  await item("2024-05-01T12:00:00Z");
+  await item("2024-05-02");
   await composeDaily("2024-05-02");
   await sql.unsafe(`CREATE FUNCTION fail_report_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
     IF NEW.status = 'completed' AND NEW.purpose = 'report_weekly' THEN RAISE EXCEPTION 'receipt commit interrupted'; END IF;
@@ -75,11 +77,11 @@ test("report publication and its receipt commit together and recovery reuses the
 
 test("empty older gaps cannot starve a later daily, weekly or monthly, and failures remain visible", async () => {
   // An older issue carried an item; the days after it are empty. Weeklies and monthlies are compiled from dailies.
-  const early = await item("2024-01-22T12:00:00Z");
+  const early = await item("2024-01-23");
   await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at)
     VALUES ('daily', '2024-01-23', now(), now(), ${sql.json({ sections: [{ label: "行业动态", items: [{ itemId: early, title: early }] }] })}, now())`;
-  await item("2024-02-01T12:00:00Z");
-  await assert.rejects(composeDueReports(new Date("2024-02-02T03:00:00Z")), /reports:/);
+  await item("2024-02-02");
+  await assert.rejects(composeDueReports(editionAt("daily", "2024-02-02", 3600)), /reports:/);
   for (const [kind, key] of [["daily", "2024-02-02"], ["weekly", "2024-W04"], ["monthly", "2024-01"]]) {
     assert.ok(await report(kind!, key!), `${kind} ${key} was recovered past the empty gaps`);
   }

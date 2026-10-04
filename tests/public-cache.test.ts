@@ -31,7 +31,7 @@ before(async () => {
 after(async()=>{await app.close();await stopBoss();await closeDb();});
 
 test('mutable content never authorizes a reader to reuse stale data beyond the withdrawal window',async()=>{
-  const paths = ['/api/v1/items','/api/v1/dailies','/api/v1/dailies/2099-10-04',
+  const paths = ['/api/v1/agent','/openapi-v1.json','/api/v1/items','/api/v1/dailies','/api/v1/dailies/2099-10-04',
     '/api/v1/weeklies/2099-W40','/api/v1/monthlies/2099-10','/api/v1/selected/snapshot',
     '/api/v1/agent/daily/2099-10-04','/api/v1/agent/weekly/2099-W40',
     '/feed.xml','/feed/full.xml','/feed/all.xml','/feed/daily.xml','/feed/weekly.xml','/feed/monthly.xml',

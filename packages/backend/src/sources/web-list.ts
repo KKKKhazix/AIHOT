@@ -6,7 +6,7 @@ import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { readable, type ExtractedBody } from "../content/extract.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
 import { jinaRead } from "../providers/jina.ts";
-import { parseLooseDate } from "./dates.ts";
+import { articleUtcOffset, parseLooseDate } from "./dates.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
 
 const JINA_PREFIX = "https://r.jina.ai/";
@@ -364,6 +364,7 @@ export interface DetailNeed {
  */
 export async function fetchDetail(url: string, source: SourceRow, need: DetailNeed): Promise<{ publishedAt: Date | null; title: string | null; summary: string | null; body: ExtractedBody | null }> {
   const d = source.config.detail ?? {};
+  const offset = articleUtcOffset(source.config);
   const jinaListing = String(source.config.url ?? "").startsWith(JINA_PREFIX);
   const dateInJina = need.date && jinaListing && !!d.publishedAtRegex;
   const titleInJina = need.title && jinaListing && !!d.titleRegex;
@@ -375,7 +376,7 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
     if (res.status !== 200) throw new FetchError(`HTTP ${res.status} for detail`, res.status);
     html = res.text();
     if (need.body && /html/.test(res.headers.get("content-type") ?? "")) {
-      try { body = readable(html, res.url); }
+      try { body = readable(html, res.url, offset); }
       catch { /* A failed extraction must not discard the detail metadata. */ }
     }
   }
@@ -386,16 +387,16 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
   if (need.date && dateText !== null) {
     if ($ && !dateInJina && d.publishedAtSelector) {
       const el = $(d.publishedAtSelector).first();
-      publishedAt = elementDate(el, d.publishedAtUtcOffset);
+      publishedAt = elementDate(el, offset);
     }
-    if (!publishedAt && d.publishedAtRegex) publishedAt = parseLooseDate(new RegExp(d.publishedAtRegex).exec(dateText)?.[1], d.publishedAtUtcOffset);
+    if (!publishedAt && d.publishedAtRegex) publishedAt = parseLooseDate(new RegExp(d.publishedAtRegex).exec(dateText)?.[1], offset);
     // An authoritative rule is the only source of the date: when its byline is missing, no other
     // timestamp on the page (an update time, a related post) stands in for it.
     const authoritative = d.publishedAtAuthoritative === true && !!(d.publishedAtSelector || d.publishedAtRegex);
     if (!publishedAt && $ && !dateInJina && !authoritative) {
       const meta = $('meta[property="article:published_time"], meta[name="pubdate"], meta[itemprop="datePublished"]').attr("content");
-      publishedAt = parseLooseDate(meta, d.publishedAtUtcOffset) ?? parseLooseDate(jsonLdPublished($, html!), d.publishedAtUtcOffset)
-        ?? parseLooseDate($("time[datetime]").first().attr("datetime"), d.publishedAtUtcOffset);
+      publishedAt = parseLooseDate(meta, offset) ?? parseLooseDate(jsonLdPublished($, html!), offset)
+        ?? parseLooseDate($("time[datetime]").first().attr("datetime"), offset);
     }
   }
 

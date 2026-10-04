@@ -31,7 +31,7 @@ export function registerAgent(app: FastifyInstance) {
   app.get("/api/v1/agent", publicHandler(async (req, reply) => {
     strictQuery(req, []);
     // Cached like /openapi-v1.json: agents learn a new ability within minutes of its release.
-    return markdown(req, reply, agentGuide(), "agent-guide", "public, max-age=300, stale-while-revalidate=3600");
+    return markdown(req, reply, agentGuide(), "agent-guide", "public, max-age=300, must-revalidate");
   }));
 
   app.get("/api/v1/agent/latest", publicHandler(async (req, reply) => {

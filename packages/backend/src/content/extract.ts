@@ -9,6 +9,8 @@ import { isVideoPageUrl } from "../lib/video-url.ts";
 import { jinaRead } from "../providers/jina.ts";
 import { BudgetExceededError } from "../providers/receipts.ts";
 import { getArticle } from "../providers/socialdata.ts";
+import { articleUtcOffset, parseLooseDate } from "../sources/dates.ts";
+import type { SourceRow } from "../sources/types.ts";
 import { onlyXArticleLink, xArticleText } from "../sources/x.ts";
 import { sanitizeBody, trimTrailingChrome } from "./sanitize.ts";
 import { contentHash, fillPublicationTime, reviseMaterial } from "./materials.ts";
@@ -25,7 +27,8 @@ export interface ExtractedBody {
 
 const MIN_BODY_CHARS = 200;
 
-export function readable(html: string, url: string): ExtractedBody | null {
+/** A publication time the page prints without a zone is read in utcOffset (the source's articleUtcOffset). */
+export function readable(html: string, url: string, utcOffset?: string): ExtractedBody | null {
   if (isVideoPageUrl(url)) return null;
   const { document } = parseHTML(html);
   try {
@@ -47,18 +50,17 @@ export function readable(html: string, url: string): ExtractedBody | null {
     images.push({ kind: "image", url: m[1]!.replace(/&amp;/g, "&"), width: w ? Number(w[1]) : null, height: h ? Number(h[1]) : null });
     if (images.length >= 12) break;
   }
-  const publishedAt = article.publishedTime ? new Date(article.publishedTime) : null;
-  return { html: clean, text, images, via: "readability", publishedAt: publishedAt && Number.isFinite(publishedAt.getTime()) ? publishedAt : null };
+  return { html: clean, text, images, via: "readability", publishedAt: parseLooseDate(article.publishedTime, utcOffset) };
 }
 
-export async function extractFromUrl(url: string, subject: string): Promise<ExtractedBody | null> {
+export async function extractFromUrl(url: string, subject: string, utcOffset?: string): Promise<ExtractedBody | null> {
   if (isVideoPageUrl(url)) return null;
   try {
     const res = await guardedFetch(url, { timeoutMs: 20_000, maxBytes: 6 * 1024 * 1024 });
     if (isVideoPageUrl(res.url)) return null;
     const type = res.headers.get("content-type") ?? "";
     if (res.status === 200 && /html/.test(type)) {
-      const got = readable(res.text(), res.url);
+      const got = readable(res.text(), res.url, utcOffset);
       if (got) return got;
     }
   } catch {
@@ -89,13 +91,12 @@ export function pageFetchable(url: string, sourceKind: string): boolean {
 
 /** Fetches and stores the body of one article. Unconfirmed bodies are recorded as such. */
 export async function extractArticleBody(articleId: string): Promise<"ok" | "unconfirmed" | "skipped"> {
-  const [a] = await sql<{ id: string; url: string; body_status: string; revision: number; x_post: { tweetId?: string } | null; authoritative_date: boolean }[]>`
-    SELECT a.id, a.url, a.body_status, a.revision, a.x_post,
-      coalesce((s.config->'detail'->>'publishedAtAuthoritative')::boolean, false) AS authoritative_date
+  const [a] = await sql<{ id: string; url: string; body_status: string; revision: number; x_post: { tweetId?: string } | null; config: SourceRow["config"] }[]>`
+    SELECT a.id, a.url, a.body_status, a.revision, a.x_post, s.config
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId}`;
   if (!a || a.body_status === "ok") return "skipped";
   if (a.x_post?.tweetId) return extractXArticle(a.id, a.x_post.tweetId, a.revision);
-  const got = await extractFromUrl(a.url, `article:${a.id}`);
+  const got = await extractFromUrl(a.url, `article:${a.id}`, articleUtcOffset(a.config));
   if (!got) {
     return markUnconfirmed(articleId, a.revision);
   }
@@ -105,7 +106,7 @@ export async function extractArticleBody(articleId: string): Promise<"ok" | "unc
       SELECT title, excerpt, content_hash FROM articles
       WHERE id = ${articleId} AND revision = ${a.revision} AND body_status <> 'ok' FOR UPDATE`;
     if (!row) return "skipped";
-    const time = a.authoritative_date ? null : await fillPublicationTime(tx, articleId, got.publishedAt);
+    const time = a.config.detail?.publishedAtAuthoritative === true ? null : await fillPublicationTime(tx, articleId, got.publishedAt);
     const hash = contentHash({ title: row.title, bodyText: got.text, excerpt: row.excerpt });
     if (!time && hash === row.content_hash) {
       await tx`UPDATE articles SET body_status = 'ok', updated_at = now() WHERE id = ${articleId}`;

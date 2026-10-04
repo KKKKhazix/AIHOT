@@ -1,15 +1,16 @@
 // Collection run for one source: fetch listing → filter → store material → enqueue processing.
 // A failed fetch never advances the success cursor; the source's health reflects consecutive failures.
 import { sql, type Db } from "../db.ts";
-import { FUTURE_TOLERANCE_MS, identityKeyFor, STALE_ON_DISCOVERY_MS, upsertMaterial } from "../content/materials.ts";
+import { identityKeyFor, STALE_ON_DISCOVERY_MS, upsertMaterial } from "../content/materials.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
 import { sha256 } from "../lib/ids.ts";
 import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
 import { queueProcessing } from "../jobs/content.ts";
 import { BudgetExceededError, completeReceipt } from "../providers/receipts.ts";
 import { fetchRss } from "./rss.ts";
-import { allowed, fetchDetail, fetchWebList, needsTitle, type DetailNeed } from "./web-list.ts";
+import { allowed, fetchDetail, fetchWebList, isCallToActionTitle, needsTitle, type DetailNeed } from "./web-list.ts";
 import { unsupportedConfig } from "./config-keys.ts";
+import { filterPublicationWindow } from "./filters.ts";
 import { fetchJsonList } from "./json-list.ts";
 import { fetchXSearch, planXShards, readXSearch, shardHandle, shardQuery, selfThreadHandle, SHARDABLE_SQL, tweetToCandidate, type XBacklog } from "./x.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
@@ -55,13 +56,14 @@ interface StoredDetail {
   title: string;
   published_at: Date | null;
   excerpt: string | null;
+  body_status: string;
   rules: string | null;
 }
 
 async function storedDetails(identities: string[]): Promise<Map<string, StoredDetail>> {
   if (identities.length === 0) return new Map();
   // One array parameter: a long listing would exceed the query's parameter limit.
-  const rows = await sql<StoredDetail[]>`SELECT identity_key, title, published_at, excerpt,
+  const rows = await sql<StoredDetail[]>`SELECT identity_key, title, published_at, excerpt, body_status,
     raw->'collectionDetail'->>'rules' AS rules
     FROM articles WHERE identity_key = ANY(${identities}::text[])`;
   return new Map(rows.map((r) => [r.identity_key, r]));
@@ -166,13 +168,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     }
     found = candidates.length;
     candidates = candidates.filter((c) => allowed(c.url, source)).map((c) => rewriteUrl(c, source)).filter((c) => !noiseFiltered(c, source));
-    // A fixed collection boundary applies to every run, before detail reads or processing. Unknown
-    // and untrusted future dates cannot prove that an item belongs to this publication window.
-    if (source.config.publishedAfter) {
-      const after = Date.parse(source.config.publishedAfter);
-      const latest = Date.now() + FUTURE_TOLERANCE_MS;
-      candidates = candidates.filter(c => !!c.publishedAt && c.publishedAt.getTime() > after && c.publishedAt.getTime() <= latest);
-    }
+    candidates = filterPublicationWindow(candidates, source.config.publishedAfter);
     if (source.config.sortByPublishedAt) candidates.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
     // Deduplicate before enrichment and limits: URL aliases must neither buy duplicate detail reads
     // nor crowd other articles out of the window. Use exactly the identity the material will store; a
@@ -216,6 +212,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     const detailErrors: Array<{ url: string; error: string }> = [];
     for (const c of candidates) {
       const stored = known.get(c.identityKey!);
+      const storedHeadline = !!stored && isCallToActionTitle(c.title) && !isCallToActionTitle(stored.title);
       if (stored !== undefined) {
         // The title came from the detail page: the listing's own rendering must not revise it back.
         if (d?.titleSelector || d?.titleRegex) c.title = stored.title;
@@ -224,9 +221,9 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
       if (!d) continue;
       const need: DetailNeed = {
         date: !(stored?.published_at || c.publishedAt) || d.upgradeDatePrecision === true,
-        title: !!(d.titleSelector || d.titleRegex) && (d.titleAuthoritative === true || needsTitle(c.title)),
+        title: !!(d.titleSelector || d.titleRegex) && (d.titleAuthoritative === true || (!storedHeadline && needsTitle(c.title))),
         summary: !!d.summarySelector && !(stored?.excerpt || c.excerpt),
-        body: source.participation_mode === "editorial" && !c.bodyText && (!c.bodyStatus || c.bodyStatus === "pending"),
+        body: source.participation_mode === "editorial" && stored?.body_status !== "ok" && !c.bodyText && (!c.bodyStatus || c.bodyStatus === "pending"),
       };
       if (!need.date && !need.title && !need.summary) continue;
       if (detailUsed >= detailBudget) { detailPending += 1; continue; }

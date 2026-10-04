@@ -13,8 +13,8 @@ process.env.AIHOT_DATA_DIR = dir;
 process.env.ALLOW_PRIVATE_NETWORK_FETCH = "true";
 process.env.MODEL_CALLS_ENABLED = "false";
 const { produceImage } = await import("@aihot/backend/media/images");
-const { renderOg } = await import("../apps/api/src/og/render.ts");
-const { renderPoster } = await import("../apps/api/src/og/poster.ts");
+const { renderOg } = await import("@aihot/backend/media/og");
+const { renderPoster } = await import("@aihot/backend/media/poster");
 const { xView } = await import("@aihot/backend/publication/items");
 
 let imageHits = 0;

@@ -5,8 +5,8 @@
 import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
 import { withSubject } from "@aihot/site";
 import { beijingDate } from "@aihot/contracts/time";
-import { ogEtag } from "../apps/api/src/og/render.ts";
-import { posterEtag } from "../apps/api/src/og/poster.ts";
+import { ogEtag } from "@aihot/backend/media/og";
+import { posterEtag } from "@aihot/backend/media/poster";
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";

@@ -3,12 +3,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
 import { beijingDate } from "@aihot/contracts/time";
-import { loadItemShare } from "@aihot/backend/publication/og";
+import { loadItemOgCard, loadItemShare } from "@aihot/backend/publication/og";
 import { loadReport, type ReportKind } from "@aihot/backend/publication/reports";
 import { findTopic, TOPIC_GROUPS, TOPICS } from "@aihot/backend/publication/topics";
 import { loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
-import { ogEtag, renderOg, type OgCard } from "../og/render.ts";
-import { posterEtag, renderPoster, type Poster } from "../og/poster.ts";
+import { ogEtag, renderOg, type OgCard } from "@aihot/backend/media/og";
+import { posterEtag, renderPoster, type Poster } from "@aihot/backend/media/poster";
 import { CARDS, ITEM_COPY, REPORTS, subjectAfter, withSubject } from "@aihot/site";
 import { config } from "@aihot/backend/config";
 
@@ -50,15 +50,9 @@ export function registerOg(app: FastifyInstance) {
   app.get("/og/items/:file", async (req, reply) => {
     const file = (req.params as { file: string }).file;
     if (!file.endsWith(".png")) return notFound(reply);
-    const d = await loadItemShare(file.slice(0, -4));
-    if (!d) return notFound(reply);
-    return send(req, reply, {
-      kicker: d.category ? CATEGORY_LABELS[d.category] : withSubject("动态"),
-      title: d.title,
-      subtitle: d.summary,
-      meta: `${d.source.name} · ${beijingDate(d.timelineAt)}`,
-      badge: d.selected && d.score !== null && ITEM_COPY.showScore ? { value: String(Math.round(d.score)), label: "精选评分" } : null,
-    }, 3600, CONTENT_IMAGE_CACHE);
+    const card = await loadItemOgCard(file.slice(0, -4));
+    if (!card) return notFound(reply);
+    return send(req, reply, card, 3600, CONTENT_IMAGE_CACHE);
   });
 
   // Phone share poster for an article (1080×1440), generated on first request and cached by content.

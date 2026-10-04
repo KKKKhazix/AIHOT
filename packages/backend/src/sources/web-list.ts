@@ -112,7 +112,8 @@ async function fetchListingText(source: SourceRow): Promise<{ text: string; viaJ
 }
 
 /** A listing title that is no headline: a label that swallowed its summary, or a call to action. */
-export const needsTitle = (title: string) => title.length > 100 || /^(read more|learn more|continue reading|more|阅读全文|阅读更多|查看详情|了解更多)$/i.test(title.trim());
+export const isCallToActionTitle = (title: string) => /^(read more|read the blog|learn more|continue reading|more|阅读全文|阅读更多|查看详情|了解更多)$/i.test(title.trim());
+export const needsTitle = (title: string) => title.length > 100 || isCallToActionTitle(title);
 
 export function fromMarkdown(md: string, base: string, source: SourceRow): Candidate[] {
   const seen = new Map<string, Candidate>();

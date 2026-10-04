@@ -1,5 +1,6 @@
 // Failure cases: a first-import cap only postpones paid history processing until the next run;
-// boundary-day, undated or future-dated entries bypass a fixed source publication window.
+// boundary-day, undated or future-dated entries bypass a fixed source publication window;
+// draft and stored-source previews promise entries the same collector will reject.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -8,6 +9,7 @@ import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { collectSource } from "@aihot/backend/sources/collect";
+import { previewSource, previewStoredSource } from "@aihot/backend/admin/sources";
 
 type Item = { id: string; date: string | null };
 const lists = new Map<string, Item[]>();
@@ -34,7 +36,7 @@ const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 config.allowPrivateNetworkFetch = true;
 after(async () => { await new Promise<void>(resolve => server.close(() => resolve())); await stopBoss(); await closeDb(); });
 
-for (const kind of ["rss", "web_list", "json_list"]) test(`${kind} applies the fixed publication window on the first and all subsequent runs`, async () => {
+for (const kind of ["rss", "web_list", "json_list"] as const) test(`${kind} applies the fixed publication window in preview, on the first and all subsequent runs`, async () => {
   const id = `window-${T}-${kind}`;
   const path = `/${kind}/${id}`;
   const rows: Item[] = [
@@ -48,8 +50,14 @@ for (const kind of ["rss", "web_list", "json_list"]) test(`${kind} applies the f
   const mapping = kind === "rss" ? { feedUrl: base + path } : kind === "json_list"
     ? { url: base + path, titlePaths: ["id"], urlTemplate: `${base}/article${path}/{id}`, publishedAtPath: "date" }
     : { url: base + path, itemSelector: "article", linkSelector: "a", publishedAtSelector: "time" };
+  const sourceConfig = { ...mapping, publishedAfter: cutoff.toISOString() };
   await sql`INSERT INTO sources(id,name,kind,participation_mode,config,next_fetch_at)
-    VALUES(${id},${id},${kind},'editorial',${sql.json({ ...mapping, publishedAfter: cutoff.toISOString() })},'2100-01-01')`;
+    VALUES(${id},${id},${kind},'editorial',${sql.json(sourceConfig)},'2100-01-01')`;
+  for (const preview of [await previewSource({ id, kind, config: sourceConfig }), await previewStoredSource(id)]) {
+    assert.equal(preview!.count, 1, "preview applies the same publication boundary before reporting its count");
+    assert.deepEqual(preview!.items.map(item => item.title), ["current"]);
+  }
+  assert.equal((await sql`SELECT count(*)::int AS n FROM articles WHERE source_id=${id}`)[0]!.n, 0, "preview remains read-only");
   assert.equal((await collectSource(id)).created, 1);
   assert.equal((await collectSource(id)).created, 0, "a regular fetch must not start ingesting the old entries");
   rows.push({ id: "latest", date: new Date(Date.now() - 30_000).toISOString() });

@@ -2,7 +2,7 @@
 // card. The first occurrence must not permanently mask the useful headline later in the page.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fromMarkdown } from "@aihot/backend/sources/web-list";
+import { fromMarkdown, needsTitle } from "@aihot/backend/sources/web-list";
 
 const source = { config: { url: "https://publisher.example/blog", allowUrlPrefixes: ["https://publisher.example/blog/"] } } as never;
 const read = (labels: string[]) => fromMarkdown(labels.map(label => `[${label}](https://publisher.example/blog/new-release)`).join("\n\n"), "https://publisher.example", source);
@@ -18,4 +18,9 @@ test("a clean headline replaces a repeated card label that swallowed its whole s
 test("the first clean headline stays stable and a lone call to action can still be enriched from its detail page", () => {
   assert.equal(read(["A clean actual headline", "Another title for the same story", "Read more"])[0]!.title, "A clean actual headline");
   assert.equal(read(["Read more"])[0]!.title, "Read more");
+});
+
+test("Read the Blog labels require the same title enrichment as other calls to action", () => {
+  assert.equal(needsTitle("Read the Blog"), true);
+  assert.equal(read(["Read the Blog", "An actual research headline"])[0]!.title, "An actual research headline");
 });

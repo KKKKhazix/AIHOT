@@ -6,6 +6,7 @@ import { sanitizeBody } from "../content/sanitize.ts";
 import { identityKeyFor } from "../content/materials.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { normalizeUrl } from "../lib/url.ts";
+import { isVideoPageUrl } from "../lib/video-url.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
 
 const parser = new XMLParser({
@@ -36,6 +37,19 @@ function text(v: unknown): string {
 function arr<T>(v: T | T[] | undefined | null): T[] {
   if (v === undefined || v === null) return [];
   return Array.isArray(v) ? v : [v];
+}
+
+/** Media RSS descriptions describe the video; even a long description is not a transcript. */
+function mediaDescription(entry: Record<string, any>): string | null {
+  const groups = arr<Record<string, any>>(entry["media:group"]);
+  const containers = [...groups.flatMap(group => arr<Record<string, any>>(group["media:content"])), ...arr<Record<string, any>>(entry["media:content"]), ...groups, entry];
+  for (const container of containers) {
+    const description = container["media:description"];
+    const value = text(description);
+    if (!value) continue;
+    return collapseWhitespace(description?.["@type"] === "html" ? stripTags(value) : value).slice(0, 2000) || null;
+  }
+  return null;
 }
 
 function parseDate(v: string): Date | null {
@@ -166,7 +180,9 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
       if (!link || !title) continue;
       const contentEncoded = text(it["content:encoded"]);
       const description = text(it.description);
-      const bodyHtmlRaw = contentEncoded || (summaryIsBody ? description : "");
+      const video = isVideoPageUrl(link);
+      const videoExcerpt = video ? mediaDescription(it) : null;
+      const bodyHtmlRaw = contentEncoded || (summaryIsBody && !video ? description : "");
       const bodyHtml = bodyHtmlRaw ? sanitizeBody(bodyHtmlRaw, link) : null;
       const enclosure = enclosures.find((e) => /^image\//.test(e?.["@type"] ?? ""));
       const media = [
@@ -179,7 +195,8 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
         title,
         author: text(it["dc:creator"]) || text(it.author) || null,
         publishedAt: parseDate(text(it.pubDate) || text(it["dc:date"]) || text(it.published)),
-        ...feedText(bodyHtml, description, source, !mediaFile),
+        ...feedText(bodyHtml, description, source, !mediaFile && !video),
+        ...(videoExcerpt ? { excerpt: videoExcerpt } : {}),
         media: media.slice(0, 6),
         categories: arr(it.category).map((c) => text(c)).filter(Boolean),
         raw: { guid: guid || null },
@@ -199,7 +216,9 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
       if (!entryUrl || !title) continue;
       const content = text(e.content);
       const summary = text(e.summary);
-      const bodyHtmlRaw = content || (summaryIsBody ? summary : "");
+      const video = isVideoPageUrl(entryUrl);
+      const videoExcerpt = video ? mediaDescription(e) : null;
+      const bodyHtmlRaw = content || (summaryIsBody && !video ? summary : "");
       const bodyHtml = bodyHtmlRaw ? sanitizeBody(bodyHtmlRaw, entryUrl) : null;
       out.push({
         url: entryUrl,
@@ -207,7 +226,8 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
         author: text(arr(e.author)[0]?.name) || null,
         publishedAt: parseDate(text(e.published) || text(e.updated)),
         sourceUpdatedAt: parseDate(text(e.updated)),
-        ...feedText(bodyHtml, summary, source),
+        ...feedText(bodyHtml, summary, source, !video),
+        ...(videoExcerpt ? { excerpt: videoExcerpt } : {}),
         media: bodyHtmlRaw ? imagesFrom(bodyHtmlRaw, entryUrl) : [],
         categories: arr(e.category).map((c: any) => c?.["@term"] ?? text(c)).filter(Boolean),
         raw: { id: text(e.id) || null },

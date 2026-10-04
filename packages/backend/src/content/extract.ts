@@ -5,6 +5,7 @@ import { parseHTML } from "linkedom";
 import { sql } from "../db.ts";
 import { guardedFetch } from "../lib/http-fetch.ts";
 import { stripTags } from "../lib/text.ts";
+import { isVideoPageUrl } from "../lib/video-url.ts";
 import { jinaRead } from "../providers/jina.ts";
 import { BudgetExceededError } from "../providers/receipts.ts";
 import { getArticle } from "../providers/socialdata.ts";
@@ -25,6 +26,7 @@ export interface ExtractedBody {
 const MIN_BODY_CHARS = 200;
 
 export function readable(html: string, url: string): ExtractedBody | null {
+  if (isVideoPageUrl(url)) return null;
   const { document } = parseHTML(html);
   try {
     const base = document.createElement("base");
@@ -50,8 +52,10 @@ export function readable(html: string, url: string): ExtractedBody | null {
 }
 
 export async function extractFromUrl(url: string, subject: string): Promise<ExtractedBody | null> {
+  if (isVideoPageUrl(url)) return null;
   try {
     const res = await guardedFetch(url, { timeoutMs: 20_000, maxBytes: 6 * 1024 * 1024 });
+    if (isVideoPageUrl(res.url)) return null;
     const type = res.headers.get("content-type") ?? "";
     if (res.status === 200 && /html/.test(type)) {
       const got = readable(res.text(), res.url);
@@ -72,9 +76,9 @@ export async function extractFromUrl(url: string, subject: string): Promise<Extr
   }
 }
 
-/** Pages extraction can fetch: ordinary web pages (X posts and WeChat articles arrive whole or not at all). */
+/** Ordinary article pages; player pages have no article body, and social posts arrive separately. */
 export function pageFetchable(url: string, sourceKind: string): boolean {
-  if (sourceKind === "x_search" || sourceKind === "mp_account") return false;
+  if (sourceKind === "x_search" || sourceKind === "mp_account" || isVideoPageUrl(url)) return false;
   try {
     const u = new URL(url);
     return /^https?:$/.test(u.protocol) && !/(^|\.)(x\.com|twitter\.com|mp\.weixin\.qq\.com)$/i.test(u.hostname);

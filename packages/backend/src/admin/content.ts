@@ -15,6 +15,55 @@ import { emit } from "../modules.ts";
 import { requestRegroup } from "../events/corrections.ts";
 import { computeHotRanking, storedHotRanking } from "../events/hot.ts";
 import { audit, auditHistory, Conflict } from "../audit.ts";
+import { stableJson } from "../lib/ids.ts";
+import { xEncodingMaterialHash, xEncodingRepairPlan, type XEncodingMaterial } from "../content/x-encoding.ts";
+
+/** A read-only plan for a specifically identified X encoding defect, including its optimistic hash. */
+export async function previewXEncodingRepair(id: string) {
+  const [article] = await sql<XEncodingMaterial[]>`SELECT a.*,s.kind FROM articles a JOIN sources s ON s.id=a.source_id WHERE a.id=${id}`;
+  return article ? xEncodingRepairPlan(article) : null;
+}
+
+interface XEncodingRepairResult {
+  articleId: string;
+  revision: number;
+  status: "repaired" | "already-normalized" | "unchanged";
+}
+
+/**
+ * Repairs an operator-confirmed encoding defect without creating a new semantic revision. The audit
+ * is the one-time marker; stored analysis, grouping and paid receipts remain bound to their revision.
+ */
+export async function normalizeXEncoding(id: string, input: { version: number; hash: string; requestId: string; reason: string }, actor: string): Promise<XEncodingRepairResult> {
+  z.object({ version: z.number().int().positive(), hash: z.string().regex(/^[0-9a-f]{64}$/),
+    requestId: z.string().regex(/^[\w-]{8,80}$/), reason: z.string().trim().min(1) }).parse(input);
+  return sql.begin(async tx => {
+    const [article] = await tx<XEncodingMaterial[]>`SELECT a.*,s.kind FROM articles a JOIN sources s ON s.id=a.source_id WHERE a.id=${id} FOR UPDATE OF a`;
+    if (!article) throw new Conflict("内容不存在");
+    const [prior] = await tx<{ request_id: string | null; after: { result: XEncodingRepairResult } }[]>`
+      SELECT request_id,after FROM audit_log WHERE subject=${`content:${id}`} AND action='content.normalize-x-encoding' ORDER BY id LIMIT 1`;
+    if (prior) return prior.request_id === input.requestId ? prior.after.result : { articleId: id, revision: article.revision, status: "already-normalized" };
+    if (article.revision !== input.version || xEncodingMaterialHash(article) !== input.hash) throw new Conflict("材料已被修改，请重新核对编码修复预览");
+    const plan = xEncodingRepairPlan(article);
+    if (!plan.changed) return { articleId: id, revision: article.revision, status: "unchanged" };
+    const [previous] = await tx`SELECT selected,eligible,visibility,fact_id,story_id,body_mode,selected_ready_at,visible_after FROM publications WHERE article_id=${id}`;
+    await tx`UPDATE articles SET title=${plan.after.title},body_text=${plan.after.body_text},x_post=${tx.json(plan.after.x_post as never)},
+      content_hash=${plan.after.content_hash},updated_at=now() WHERE id=${id}`;
+    await tx`INSERT INTO article_revisions(article_id,revision,title,body_text,content_hash)
+      VALUES(${id},${article.revision},${plan.after.title},${plan.after.body_text},${plan.after.content_hash})
+      ON CONFLICT(article_id,revision) DO UPDATE SET title=EXCLUDED.title,body_text=EXCLUDED.body_text,content_hash=EXCLUDED.content_hash`;
+    if (previous) {
+      await publishArticleTx(tx, id);
+      const [next] = await tx`SELECT selected,eligible,visibility,fact_id,story_id,body_mode,selected_ready_at,visible_after FROM publications WHERE article_id=${id}`;
+      if (stableJson(previous) !== stableJson(next)) throw new Conflict("公开决定与当前投影不一致，编码修复不能改变选稿、范围或归组");
+    }
+    await emit("articleChanged", { id, kind: "content", reason: "X text encoding normalized" }, tx);
+    const result: XEncodingRepairResult = { articleId: id, revision: article.revision, status: "repaired" };
+    await audit(actor, "content.normalize-x-encoding", `content:${id}`, input.reason, plan.before,
+      { ...plan.after, result }, { db: tx, requestId: input.requestId });
+    return result;
+  });
+}
 
 export async function searchContent(q: string): Promise<BeforeJson<AdminContentRow>[]> {
   const term = q.trim();

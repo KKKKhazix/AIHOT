@@ -256,7 +256,10 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   // Material from an isolated source reaches no public surface at all: not even a detail page.
   const visibility = source.participation_mode === "isolated" ? "withdrawn" : (override?.visibility ?? "public");
 
-  const eligible = isPoolEligible({ participationMode: source.participation_mode, relevance, title, summary });
+  // An undated archive has a readable detail page, but its discovery is not a news timestamp.
+  // Explicit imports can retain an editorial decision already published elsewhere.
+  const eligible = isPoolEligible({ participationMode: source.participation_mode, relevance, title, summary })
+    && (!article.backfill || article.published_at !== null || !!options.releasedAt);
   const selectionCandidate = isSelectable(eligible, judgedSelected, source.tier);
   // Scoring nominates a report; a completed identity/value decision admits it to selection.
   // A historical import already has its public decision. Preserve that confirmed state on rebuild.

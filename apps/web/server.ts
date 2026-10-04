@@ -78,10 +78,10 @@ const server = createServer((req, res) => {
 });
 
 /**
- * The one writer of page cache headers: a route only says how long shared caches may keep it (edgeTtl).
+ * The one writer of page response headers: a route only says how long shared caches may keep it (edgeTtl).
  * Public navigation returns all matched loaders, so `_routes` never changes a cached answer.
  */
-function pageCache(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) {
+function pageResponse(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) {
   const url = new URL(req.url ?? "/", "http://web.local");
   const pathname = decodeURIComponent(url.pathname).replace(/\.data$/, "");
   const publicRead = (req.method === "GET" || req.method === "HEAD") && !/^\/admin(?:\/|$)/i.test(pathname);
@@ -96,6 +96,11 @@ function pageCache(req: import("node:http").IncomingMessage, res: import("node:h
   res.writeHead = ((status: number, messageOrHeaders?: string | import("node:http").OutgoingHttpHeaders, headers?: import("node:http").OutgoingHttpHeaders) => {
     const outgoing = typeof messageOrHeaders === "string" ? headers : messageOrHeaders;
     for (const [name, value] of Object.entries(outgoing ?? {})) if (value !== undefined) res.setHeader(name, value);
+    // Download managers can treat prefetched .data with the unknown text/x-script type as a file.
+    // Turbo-stream is text decoded from the response body; its client does not depend on the MIME.
+    if (url.pathname.endsWith(".data") && res.getHeader("Content-Type") === "text/x-script") {
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    }
     const cc = String(res.getHeader("Cache-Control") ?? "");
     if (!publicRead || status !== 200 || res.hasHeader("Set-Cookie") || !cc || /(?:private|no-store)/i.test(cc)) {
       res.removeHeader("Expires");
@@ -144,7 +149,7 @@ async function handle(req: import("node:http").IncomingMessage, res: import("nod
   }
 
   if ((req.method === "GET" || req.method === "HEAD") && pathname.includes(".") && (await serveStatic(pathname, res))) return;
-  pageCache(req, res);
+  pageResponse(req, res);
   return ssr(req, res);
 }
 

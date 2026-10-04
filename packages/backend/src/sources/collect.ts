@@ -203,6 +203,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
           c.bodyText = got.body.text;
           c.bodyStatus = "ok";
           if (!c.media?.length) c.media = got.body.images;
+          if (!d.publishedAtAuthoritative && !c.publishedAt && got.body.publishedAt) c.publishedAt = got.body.publishedAt;
         }
         // A date-only listing value gives way to the detail page's time on the same day.
         if (got.publishedAt && (!c.publishedAt || Math.abs(got.publishedAt.getTime() - c.publishedAt.getTime()) < DAY_MS)) c.publishedAt = got.publishedAt;

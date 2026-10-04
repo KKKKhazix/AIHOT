@@ -10,7 +10,7 @@ import { BudgetExceededError } from "../providers/receipts.ts";
 import { getArticle } from "../providers/socialdata.ts";
 import { onlyXArticleLink, xArticleText } from "../sources/x.ts";
 import { sanitizeBody, trimTrailingChrome } from "./sanitize.ts";
-import { contentHash, reviseMaterial } from "./materials.ts";
+import { contentHash, fillPublicationTime, reviseMaterial } from "./materials.ts";
 import { markdownBody } from "./markdown.ts";
 
 export interface ExtractedBody {
@@ -18,6 +18,8 @@ export interface ExtractedBody {
   text: string;
   images: Array<{ kind: "image"; url: string; width: number | null; height: number | null }>;
   via: "readability" | "jina";
+  /** The page's publication metadata; neither modification time nor dates mentioned in its prose. */
+  publishedAt?: Date | null;
 }
 
 const MIN_BODY_CHARS = 200;
@@ -43,7 +45,8 @@ export function readable(html: string, url: string): ExtractedBody | null {
     images.push({ kind: "image", url: m[1]!.replace(/&amp;/g, "&"), width: w ? Number(w[1]) : null, height: h ? Number(h[1]) : null });
     if (images.length >= 12) break;
   }
-  return { html: clean, text, images, via: "readability" };
+  const publishedAt = article.publishedTime ? new Date(article.publishedTime) : null;
+  return { html: clean, text, images, via: "readability", publishedAt: publishedAt && Number.isFinite(publishedAt.getTime()) ? publishedAt : null };
 }
 
 export async function extractFromUrl(url: string, subject: string): Promise<ExtractedBody | null> {
@@ -82,8 +85,10 @@ export function pageFetchable(url: string, sourceKind: string): boolean {
 
 /** Fetches and stores the body of one article. Unconfirmed bodies are recorded as such. */
 export async function extractArticleBody(articleId: string): Promise<"ok" | "unconfirmed" | "skipped"> {
-  const [a] = await sql<{ id: string; url: string; body_status: string; revision: number; x_post: { tweetId?: string } | null }[]>`
-    SELECT id, url, body_status, revision, x_post FROM articles WHERE id = ${articleId}`;
+  const [a] = await sql<{ id: string; url: string; body_status: string; revision: number; x_post: { tweetId?: string } | null; authoritative_date: boolean }[]>`
+    SELECT a.id, a.url, a.body_status, a.revision, a.x_post,
+      coalesce((s.config->'detail'->>'publishedAtAuthoritative')::boolean, false) AS authoritative_date
+    FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId}`;
   if (!a || a.body_status === "ok") return "skipped";
   if (a.x_post?.tweetId) return extractXArticle(a.id, a.x_post.tweetId, a.revision);
   const got = await extractFromUrl(a.url, `article:${a.id}`);
@@ -96,8 +101,9 @@ export async function extractArticleBody(articleId: string): Promise<"ok" | "unc
       SELECT title, excerpt, content_hash FROM articles
       WHERE id = ${articleId} AND revision = ${a.revision} AND body_status <> 'ok' FOR UPDATE`;
     if (!row) return "skipped";
+    const time = a.authoritative_date ? null : await fillPublicationTime(tx, articleId, got.publishedAt);
     const hash = contentHash({ title: row.title, bodyText: got.text, excerpt: row.excerpt });
-    if (hash === row.content_hash) {
+    if (!time && hash === row.content_hash) {
       await tx`UPDATE articles SET body_status = 'ok', updated_at = now() WHERE id = ${articleId}`;
       return "ok";
     }

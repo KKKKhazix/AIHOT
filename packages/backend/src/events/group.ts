@@ -284,12 +284,13 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
   }
   const composite = an?.composite === true;
   const unsupported = an?.output?.scope === "unknown" && !an.output.fact;
-  const left = composite || unsupported
+  const historical = isHistorical(a);
+  const left = composite || unsupported || historical
     ? await sql.begin(async (tx) => { await lockCurrentRevision(tx, articleId, a.revision); return resetAutomatic(tx, articleId); })
     : [];
 
   // History founds no event and adds no heat (isHistorical); a regroup takes it out of any it joined.
-  if (isHistorical(a)) {
+  if (historical) {
     await markGrouped(articleId, a.revision, { addsValue: true, reason: "历史资料按原文时间归档" });
     return { verdict: "historical" };
   }

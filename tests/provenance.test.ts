@@ -47,7 +47,7 @@ test("a repeated signal discovery adopts a newly registered publisher and resume
   const scope = `https://${tag()}.example/news`;
   const signal = await source("T2", {}, false, { mode: "hot_signal" });
   const url = `${scope}/release`;
-  const first = await upsertMaterial({ sourceId: signal, url, title: "Original", bodyText: "Preserved body", via: "fetch" });
+  const first = await upsertMaterial({ sourceId: signal, url, title: "Original", bodyText: "Preserved body", via: "fetch", publishedAt: new Date() });
   await queueProcessing(first.articleId);
   assert.deepEqual((await jobs(first.articleId)).map((j) => [j.name, j.data.signalOnly]), [[QUEUES.group, true]]);
   assert.equal((await settleNonEditorial(first.articleId)).group, true);

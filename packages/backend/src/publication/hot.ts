@@ -1,7 +1,7 @@
 // The latest hot ranking through the public read layer. A stored entry is shown only while its
 // representative is still listed evidence of the story (regrouping or a withdrawal can undo it before
 // the next ranking); the web shows heat values, machine exits only ranks (stories.ts).
-import type { HotParticipant, HotStripEntry } from "@aihot/contracts/site";
+import { HOT_FACE_LIMIT, type HotParticipant, type HotStripEntry } from "@aihot/contracts/site";
 import { sql } from "../db.ts";
 import { storedHotRanking, tierRank, type HotEntry, type HotRanking } from "../events/hot.ts";
 import { cached, cachedByKey, SHARED_ONLY } from "../lib/cache.ts";
@@ -9,9 +9,6 @@ import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { publicSourceName } from "./rules.ts";
 import { evidenceCondition, listedCondition } from "./scope.ts";
 import { storyTexts } from "./story-text.ts";
-
-/** Faces are the 精选组 sources, T1 before T1.5 before T2; the rest (and 氛围组) count in "+N". */
-const MAX_FACES = 6;
 
 // Concurrent reads are shared, nothing more: public words follow withdrawals and regrouping at once.
 const ranking = cached(queryLatestHotRanking, SHARED_ONLY);
@@ -84,11 +81,14 @@ export async function rankingExtras(ranking: HotRanking) {
         const name = publicSourceName(person.p.name);
         if (!named.has(name)) named.set(name, person);
       }
-      // Every name stays for the tooltip; only visible Faces need srcSet.
+      // Every name stays for the tooltip; only visible faces carry image URLs.
       return [...named].map(([name, { p, icon }], i): HotParticipant => {
-        const person: HotParticipant = { name, kind: p.kind, iconUrl: proxiedImage(icon, "avatar") };
-        const srcSet = p.kind === "editorial" && i < MAX_FACES ? proxiedImageSet(icon, "avatar") : undefined;
-        if (srcSet) person.iconSrcSet = srcSet;
+        const person: HotParticipant = { name, kind: p.kind };
+        if (p.kind === "editorial" && i < HOT_FACE_LIMIT) {
+          person.iconUrl = proxiedImage(icon, "avatar");
+          const srcSet = proxiedImageSet(icon, "avatar");
+          if (srcSet) person.iconSrcSet = srcSet;
+        }
         return person;
       });
     },

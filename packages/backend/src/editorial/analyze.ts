@@ -93,10 +93,10 @@ export function buildScoreInput(a: AnalyzeInputArticle): string {
     body = (a.bodyText ?? a.excerpt ?? "").trim();
   }
   if (!body) body = a.title;
-  const at = a.publishedAt ?? a.discoveredAt ?? null;
+  const at = a.publishedAt;
   return [
     "请按系统规则评估以下单篇材料所代表的事件。只输出 attentionScore。",
-    `【发布时间（北京时间）】\n${at ? scoreInputTime(at) : ""}`,
+    `【发布时间（北京时间）】\n${at ? scoreInputTime(at) : "未知（收录时间不代表发布时间）"}`,
     `【标题】\n${a.title.trim()}`,
     `【完整正文】\n${body.length > MAX_BODY_CHARS ? body.slice(0, MAX_BODY_CHARS) : body}`,
   ].join("\n\n");

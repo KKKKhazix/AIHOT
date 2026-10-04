@@ -30,6 +30,11 @@ const api = createServer((req, res) => {
   }
   if (url.pathname === "/api/site/hot") return res.end(JSON.stringify({ entries: [] }));
   if (url.pathname === "/api/site/echo-client") return res.end(JSON.stringify({ forwarded: req.headers["x-forwarded-for"], real: req.headers["x-real-ip"] }));
+  if (url.pathname === "/api/site/download") {
+    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="article.md"');
+    return res.end("# Article");
+  }
   if (url.pathname === "/api/site/items/long-lived") return res.end(JSON.stringify({ id: "long-lived", title: "t" }));
   if (url.pathname === "/api/site/contact") return res.end(JSON.stringify({ wechatQr: "/qr.png", feishuQr: "/qr.png" }));
   if (url.pathname === "/api/site/stories/merged") {
@@ -90,6 +95,35 @@ test("public route subsets produce the same complete navigation data; filters st
   const body = await filtered.text();
   assert.ok(body.includes(category));
   assert.notEqual(body, answers[0]);
+});
+
+test("navigation streams are plain text for download managers, including errors and actions", async () => {
+  for (const [pathname, method, status] of [
+    ["/_.data?_routes=root", "GET", 200],
+    ["/about.data", "HEAD", 200],
+    ["/items/missing.data", "GET", 404],
+    ["/story/merged.data", "GET", 202],
+    ["/admin/sources.data?_routes=admin-layout", "GET", 202],
+    ["/hot.data", "POST", 405],
+  ] as const) {
+    const res = await fetch(origin + pathname, { method });
+    assert.equal(res.status, status, pathname);
+    assert.equal(res.headers.get("Content-Type"), "text/plain; charset=utf-8", pathname);
+    assert.equal(res.headers.get("Content-Disposition"), null, pathname);
+    const body = await res.text();
+    if (method === "HEAD") assert.equal(body, "");
+    else assert.ok(body.length > 0, pathname);
+  }
+  const html = await fetch(origin + "/about");
+  assert.match(html.headers.get("Content-Type")!, /^text\/html/);
+  await html.text();
+  const json = await fetch(origin + "/api/site/echo-client");
+  assert.match(json.headers.get("Content-Type")!, /^application\/json/);
+  await json.text();
+  const download = await fetch(origin + "/api/site/download");
+  assert.equal(download.headers.get("Content-Type"), "text/markdown; charset=utf-8");
+  assert.equal(download.headers.get("Content-Disposition"), 'attachment; filename="article.md"');
+  assert.equal(await download.text(), "# Article");
 });
 
 test("HTML and navigation share freshness; cookies do not personalize public results", async () => {

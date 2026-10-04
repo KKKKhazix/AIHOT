@@ -48,7 +48,7 @@ for (const unit of ["epoch_s", "epoch_ms"] as const) {
     assert.equal(articles.length, 5);
     for (const article of articles.slice(1, 4)) {
       const middle = await timeline(article.id);
-      assert.deepEqual([middle.published_at, middle.published_at_claim, middle.backfill, middle.backfill_reason], [null, null, false, null]);
+      assert.deepEqual([middle.published_at, middle.published_at_claim, middle.backfill, middle.backfill_reason], [null, null, true, 'unknown-publication-time']);
       assert.equal(middle.timeline_at.getTime(), middle.discovered_at.getTime());
     }
     assert.equal((await timeline(articles[4]!.id)).published_at?.getTime(), now - 1000);
@@ -103,7 +103,7 @@ test("storage preserves finite future claims and existing timeline boundaries", 
   await saveSource(s);
   const discoveredAt = new Date("2026-09-30T12:00:00Z");
   const cases = [
-    { name: "future", claim: new Date(discoveredAt.getTime() + FUTURE_TOLERANCE_MS + 1), trusted: false, backfill: null },
+    { name: "future", claim: new Date(discoveredAt.getTime() + FUTURE_TOLERANCE_MS + 1), trusted: false, backfill: 'unknown-publication-time' },
     { name: "old", claim: new Date(discoveredAt.getTime() - STALE_ON_DISCOVERY_MS - 1), trusted: true, backfill: "stale-on-discovery" },
     { name: "explicit", claim: new Date(NaN), trusted: false, backfill: "manual-backfill" },
   ];

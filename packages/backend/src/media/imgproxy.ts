@@ -5,7 +5,7 @@
 // of a compressed list page. A full-length signature from an older URL is still accepted.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { config, credential } from "../config.ts";
-import { isTrackingImage } from "../lib/image-url.ts";
+import { isNonArticleImage } from "../lib/image-url.ts";
 
 import { IMAGE_WIDTHS, RESPONSIVE_MODES, type ProxyMode, type ResponsiveImageKind } from "./renditions.ts";
 export type { ProxyMode } from "./renditions.ts";
@@ -33,7 +33,7 @@ export function proxyExpiry(nowMs = Date.now(), lifetimeSeconds = LIFETIME_SECON
 
 export function proxiedImage(url: string | null | undefined, mode: ProxyMode, absolute = false, nowMs = Date.now(), lifetimeSeconds = LIFETIME_SECONDS): string | null {
   if (!url) return null;
-  if (isTrackingImage(url)) return null;
+  if (isNonArticleImage(url)) return null;
   if (url.startsWith("data:")) return url;
   if (!/^https?:\/\//i.test(url)) return null;
   const exp = proxyExpiry(nowMs, lifetimeSeconds);
@@ -43,7 +43,7 @@ export function proxiedImage(url: string | null | undefined, mode: ProxyMode, ab
 
 /** Browser source candidates, each independently signed with the same expiry boundary. */
 export function proxiedImageSet(url: string | null | undefined, kind: ResponsiveImageKind, absolute = false, nowMs = Date.now(), lifetimeSeconds = LIFETIME_SECONDS): string | null {
-  if (!url || !/^https?:\/\//i.test(url) || isTrackingImage(url)) return null;
+  if (!url || !/^https?:\/\//i.test(url) || isNonArticleImage(url)) return null;
   return RESPONSIVE_MODES[kind].map((mode) => `${proxiedImage(url, mode, absolute, nowMs, lifetimeSeconds)} ${IMAGE_WIDTHS[mode]}w`).join(", ");
 }
 
@@ -73,7 +73,7 @@ export function proxyBodyImages(html: string, absolute = false, lifetimeSeconds 
     .replace(/<img\b([^>]*)>/gi, (tag: string, attrs: string) => {
       const src = attrs.match(/\ssrc="([^"]+)"/i);
       if (!src) return tag;
-      if (isTrackingImage(src[1]!, attrs.match(/\bwidth="([^"]+)"/i)?.[1], attrs.match(/\bheight="([^"]+)"/i)?.[1])) return "";
+      if (isNonArticleImage(src[1]!, attrs.match(/\bwidth="([^"]+)"/i)?.[1], attrs.match(/\bheight="([^"]+)"/i)?.[1])) return "";
       const decoded = src[1]!.replace(/&amp;/g, "&");
       const proxied = proxiedImage(decoded, "full", absolute, now, lifetimeSeconds);
       // Width descriptors change an image's natural CSS size. Only use them for a body image with

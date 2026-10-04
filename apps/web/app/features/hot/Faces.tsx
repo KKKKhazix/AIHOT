@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { HotParticipant } from "@aihot/contracts/site";
+import { HOT_FACE_LIMIT, type HotParticipant } from "@aihot/contracts/site";
 import { SourceAvatar } from "../../components/ui/SourceAvatar";
 
 /**
@@ -9,8 +9,8 @@ import { SourceAvatar } from "../../components/ui/SourceAvatar";
  * the faces are their own control (not inside a link), a tap or Enter opens the list, so phones and
  * keyboards reach it too.
  */
-export function Faces({ participants, total, size = 24, max = 6, interactive = true }: { participants: HotParticipant[]; total: number; size?: number; max?: number; interactive?: boolean }) {
-  const shown = participants.filter((p) => p.kind === "editorial").slice(0, max);
+export function Faces({ participants, total, size = 24, interactive = true }: { participants: HotParticipant[]; total: number; size?: number; interactive?: boolean }) {
+  const shown = participants.filter((p) => p.kind === "editorial").slice(0, HOT_FACE_LIMIT);
   const rest = total - shown.length;
   const names = participants.map((p) => p.name).join("、");
   const faces = (

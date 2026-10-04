@@ -81,10 +81,29 @@ export function decideTimeline(claimed: Date | null | undefined, discoveredAt: D
   if (publishedAt && publishedAt.getTime() > discoveredAt.getTime() + FUTURE_TOLERANCE_MS) publishedAt = null;
   let backfillReason: string | null = null;
   if (explicitBackfill) backfillReason = explicitBackfill;
+  else if (!publishedAt) backfillReason = "unknown-publication-time";
   else if (publishedAt && discoveredAt.getTime() - publishedAt.getTime() > STALE_ON_DISCOVERY_MS) backfillReason = "stale-on-discovery";
   const backfill = backfillReason !== null;
   const timelineAt = backfill && publishedAt ? publishedAt : discoveredAt;
   return { publishedAt, timelineAt, backfill, backfillReason };
+}
+
+/**
+ * Fill a missing publication date from the original listing or page, against the first discovery
+ * time. Explicit imports stay backfills. The caller holds the article lock and revises the material
+ * with this change, so analysis and grouping cannot retain a decision made on an undated input.
+ */
+export async function fillPublicationTime(db: Db, articleId: string, claimed: Date | null | undefined): Promise<TimelineDecision | null> {
+  if (!claimed || !Number.isFinite(claimed.getTime())) return null;
+  const [a] = await db<{ published_at: Date | null; discovered_at: Date; backfill_reason: string | null }[]>`
+    SELECT published_at, discovered_at, backfill_reason FROM articles WHERE id = ${articleId}`;
+  if (!a || a.published_at) return null;
+  const explicit = a.backfill_reason === "unknown-publication-time" ? null : a.backfill_reason;
+  const next = decideTimeline(claimed, a.discovered_at, explicit);
+  if (!next.publishedAt) return null;
+  await db`UPDATE articles SET published_at = ${next.publishedAt}, published_at_claim = ${claimed},
+    timeline_at = ${next.timelineAt}, backfill = ${next.backfill}, backfill_reason = ${next.backfillReason} WHERE id = ${articleId}`;
+  return next;
 }
 
 /**
@@ -165,8 +184,8 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
     return { articleId: newId, created: true, revised: false, backfill: t.backfill };
   }
 
-  const [existing] = await db<{ id: string; source_id: string; revision: number; content_hash: string | null; backfill: boolean; title: string; body_text: string | null; excerpt: string | null; participation_mode: string }[]>`
-    SELECT a.id, a.source_id, a.revision, a.content_hash, a.backfill, a.title, a.body_text, a.excerpt, s.participation_mode
+  const [existing] = await db<{ id: string; source_id: string; revision: number; content_hash: string | null; backfill: boolean; published_at: Date | null; title: string; body_text: string | null; excerpt: string | null; participation_mode: string }[]>`
+    SELECT a.id, a.source_id, a.revision, a.content_hash, a.backfill, a.published_at, a.title, a.body_text, a.excerpt, s.participation_mode
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.identity_key = ${identityKey} FOR UPDATE OF a`;
   await db`INSERT INTO article_discoveries (article_id, source_id, via, discovered_at)
            VALUES (${existing!.id}, ${m.sourceId}, ${m.via}, ${discoveredAt}) ON CONFLICT DO NOTHING`;
@@ -188,12 +207,13 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   if (existing!.source_id !== m.sourceId) {
     return unchanged;
   }
+  const time = existing!.published_at ? null : await fillPublicationTime(db, existing!.id, m.publishedAt);
   // What the row will hold after this report: a listing without body keeps the stored (extracted) body.
   const bodyText = m.bodyText ?? existing!.body_text;
   const excerpt = m.excerpt ?? existing!.excerpt;
   const next = contentHash({ title, bodyText, excerpt });
-  if (existing!.content_hash === next) return unchanged;
-  if (existing!.content_hash === null) {
+  if (!time && existing!.content_hash === next) return unchanged;
+  if (!time && existing!.content_hash === null) {
     // Imported history carries no hash of this form (its collectors normalised differently): the
     // first report here records the baseline instead of a revision, so an import does not send
     // every article a source still lists back to paid analysis. The baseline joins the history, so
@@ -208,9 +228,9 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   // already. Any earlier version counts, however long ago: a rotation with many variants would
   // otherwise start over, and a real edit reverted later is rare and loses nothing.
   const [seen] = await db`SELECT 1 FROM article_revisions WHERE article_id = ${existing!.id} AND content_hash = ${next} LIMIT 1`;
-  if (seen) return unchanged;
+  if (!time && seen) return unchanged;
   // Nor is the stored version with other characters lost in transit, or with them restored.
-  if (sameBarringLoss(existing!.title, title) && sameBarringLoss(existing!.body_text, bodyText) && sameBarringLoss(existing!.excerpt, excerpt)) return unchanged;
+  if (!time && sameBarringLoss(existing!.title, title) && sameBarringLoss(existing!.body_text, bodyText) && sameBarringLoss(existing!.excerpt, excerpt)) return unchanged;
 
   const media = m.media ? sql.json(m.media as never) : null;
   await reviseMaterial(db, existing!.id, {
@@ -222,7 +242,7 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
       x_post = coalesce(${m.xPost ? sql.json(m.xPost as never) : null}, x_post)`,
     hash: next, title, bodyText,
   });
-  return { articleId: existing!.id, created: false, revised: true, backfill: existing!.backfill };
+  return { articleId: existing!.id, created: false, revised: true, backfill: time?.backfill ?? existing!.backfill };
 }
 
 /**

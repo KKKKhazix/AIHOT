@@ -164,11 +164,14 @@ export interface GroupReportsResponse {
 
 // Hot ranking and stories
 
+/** Home and hot-ranking faces show the same maximum number of editorial participants. */
+export const HOT_FACE_LIMIT = 6;
+
 export interface HotParticipant {
   name: string;
   kind: "editorial" | "signal";
-  /** The source's icon, or for an X account its latest collected avatar (proxied). */
-  iconUrl: string | null;
+  /** Only visible faces carry images: the source's icon or its latest collected X avatar (proxied). */
+  iconUrl?: string | null;
   iconSrcSet?: string;
 }
 

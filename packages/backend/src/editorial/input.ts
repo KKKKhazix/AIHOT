@@ -13,7 +13,7 @@ export interface AnalyzeInputArticle {
   url: string;
   author: string | null;
   publishedAt: Date | null;
-  /** When the site first saw it (the score input's time when the source gives none). */
+  /** When the site first saw it; never evidence of when the source published it. */
   discoveredAt?: Date | null;
   bodyText: string | null;
   excerpt: string | null;

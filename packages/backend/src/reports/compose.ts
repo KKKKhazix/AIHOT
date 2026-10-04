@@ -11,6 +11,7 @@ import { modelFor } from "../editorial/models.ts";
 import { ENTITIES, isRelease } from "../editorial/vocabulary.ts";
 import { addDays, beijingDate, beijingMidnight, isoWeekLabel, isoWeekRange, monthRange } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
+import { logError } from "../lib/log-error.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt } from "../providers/receipts.ts";
 import { shutdownSignal } from "../jobs/queue.ts";
@@ -205,7 +206,7 @@ async function composePeriod(kind: "weekly" | "monthly", key: string, startDate:
     receiptId = res.receiptId;
   } catch (error) {
     if (shutdownSignal.signal.aborted) throw error;
-    console.error(JSON.stringify({ level: "warn", msg: "period writer failed; the issue goes out with its plain overview", report: `${kind}:${key}`, error: String(error).slice(0, 300) }));
+    console.error(JSON.stringify({ level: "warn", msg: "period writer failed; the issue goes out with its plain overview", report: `${kind}:${key}`, error: logError(error) }));
   }
   const usable = (text: string | undefined, max: number) => {
     const fit = fitted(text ?? "", max);
@@ -306,7 +307,7 @@ export async function composeDueReports(now = new Date(), limit = 8): Promise<{ 
         generated.push(`${k.kind}:${key}`);
       } catch (error) {
         failed.push(`${k.kind}:${key}`);
-        console.error(JSON.stringify({ level: "error", msg: "report failed", report: `${k.kind}:${key}`, error: String(error).slice(0, 300) }));
+        console.error(JSON.stringify({ level: "error", msg: "report failed", report: `${k.kind}:${key}`, error: logError(error) }));
       }
     }
   }

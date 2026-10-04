@@ -1,8 +1,9 @@
-// Published dates on list pages: a date without a zone is read in the source's offset, whatever zone
-// the server runs in (Docker runs in UTC; run this file with TZ=UTC and TZ=Asia/Shanghai to see both).
+// Published dates as list pages and JSON lists print them: a date without a zone is read in the source's
+// offset, whatever zone the server runs in (Docker runs in UTC; run this file with TZ=UTC and
+// TZ=Asia/Shanghai to see both).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseLooseDate } from "@aihot/backend/sources/web-list";
+import { parseLooseDate } from "@aihot/backend/sources/dates";
 
 const iso = (v: string, offset?: string) => parseLooseDate(v, offset)?.toISOString() ?? null;
 

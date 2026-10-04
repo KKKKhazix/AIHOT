@@ -16,7 +16,8 @@ export interface SourceRow {
 
 /**
  * What a fetcher found on a listing, before identity and timeline rules are applied. Whether the
- * article page is then fetched for a body is decided per source (jobs/content.ts route).
+ * article page is then fetched for a body is decided per source (jobs/content.ts route); an entry
+ * that has no page says so with bodyStatus "none".
  */
 export type Candidate = Omit<MaterialInput, "sourceId" | "via"> & {
   categories?: string[];

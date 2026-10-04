@@ -229,8 +229,8 @@ export const DEPLOYMENT = {
    * null 就不设上限。环境变量 IMGPROXY_UPSTREAM_MB_PER_MINUTE、IMGPROXY_UPSTREAM_GB_PER_DAY 优先。
    */
   imageUpstreamBudget: null as null | { mbPerMinute: number; gbPerDay: number },
-  /** 图片代理不走出网代理（EGRESS_PROXY_URL）、直接连的图片域名（选填）。 */
-  directImageHosts: [] as string[],
+  /** 抓取时不走出网代理（EGRESS_PROXY_URL）、直接连接的域名，采集和图片共用；仍检查目标地址（选填）。 */
+  directFetchHosts: [] as string[],
   /**
    * 精选评测（scripts/eval-selection.ts）不带参数时用的金标集：文件（相对仓库根目录）、抽样条数、只抽哪一份、门槛扫描范围。
    * null 就用 .data/gold.jsonl 的全部样本（最多 200 条），在 40–90 之间扫描。

@@ -4,7 +4,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { DEPLOYMENT } from "@aihot/site";
 import { config } from "../config.ts";
 import { guardedFetch, type GuardedResponse } from "../lib/http-fetch.ts";
 import { IMAGE_WIDTHS } from "./renditions.ts";
@@ -81,9 +80,7 @@ function original(url: string): Promise<GuardedResponse> {
 async function fetchOriginal(url: string): Promise<GuardedResponse> {
   const allowed = upstreamAllowed();
   if (!allowed.ok) throw new ImageBudgetExceeded(allowed.reason);
-  const route = DEPLOYMENT.directImageHosts.includes(new URL(url).hostname) ? "direct" : "egress";
   const res = await guardedFetch(url, {
-    route,
     timeoutMs: 20_000, maxBytes: 15 * 1024 * 1024, headers: { accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
   });
   recordUpstream(res.body.length);

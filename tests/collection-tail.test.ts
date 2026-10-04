@@ -1,5 +1,6 @@
-// A regular run keeps the whole listing it was given, past the first 60 entries: the cursor (an RSS
-// validator) moves past all of it. The first import, the detail budget and the success cursor keep their bounds.
+// A regular run keeps every entry published since its source was added, past the first 60: the cursor (an
+// RSS validator) moves past the whole listing. The dated archive from before comes in only through the
+// bounded first import; the detail budget and the success cursor keep their bounds.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -155,9 +156,13 @@ for (const reverse of [false, true]) {
   });
 }
 
-test("the first import keeps its count and age limits; the next regular run fills in the rest before accepting 304", async () => {
+test("the first import keeps its count and age limits; later runs take what was published since, and undated entries, before accepting 304", async () => {
   const rows = items("initial", 100);
   rows[0]!.date = new Date(Date.now() - 400 * 86400000).toISOString();
+  // Past the import's count: published days before the source is added, just within the stale window, undated.
+  for (const row of rows.slice(90, 95)) row.date = new Date(Date.now() - 3 * 86400000).toISOString();
+  rows[95]!.date = new Date(Date.now() - 47 * 3600000).toISOString();
+  for (const row of rows.slice(96)) row.date = null;
   const { id, listing } = await source("initial", "rss", rows, { _aihot: { initialBackfillLimit: 7, initialBackfillMonths: 12 } }, false);
   assert.equal((await collectSource(id)).created, 7);
   assert.equal((await cursor(id)).rss, undefined);
@@ -165,8 +170,14 @@ test("the first import keeps its count and age limits; the next regular run fill
   assert.ok(imported.every(a => a.backfill && a.backfill_reason === "first-import"));
   assert.ok(!imported.some(a => a.url === rows[0]!.url), "an entry past the age limit takes no place in the first import");
   const second = await collectSource(id);
-  assert.deepEqual([second.status, second.found, second.created, second.revised], ["ok", 100, 93, 0]);
-  assert.equal(await count(id), 100);
+  assert.deepEqual([second.status, second.found, second.created, second.revised], ["ok", 100, 87, 0]);
+  const stored = await sql`SELECT url,backfill_reason FROM articles WHERE source_id=${id}`;
+  const urls = new Set(stored.map(a => a.url));
+  assert.deepEqual([0, 90, 91, 92, 93, 94].filter(i => urls.has(rows[i]!.url)), [], "what was published before the source was added stays out");
+  assert.ok(urls.has(rows[95]!.url) && urls.has(rows[89]!.url), "what was published since is kept, however far down the listing");
+  assert.deepEqual(stored.filter(a => rows.slice(96).some(r => r.url === a.url)).map(a => a.backfill_reason), Array(4).fill("unknown-publication-time"),
+    "undated entries are kept and wait for a date");
+  assert.equal(await count(id), 94);
   assert.equal((await collectSource(id)).found, 0);
   assert.deepEqual(listing.requests.map(r => r.status), [200, 200, 304]);
   assert.equal(listing.requests[1]!.etag, undefined);

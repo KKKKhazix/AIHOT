@@ -1,7 +1,7 @@
 // Collection run for one source: fetch listing → filter → store material → enqueue processing.
 // A failed fetch never advances the success cursor; the source's health reflects consecutive failures.
 import { sql, type Db } from "../db.ts";
-import { identityKeyFor, upsertMaterial } from "../content/materials.ts";
+import { identityKeyFor, STALE_ON_DISCOVERY_MS, upsertMaterial } from "../content/materials.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
 import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
 import { queueProcessing } from "../jobs/content.ts";
@@ -127,8 +127,8 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     if (source.kind === "rss") {
       const rss = await fetchRss(source, opts);
       candidates = rss.candidates;
-      // The first import has a smaller backfill cap than later runs: allow the next run to read
-      // the ordinary window before accepting 304s. Persist validators only after store succeeds.
+      // The first import keeps only part of the listing: the next run reads all of it once before
+      // accepting 304s, for the recent entries the import left out. Persist validators only after store succeeds.
       if (!firstImport) nextCursor.rss = rss.validator;
       else delete nextCursor.rss;
       if (rss.notModified) detail = { notModified: true, httpStatus: 304 };
@@ -159,24 +159,31 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
       if (!unique.has(identityKey)) unique.set(identityKey, { ...c, identityKey });
     }
     candidates = [...unique.values()];
+    // Listing dates the source marks unreliable are dropped before any rule reads them; the detail page's rule decides.
+    const d = source.config.detail;
+    if (d?.publishedAtAuthoritative === true) for (const c of candidates) c.publishedAt = null;
     // First import of a new source: bounded, and archived by source time (never "today", never pushed).
     const backfillLimit = Number(source.config._aihot?.initialBackfillLimit ?? 30);
     const backfillMonths = Number(source.config._aihot?.initialBackfillMonths ?? 12);
     if (firstImport) {
       const cutoff = Date.now() - backfillMonths * 30 * 86400000;
       candidates = candidates.filter((c) => !c.publishedAt || !Number.isFinite(c.publishedAt.getTime()) || c.publishedAt.getTime() >= cutoff).slice(0, backfillLimit);
+    } else if (source.kind !== "x_search") {
+      // Later runs take only what was published since the source was added, less the stale-on-discovery
+      // window: a long listing's archive comes in through the bounded first import alone. The listing's
+      // date decides; an undated entry passes and waits for a date as material (dropping one a detail page
+      // dates would buy the same read again on every run). An X search is bounded by its watermark. Nothing
+      // is cut by count: the cursor (an RSS validator) moves past the whole listing, so a recent entry cut
+      // here would never be offered again.
+      const floor = Date.parse(String(source.cursor!.initializedAt)) - STALE_ON_DISCOVERY_MS;
+      candidates = candidates.filter((c) => !(c.publishedAt && c.publishedAt.getTime() < floor));
     }
-    // Every other run keeps all it was given: the cursor (an RSS validator) moves past the whole listing,
-    // so an entry cut here would never be offered again.
 
     // Detail pages only for material we have not seen (bounded per run), and only for what the listing lacks.
-    const d = source.config.detail;
     const known = d ? await storedTitles(candidates.map((c) => c.identityKey!)) : new Map<string, string>();
     const detailBudget = Number(d?.maxFetches ?? 0);
     let detailUsed = 0;
     for (const c of candidates) {
-      // Listing dates the source marks unreliable are dropped; the detail page's rule decides.
-      if (d?.publishedAtAuthoritative === true) c.publishedAt = null;
       const stored = known.get(c.identityKey!);
       if (stored !== undefined) {
         // The title came from the detail page: the listing's own rendering must not revise it back.

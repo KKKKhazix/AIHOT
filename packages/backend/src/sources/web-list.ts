@@ -6,44 +6,10 @@ import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { readable, type ExtractedBody } from "../content/extract.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
 import { jinaRead } from "../providers/jina.ts";
+import { parseLooseDate } from "./dates.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
 
 const JINA_PREFIX = "https://r.jina.ai/";
-
-/** A time followed by its zone: "10:00Z", "10:00:00+08:00", "10:00:00 +0000", "10:00:00 GMT". */
-const EXPLICIT_ZONE = /\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(?:Z|[+-]\d{2}:?\d{2}|GMT|UTC)\b/i;
-
-function atOffset(y: string | number, mo: string | number, d: string | number, h: string | number, mi: string | number, s: string | number, utcOffset: string): Date | null {
-  const p = (n: string | number) => String(n).padStart(2, "0");
-  const t = Date.parse(`${y}-${p(mo)}-${p(d)}T${p(h)}:${p(mi)}:${p(s)}${utcOffset}`);
-  return Number.isFinite(t) ? new Date(t) : null;
-}
-
-/**
- * A published date as a list page or article prints it. Date.parse is kept only where it reads the same
- * on every host: a time with its zone, and an ISO date alone (UTC midnight). Anything else it would read
- * in the server's local zone (UTC in Docker), so "2026-09-26 10:00" is read in the source's offset instead.
- */
-export function parseLooseDate(value: string | null | undefined, utcOffset = "+08:00"): Date | null {
-  if (!value) return null;
-  const v = value.trim();
-  if (!v) return null;
-  if (EXPLICIT_ZONE.test(v) || /^\d{4}-\d{2}-\d{2}$/.test(v)) {
-    const direct = Date.parse(v);
-    if (Number.isFinite(direct) && /\d{4}/.test(v)) return new Date(direct);
-  }
-  // 2026-09-26 / 2026/09/26 / 2026-09-26T10:00 / 2026年9月26日 (+ optional time), interpreted in the given offset.
-  const m = /(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?(?:(?:T|\s*)(\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(v);
-  if (m) {
-    const [, y, mo, d, h = "00", mi = "00", s = "00"] = m;
-    return atOffset(y!, mo!, d!, h, mi, s, utcOffset);
-  }
-  // "Sep 26, 2026": Date.parse reads it in the host's zone, so take its fields and place them in the offset.
-  const en = Date.parse(v.replace(/(\d)(st|nd|rd|th)/, "$1"));
-  if (!Number.isFinite(en)) return null;
-  const local = new Date(en);
-  return atOffset(local.getFullYear(), local.getMonth() + 1, local.getDate(), local.getHours(), local.getMinutes(), local.getSeconds(), utcOffset);
-}
 
 /** The datePublished of the page's structured data (JSON-LD, also inside @graph or embedded app state). */
 export function jsonLdPublished($: cheerio.CheerioAPI, html: string): string | null {
@@ -212,13 +178,14 @@ function headingDate(title: string, utcOffset = "+08:00"): Date | null | undefin
 function fromDocusaurusChangelog(html: string, base: string, source: SourceRow): Candidate[] {
   const $ = cheerio.load(html);
   const out: Candidate[] = [];
+  const offset = source.config.publishedAtUtcOffset;
   // A date heading is no update itself: it dates the updates under it, up to the next h2.
   let sectionDate: Date | null = null;
   $("article h2[id], article h3[id], .markdown h2[id], .markdown h3[id]").each((_i, h) => {
     const head = $(h);
     const id = head.attr("id")!;
     const title = collapseWhitespace(head.text().replace(/​/g, "").replace(/#$/, ""));
-    const date = headingDate(title, source.config.publishedAtUtcOffset);
+    const date = headingDate(title, offset);
     if (date !== undefined) {
       sectionDate = date;
       return;
@@ -237,7 +204,7 @@ function fromDocusaurusChangelog(html: string, base: string, source: SourceRow):
       url,
       identityKey: `url:${url}`,
       title,
-      publishedAt: parseLooseDate(title) ?? sectionDate ?? parseLooseDate(stripTags(bodyHtml).slice(0, 80)),
+      publishedAt: parseLooseDate(title, offset) ?? sectionDate ?? parseLooseDate(stripTags(bodyHtml).slice(0, 80), offset),
       bodyHtml,
       bodyText: stripTags(bodyHtml),
       bodyStatus: "ok",
@@ -375,7 +342,8 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
     const authoritative = d.publishedAtAuthoritative === true && !!(d.publishedAtSelector || d.publishedAtRegex);
     if (!publishedAt && $ && !dateInJina && !authoritative) {
       const meta = $('meta[property="article:published_time"], meta[name="pubdate"], meta[itemprop="datePublished"]').attr("content");
-      publishedAt = parseLooseDate(meta) ?? parseLooseDate(jsonLdPublished($, html!)) ?? parseLooseDate($("time[datetime]").first().attr("datetime"));
+      publishedAt = parseLooseDate(meta, d.publishedAtUtcOffset) ?? parseLooseDate(jsonLdPublished($, html!), d.publishedAtUtcOffset)
+        ?? parseLooseDate($("time[datetime]").first().attr("datetime"), d.publishedAtUtcOffset);
     }
   }
 

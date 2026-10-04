@@ -41,7 +41,7 @@ test("egress resolves independently of local DNS and pins CONNECT while preservi
 });
 
 test("internal, mixed, reserved, empty and malformed DNS answers never reach the proxy", async () => {
-  for (const addresses of [["127.0.0.1"], ["93.184.216.34", "10.0.0.1"], ["::ffff:169.254.169.254"], ["2001:db8::1"], [], ["not-an-ip"]]) {
+  for (const addresses of [["127.0.0.1"], ["93.184.216.34", "10.0.0.1"], ["::ffff:169.254.169.254"], ["2001:db8::1"], ["198.18.0.1"], ["198.19.255.255"], [], ["not-an-ip"]]) {
     const before = tunnels.length;
     const agent = createEgressProxy(proxyUrl, async () => addresses);
     try {

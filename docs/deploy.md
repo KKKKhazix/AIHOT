@@ -81,6 +81,7 @@ docker compose run --rm setup && docker compose up -d
 - **只属于你这个站的功能可以做成模块**：放进 `modules/<名字>/`，在 `site/modules/` 的清单里启用，见 [架构](architecture.md) 的“模块”。框架本身不带模块。
 - **Agent 接入页默认打开 MCP**，页面列出 MCP、RSS 和 API 三种接入方式。Agent Markdown 接口仍在 `/api/v1/agent`，可从页面下方“Agent 使用说明”进入。
 - **图片代理可以设流量上限**：`IMGPROXY_UPSTREAM_MB_PER_MINUTE`、`IMGPROXY_UPSTREAM_GB_PER_DAY`（或 `site.ts` 的 `DEPLOYMENT.imageUpstreamBudget`），默认不设。
+- **直连域名设置**从 `DEPLOYMENT.directImageHosts` 改为 `DEPLOYMENT.directFetchHosts`，采集和图片共用，默认空数组。自己配置过直连域名的，把名单移到新字段；这些域名及跳转后的目标仍要经过地址检查。
 - **修复**：同样的数据每次给出同样的字节（排序遇到并列时补上唯一的次序，API 和 RSS 的 ETag 不再无故变化）；网页转给 api 的请求不再带上逐跳头，`Connection: close` 不再让下一个 POST 失败；`llms.txt` 的接入方式按实际数，不再写成四种。
 
 #### 升级到公开接口 4.0.0

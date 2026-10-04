@@ -35,6 +35,8 @@
 
 可选：`summaryIsBody`（订阅里的摘要就是全文）、`allowCategories` / `denyCategories`（按订阅里的分类过滤）。
 
+播客条目没有网页链接、但有音视频附件时，原文链接指向附件，条目身份仍沿用订阅提供的标识；不会把音视频文件当文章正文抓取。
+
 ### web_list
 
 支持普通 CSS 选择器，`div` 列表也能采集。关键是 `itemSelector` 要选中**每条新闻**，而不是包住所有新闻的容器。例如：
@@ -110,7 +112,7 @@
 
 - 接口本身返回数组时，省略 `itemsPath`。`titlePaths`、`summaryPaths`、`authorPaths` 是候选路径数组，按顺序取第一个非空值，例如 `["title", "name"]`。
 - 已有完整网址时用 `{raw:url}`；只有 slug 时可用 `https://example.com/posts/{slug}`。`{字段路径}` 会编码字段值，`{raw:字段路径}` 原样插入。JSON 列表不会自动把相对网址补成绝对网址，模板应产出完整的 HTTP(S) 地址。
-- 日期建议返回带时区的 ISO 字符串；数字时间戳分别设 `publishedAtUnit: "epoch_s"`（秒）或 `"epoch_ms"`（毫秒），`20261001` 这类日期设 `"yyyymmdd"`。
+- 日期建议返回带时区的 ISO 字符串；没有时区的 `2026-10-01 09:00:00` 这类日期时间用 `publishedAtUtcOffset` 指定来源时区（默认 `+08:00`），不随服务器时区变化。数字时间戳分别设 `publishedAtUnit: "epoch_s"`（秒）或 `"epoch_ms"`（毫秒），`20261001` 这类日期设 `"yyyymmdd"`。
 - 缺少标题或无法生成链接的条目会跳过。非空数组全部映射失败时，会报 `no items mapped (check title/url paths)`；路径不是数组时，会报 `items path did not resolve to an array`。
 
 ### 本地跑通 HTML/JSON 示例
@@ -217,6 +219,8 @@ http.createServer((req, res) => {
 ## 规则：旧文不刷屏
 
 首次发现时原文已经发布超过 48 小时的资料、新信源第一次导入的存量条目、标记为回灌的推送，都按原文时间归档：不进入“今天”，也不推送。这条规则所有入口共用，防止一次性导入历史内容刷屏。
+
+首次导入只取配置范围内的一批历史条目；之后的列表抓取跳过早于该信源初始化前 48 小时的旧条目，近期条目不按数量截断。没有日期的条目会先保留，等正文补齐日期后再判断；明确指定详情页日期为准时，列表里的日期不参与筛选。
 
 ## 外部推送接口
 

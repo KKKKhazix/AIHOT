@@ -77,11 +77,12 @@ test("a listing read whose outcome is unknown is not sent again; each later fetc
 
 test("a listing parsed with selectors is read from Jina as rendered HTML, dates included", async () => {
   const id = `${SOURCE}-html`;
+  // Added before the post's date, so a regular run keeps it.
   await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at, config, cursor)
     VALUES (${id}, 'Jina HTML listing', 'web_list', 'T1', 'editorial', '2100-01-01',
             ${sql.json({ url: "https://r.jina.ai/https://example.org/", baseUrl: "https://example.org", parseMode: "html", itemSelector: "article",
               titleSelector: "h2", publishedAtSelector: "time", allowUrlPrefixes: ["https://example.org/blog/"] })},
-            ${sql.json({ initializedAt: new Date().toISOString() })})`;
+            ${sql.json({ initializedAt: "2026-09-01T00:00:00.000Z" })})`;
   const run = await collectSource(id, { force: true });
   assert.equal(run.status, "ok", run.error ?? "");
   const [post] = await sql<{ title: string; published_at: Date }[]>`SELECT title, published_at FROM articles WHERE source_id = ${id}`;

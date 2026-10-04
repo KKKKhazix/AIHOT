@@ -6,6 +6,7 @@ import { PgBoss, type SendOptions, type WorkOptions } from "pg-boss";
 import { config } from "../config.ts";
 import { sql, type Db } from "../db.ts";
 import { shutdownSignal } from "../lib/shutdown.ts";
+import { logError } from "../lib/log-error.ts";
 import { serverModules, type ModuleQueue } from "../modules.ts";
 export { shutdownSignal } from "../lib/shutdown.ts";
 
@@ -61,13 +62,13 @@ export async function getBoss(): Promise<PgBoss> {
   if (boss) return boss;
   starting ??= (async () => {
     const b = new PgBoss({ connectionString: config.databaseUrl, max: 4, schema: "pgboss", application_name: "aihot-jobs" });
-    b.on("error", (err) => console.error("[pg-boss]", err));
+    b.on("error", (err) => console.error("[pg-boss]", logError(err)));
     try {
       await b.start();
       boss = b;
       return b;
     } catch (error) {
-      await b.stop({ graceful: false }).catch((cleanup) => console.error("[pg-boss] startup cleanup", cleanup));
+      await b.stop({ graceful: false }).catch((cleanup) => console.error("[pg-boss] startup cleanup", logError(cleanup)));
       throw error;
     } finally {
       // A temporary connection error must not leave every caller sharing a rejected promise.

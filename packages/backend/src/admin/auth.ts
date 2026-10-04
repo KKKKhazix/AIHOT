@@ -135,6 +135,15 @@ interface FeishuUser {
   name?: string;
 }
 
+/** JSON decoding errors may quote response bytes, which are private authentication data. */
+async function feishuJson<T>(response: Response, step: "token" | "profile"): Promise<T> {
+  try {
+    return await response.json() as T;
+  } catch {
+    throw new Error(`Feishu ${step} response is not valid JSON (HTTP ${response.status})`);
+  }
+}
+
 async function feishuUser(code: string): Promise<{ user: FeishuUser; appId: string }> {
   const appId = credential("integrations", "FEISHU_LOGIN_APP_ID");
   const appSecret = credential("integrations", "FEISHU_LOGIN_APP_SECRET");
@@ -145,13 +154,13 @@ async function feishuUser(code: string): Promise<{ user: FeishuUser; appId: stri
     body: new URLSearchParams({ grant_type: "authorization_code", client_id: appId, client_secret: appSecret, code, redirect_uri: CALLBACK_URL }),
     signal: AbortSignal.timeout(15_000),
   });
-  const token = (await tokenRes.json()) as { access_token?: string; error?: string };
-  if (!token.access_token) throw new Error(`Feishu token exchange failed: ${token.error ?? tokenRes.status}`);
+  const token = await feishuJson<{ access_token?: string }>(tokenRes, "token");
+  if (!token.access_token) throw new Error(`Feishu token exchange failed (HTTP ${tokenRes.status})`);
   const userRes = await fetch("https://passport.feishu.cn/suite/passport/oauth/userinfo", {
     headers: { authorization: `Bearer ${token.access_token}` },
     signal: AbortSignal.timeout(15_000),
   });
-  return { user: (await userRes.json()) as FeishuUser, appId };
+  return { user: await feishuJson<FeishuUser>(userRes, "profile"), appId };
 }
 
 export class LoginRejected extends Error {}

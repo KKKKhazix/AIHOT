@@ -1,5 +1,6 @@
 // Collection picks up where it stopped: an X search longer than one run continues in later runs until
-// it meets the old watermark (no post in between is skipped, no page is bought twice).
+// it meets the old watermark (no post in between is skipped, no page is bought twice). The watermark
+// alone bounds it: posts made weeks before the account was added are kept too.
 import { stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -11,12 +12,12 @@ import { collectSource } from "@aihot/backend/sources/collect";
 const T = tag();
 const X_SOURCE = `test-x-${T}`;
 
-// SocialData: 450 posts newer than the watermark, newest first, 20 a page; `cursor` is the page number.
+// SocialData: 450 posts newer than the watermark, newest first an hour apart, 20 a page; `cursor` is the page number.
 const BASE = BigInt(Date.now()) * 1000n;
 const WATERMARK = BASE + 100n;
 const POSTS = Array.from({ length: 450 }, (_, i) => BASE + 550n - BigInt(i));
 const tweet = (id: bigint) => ({
-  id_str: String(id), tweet_created_at: new Date(Date.now() - Number(BASE + 550n - id) * 60_000).toISOString(),
+  id_str: String(id), tweet_created_at: new Date(Date.now() - Number(BASE + 550n - id) * 3_600_000).toISOString(),
   full_text: `Post ${id} ${T}`, lang: "en", user: { name: "Test account", screen_name: `acct${T}` },
 });
 const socialdata = await stub((_hit, req) => {

@@ -5,13 +5,14 @@ import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici
 import { config } from "../config.ts";
 import { assertPublicUrl, guardedLookup } from "./url.ts";
 import { createEgressProxy, createEgressResolver } from "./egress-proxy.ts";
-import { SITE } from "@aihot/site";
+import { DEPLOYMENT, SITE } from "@aihot/site";
 
 /**
  * Where a request leaves the host. "egress" (collection, bodies, images and other public data) goes
  * through the egress proxy when EGRESS_PROXY_URL is set (for example a rule-based proxy that connects
  * .cn and .local names and Chinese or private addresses directly and sends the rest abroad); the names
- * and address literals such a proxy would connect directly are connected here instead, so the
+ * and address literals such a proxy would connect directly, plus the deployment's verified direct
+ * hosts, are connected here instead, so the
  * connect-time address check still applies. A name sent through the proxy is resolved through it too
  * (egress-proxy.ts), and the tunnel goes to the checked address. "direct" is for paid APIs called
  * straight (SocialData, Dajiala) and the site's own addresses.
@@ -29,7 +30,7 @@ function egressResolver() {
 function proxied(url: URL, route: EgressRoute): boolean {
   if (route !== "egress" || !config.egressProxyUrl) return false;
   const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  return net.isIP(host) === 0 && !host.endsWith(".cn") && !host.endsWith(".local");
+  return net.isIP(host) === 0 && !host.endsWith(".cn") && !host.endsWith(".local") && !DEPLOYMENT.directFetchHosts.includes(host);
 }
 
 function dispatcherFor(viaProxy: boolean): Dispatcher | undefined {

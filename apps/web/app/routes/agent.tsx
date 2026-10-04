@@ -120,6 +120,7 @@ export default function AgentPage() {
   }, [target, tab]);
 
   const select = (key: string) => {
+    if (key === tab) return;
     navigate(hrefOf(key), { replace: true, preventScrollReset: true });
   };
   const open = (id: string) => {

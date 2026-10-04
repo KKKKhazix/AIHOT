@@ -314,6 +314,8 @@ export function registerMcp(app: FastifyInstance) {
   const options = { legacy: "stateless", maxRequestBodySize: MAX_REQUEST_BODY_SIZE } as const;
   // One handler per reminder (none, or each distinct one a module gives), made when first needed.
   const handlers = new Map<string, McpHttpHandler>();
+  const subscriptions = new Set<McpHttpHandler>();
+  let retiring = false;
   const handlerFor = (notice: McpNotice | null) => {
     const key = notice ? JSON.stringify(notice) : "";
     let handler = handlers.get(key);
@@ -321,9 +323,19 @@ export function registerMcp(app: FastifyInstance) {
     return handler;
   };
   handlerFor(null);
+  const drainSubscriptions = async () => {
+    retiring = true;
+    await Promise.all([...subscriptions].map(handler => handler.close()));
+  };
+  const retire = () => { drainSubscriptions().catch(err => app.log.error({ err }, "MCP subscription retirement failed")); };
+  // End indefinite streams before the proxy retires, while ordinary requests can still finish
+  // uploading their bodies and reach this process. The signal is local to the deployment host.
+  app.addHook("onListen", async () => { process.on("SIGURG", retire); });
+  app.addHook("onClose", async () => { process.off("SIGURG", retire); });
   // SSE subscriptions otherwise keep Fastify's server.close waiting until the process is killed.
   // preClose runs before HTTP draining; onClose would be too late for a never-ending stream.
   app.addHook("preClose", async () => {
+    await drainSubscriptions();
     for (const handler of handlers.values()) await handler.close();
   });
 
@@ -355,8 +367,26 @@ export function registerMcp(app: FastifyInstance) {
     reply.raw.once("close", () => gone.abort());
     const request = new Request(`${config.siteUrl}${(req.raw.url ?? "/api/mcp")}`, { method: req.method, headers, body, signal: gone.signal });
     const parsed = req.method === "POST" && typeof req.body === "object" ? { parsedBody: req.body } : undefined;
+    const notice = requestNotice("mcp", req);
+    const base = handlerFor(notice);
+    const listening = req.method === "POST" && req.body && typeof req.body === "object" &&
+      (req.body as { method?: unknown }).method === "subscriptions/listen";
+    // A subscription has its own SDK lifetime but shares the same notification bus. Closing it
+    // emits the protocol's complete result without cancelling an ordinary call on that bus.
+    const handler = listening ? createMcpHandler(() => buildMcpServer(notice), { ...options, bus: base.bus }) : base;
+    if (listening) {
+      subscriptions.add(handler);
+      reply.raw.once("close", () => {
+        subscriptions.delete(handler);
+        handler.close().catch(err => req.log.error({ err }, "MCP subscription cleanup failed"));
+      });
+    }
     try {
-      return respond(reply, await requestLog.run(req.log, () => handlerFor(requestNotice("mcp", req)).fetch(request, parsed)));
+      const response = await requestLog.run(req.log, () => handler.fetch(request, parsed));
+      // Covers a listen body accepted by the old proxy but parsed after retirement, or a signal
+      // during the SDK's asynchronous initialization. Neither can start another indefinite stream.
+      if (listening && retiring) await handler.close();
+      return respond(reply, response);
     } catch (error) {
       req.log.error({ err: error }, "mcp error");
       return reply.code(500).type("application/json").send({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null });

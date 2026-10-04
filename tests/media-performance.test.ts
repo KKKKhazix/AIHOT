@@ -2,7 +2,8 @@ import "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { createServer } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
@@ -73,12 +74,51 @@ test("failed originals are not retried for every mode", async () => {
   assert.equal(failureHits, 1);
 });
 
+// A previous encoder's disk entry must not bypass today's rendition rules, refetch the source,
+// rasterize a compact vector, or expose a mismatched MIME while body/type files are replaced.
+test("cached oversized SVGs use current renditions without downloading them again", async () => {
+  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#176b75"/><desc>${"old metadata ".repeat(12000)}</desc></svg>`);
+  const url = `${base}/cached-vector`;
+  const key = createHash("sha256").update(`full|${url}`).digest("hex");
+  const file = path.join(dir, "imgcache", key.slice(0, 2), key);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, svg);
+  await writeFile(`${file}.type`, "image/svg+xml");
+  const before = imageHits;
+  const first = await produceImage(url, "full");
+  assert.equal(first.type, "image/webp");
+  const meta = await sharp(first.body).metadata();
+  assert.deepEqual([meta.width, meta.height], [1600, 900]);
+  assert.ok(first.body.length < svg.length / 10);
+  assert.deepEqual(await produceImage(url, "full"), first);
+  // Another serving process can read the old MIME alongside the new body, or the reverse.
+  await writeFile(`${file}.type`, "image/svg+xml");
+  assert.deepEqual(await produceImage(url, "full"), first);
+  await writeFile(file, svg);
+  await writeFile(`${file}.type`, "image/webp");
+  assert.deepEqual(await produceImage(url, "full"), first);
+  const smallUrl = `${base}/compact-vector`;
+  const smallKey = createHash("sha256").update(`full|${smallUrl}`).digest("hex");
+  const smallFile = path.join(dir, "imgcache", smallKey.slice(0, 2), smallKey);
+  const compact = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8"/></svg>');
+  await mkdir(path.dirname(smallFile), { recursive: true });
+  await writeFile(smallFile, compact);
+  await writeFile(`${smallFile}.type`, "image/svg+xml");
+  assert.deepEqual(await produceImage(smallUrl, "full"), { body: compact, type: "image/svg+xml" });
+  assert.equal(imageHits, before);
+});
+
 test("site media exposes responsive previews and full lightboxes while RSS retains thumb images", () => {
   const row = { zh_text: null, x_post: { media: [{ url: "https://example.org/1.png" }, { url: "https://example.org/2.png", poster: "https://example.org/poster.png" }] } };
   assert.ok(xView(row, true)!.media.every((m) => m.url.includes("mode=card") && m.fullUrl?.includes("mode=full")));
   assert.ok(xView(row, true)!.media[1]!.poster!.includes("mode=card"));
   assert.ok(xView(row)!.media.every((m) => m.url.includes("mode=thumb") && m.fullUrl === undefined));
-  assert.ok(xView(row, false, true)!.media.every((m) => m.url.includes("mode=full") && m.srcSet?.includes("mode=image-720")));
+  const detail = xView(row, false, true)!.media;
+  assert.ok(detail.every((m) => m.url.includes("mode=full") && m.srcSet?.includes("mode=thumb")));
+  for (const media of detail.filter((m) => !m.poster)) {
+    // Opening a picture already displayed at full resolution must reuse its browser cache entry.
+    assert.equal(media.srcSet!.split(", ").at(-1), `${media.poster ?? media.url} 1600w`);
+  }
   row.x_post.media[1]!.url = "javascript:invalid";
   const single = xView(row, true)!.media;
   assert.equal(single.length, 1);
@@ -117,14 +157,17 @@ test("responsive URLs and web body candidates retain exact signatures and stable
     assert.deepEqual([...u.searchParams.keys()].sort(), ["exp", "mode", "sig", "u"]);
     const query = Object.fromEntries(u.searchParams);
     assert.equal(verifyProxyRequest(query, now).ok, true);
-    assert.equal(width, query.mode === "image-336" ? "336w" : "720w");
+    assert.equal(width, query.mode === "card" ? "336w" : "720w");
     assert.equal(verifyProxyRequest({ ...query, mode: "image-1600" }, now).ok, false);
   }
   const html = '<p><img src="https://example.org/image.png?a=1&amp;b=2" width="800" height="400"></p>';
   assert.ok(!proxyBodyImages('<img src="https://example.org/small.png" width="160" height="80">').includes('srcset='));
   assert.ok(!proxyBodyImages('<img src="https://example.org/unknown.png">').includes('srcset='));
   const web = proxyBodyImages(html);
-  assert.match(web, /srcset="[^"]+image-720/);
+  assert.match(web, /srcset="[^"]+mode=thumb/);
+  const tag = web.match(/<img\b[^>]+>/)![0];
+  const bodySource = tag.match(/\bsrc="([^"]+)"/)![1];
+  assert.equal(tag.match(/\bsrcset="([^"]+)"/)![1]!.split(", ").at(-1), `${bodySource} 1600w`);
   assert.match(web, /loading="lazy"/);
   assert.match(web, /width="800" height="400"/);
   assert.doesNotMatch(web, /sizes="auto\b/, "body images must use their loaded ratio even if publisher dimensions are wrong");

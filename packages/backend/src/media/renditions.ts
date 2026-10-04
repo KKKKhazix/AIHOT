@@ -1,5 +1,5 @@
-// Fixed renditions use the existing signed mode parameter. They share a caching proxy's existing
-// URL+mode cache identity; no Accept negotiation or additional cache-key parameters are needed.
+// Fixed renditions use the existing signed mode parameter. Responsive candidates reuse the same
+// mode as previews and full-size viewers, so identical pixels have one browser/CDN address.
 export const IMAGE_WIDTHS = {
   avatar: 96, card: 336, thumb: 720, full: 1600, og: 1200,
   "avatar-48": 48, "avatar-96": 96,
@@ -10,8 +10,8 @@ export type ProxyMode = keyof typeof IMAGE_WIDTHS;
 export type ResponsiveImageKind = "avatar" | "card" | "body" | "hero";
 
 export const RESPONSIVE_MODES = {
-  avatar: ["avatar-48", "avatar-96"],
-  card: ["image-336", "image-720"],
-  body: ["image-720", "image-1200", "image-1600"],
-  hero: ["image-720", "image-1200", "image-1600"],
+  avatar: ["avatar-48", "avatar"],
+  card: ["card", "thumb"],
+  body: ["thumb", "image-1200", "full"],
+  hero: ["thumb", "image-1200", "full"],
 } as const satisfies Record<ResponsiveImageKind, readonly ProxyMode[]>;

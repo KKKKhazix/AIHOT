@@ -13,6 +13,7 @@ const CACHE_DIR = path.join(config.dataDir, "imgcache");
 const ORIGINAL_TTL_MS = 60_000;
 const ORIGINAL_MAX_BYTES = 32 * 1024 * 1024;
 const ORIGINAL_MAX_ENTRIES = 32;
+const SVG_PASSTHROUGH_MAX_BYTES = 128 * 1024;
 const recentOriginals = new Map<string, { value: GuardedResponse; until: number }>();
 let originalBytes = 0;
 export interface PreparedImage {
@@ -146,7 +147,25 @@ function cacheFile(url: string, mode: string): string {
   return path.join(CACHE_DIR, key.slice(0, 2), key);
 }
 
-async function cachedImage(file: string, body: Buffer, type: string): Promise<PreparedImage> {
+async function saveImage(file: string, image: { body: Buffer; type: string }): Promise<void> {
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  await writeFile(tmp, image.body);
+  await writeFile(`${tmp}.type`, image.type);
+  await rename(tmp, file);
+  await rename(`${tmp}.type`, `${file}.type`);
+}
+
+async function cachedImage(file: string, body: Buffer, type: string, mode: string): Promise<PreparedImage> {
+  // Replacements publish two files. A reader can see either MIME alongside the other body;
+  // the actual WebP bytes identify a completed conversion, including one done by another process.
+  const webp = body.toString("ascii", 0, 4) === "RIFF" && body.toString("ascii", 8, 12) === "WEBP";
+  if (webp) type = "image/webp";
+  else if (type === "image/webp") type = (await sharp(body, { animated: true, limitInputPixels: false }).metadata()).mediaType ?? type;
+  if (type === "image/svg+xml" && body.length > SVG_PASSTHROUGH_MAX_BYTES) {
+    const image = await resizeImage(body, type, mode);
+    await saveImage(file, image);
+    return image;
+  }
   if (type !== "image/gif") return { body, type };
   const prepared = await readFile(`${file}.prepared`).then(() => true, () => false);
   if (prepared) return { body, type };
@@ -160,16 +179,15 @@ async function produce(url: string, mode: string): Promise<PreparedImage> {
   const file = cacheFile(url, mode);
   try {
     const [body, meta] = await Promise.all([readFile(file), readFile(`${file}.type`, "utf8")]);
-    return cachedImage(file, body, meta);
+    return cachedImage(file, body, meta, mode);
   } catch {
     // not cached
   }
   const res = await original(url);
   const image = await resizeImage(res.body, res.headers.get("content-type") ?? "", mode);
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, image.body);
-  await writeFile(`${file}.type`, image.type);
-  return cachedImage(file, image.body, image.type);
+  await saveImage(file, image);
+  return cachedImage(file, image.body, image.type, mode);
 }
 
 /** Most frames × pixels an animation may have to be re-encoded (all frames are decoded at once). */
@@ -200,12 +218,7 @@ export async function convertAnimated(url: string, mode: string): Promise<number
     await writeFile(`${file}.prepared`, "original");
     return 0;
   }
-  // A deploy can briefly overlap worker processes; neither may rename the other's temp files.
-  const tmp = `${file}.${randomUUID()}.tmp`;
-  await writeFile(tmp, webp);
-  await writeFile(`${tmp}.type`, "image/webp");
-  await rename(tmp, file);
-  await rename(`${tmp}.type`, `${file}.type`);
+  await saveImage(file, { body: webp, type: "image/webp" });
   return body.length - webp.length;
 }
 
@@ -233,7 +246,7 @@ export async function resizeImage(body: Buffer, upstreamType: string, mode: stri
   if ((meta.pages ?? 1) > 1 || type === "image/gif") return { body, type };
   // Small vectors are already compact and remain sharp at every zoom level. Rasterize oversized
   // SVGs (often screenshots embedded as base64) and avatars at their actual display rendition.
-  if (type === "image/svg+xml" && !avatar && body.length <= 128 * 1024) return { body, type };
+  if (type === "image/svg+xml" && !avatar && body.length <= SVG_PASSTHROUGH_MAX_BYTES) return { body, type };
   const density = type === "image/svg+xml" && meta.width ? Math.max(72, Math.min(300, Math.ceil(width / meta.width * 72))) : 72;
   let image = sharp(input, { ...raw, failOn: "none", density }).rotate();
   image = avatar ? image.resize(width, width, { fit: "cover" }) : image.resize({ width, withoutEnlargement: true });

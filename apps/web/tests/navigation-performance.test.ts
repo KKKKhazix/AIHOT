@@ -218,9 +218,11 @@ test('Agent tabs finish offline with matching canonical; invalid direct tabs and
     await page.goto(origin+'/agent');
     const start=hits.length;
     await context.setOffline(true);
+    await page.getByRole('tablist',{name:'接入方式'}).getByRole('tab',{selected:true}).click();
+    await expect(page.locator('#agent-panel')).not.toBeEmpty();
     for(const [tab,name] of [['mcp',/^MCP/],['rss',/^RSS/],['api',/^REST API/]] as const){
       const choice=page.getByRole('tab',{name});
-      // A site with no extra tracks starts at MCP; clicking its current URL is an explicit refresh.
+      // The active track was exercised above; compare navigation through every remaining track.
       if(await choice.getAttribute('aria-selected')==='true')continue;
       const target=await choice.getAttribute('href');
       await choice.click();

@@ -312,20 +312,20 @@ export function registerMcp(app: FastifyInstance) {
   const hosts = serverModules().flatMap((m) => m.hosts ?? []);
   const allowed = allowedHosts(hosts);
   const options = { legacy: "stateless", maxRequestBodySize: MAX_REQUEST_BODY_SIZE } as const;
-  // One handler per reminder (none, or each distinct one a module gives), made when first needed.
-  const handlers = new Map<string, McpHttpHandler>();
-  const subscriptions = new Set<McpHttpHandler>();
+  // One pair of SDK lifetimes per reminder: ordinary requests and the shared subscription router.
+  // Sharing the router preserves its capacity limit and avoids rebuilding capabilities per listener.
+  const handlers = new Map<string, { requests: McpHttpHandler; subscriptions?: McpHttpHandler }>();
   let retiring = false;
   const handlerFor = (notice: McpNotice | null) => {
     const key = notice ? JSON.stringify(notice) : "";
     let handler = handlers.get(key);
-    if (!handler) handlers.set(key, (handler = createMcpHandler(() => buildMcpServer(notice), options)));
+    if (!handler) handlers.set(key, (handler = { requests: createMcpHandler(() => buildMcpServer(notice), options) }));
     return handler;
   };
   handlerFor(null);
   const drainSubscriptions = async () => {
     retiring = true;
-    await Promise.all([...subscriptions].map(handler => handler.close()));
+    await Promise.all([...handlers.values()].map(channel => channel.subscriptions?.close()));
   };
   const retire = () => { drainSubscriptions().catch(err => app.log.error({ err }, "MCP subscription retirement failed")); };
   // End indefinite streams before the proxy retires, while ordinary requests can still finish
@@ -336,7 +336,7 @@ export function registerMcp(app: FastifyInstance) {
   // preClose runs before HTTP draining; onClose would be too late for a never-ending stream.
   app.addHook("preClose", async () => {
     await drainSubscriptions();
-    for (const handler of handlers.values()) await handler.close();
+    for (const channel of handlers.values()) await channel.requests.close();
   });
 
   const serve = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -368,16 +368,19 @@ export function registerMcp(app: FastifyInstance) {
     const request = new Request(`${config.siteUrl}${(req.raw.url ?? "/api/mcp")}`, { method: req.method, headers, body, signal: gone.signal });
     const parsed = req.method === "POST" && typeof req.body === "object" ? { parsedBody: req.body } : undefined;
     const notice = requestNotice("mcp", req);
-    const base = handlerFor(notice);
+    const channel = handlerFor(notice);
     const listening = req.method === "POST" && req.body && typeof req.body === "object" &&
       (req.body as { method?: unknown }).method === "subscriptions/listen";
-    // A subscription has its own SDK lifetime but shares the same notification bus. Closing it
+    // Subscriptions have their own SDK lifetime but share the same notification bus. Closing them
     // emits the protocol's complete result without cancelling an ordinary call on that bus.
-    const handler = listening ? createMcpHandler(() => buildMcpServer(notice), { ...options, bus: base.bus }) : base;
-    if (listening) {
-      subscriptions.add(handler);
+    const createSubscription = () => createMcpHandler(() => buildMcpServer(notice), { ...options, bus: channel.requests.bus });
+    const handler = listening
+      ? (retiring ? createSubscription() : (channel.subscriptions ??= createSubscription()))
+      : channel.requests;
+    if (listening && retiring) {
+      // A late body gets a short-lived channel which completes immediately. Active listeners are
+      // cancelled individually by their request signal; never close their shared router for one peer.
       reply.raw.once("close", () => {
-        subscriptions.delete(handler);
         handler.close().catch(err => req.log.error({ err }, "MCP subscription cleanup failed"));
       });
     }

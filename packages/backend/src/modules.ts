@@ -181,6 +181,14 @@ export interface ServerModule {
   http?: (app: FastifyInstance) => void;
   /** Run before the api process exits, to flush what it buffers (apps/api/src/main.ts). */
   stop?: () => Promise<void>;
+  /**
+   * Marks and pictures of its own, served from the repository's assets/ (routes/static.ts): the key is the
+   * address it is served under ("/model-providers") and the value the directory under assets/. A page
+   * names them by that address, so the web server must send the request to the api process too
+   * (module.ts `apiPaths`). Only `.svg` and `.png` files whose names are lower-case letters, digits and
+   * dashes are served; the engine's own paths (og, contact, the icons) are not part of this.
+   */
+  staticAssets?: Record<string, string>;
   agent?: {
     abilities?: AgentAbility[];
     /** The guide's "目前查不到的" list, after the engine's first entry. */

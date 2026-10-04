@@ -8,6 +8,7 @@ import { EDITION_TIMES, SITE } from "@aihot/site";
 import { CONTACT_ALIASES, PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT, config } from "@aihot/backend/config";
+import { serverModules } from "@aihot/backend/modules";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
 import { loadSitemap } from "@aihot/backend/publication/sitemap";
 import { llmsTxt, loadLlmsAvailability } from "@aihot/backend/publication/llms";
@@ -16,6 +17,8 @@ import { loadContact } from "@aihot/backend/site/contact";
 const PUBLIC = path.join(REPO_ROOT, "site/public");
 /** The site's brand files (site/brand/), and how long its icons are cached. */
 const BRAND = path.join(REPO_ROOT, "site/brand");
+/** The site's modules' own marks and pictures (modules/<name>/server.ts staticAssets). */
+const ASSETS = path.join(REPO_ROOT, "assets");
 const ICON_CACHE = "public, max-age=2592000, stale-while-revalidate=604800";
 
 const TYPES: Record<string, string> = {
@@ -140,6 +143,15 @@ export function registerStatic(app: FastifyInstance) {
   // The site's icons (site/brand/): the standard ones, then any others it keeps at the root.
   for (const icon of ["favicon.ico", "icon.png", "icon-192.png", "apple-icon.png", "logo.svg", ...SITE.rootIcons]) {
     app.get(`/${icon}`, (req, reply) => sendFile(req, reply, path.join(BRAND, icon), { cacheControl: ICON_CACHE }));
+  }
+
+  // Marks and pictures the site's modules ship (modules/<name>/server.ts staticAssets), from assets/.
+  for (const m of serverModules()) for (const [prefix, dir] of Object.entries(m.staticAssets ?? {})) {
+    app.get(`${prefix}/:file`, (req, reply) => {
+      const file = (req.params as { file: string }).file;
+      if (!/^[a-z0-9-]+\.(svg|png)$/.test(file)) return reply.code(404).send();
+      return sendFile(req, reply, path.join(ASSETS, dir, file), { cacheControl: "public, max-age=604800" });
+    });
   }
 
   // Contact codes' root addresses linked from outside lead to the codes the about page shows now

@@ -223,6 +223,8 @@ export interface ServerModule {
       /**
        * The members it may name, read again with the page, and its part from them as they are now: one no
        * longer selected is missing, `topics` is its current membership. Null when it has no part on the page.
+       * Work the part out inside `part`, from `current`: what `read` works out from `ask.members` is up to a
+       * minute old, so a withdrawn or corrected report would stay on the page until the index is read again.
        */
       read: (ask: TopicPageAsk) => { recheck: string[]; part: (current: ReadonlyMap<string, TopicMember>) => unknown } | null;
     };

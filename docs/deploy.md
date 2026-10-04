@@ -110,7 +110,9 @@ docker compose run --rm setup && docker compose up -d
 - **公开接口按类别筛选按 `PUBLIC_CATEGORIES` 走**：API、RSS 和 MCP 的 `category` 取所有在公开接口里算作这一类的类别。不合并分类的站（默认就是），按 `tip` 查不再带出观点；没有 `tip` 类别的行业也能通过类型检查。
 - **JSON 接口里不带时区的时间**（如 `2026-09-30 17:43:58`）按信源的 `publishedAtUtcOffset` 读，默认 `+08:00`。以前按服务器时区读，Docker 里是 UTC，所以已有这类信源的新条目时间会提前 8 小时，变成正确值。
 - **文章页日期使用同一来源时区**：详情页补日期与正文提取先用 `detail.publishedAtUtcOffset`，未设则继承信源的 `publishedAtUtcOffset`，再默认 `+08:00`。此修复作用于后续采集和补日期，不批量重写已有发布时间。
-- **RSS**：声明了 `summaryIsBody` 的信源，摘要不论长短都当正文（Atom 的 `summary` 也算）；没有网页的播客单集，原文链接改为音频或视频文件，不再去抓网页。
+- **已核实的历史日期**：运维脚本可先调用 `admin/content.ts` 的 `previewPublicationDateCorrection`，按预览的版本和校验值调用 `correctPublicationDate` 并记录操作者与理由。仅接受新旧日期都早于七天窗口的明确更正；保留材料修订、选稿与归组，不重跑模型。材料或日期已变化，或本次校正会改变其他公开决定时，会拒绝操作并要求重新核对；没有批量回填或新增公开接口。
+- **RSS**：确认摘要就是全文的文字订阅可设置 `summaryIsBody`（Atom 的 `summary` 也算）；YouTube、Vimeo 播放页不再作为文章正文抓取，视频描述仅作摘要，订阅直接提供的真实文字保留。没有网页的播客单集，原文链接改为音频或视频文件，不再去抓网页。升级不会批量删除或重新分析已有正文；若旧视频记录混入播放器导航，先逐条核实，可在后台设为仅摘要以停止展示错误正文。
+- **详情补全**：失败或超出本轮次数限制的日期、标题、摘要会在后续采集中补齐，已确认的正文保持原样。Jina 详情规则要与实际返回格式匹配；固定采集起点、Intercom 日期章节及视频描述的配置见 [信源](sources.md)。
 - **迁移避免阻塞读写**：新迁移每个文件只放一条允许在线执行的语句，不整表回填或重写，建索引用 `CREATE INDEX CONCURRENTLY IF NOT EXISTS`；CI 用 `scripts/check-migrations.ts` 检查。统计维护只针对明确表和列，规则见 [架构](architecture.md#数据库迁移)。
 - **修复**：信源请求成功却漏掉日期、标题或正文时会补全并记进信源健康；YouTube 视频页不再被当成图片；MCP 请求有大小上限，错误日志去掉凭据；桌面侧栏放大后显示细滚动条；测试按每一步实际的提示词认请求、从 `industry/selection.ts` 读门槛，换行业改写提示词和门槛后不再误报，架构测试在 Windows 上也能判对。
 

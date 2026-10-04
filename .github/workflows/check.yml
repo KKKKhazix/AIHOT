@@ -67,6 +67,8 @@ jobs:
         run: npm run typecheck
       - name: Build web
         run: npm run build -w @aihot/web
+      - name: Browser test engines
+        run: npx playwright install --with-deps chromium webkit
       - name: Web tests
         run: node --test apps/web/tests/*.test.ts
 

@@ -1,6 +1,6 @@
 // JSON sources: plain JSON APIs, JSON embedded in HTML (script tags, window variables).
 import { credential } from "../config.ts";
-import { guardedFetch } from "../lib/http-fetch.ts";
+import { fetchListing } from "./listing-fetch.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { parseLooseDate } from "./dates.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
@@ -152,7 +152,7 @@ export async function fetchJsonList(source: SourceRow): Promise<Candidate[]> {
     const token = credential("collectors", "GITHUB_TOKEN");
     if (token) headers.authorization = `Bearer ${token}`;
   }
-  const res = await guardedFetch(url, {
+  const res = await fetchListing(url, {
     redirectPolicy: "same-origin",
     method: c.method ?? "GET",
     headers: c.bodyJson ? { ...headers, "content-type": "application/json" } : headers,

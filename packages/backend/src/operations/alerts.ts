@@ -1,8 +1,10 @@
 // Operations alerts. The person reading them is the site owner, not an engineer: each
 // message says what readers see, whether it heals by itself and what, if anything, the owner must do.
-//   now    — readers are affected and it has not healed: sent at once, repeated hourly, recovery reported.
-//   today  — money at risk or only the owner can act: sent at once, repeated at most daily, recovery reported.
-//   digest — other follow-ups: one 09:00 message a day, meant to be handed to the AI.
+//   now   — readers are affected and it has not healed: sent at once, repeated hourly, recovery reported.
+//   today — money at risk or only the owner can act: sent at once, repeated at most daily, recovery reported.
+//   later — other follow-ups: one 09:00 message a day, meant to be handed to the AI.
+// A site's responder (modules.ts) takes every problem that is not the owner's own (Finding.owner) off
+// them; the owner then hears what it hands back, with the same repeats and recoveries, and no digest.
 // Delivery goes through sendAlert (ops chat, internal-chat fallback; off unless FEISHU_INTERNAL_ENABLED).
 import { beijingAt, beijingDate } from "@aihot/contracts/time";
 import { ALERTS, EDITION_TIMES } from "@aihot/site";
@@ -11,10 +13,10 @@ import { beijingDay, beijingStamp, duration, formatAlert, formatRecovery, sendAl
 import { backupConfigured } from "./backup.ts";
 import { GROUPING_WARN_AFTER_MS, waitingSelectedNews } from "./grouping.ts";
 import { upstreamFindings } from "../media/upstream.ts";
-import { serverModules } from "../modules.ts";
+import { responder, serverModules } from "../modules.ts";
 import { sourceHealth, sourceHealthList } from "../sources/health.ts";
 
-const REPEAT_MS: Record<Exclude<Level, "digest">, number> = { now: 3600_000, today: 24 * 3600_000 };
+const REPEAT_MS: Record<Exclude<Level, "later">, number> = { now: 3600_000, today: 24 * 3600_000 };
 
 /** What the content groups receive, as the alerts name it: the engine's cards, then the modules' pushes. */
 const pushes = () => ["精选", ...serverModules().flatMap((m) => m.pushes ?? [])];
@@ -157,7 +159,7 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
         since: new Date(since),
       });
     } else if (!b || !b.value.uploaded || age > 30 * 3600_000) {
-      out.push({ key: "backup.stale", level: "digest", title: "数据库备份超过一天没成功", detail: b ? `最近一次 ${beijingStamp(b.value.at)}${state ? `（${state}）` : ""}；看 ops.backup` : "还没有成功的备份记录" });
+      out.push({ key: "backup.stale", level: "later", title: "数据库备份超过一天没成功", detail: b ? `最近一次 ${beijingStamp(b.value.at)}${state ? `（${state}）` : ""}；看 ops.backup` : "还没有成功的备份记录" });
     }
   }
 
@@ -166,27 +168,27 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
   // What the site's modules find.
   for (const m of serverModules()) if (m.alerts) out.push(...(await m.alerts(now)));
 
-  // Follow-ups for the daily digest
+  // Follow-ups
   if (collecting()) {
     for (const group of await sourceHealth(now)) {
       if (group.failing.length) out.push({
-        key: `sources.failing.${group.mode}`, level: "digest", title: `${group.name}有 ${group.failing.length} 个信源连续抓取失败`,
+        key: `sources.failing.${group.mode}`, level: "later", title: `${group.name}有 ${group.failing.length} 个信源连续抓取失败`,
         detail: sourceHealthList(group.failing, s => `连续失败 ${s.fail_count} 次${s.last_error ? `，${s.last_error}` : ""}`) + "；转给 AI 检查抓取错误",
       });
       if (group.unstable.length) out.push({
-        key: `sources.unstable.${group.mode}`, level: "digest", title: `${group.name}有 ${group.unstable.length} 个信源反复抓取失败`,
+        key: `sources.unstable.${group.mode}`, level: "later", title: `${group.name}有 ${group.unstable.length} 个信源反复抓取失败`,
         detail: sourceHealthList(group.unstable, s => `近 7 天失败 ${s.failed}/${s.runs} 次`) + "；即使最近成功也需检查，避免继续漏收",
       });
       if (group.silent.length) out.push({
-        key: `sources.silent.${group.mode}`, level: "digest", title: `${group.name}有 ${group.silent.length} 个信源 7 天未发现新内容`,
+        key: `sources.silent.${group.mode}`, level: "later", title: `${group.name}有 ${group.silent.length} 个信源 7 天未发现新内容`,
         detail: sourceHealthList(group.silent, s => `近 7 天 ${s.runs} 次抓取、0 条新发现`) + "；需对照原站，区分低频更新与采集失效",
       });
       if (group.quality.length) out.push({
-        key: `sources.quality.${group.mode}`, level: "digest", title: `${group.name}有 ${group.quality.length} 个信源需要核实文章质量`,
+        key: `sources.quality.${group.mode}`, level: "later", title: `${group.name}有 ${group.quality.length} 个信源需要核实文章质量`,
         detail: sourceHealthList(group.quality, s => `近 7 天缺发布时间 ${s.undated} 篇、反复修订 ${s.repeated} 篇`) + "；缺时间可能让新闻按历史文章处理，反复修订需核对正文是否混入变化内容",
       });
       if (group.detailFailures.length) out.push({
-        key: `sources.details.${group.mode}`, level: "digest", title: `${group.name}有 ${group.detailFailures.length} 个信源详情补全失败`,
+        key: `sources.details.${group.mode}`, level: "later", title: `${group.name}有 ${group.detailFailures.length} 个信源详情补全失败`,
         detail: sourceHealthList(group.detailFailures, s => `近 7 天 ${s.detail_failures} 次`) + "；查看抓取记录中的详情地址与错误",
       });
     }
@@ -196,9 +198,9 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
            (SELECT string_agg(DISTINCT service || '/' || purpose, '、') FROM receipts WHERE status = 'unknown') AS services,
            (SELECT count(*)::int FROM deliveries WHERE status = 'unknown') AS deliveries`;
   if (r!.receipts > 0) {
-    out.push({ key: "receipts.unknown", level: "digest", title: `${r!.receipts} 个付费请求的结果尚未确认`, detail: `${r!.services}；可能影响内容处理，后台“运行”页查看影响；自动恢复后仍未知的请求需核对后放行` });
+    out.push({ key: "receipts.unknown", level: "later", title: `${r!.receipts} 个付费请求的结果尚未确认`, detail: `${r!.services}；可能影响内容处理，后台“运行”页查看影响；自动恢复后仍未知的请求需核对后放行` });
   }
-  if (r!.deliveries > 0) out.push({ key: "deliveries.unknown", level: "digest", title: `${r!.deliveries} 条飞书内容群推送不确定是否送达`, detail: "后台“运行”页核对群里有没有，再标记或重发" });
+  if (r!.deliveries > 0) out.push({ key: "deliveries.unknown", level: "later", title: `${r!.deliveries} 条飞书内容群推送不确定是否送达`, detail: "后台“运行”页核对群里有没有，再标记或重发" });
 
   // Runnable jobs (deferred ones excluded) that have waited more than two hours.
   const queues = await sql<{ name: string; n: number; oldest: Date }[]>`
@@ -206,7 +208,7 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
     WHERE state IN ('created', 'retry') AND start_after <= now() AND name NOT LIKE 'cron.%' GROUP BY 1`;
   for (const q of queues) {
     if (now - q.oldest.getTime() > 2 * 3600_000) {
-      out.push({ key: `queue.${q.name}`, level: "digest", title: `后台任务排队超过 2 小时：${q.name}`, detail: `${q.n} 个等待，最早的等了 ${duration(now - q.oldest.getTime())}` });
+      out.push({ key: `queue.${q.name}`, level: "later", title: `后台任务排队超过 2 小时：${q.name}`, detail: `${q.n} 个等待，最早的等了 ${duration(now - q.oldest.getTime())}` });
     }
   }
 
@@ -257,7 +259,7 @@ async function providerFindings(): Promise<Finding[]> {
   for (const c of capped) {
     out.push({
       key: `budget.day.${c.service}`,
-      level: "today",
+      level: "later",
       title: `${providerName(c.service)} 过去 24 小时的调用额度用完了`,
       impact: `${providerStops(c.service)}，直到额度随时间腾出来`,
       heals: "会，额度按 24 小时滚动恢复",
@@ -272,15 +274,21 @@ interface AlertState {
   [key: string]: { title: string; since: string; sentAt: string };
 }
 
-/** Every 10 minutes: new problems and recoveries of the now/today levels go out; digest items wait for 09:00. */
+/**
+ * Every 10 minutes: new problems and recoveries of the now/today levels go out; follow-ups wait for 09:00.
+ * With a responder, only what it hands back goes out, and what it still holds is not reported as recovered.
+ */
 export async function checkAlerts(now = Date.now()) {
-  const found = (await collectFindings(now)).filter((f) => f.level !== "digest");
+  const all = await collectFindings(now);
+  const r = responder();
+  const { tell, held } = r ? await r.take(all, now) : { tell: all, held: [] as string[] };
+  const found = tell.filter((f) => f.level !== "later");
   const [row] = await sql<{ value: AlertState }[]>`SELECT value FROM settings WHERE key = 'alerts.state'`;
   const state: AlertState = { ...(row?.value ?? {}) };
   const sent: string[] = [];
   for (const f of found) {
     const open = state[f.key];
-    if (open && now - Date.parse(open.sentAt) <= REPEAT_MS[f.level as Exclude<Level, "digest">]) continue;
+    if (open && now - Date.parse(open.sentAt) <= REPEAT_MS[f.level as Exclude<Level, "later">]) continue;
     const since = open ? new Date(open.since) : (f.since ?? new Date(now));
     const msg = formatAlert(f, since, now, !!open);
     await sendAlert(msg.title, msg.lines);
@@ -288,7 +296,7 @@ export async function checkAlerts(now = Date.now()) {
     sent.push(f.key);
   }
   for (const [key, open] of Object.entries(state)) {
-    if (found.some((f) => f.key === key)) continue;
+    if (found.some((f) => f.key === key) || held.includes(key)) continue;
     const msg = formatRecovery(open.title, new Date(open.since), now);
     await sendAlert(msg.title, msg.lines);
     sent.push(`${key}:recovered`);
@@ -299,9 +307,9 @@ export async function checkAlerts(now = Date.now()) {
   return { open: Object.keys(state), sent };
 }
 
-/** 09:00: one message with other follow-ups; nothing when there are none. */
+/** 09:00 (without a responder): one message with the follow-ups; nothing when there are none. */
 export async function sendDigest(now = Date.now()) {
-  const items = (await collectFindings(now)).filter((f) => f.level === "digest");
+  const items = (await collectFindings(now)).filter((f) => f.level === "later");
   const lines = items.map((f, i) => `${i + 1}. ${f.title}${f.detail ? `\n   ${f.detail}` : ""}`);
   if (!lines.length) return { items: 0 };
   await sendAlert(`📋 系统日报 · ${beijingDay(now)}`, ["以下事项需要跟进，具体影响见各条说明；可把整条转给 AI 处理。", ...lines]);

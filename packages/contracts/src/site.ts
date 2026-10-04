@@ -189,7 +189,7 @@ export interface HotEntryView {
   participants: HotParticipant[];
   /** Hourly heat over the 24 hours up to the ranking, oldest first; null where no comparable snapshot exists. */
   spark: Array<number | null>;
-  /** The story's AI digest, else its fact statement. */
+  /** A card excerpt of the story's AI digest, else its fact statement; full text is on the event page. */
   summary: string | null;
   /** The latest development, one line. */
   latest: string | null;
@@ -444,6 +444,12 @@ export interface TopicSummary extends TopicLink {
 export interface TopicsResponse {
   groups: TopicGroup[];
   topics: TopicSummary[];
+}
+
+/** Phone search only needs links, not the topic pages or full hot ranking. */
+export interface SearchSuggestions {
+  topics: Array<TopicLink & { group: TopicGroupKey }>;
+  hot: Array<{ rank: number; title: string; to: string }>;
 }
 
 export interface TopicPage {

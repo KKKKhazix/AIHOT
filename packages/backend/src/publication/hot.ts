@@ -17,6 +17,12 @@ export function latestHotRanking(): Promise<HotRanking | null> {
   return ranking.get();
 }
 
+/** Search links follow the same current public evidence as every hot-ranking surface. */
+export async function hotSearchLinks() {
+  const ranking = await latestHotRanking();
+  return (ranking?.entries ?? []).slice(0, 5).map(e => ({ rank: e.rank, title: e.title, to: `/story/${e.storyPublicId}` }));
+}
+
 async function queryLatestHotRanking(): Promise<HotRanking | null> {
   const row = await storedHotRanking();
   if (!row) return null;

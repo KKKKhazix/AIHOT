@@ -2,7 +2,8 @@ import { useLoaderData } from "react-router";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
 import type { Route } from "./+types/topics";
 import type { TopicSummary, TopicsResponse } from "@aihot/contracts/site";
-import { apiGet, edgeTtl } from "../lib/api.server";
+import { apiGet, edgeTtl, pageExpiresAt } from "../lib/api.server";
+import { cachedLoader } from "../lib/page-reuse";
 import { breadcrumbLd, pageMeta, siteUrl } from "../lib/seo";
 import { relativeTime } from "../lib/format";
 import { IconChevronRight } from "../components/icons";
@@ -12,9 +13,11 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { home: "me", name: "主题" };
+export { shouldRevalidate } from "../lib/page-reuse";
+export const clientLoader = cachedLoader<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
-  return apiGet<TopicsResponse>("/api/site/topics", { signal: request.signal });
+  return { ...await apiGet<TopicsResponse>("/api/site/topics", { signal: request.signal }), expiresAt: pageExpiresAt(300) };
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {

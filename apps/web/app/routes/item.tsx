@@ -1,9 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { Await, isRouteErrorResponse, Link, useAsyncError, useLoaderData, useNavigate, useRevalidator } from "react-router";
+import { Await, isRouteErrorResponse, Link, useAsyncError, useLoaderData, useNavigate, useRevalidator, type ClientLoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/item";
 import type { FeedItemSummary, SiteItemDetail } from "@aihot/contracts/site";
 import { ITEM_COPY, SITE } from "@aihot/site";
-import { edgeTtl, loadOr404 } from "../lib/api.server";
+import { edgeTtl, loadOr404, pageExpiresAt } from "../lib/api.server";
+import { cachedLoader } from "../lib/page-reuse";
 import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
 import { fullDateTime, relativeTime } from "../lib/format";
 import { markRead } from "../lib/local-state";
@@ -26,12 +27,13 @@ import { BarButton, PhoneBar } from "../components/shell/PhoneBar";
 import { isPhone, type Screen } from "../components/shell/screens";
 
 export const handle: Screen = { home: "featured", toolbar: true };
+export { shouldRevalidate } from "../lib/page-reuse";
 
 const PosterSheet = lazy(() => import("../features/item/PosterSheet"));
 
 export async function loader({ params, request }: Route.LoaderArgs) {
   const item = await loadOr404<SiteItemDetail>(`/api/site/items/${encodeURIComponent(params.id)}`, { signal: request.signal });
-  return { item };
+  return { item, expiresAt: pageExpiresAt(600) };
 }
 
 type Preview = { item: null; preview: FeedItemSummary; detail: Promise<{ item: SiteItemDetail }> };
@@ -40,11 +42,14 @@ type Preview = { item: null; preview: FeedItemSummary; detail: Promise<{ item: S
  * Phones: an article tapped in a list opens at once with what the card showed (title, summary, reason),
  * while its full text loads. Opened any other way, or on desktop, the page waits for its data as usual.
  */
-export async function clientLoader({ params, serverLoader }: Route.ClientLoaderArgs) {
-  const preview = isPhone() ? takePreview(params.id) : null;
-  if (!preview) return serverLoader();
-  return { item: null, preview, detail: serverLoader() } satisfies Preview;
+const loadPage = cachedLoader<typeof loader>();
+export async function clientLoader(args: ClientLoaderFunctionArgs) {
+  const { params } = args;
+  const preview = isPhone() && params.id ? takePreview(params.id) : null;
+  if (!preview) return loadPage(args);
+  return { item: null, preview, detail: loadPage(args) } satisfies Preview;
 }
+clientLoader.hydrate = true as const;
 
 export function meta({ loaderData }: Route.MetaArgs) {
   if (!loaderData) return [{ title: titled("内容不存在") }, { name: "robots", content: "noindex" }];

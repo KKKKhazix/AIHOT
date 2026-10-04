@@ -334,7 +334,12 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
     && (previous.story_id === null || previous.story_id === next.story_id)
     && (previous.fact_id === null || previous.fact_id === next.fact_id)
     && changedFields.every((key) => firstAnalysisFields.has(key));
-  const initial = (admission || firstAnalysis) && !(await tx`SELECT 1 FROM selected_state WHERE article_id = ${articleId}`).length;
+  // A first event link is new metadata, like the first judgement or selection. It refreshes
+  // the item and event's exact URLs; established identities and corrected text invalidate lists.
+  const firstIdentity = previous && !previous.selected && previous.fact_id === null && previous.story_id === null
+    && previous.visibility === "public" && visibility === "public" && eligible && next.story_id !== null
+    && changedFields.every((key) => admissionFields.has(key));
+  const initial = (admission || firstAnalysis || firstIdentity) && !(await tx`SELECT 1 FROM selected_state WHERE article_id = ${articleId}`).length;
   const changeKind = initial ? "detail" : "content";
   const revision = previous ? previous.revision + (changed ? 1 : 0) : 1;
 

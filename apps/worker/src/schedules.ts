@@ -2,7 +2,7 @@
 // job_runs; missed slots run once.
 import type { PgBoss } from "pg-boss";
 import { ensureQueue, recordRun } from "@aihot/backend/jobs/queue";
-import { serverModules, type Scheduled } from "@aihot/backend/modules";
+import { responder, serverModules, type Scheduled } from "@aihot/backend/modules";
 import { sweepUnprocessed } from "@aihot/backend/jobs/content";
 import { translatePending } from "@aihot/backend/editorial/translate";
 import { adaptIntervals, scheduleDueSources } from "@aihot/backend/sources/collect";
@@ -40,12 +40,13 @@ const ENGINE_SCHEDULES: Scheduled[] = [
   // automatic release; ops.alerts runs in parallel and sees the result by its next run at the latest.
   { name: "ops.recover", cron: "*/10 * * * *", run: () => recoverStaleWork() },
   { name: "ops.alerts", cron: "*/10 * * * *", run: () => checkAlerts() },
-  // One message with other follow-ups and their actual impact (nothing when there are none).
-  { name: "ops.digest", cron: "0 9 * * *", missed: "once", run: () => sendDigest() },
+  // One message with other follow-ups and their actual impact (nothing when there are none); a site's
+  // responder takes the follow-ups instead.
+  { name: "ops.digest", cron: "0 9 * * *", missed: "once", run: () => sendDigest(), when: () => !responder() },
   // Feedback that did not reach the internal Feishu chat when it was sent (off with FEISHU_INTERNAL_ENABLED).
   { name: "feedback.forward", cron: "*/10 * * * *", run: () => forwardPendingFeedback() },
   ...(backupConfigured() ? [{ name: "ops.backup", cron: "10 4 * * *", missed: "once" as const, run: () => runBackup() }] : []),
-  { name: "reports.source-health", cron: "0 9 * * 1", missed: "once", run: () => sourceHealthWeekly() },
+  { name: "reports.source-health", cron: "0 9 * * 1", missed: "once", run: () => sourceHealthWeekly(), when: () => !responder() },
   ...(collecting
     ? [
         { name: "sources.schedule", cron: "* * * * *", run: () => scheduleDueSources() },
@@ -59,7 +60,7 @@ const ENGINE_SCHEDULES: Scheduled[] = [
 ];
 
 export async function registerSchedules(boss: PgBoss) {
-  const schedules = [...ENGINE_SCHEDULES, ...serverModules().flatMap((m) => m.schedules ?? []).filter((s) => s.when?.() ?? true)];
+  const schedules = [...ENGINE_SCHEDULES, ...serverModules().flatMap((m) => m.schedules ?? [])].filter((s) => s.when?.() ?? true);
   for (const s of schedules) {
     const queue = `cron.${s.name}`;
     await ensureQueue(queue, { policy: "singleton", retryLimit: 1, expireInSeconds: 3600 });

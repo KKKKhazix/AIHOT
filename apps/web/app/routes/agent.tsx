@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useLoaderData, useNavigate, useSearchParams } from "react-router";
+import { IntentLink } from "../components/ui/IntentLink";
+import { useLoaderData, useNavigate, useSearchParams, type ClientLoaderFunctionArgs, type ShouldRevalidateFunction } from "react-router";
 import type { Route } from "./+types/agent";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { SITE } from "@aihot/site";
-import { apiGet, edgeTtl } from "../lib/api.server";
+import { apiGet, edgeTtl, pageExpiresAt } from "../lib/api.server";
 import { listPath, pageMeta, siteUrl } from "../lib/seo";
 import { IconArrowUpRight, IconChevronRight, IconCode, IconPlug, IconRss } from "../components/icons";
 import { Kicker } from "../components/ui/Kicker";
@@ -30,6 +31,7 @@ const TRACKS: AgentTrack[] = [
   { key: "api", name: "REST API", short: "API", pitch: "匿名 GET，自己写程序取数", fit: "脚本、机器人、小程序、看板", icon: IconCode, Panel: ApiPanel, anchors: ["agent-api-recovery"] },
 ];
 const FIRST = TRACKS[0]!.key;
+const tabKey = (key: string | null) => key && TRACKS.some(t => t.key === key) ? key : FIRST;
 const hrefOf = (key: string) => (key === FIRST ? "/agent" : `/agent?tab=${key}`);
 /** How many ways, as the copy counts them ("四种方式"). */
 const WAYS = ["零", "一", "两", "三", "四", "五", "六"][TRACKS.length];
@@ -56,21 +58,35 @@ const BANNERS = AGENT_PARTS.flatMap((p) => (p.Banner ? [p.Banner] : []));
 const useTag = TAG?.useValue ?? (() => null);
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const tab = new URL(request.url).searchParams.get("tab");
   // Only whether the api answers, within three seconds.
   const healthy = await apiGet("/api/health", { signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]) }).then(() => true, () => false);
   return {
-    tab: tab && TRACKS.some((t) => t.key === tab) ? tab : FIRST,
+    tab: tabKey(new URL(request.url).searchParams.get('tab')),
     healthy,
     // The examples show the configured public address, the same on the server and in the browser; what
     // depends on the time reads the server's.
     base: siteUrl(),
     now: Date.now(),
+    expiresAt: pageExpiresAt(300),
   };
 }
 
-export function meta({ loaderData }: Route.MetaArgs) {
-  const path = listPath("/agent", { tab: loaderData && loaderData.tab !== FIRST ? loaderData.tab : null });
+let freshUntil = 0;
+export async function clientLoader({ serverLoader }: ClientLoaderFunctionArgs) {
+  const result = await serverLoader<typeof loader>();
+  freshUntil = result.expiresAt;
+  return result;
+}
+clientLoader.hydrate = true as const;
+export const shouldRevalidate: ShouldRevalidateFunction = ({ currentUrl, nextUrl, formMethod, defaultShouldRevalidate }) => {
+  const otherParams = (url: URL) => { const params = new URLSearchParams(url.search); params.delete('tab'); return params.toString(); };
+  const switchTab = !formMethod && currentUrl.pathname === nextUrl.pathname && currentUrl.search !== nextUrl.search && otherParams(currentUrl) === otherParams(nextUrl);
+  return switchTab ? Date.now() >= freshUntil : defaultShouldRevalidate;
+};
+
+export function meta({ location }: Route.MetaArgs) {
+  const tab = tabKey(new URLSearchParams(location.search).get('tab'));
+  const path = listPath("/agent", { tab: tab !== FIRST ? tab : null });
   return pageMeta({
     title: "Agent 接入",
     description: `把 ${SITE.name} 接进你的 Agent：${TRACKS.map((t) => t.name).join("、")} ${WAYS}种方式，匿名只读，无需 API Key，一分钟接好。`,
@@ -80,21 +96,20 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 export default function AgentPage() {
-  const { tab: initialTab, healthy, base, now } = useLoaderData<typeof loader>();
+  const { healthy, base, now } = useLoaderData<typeof loader>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const tag = useTag();
-  const [tab, setTab] = useState(initialTab);
+  const tab = tabKey(params.get('tab'));
   // A section to scroll to once its panel is on the page.
   const [target, setTarget] = useState<string | null>(null);
 
-  useEffect(() => setTab(params.get("tab") || FIRST), [params]);
   // Opened at a section's anchor: show its tab and scroll there.
   useEffect(() => {
     const hash = location.hash.slice(1);
     const key = ANCHORS.get(hash);
     if (key) {
-      setTab(key);
+      if (key !== tab) navigate(`${hrefOf(key)}#${hash}`, { replace: true, preventScrollReset: true });
       setTarget(hash);
     }
   }, []);
@@ -105,11 +120,10 @@ export default function AgentPage() {
   }, [target, tab]);
 
   const select = (key: string) => {
-    setTab(key);
     navigate(hrefOf(key), { replace: true, preventScrollReset: true });
   };
   const open = (id: string) => {
-    select(ANCHORS.get(id)!);
+    navigate(anchorHref(id), { replace: true, preventScrollReset: true });
     setTarget(id);
   };
   const track = TRACKS.find((t) => t.key === tab);
@@ -156,9 +170,9 @@ export default function AgentPage() {
       </AsideCard>
       <AsideCard title="没接上？">
         <p className="text-[13px] leading-[1.75] text-ink-3">把平台、版本和报错写在反馈页，别发 token 或本地文件。</p>
-        <Link viewTransition to="/feedback" prefetch="intent" className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline">
+        <IntentLink viewTransition to="/feedback" className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline">
           去反馈 <IconChevronRight size={14} />
-        </Link>
+        </IntentLink>
       </AsideCard>
     </>
   );

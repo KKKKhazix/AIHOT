@@ -41,15 +41,14 @@ export default defineConfig({
   build: {
     rolldownOptions: {
       output: {
-        // A page used to load 15–30 small shared chunks. Framework code stays one stable chunk across
-        // releases; app code that at least four public routes share, the site's and the industry pack's included, is
-        // one chunk (7–10 files a page); the rest keeps automatic splitting. Motion is left to the admin
-        // pages, the agent page's building blocks to that page and the modules' parts of it.
+        // Keep the framework stable across releases and reused shell/feed code in one browser cache
+        // entry, including the site and industry packages. Page-specific code still splits by route;
+        // report, agent and admin features stay with their pages instead of enlarging every document.
         codeSplitting: {
           groups: [
             { name: "framework", test: /node_modules[\\/](?:react|react-dom|scheduler|react-router|@react-router|cookie|set-cookie-parser|turbo-stream)[\\/]/, priority: 30 },
             { name: "motion", test: /node_modules[\\/](?:motion|framer-motion|motion-dom|motion-utils)[\\/]/, priority: 20 },
-            { name: "shared", test: /apps[\\/]web[\\/]app[\\/](?!features[\\/](?:admin|agent)[\\/]|routes[\\/])|[\\/](?:industry|site)[\\/]/, minShareCount: 4, priority: 10 },
+            { name: "shared", test: /apps[\\/]web[\\/]app[\\/](?!features[\\/](?:admin|agent|report)[\\/]|routes[\\/])|[\\/](?:industry|site)[\\/]/, minShareCount: 2, priority: 10 },
           ],
         },
       },

@@ -2,19 +2,19 @@
 // Reads through the same public read layer as v1; no cookies are read or set.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isCategoryKey, isChannelKey, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
-import type { ReportIndexResponse, ReportLatestPage, ReportNavigationResponse, SiteContact } from "@aihot/contracts/site";
+import type { ReportIndexResponse, ReportLatestPage, ReportNavigationResponse, SearchSuggestions, SiteContact } from "@aihot/contracts/site";
 import { InvalidCursorError } from "@aihot/backend/lib/cursor";
 import { exportMarkdown, loadItemDetail } from "@aihot/backend/publication/detail";
 import { loadPool, SearchBusyError } from "@aihot/backend/publication/pool";
 import { loadTimeline } from "@aihot/backend/publication/timeline";
 import { loadStoryFollowups } from "@aihot/backend/publication/followups";
 import { loadGroupReports } from "@aihot/backend/publication/groups";
-import { loadHotStrip } from "@aihot/backend/publication/hot";
+import { hotSearchLinks, loadHotStrip } from "@aihot/backend/publication/hot";
 import { loadChangelog, siteMeta } from "@aihot/backend/site/meta";
 import { loadContact, loadMakerAvatar } from "@aihot/backend/site/contact";
 import { loadSiteStats } from "@aihot/backend/site/stats";
 import { itemAvailability } from "@aihot/backend/publication/availability";
-import { listTopicSummaries, loadTopicPage } from "@aihot/backend/publication/topics";
+import { listTopicSummaries, loadTopicPage, topicBrowseLinks } from "@aihot/backend/publication/topics";
 import { registerFeedback } from "./feedback.ts";
 import { loadHot, loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
 import { listReports, loadReport, reportNavigation, loadReportNavigation, loadReportMonth, type ReportKind } from "@aihot/backend/publication/reports";
@@ -134,6 +134,11 @@ export function registerSite(app: FastifyInstance) {
 
   app.get("/api/site/topics", siteHandler(async (req, reply) => {
     return sendJsonWithEtag(req, reply, await listTopicSummaries(), { etagPrefix: "topics", cacheControl: "public, max-age=300, s-maxage=300" });
+  }));
+
+  app.get('/api/site/search/suggestions', siteHandler(async (req, reply) => {
+    const body: SearchSuggestions = { topics: topicBrowseLinks(), hot: await hotSearchLinks() };
+    return sendJsonWithEtag(req, reply, body, { etagPrefix: 'suggestions', cacheControl: 'public, max-age=30, s-maxage=30, must-revalidate' });
   }));
 
   app.get("/api/site/topics/:slug", siteHandler(async (req, reply) => {

@@ -1,8 +1,10 @@
 import { useEffect, useState, type ComponentType } from "react";
+import { IntentLink } from "../components/ui/IntentLink";
 import type { ChangelogRelease, ChangelogResponse } from "@aihot/contracts/site";
 import { SITE } from "@aihot/site";
-import { Link, useLoaderData } from "react-router";
-import { apiGet, edgeTtl } from "../lib/api.server";
+import { useLoaderData } from "react-router";
+import { apiGet, edgeTtl, pageExpiresAt } from "../lib/api.server";
+import { cachedLoader } from "../lib/page-reuse";
 import { pageMeta } from "../lib/seo";
 import { setChangelogSeen } from "../lib/local-state";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
@@ -12,6 +14,8 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "me", name: "更新日志" };
+export { shouldRevalidate } from "../lib/page-reuse";
+export const clientLoader = cachedLoader<typeof loader>();
 
 export function headers() {
   return edgeTtl(300);
@@ -20,7 +24,7 @@ export function headers() {
 type Release = ChangelogRelease;
 
 export async function loader({ request }: { request: Request }) {
-  return apiGet<ChangelogResponse>("/api/site/changelog", { signal: request.signal });
+  return { ...await apiGet<ChangelogResponse>("/api/site/changelog", { signal: request.signal }), expiresAt: pageExpiresAt(300) };
 }
 
 export function meta() {
@@ -172,9 +176,9 @@ export default function ChangelogPage() {
       </AsideCard>
       <AsideCard title="有想法或遇到问题">
         <p className="text-[13px] leading-[1.75] text-ink-3">想要的功能、用着不顺的地方，都可以在反馈页告诉我们。</p>
-        <Link viewTransition to="/feedback" prefetch="intent" className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline">
+        <IntentLink viewTransition to="/feedback" className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline">
           去反馈 <IconChevronRight size={14} />
-        </Link>
+        </IntentLink>
       </AsideCard>
     </>
   );

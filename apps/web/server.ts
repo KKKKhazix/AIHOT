@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequestListener } from "@react-router/node";
+import type { ServerBuild } from "react-router";
 import { isApiOwned, resolveRedirect } from "@aihot/contracts/http-policy";
 import { proxyToApi } from "./app/lib/api-proxy.server.ts";
 import { logError } from "./app/lib/errors.server.ts";
@@ -38,8 +39,14 @@ const TYPES: Record<string, string> = {
 };
 
 // A file URL, not a path: on Windows import() reads "C:\..." as a URL with the scheme "c:".
-const build = await import(pathToFileURL(path.resolve(import.meta.dirname, "build/server/index.js")).href);
-const ssr = createRequestListener({ build, mode: "production" });
+const build: ServerBuild = await import(pathToFileURL(path.resolve(import.meta.dirname, "build/server/index.js")).href);
+// Keep an empty result for pages without a loader. An older document can still unwrap its route's
+// result, so a changed data shape reaches React's release recovery rather than failing in the router.
+// The client manifest still declares no loader: current documents make no request for these pages.
+const routes = Object.fromEntries(Object.entries(build.routes).map(([id, route]) => [id,
+  route?.module.default && !route.module.loader ? { ...route, module: { ...route.module, loader: () => null } } : route,
+]));
+const ssr = createRequestListener({ build: { ...build, routes }, mode: "production" });
 
 class BadRequest extends Error {}
 

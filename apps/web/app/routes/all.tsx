@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
-import { Link, redirect, useLoaderData, useLocation, useNavigation, useSearchParams } from "react-router";
+import { useEffect } from "react";
+import { Link, redirect, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/all";
 import type { PoolResponse } from "@aihot/contracts/site";
 import { SITE, subjectAfter } from "@aihot/site";
 import { beijingTime } from "@aihot/contracts/time";
-import { edgeTtl, loadOr404 } from "../lib/api.server";
+import { edgeTtl, loadOr404, pageExpiresAt } from "../lib/api.server";
+import { cachedLoader } from "../lib/page-reuse";
 import { filterParams, itemListLd, listPath, pageMeta, readFilters } from "../lib/seo";
 import { ActiveFilters, CategoryTabs, FeedBar, SearchField } from "../features/feed/Filters";
 import { PillTabs } from "../components/ui/Tabs";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { EmptyState } from "../components/ui/Page";
-import { RingMark } from "@aihot/site/brand/Logo.tsx";
 import { IconSearch } from "../components/icons";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import { isPhone, type Screen } from "../components/shell/screens";
@@ -18,6 +18,8 @@ import { openSearch } from "../features/search/SearchOverlay";
 import { addRecentSearch } from "../lib/local-state";
 
 export const handle: Screen = { tab: "featured", name: "全部" };
+export { shouldRevalidate } from "../lib/page-reuse";
+export const clientLoader = cachedLoader<typeof loader>();
 
 const ALL_TITLE = subjectAfter("全部", "动态");
 
@@ -34,7 +36,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
   // Past the last page of what there is: the last page, with the same search and filters.
   if (data.total > 0 && data.page > data.pageCount) throw redirect(pageHref(url.searchParams, data.pageCount));
-  return { data };
+  return { data, expiresAt: pageExpiresAt(60) };
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
@@ -157,45 +159,5 @@ export default function AllPage() {
       <Pagination page={data.page} pageCount={data.pageCount} href={(p) => pageHref(params, p)} />
       {data.page >= 50 && <p className="mt-4 text-center text-[12px] text-ink-4">最多提供 50 页，更早的内容请使用搜索或主题页。</p>}
     </div>
-  );
-}
-
-const RETRY_AFTER_SECONDS = 5;
-const SEARCH_PARAMS = ["q", "tag", "channel", "category", "page", "tab"];
-
-/** The busy page after an overloaded search: the same search can be tried again after a few seconds. */
-export function SearchBusy() {
-  const { pathname, search } = useLocation();
-  const [wait, setWait] = useState(RETRY_AFTER_SECONDS);
-  useEffect(() => {
-    if (wait <= 0) return;
-    const t = setTimeout(() => setWait((w) => w - 1), 1000);
-    return () => clearTimeout(t);
-  }, [wait]);
-  const kept = new URLSearchParams();
-  for (const [k, v] of new URLSearchParams(search)) if (SEARCH_PARAMS.includes(k)) kept.append(k, v);
-  const base = pathname.startsWith("/all") ? "/all" : "/";
-  const retry = kept.toString() ? `${base}?${kept}` : base;
-  const hasSearch = kept.has("q");
-  const button = "inline-flex h-9 items-center rounded-full px-4 text-[13.5px]";
-  return (
-    <>
-    <PhoneBar back={{ to: base, label: base === "/all" ? "全部" : "精选" }} />
-    <div className="mx-auto max-w-sm py-24 text-center" aria-live="polite">
-      <RingMark className="mx-auto mb-5 size-10 text-accent" spinning />
-      <h1 className="text-[20px] font-bold text-ink">搜索有点忙</h1>
-      <p className="mt-2 text-[14px] leading-relaxed text-ink-3">现在搜索的人比较多，请 {RETRY_AFTER_SECONDS} 秒以后重试。列表浏览不受影响。</p>
-      <div className="mt-6 flex flex-wrap justify-center gap-2.5">
-        {hasSearch &&
-          (wait > 0 ? (
-            <span aria-disabled="true" className={`${button} num cursor-default bg-bg-sunk font-medium text-ink-4`}>{wait} 秒后可重试</span>
-          ) : (
-            <Link to={retry} className={`${button} bg-accent font-medium text-accent-contrast hover:bg-accent-ink`}>重试这次搜索</Link>
-          ))}
-        <Link to="/all" className={`${button} ${hasSearch ? "border border-line-strong bg-surface text-ink-2 hover:border-ink-4" : "bg-accent font-medium text-accent-contrast hover:bg-accent-ink"}`}>浏览全部动态</Link>
-        <Link to="/" className={`${button} border border-line-strong bg-surface text-ink-2 hover:border-ink-4`}>回到精选</Link>
-      </div>
-    </div>
-    </>
   );
 }

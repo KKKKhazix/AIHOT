@@ -1,7 +1,9 @@
-import { Link, useLoaderData } from "react-router";
+import { useLoaderData } from "react-router";
+import { IntentLink } from "../components/ui/IntentLink";
 import type { ReportIndexEntry, ReportIndexResponse } from "@aihot/contracts/site";
 import { SITE, withSubject } from "@aihot/site";
-import { apiGet, edgeTtl } from "../lib/api.server";
+import { apiGet, edgeTtl, pageExpiresAt } from "../lib/api.server";
+import { cachedLoader } from "../lib/page-reuse";
 import { archiveLd, pageMeta } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
 import { weekdayShort } from "../lib/format";
@@ -12,10 +14,12 @@ import { Nameplate } from "../features/report/Nameplate";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "daily", name: "往期" };
+export { shouldRevalidate } from "../lib/page-reuse";
+export const clientLoader = cachedLoader<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
   const { items: index } = await apiGet<ReportIndexResponse>("/api/site/reports/daily", { signal: request.signal });
-  return { index, today: beijingDate(Date.now()) };
+  return { index, today: beijingDate(Date.now()), expiresAt: pageExpiresAt(600) };
 }
 
 export function meta({ loaderData }: { loaderData?: { index: ReportIndexEntry[] } }) {
@@ -52,7 +56,7 @@ export default function DailyArchive() {
           <SectionPage key={m.id} id={`m-${m.id}`} label={m.label}>
             <Rows items={m.entries}>
               {(e, cell) => (
-                <Link viewTransition key={e.key} to={`/daily/${e.key}`} prefetch="intent" className={`group flex gap-4 py-4 ${cell}`}>
+                <IntentLink viewTransition key={e.key} to={`/daily/${e.key}`} className={`group flex gap-4 py-4 ${cell}`}>
                   <span className="flex w-9 shrink-0 flex-col items-center">
                     <span className="num text-[24px] font-black leading-none tracking-[-0.03em] text-ink transition-colors group-hover:text-accent">{e.key.slice(8, 10)}</span>
                     <span className="mt-1.5 text-[10.5px] leading-none text-ink-4">{weekdayShort(e.key)}</span>
@@ -63,7 +67,7 @@ export default function DailyArchive() {
                       <span className="num">{e.count}</span>{` ${ENTRIES_UNIT}`}
                     </span>
                   </span>
-                </Link>
+                </IntentLink>
               )}
             </Rows>
           </SectionPage>

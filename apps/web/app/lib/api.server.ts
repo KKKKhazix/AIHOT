@@ -79,3 +79,9 @@ export function apiDeadlineCache(maxSeconds: number, now = Date.now(), upstream?
   const seconds = Math.max(0, Math.floor(deadline - now / 1000));
   return seconds > 0 ? { ...edgeTtl(seconds), "X-Accel-Expires": `@${deadline}` } : { "Cache-Control": "no-cache", "X-Accel-Expires": "0" };
 }
+
+/** Revisited pages share their original browser deadline, including time already spent at the edge. */
+export function pageExpiresAt(seconds: number, upstream?: Headers): number {
+  const headers = apiDeadlineCache(Math.min(seconds, 300), Date.now(), upstream);
+  return Number(headers['X-Accel-Expires']?.replace(/^@/, '')) * 1000;
+}

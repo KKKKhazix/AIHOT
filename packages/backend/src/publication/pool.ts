@@ -2,7 +2,7 @@
 import type { PoolResponse, TimelineFilters } from "@aihot/contracts/site";
 import { beijingDate, beijingMidnight } from "@aihot/contracts/time";
 import { one, sql, withCustomPlans, type Db } from "../db.ts";
-import { cachedByKey } from "../lib/cache.ts";
+import { cachedByKey, SHARED_ONLY } from "../lib/cache.ts";
 import {
   categoryCondition, channelCondition, ITEM_COLUMNS, ITEM_FROM, seatHolders, tagCondition, toFeedItemSummary,
   type ItemRow,
@@ -118,7 +118,18 @@ export interface PoolQuery extends TimelineFilters {
   now?: Date;
 }
 
-export async function loadPool(query: PoolQuery): Promise<PoolResponse> {
+// Identical searches share only unfinished work, before taking search capacity. A completed or
+// failed read is never reused; explicit clocks remain independent for replays and historical reads.
+const sharedSearch = cachedByKey(
+  (q: PoolQuery) => JSON.stringify([q.channel, q.category, q.tag, q.q, q.tab, q.page]),
+  queryPool, { ...SHARED_ONLY, maxKeys: 200 },
+);
+
+export function loadPool(query: PoolQuery): Promise<PoolResponse> {
+  return query.q?.trim() && !query.now ? sharedSearch(query) : queryPool(query);
+}
+
+async function queryPool(query: PoolQuery): Promise<PoolResponse> {
   const now = query.now ?? new Date();
   const page = Math.min(Math.max(query.page ?? 1, 1), POOL_MAX_PAGES);
   const q = query.q?.trim() || null;

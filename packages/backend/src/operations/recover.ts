@@ -36,7 +36,7 @@ export async function releaseReceipt(id: number, input: { billed: boolean; note:
 
 /**
  * Unknown receipts older than half an hour, released without checking the provider's bill. A request
- * released this way once and unknown again stays for the admin (the daily ops digest lists it).
+ * released this way once and unknown again stays for the admin (the alerts' follow-ups list it).
  */
 export async function autoReleaseUnknownReceipts(now = Date.now()) {
   const rows = await sql<{ id: number }[]>`

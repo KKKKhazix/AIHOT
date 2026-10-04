@@ -77,6 +77,11 @@ export function topicLinks(slugs: string[]): TopicLink[] {
   return slugs.map((s) => findTopic(s)).filter((t): t is Topic => !!t).map((t) => ({ slug: t.slug, name: t.name }));
 }
 
+/** Stable browse links in the same order as the topic directory, without its counts or modules. */
+export function topicBrowseLinks() {
+  return TOPICS.map(({ slug, name, group }) => ({ slug, name, group }));
+}
+
 /** One membership rule for topic discovery and a single topic's page and count. */
 function topicMatch(tags: ReturnType<typeof sql>, pattern: ReturnType<typeof sql>) {
   return sql`p.tags && ${tags} AND (${pattern} IS NULL OR p.title ~* ${pattern} OR coalesce(p.original_title, '') ~* ${pattern}

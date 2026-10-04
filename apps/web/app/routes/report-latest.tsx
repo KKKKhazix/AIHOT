@@ -2,7 +2,8 @@ import { useLoaderData } from "react-router";
 import type { Route } from "./+types/report-latest";
 import type { ReportLatestPage } from "@aihot/contracts/site";
 import { REPORTS, subjectAfter, withSubject } from "@aihot/site";
-import { edgeTtl, loadOr404 } from "../lib/api.server";
+import { edgeTtl, loadOr404, pageExpiresAt } from "../lib/api.server";
+import { cachedLoader } from "../lib/page-reuse";
 import { pageMeta, reportLd } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
 import { EmptyState } from "../components/ui/Page";
@@ -12,11 +13,13 @@ import { KIND_LABEL, feedLink, kindFromPath } from "../features/report/format";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "daily", name: "日报" };
+export { shouldRevalidate } from "../lib/page-reuse";
+export const clientLoader = cachedLoader<typeof loader>();
 
 export async function loader({ request }: Route.LoaderArgs) {
   const kind = kindFromPath(new URL(request.url).pathname);
   const { index, report } = await loadOr404<ReportLatestPage>(`/api/site/reports/${kind}/latest-page`, { signal: request.signal });
-  return { kind, report, index, today: beijingDate(Date.now()) };
+  return { kind, report, index, today: beijingDate(Date.now()), expiresAt: pageExpiresAt(600) };
 }
 
 export function meta({ loaderData, location }: Route.MetaArgs) {

@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { IntentLink } from "../components/ui/IntentLink";
 import { Link, useLoaderData, useLocation } from "react-router";
 import type { Route } from "./+types/story";
 import type { StoryDetail, StoryReportView } from "@aihot/contracts/site";
 import { SITE } from "@aihot/site";
-import { edgeTtl, loadOr404 } from "../lib/api.server";
+import { edgeTtl, loadOr404, pageExpiresAt } from "../lib/api.server";
+import { cachedLoader } from "../lib/page-reuse";
 import { breadcrumbLd, pageMeta, titled } from "../lib/seo";
 import { beijingDate, beijingTime } from "@aihot/contracts/time";
 import { monthDay, monthDayTime, relativeTime } from "../lib/format";
@@ -18,10 +20,12 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { home: "hot" };
+export { shouldRevalidate } from "../lib/page-reuse";
+export const clientLoader = cachedLoader<typeof loader>();
 
 export async function loader({ params, request }: Route.LoaderArgs) {
   const story = await loadOr404<StoryDetail>(`/api/site/stories/${encodeURIComponent(params.publicId)}`, { signal: request.signal, merged: (id) => `/story/${id}` });
-  return { story };
+  return { story, expiresAt: pageExpiresAt(300) };
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
@@ -126,9 +130,9 @@ function TimelineRow({ r }: { r: StoryReportView }) {
           <span className="min-w-0 truncate">{r.source.name}</span>
           {r.selected && <SelectedBadge />}
         </div>
-        <Link viewTransition to={`/items/${r.id}`} prefetch="intent" className="mt-1 block text-[16px] font-[650] leading-[1.6] text-ink transition-colors hover:text-accent lg:text-[15.5px]">
+        <IntentLink viewTransition to={`/items/${r.id}`} className="mt-1 block text-[16px] font-[650] leading-[1.6] text-ink transition-colors hover:text-accent lg:text-[15.5px]">
           {r.title}
-        </Link>
+        </IntentLink>
         {r.summary && (
           <>
             <p ref={ref} className={`mt-1 text-[14px] leading-[1.75] text-ink-3 ${open ? "" : "line-clamp-2"}`}>

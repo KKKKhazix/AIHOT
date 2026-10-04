@@ -15,7 +15,7 @@ export function cached<T, A = void>(load: (arg: A) => Promise<T>, opts: { freshM
     if (pending) return pending;
     pending = load(arg)
       .then((data) => {
-        value = { at: Date.now(), data };
+        if (opts.freshMs > 0 || opts.maxStaleMs > 0) value = { at: Date.now(), data };
         return data;
       })
       .finally(() => {

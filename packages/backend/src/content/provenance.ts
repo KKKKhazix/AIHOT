@@ -60,8 +60,6 @@ export async function reconcileMaterialSource(db: Db, articleId: string, observe
       EXISTS (SELECT 1 FROM analyses an WHERE an.article_id = a.id AND an.input_revision = a.revision AND an.relevance IS NOT NULL) AS analyzed
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId} FOR UPDATE OF a`;
   if (!article) return false;
-  const [previous] = await db<{ visibility: string }[]>`SELECT visibility FROM publications WHERE article_id = ${articleId}`;
-  const wasReadable = !!previous && hasItemPage({ visibility: previous.visibility, sourceMode: article.participation_mode });
   const candidates = await db<Publisher[]>`
     SELECT s.id, s.kind, s.config, s.participation_mode FROM sources s
     WHERE s.tier = 'T1' AND (jsonb_typeof(s.config->'publisherUrlPrefixes') = 'array'
@@ -71,6 +69,8 @@ export async function reconcileMaterialSource(db: Db, articleId: string, observe
   if (owned.length !== 1) return false;
   const publisher = owned[0]!;
   if (publisher.id === article.source_id) return false;
+  const [previous] = await db<{ visibility: string }[]>`SELECT visibility FROM publications WHERE article_id = ${articleId}`;
+  const wasReadable = !!previous && hasItemPage({ visibility: previous.visibility, sourceMode: article.participation_mode });
   // Aggregator submitters are not article authors. Keep a name only from the publisher discovery.
   const author = observed?.sourceId === publisher.id ? observed.author?.trim() || null : null;
   // A completed signal has never been judged for editorial use. An existing judgement of this

@@ -252,6 +252,8 @@ export async function loadHot(): Promise<HotResponse> {
       const picture = covers.get(e.storyId);
       const coverUrl = picture ? proxiedImage(picture.url, "full") : null;
       const text = extras.text(e);
+      // The card clips its text to a few lines; complete public words belong to the event page.
+      const summary = text.summary ? Array.from(text.summary) : null;
       return {
         rank: e.rank,
         story: { publicId: e.storyPublicId, title: e.title },
@@ -264,7 +266,7 @@ export async function loadHot(): Promise<HotResponse> {
         sourceNames: [...new Set(e.sourceNames.map(publicSourceName))],
         participants: extras.participants(e),
         spark: sparks.get(e.storyId) ?? [],
-        summary: text.summary,
+        summary: summary && summary.length > 480 ? summary.slice(0, 480).join('') + '…' : text.summary,
         latest: text.latest,
         cover: picture && coverUrl ? { url: coverUrl, srcSet: proxiedImageSet(picture.url, "hero") ?? undefined, width: picture.width, height: picture.height } : null,
       };

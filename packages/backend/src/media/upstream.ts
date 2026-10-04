@@ -48,9 +48,9 @@ export function recordUpstream(bytes: number, now = Date.now()): void {
   day.bytes += bytes;
 }
 
-/** For the digest: a minute window heals within the minute; only a day window leaves uncached images failing until midnight. */
+/** A follow-up: a minute window heals within the minute; only a day window leaves uncached images failing until midnight. */
 export async function upstreamFindings(now = Date.now()): Promise<Finding[]> {
   const [img] = await sql<{ value: { window: string; reason: string }; updated_at: Date }[]>`SELECT value, updated_at FROM settings WHERE key = 'egress.imgproxy'`;
   if (!img || img.value.window !== "day" || now - img.updated_at.getTime() >= 86400_000) return [];
-  return [{ key: "egress.imgproxy", level: "digest", title: "图片代理今天的流量额度用完了，未缓存的图片到零点前显示不出来", detail: String(img.value.reason) }];
+  return [{ key: "egress.imgproxy", level: "later", title: "图片代理今天的流量额度用完了，未缓存的图片到零点前显示不出来", detail: String(img.value.reason) }];
 }

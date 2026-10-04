@@ -143,7 +143,10 @@ export async function work<Q extends QueueName>(boss: PgBoss, name: Q, options: 
 export async function workModuleQueues(boss: PgBoss): Promise<void> {
   for (const queue of serverModules().flatMap((m) => m.queues ?? [])) {
     await ensureQueue(queue.name, queue.options);
-    await boss.work(queue.name, queue.worker, async ([job]) => (job ? queue.run(job.data as never) : undefined));
+    await boss.work(queue.name, { ...queue.worker, perJobResults: true }, async (jobs) => {
+      const output = await queue.run(jobs.map(job => job.data) as never[]);
+      return jobs.map(job => ({ id: job.id, status: "completed" as const, output }));
+    });
   }
 }
 

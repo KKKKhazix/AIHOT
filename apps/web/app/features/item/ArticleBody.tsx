@@ -5,8 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { Lightbox, type LightboxImage } from "../../components/ui/Lightbox";
 
 /** Pictures worth enlarging: not inside a link, not tiny icons. */
+function canZoom(img: HTMLImageElement): boolean {
+  return !img.closest("a") && !(img.naturalWidth && img.naturalWidth < 120);
+}
+
 function zoomable(root: HTMLElement): HTMLImageElement[] {
-  return [...root.querySelectorAll<HTMLImageElement>("img")].filter((img) => !img.closest("a") && !(img.naturalWidth && img.naturalWidth < 120));
+  return [...root.querySelectorAll<HTMLImageElement>("img")].filter(canZoom);
 }
 
 function enhanceCode(root: HTMLElement): () => void {
@@ -14,7 +18,24 @@ function enhanceCode(root: HTMLElement): () => void {
   if (!blocks.length) return () => {};
   let disposed = false;
   const timers = new Set<ReturnType<typeof setTimeout>>();
-  const highlighter = import("./highlight");
+  let highlighter: Promise<typeof import("./highlight")> | undefined;
+  const pending = new Map<Element, { code: HTMLElement; source: string; label: HTMLElement }>();
+  // Plain code and copying are available immediately. Colour only code near the reader, and
+  // download the language parser only when there is something there to colour.
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const block = pending.get(entry.target);
+      if (!block) continue;
+      pending.delete(entry.target);
+      observer.unobserve(entry.target);
+      colour(block.code, block.source, block.label);
+    }
+  }, { rootMargin: "200px 0px" });
+  const observe = (pre: HTMLPreElement, code: HTMLElement, source: string, label: HTMLElement) => {
+    pending.set(pre, { code, source, label });
+    observer.observe(pre);
+  };
   for (const pre of blocks) {
     const code = pre.querySelector("code") ?? pre;
     const source = code.textContent ?? "";
@@ -22,7 +43,7 @@ function enhanceCode(root: HTMLElement): () => void {
     if (wrapped) {
       // Enhanced by an earlier run of this effect: only the colours may still be missing.
       const label = pre.parentElement!.querySelector<HTMLElement>(".code-block-head span");
-      if (!code.classList.contains("hljs") && label) colour(code, source, label);
+      if (!code.classList.contains("hljs") && label) observe(pre, code, source, label);
       continue;
     }
     const shell = document.createElement("div");
@@ -55,10 +76,10 @@ function enhanceCode(root: HTMLElement): () => void {
     head.append(label, button);
     pre.parentNode?.insertBefore(shell, pre);
     shell.append(head, pre);
-    colour(code, source, label);
+    observe(pre, code, source, label);
   }
   function colour(code: HTMLElement, source: string, label: HTMLElement) {
-    void highlighter
+    void (highlighter ??= import("./highlight"))
       .then(({ highlightCode }) => {
         if (disposed || !code.isConnected || code.classList.contains("hljs")) return;
         const coloured = highlightCode(source);
@@ -72,6 +93,8 @@ function enhanceCode(root: HTMLElement): () => void {
   }
   return () => {
     disposed = true;
+    observer.disconnect();
+    pending.clear();
     for (const t of timers) clearTimeout(t);
   };
 }
@@ -84,25 +107,22 @@ export function ArticleBody({ html }: { html: string }) {
     const root = ref.current;
     if (!root) return;
     const cleanCode = enhanceCode(root);
-    const mark = () => {
-      const available = new Set(zoomable(root));
-      for (const img of root.querySelectorAll("img")) {
-        if (available.has(img)) {
-          img.classList.add("zoomable");
-          img.tabIndex = 0;
-          img.setAttribute("role", "button");
-          img.setAttribute("aria-label", img.alt ? `查看大图：${img.alt}` : "查看大图");
-        } else if (img.classList.contains("zoomable")) {
-          img.classList.remove("zoomable");
-          img.removeAttribute("tabindex");
-          img.removeAttribute("role");
-          img.removeAttribute("aria-label");
-        }
+    const mark = (img: HTMLImageElement) => {
+      if (canZoom(img)) {
+        img.classList.add("zoomable");
+        img.tabIndex = 0;
+        img.setAttribute("role", "button");
+        img.setAttribute("aria-label", img.alt ? `查看大图：${img.alt}` : "查看大图");
+      } else if (img.classList.contains("zoomable")) {
+        img.classList.remove("zoomable");
+        img.removeAttribute("tabindex");
+        img.removeAttribute("role");
+        img.removeAttribute("aria-label");
       }
     };
-    mark();
+    for (const img of root.querySelectorAll("img")) mark(img);
     const onLoad = (e: Event) => {
-      if (e.target instanceof HTMLImageElement) mark();
+      if (e.target instanceof HTMLImageElement) mark(e.target);
     };
     const showImage = (e: MouseEvent | KeyboardEvent) => {
       const img = e.target instanceof HTMLImageElement ? e.target : null;

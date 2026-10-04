@@ -5,6 +5,7 @@
 // Rules are hairlines in two weights: line-strong closes the masthead and underlines a page's heading
 // and the neighbours; line parts stories, columns and list rows. Nothing is set in solid ink. Stories
 // sit in rows of two whose rules run across the page, each story as tall as its neighbour.
+import { IntentLink } from "../../components/ui/IntentLink";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import type { ReportCitation, ReportDetail, ReportNavigationEntry } from "@aihot/contracts/site";
@@ -111,9 +112,9 @@ function Related({ items, className = "" }: { items: ReportCitation[]; className
           <span className="mt-[9px] size-1 shrink-0 rounded-full bg-ink-4" aria-hidden="true" />
           <span className="min-w-0 [overflow-wrap:anywhere]">
             {r.available && r.itemId ? (
-              <Link viewTransition to={`/items/${r.itemId}`} prefetch="intent" className="text-ink-2 transition-colors hover:text-accent">
+              <IntentLink viewTransition to={`/items/${r.itemId}`} className="text-ink-2 transition-colors hover:text-accent">
                 {r.title}
-              </Link>
+              </IntentLink>
             ) : (
               <span title={WITHDRAWN_NOTE} className="text-ink-4 line-through">{r.title}</span>
             )}
@@ -148,9 +149,9 @@ function Story({ c, dated, className = "" }: { c: ReportCitation; dated: boolean
         <>
           <h3 className="mt-3 text-[19px] font-bold leading-[1.5] tracking-[-0.01em] text-ink [overflow-wrap:anywhere] [text-wrap:pretty] @[880px]:text-[20px]">
             {c.itemId ? (
-              <Link viewTransition to={`/items/${c.itemId}`} prefetch="intent" className="transition-colors hover:text-accent">
+              <IntentLink viewTransition to={`/items/${c.itemId}`} className="transition-colors hover:text-accent">
                 {c.title}
-              </Link>
+              </IntentLink>
             ) : (
               c.title
             )}
@@ -286,9 +287,9 @@ function FrontPage({ report, pages, leadStory, count }: { report: ReportDetail; 
         {cover && wide && <LeadPicture cover={cover} onError={() => setBroken(cover.url)} priority className="order-2 mt-5 @[560px]:order-1" />}
         <h2 className="order-1 mt-4 text-[32px] font-black leading-[1.28] tracking-[-0.03em] text-ink [text-wrap:balance] @[520px]:text-[40px] @[560px]:order-2 @[1040px]:text-[48px] @[1040px]:leading-[1.22]">
           {leadStory?.itemId ? (
-            <Link viewTransition to={`/items/${leadStory.itemId}`} prefetch="intent" className="transition-colors hover:text-accent">
+            <IntentLink viewTransition to={`/items/${leadStory.itemId}`} className="transition-colors hover:text-accent">
               {title}
-            </Link>
+            </IntentLink>
           ) : (
             title
           )}

@@ -22,14 +22,20 @@ export interface SourceHealthRow {
 
 export const SOURCE_USE_NAMES: Record<string, string> = { editorial: "编辑内容", hot_signal: "热度信号" };
 
-/** Seven days of outcomes, including intermittent failures that a later success clears on sources. */
+/** Seven days of outcomes, including intermittent failures that a later success clears on sources.
+ * Provider budget waits and process shutdowns are excluded even when a saved detail run counted
+ * them as failures. A request timeout remains a failure. */
 export async function sourceHealth(now = Date.now()) {
   const since = new Date(now - 7 * 86400_000);
   const rows = await sql<SourceHealthRow[]>`
     WITH runs AS (
       SELECT source_id, count(*) FILTER (WHERE status IN ('ok','failed') AND coalesce(error, '') NOT LIKE 'Budget for % exhausted (%)')::int AS runs,
         count(*) FILTER (WHERE status = 'failed' AND coalesce(error, '') NOT LIKE 'Budget for % exhausted (%)')::int AS failed,
-        coalesce(sum((detail->>'detailFailures')::int), 0)::int AS detail_failures
+        coalesce(sum((detail->>'detailFailures')::int - (
+          SELECT count(*) FROM jsonb_array_elements(detail->'detailErrors') e
+          WHERE e->>'error' LIKE 'Budget for % exhausted (%)'
+            OR e->>'error' = 'This operation was aborted'
+        )), 0)::int AS detail_failures
       FROM fetch_runs WHERE started_at >= ${since} GROUP BY source_id
     ), seen AS (
       SELECT article_id, source_id FROM article_discoveries WHERE discovered_at >= ${since}
@@ -68,5 +74,5 @@ export async function sourceHealth(now = Date.now()) {
 /** Bounded display, with the full count explicit; the underlying assessment never drops the tail. */
 export function sourceHealthList(rows: SourceHealthRow[], describe: (row: SourceHealthRow) => string, limit = 10): string {
   const list = rows.slice(0, limit).map(s => `${s.name}（${s.id}）：${describe(s)}`).join("；");
-  return list + (rows.length > limit ? `；另有 ${rows.length - limit} 个，见信源周报与后台信源列表` : "");
+  return list + (rows.length > limit ? `；另有 ${rows.length - limit} 个，见后台信源列表` : "");
 }

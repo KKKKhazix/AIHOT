@@ -28,12 +28,21 @@ export function isReload(): boolean {
 /** Saves the list as it is now, anchored on the first card ([data-card-key]) still below the bar. */
 export function saveSnapshot<T>(historyKey: string, data: T, flush = false) {
   let anchor: ListSnapshot<T>["anchor"] = null;
-  for (const el of document.querySelectorAll<HTMLElement>("[data-card-key]")) {
-    const rect = el.getBoundingClientRect();
-    if (rect.bottom > 72) {
-      anchor = { key: el.dataset.cardKey!, offset: rect.top };
-      break;
-    }
+  // Cards follow vertical order. A closing date still has clipped children until its animation
+  // ends; exclude them so only the visible list participates in the position search.
+  const cards = document.querySelectorAll<HTMLElement>("[data-card-key]:not(.anim-collapse-out *)");
+  const head = cards[0]?.getBoundingClientRect();
+  let start = 0;
+  // Near the top one read is enough; deep returns use a logarithmic search.
+  let end = head && head.bottom > 72 ? 0 : cards.length;
+  while (start < end) {
+    const middle = (start + end) >>> 1;
+    if (cards[middle]!.getBoundingClientRect().bottom > 72) end = middle;
+    else start = middle + 1;
+  }
+  const first = cards[start];
+  if (first) {
+    anchor = { key: first.dataset.cardKey!, offset: start === 0 ? head!.top : first.getBoundingClientRect().top };
   }
   snapshots.set(historyKey, { savedAt: Date.now(), data, anchor, scrollY: window.scrollY });
   if (flush) snapshots.flush();

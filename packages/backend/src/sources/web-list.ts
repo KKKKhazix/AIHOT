@@ -1,6 +1,7 @@
 // Web list pages: HTML with selectors, Markdown through Jina Reader, and dated changelog sections.
 import * as cheerio from "cheerio";
 import { guardedFetch } from "../lib/http-fetch.ts";
+import { fetchListing } from "./listing-fetch.ts";
 import { identityKeyForUrl, normalizeUrl } from "../lib/url.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { readable, type ExtractedBody } from "../content/extract.ts";
@@ -106,7 +107,7 @@ async function fetchListingText(source: SourceRow): Promise<{ text: string; viaJ
     const page = await jinaRead(target, { purpose: "source_listing", subject: `source:${source.id}`, cacheToleranceSeconds: source.config.cacheToleranceSeconds, format, perRead: true });
     return { text: page.markdown, viaJina: true, base: source.config.baseUrl ?? target };
   }
-  const res = await guardedFetch(url, { headers: { accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8" }, timeoutMs: 25_000 });
+  const res = await fetchListing(url, { headers: { accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8" }, timeoutMs: 25_000 });
   if (res.status !== 200) throw new FetchError(`HTTP ${res.status}`, res.status);
   return { text: res.text(), viaJina: false, base: source.config.baseUrl ?? res.url };
 }

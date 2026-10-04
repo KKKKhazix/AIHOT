@@ -54,7 +54,7 @@ test("daily follow-ups retain chronic failures after a successful run, separatel
   const findings = await collectFindings(now);
   for (const [mode, id, other] of [["editorial", editorial, signal], ["hot_signal", signal, editorial]]) {
     const f = findings.find(f => f.key === `sources.unstable.${mode}`);
-    assert.equal(f?.level, "digest");
+    assert.equal(f?.level, "later");
     assert.ok(f!.detail!.includes(id!));
     assert.ok(!f!.detail!.includes(other!));
     assert.ok(!f!.detail!.includes(budget), "a spent budget is not a failing source");
@@ -90,9 +90,33 @@ test("quality follow-ups count undated editorial articles and edits without judg
     SELECT ${article.articleId},i,'changed',${new Date(now)} FROM generate_series(2,6) i`;
   const findings = await collectFindings(now);
   const quality = findings.find(f => f.key === "sources.quality.editorial");
-  assert.equal(quality?.level, "digest");
+  assert.equal(quality?.level, "later");
   assert.ok(quality!.detail!.includes(editorial));
   assert.match(quality!.detail!, /缺发布时间 1/);
   assert.match(quality!.detail!, /反复修订 1/);
   assert.equal(findings.find(f => f.key === "sources.quality.hot_signal"), undefined);
+});
+
+test("saved detail budget waits and shutdowns do not alert, while HTTP errors and timeouts do", async () => {
+  const budget = await source("detail-budget", "editorial", new Date(now));
+  const shutdown = await source("detail-shutdown", "editorial", new Date(now));
+  const mixed = await source("detail-mixed", "editorial", new Date(now));
+  const legacy = await source("detail-counter", "editorial", new Date(now));
+  const error = "Budget for jina exhausted (minute)";
+  for (const [id, detail] of [
+    [budget, { detailFailures: 2, detailErrors: [{ error }, { error: "Budget for jina exhausted (day)" }] }],
+    [shutdown, { detailFailures: 15, detailErrors: Array.from({ length: 15 }, () => ({ error: "This operation was aborted" })) }],
+    [mixed, { detailFailures: 4, detailErrors: [{ error }, { error: "This operation was aborted" },
+      { error: "HTTP 500 for detail" }, { error: "The operation was aborted due to timeout" }] }],
+    [legacy, { detailFailures: 1 }],
+  ] as const) {
+    await sql`INSERT INTO fetch_runs(source_id,started_at,finished_at,status,detail)
+      VALUES(${id},${new Date(now)},${new Date(now)},'ok',${sql.json(detail)})`;
+  }
+  const finding = (await collectFindings(now)).find(f => f.key === "sources.details.editorial");
+  assert.ok(finding);
+  assert.ok(!finding.detail!.includes(budget));
+  assert.ok(!finding.detail!.includes(shutdown));
+  assert.ok(finding.detail!.includes(`${mixed}）：近 7 天 2 次`));
+  assert.ok(finding.detail!.includes(`${legacy}）：近 7 天 1 次`));
 });

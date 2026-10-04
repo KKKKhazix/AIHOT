@@ -17,8 +17,23 @@ export interface Scheduled {
   cron: string;
   run: () => Promise<unknown>;
   missed?: "skip" | "once";
-  /** Read when the worker starts: false removes the schedule and its execution queue; run history remains. */
+  /** Read when the worker starts, after the modules are installed: false removes the schedule and its execution queue; run history remains. */
   when?: () => boolean;
+}
+
+/**
+ * Someone who takes problems off the owner, such as an engineer's or an agent's queue (ServerModule.responder):
+ * the owner then hears only what it hands back.
+ */
+export interface Responder {
+  /**
+   * Every problem the alerts check found (operations/alerts.ts); a problem it held that is missing has ended.
+   * `tell` is what the owner should hear about now; `held` names the problems still open, so the owner is not
+   * told that something they heard about earlier has ended while it lasts.
+   */
+  take: (found: Finding[], now: number) => Promise<{ tell: Finding[]; held: string[] }>;
+  /** A problem found while the alerts check cannot run (operations/watch.ts: the worker is down); what the owner should hear about it, if anything. */
+  raise: (found: Finding, now: number) => Promise<Finding | null>;
 }
 
 /** A model step (editorial/models.ts); its default model comes from site/models.ts, else `default`. */
@@ -88,7 +103,8 @@ export interface ModuleQueue<T = never> {
   options: QueueOptions;
   /** How the worker takes its jobs (pg-boss work). */
   worker: WorkOptions;
-  run: (data: T) => Promise<unknown>;
+  /** All jobs taken together (batchSize); a failure retries the whole batch. */
+  run: (data: T[]) => Promise<unknown>;
 }
 
 export function defineQueue<T>(queue: ModuleQueue<T>): ModuleQueue<T> {
@@ -206,6 +222,12 @@ export interface ServerModule {
   schedules?: Scheduled[];
   /** What is wrong now, for the owner's alerts (operations/alerts.ts), after the engine's problems. */
   alerts?: (now: number) => Promise<Finding[]>;
+  /**
+   * Takes the problems that are not the owner's own (Finding.owner) off them: the first installed module with
+   * one (operations/alerts.ts, operations/watch.ts). With it, the daily digest and the weekly source report
+   * have no schedule (apps/worker/src/schedules.ts): their follow-ups are its work.
+   */
+  responder?: Responder;
   /** What the content groups receive from it, as the alerts name it: "状态". */
   pushes?: string[];
   /** Its share of the daily retention run (operations/retention.ts): what it deleted or aggregated. */
@@ -244,7 +266,7 @@ export interface ServerModule {
   sourceHealth?: (now: number) => Promise<string[]>;
   /** Job queues of its own (jobs/queue.ts). */
   queues?: ModuleQueue[];
-  /** Follow-ups for the daily digest (level digest), after the engine's (operations/alerts.ts). */
+  /** Follow-ups (level later), after the engine's (operations/alerts.ts). */
   followUps?: (now: number) => Promise<Finding[]>;
   /** Further hosts the site answers on, over https: MCP accepts them as Host and as a browser's Origin (routes/mcp.ts). */
   hosts?: string[];
@@ -269,6 +291,11 @@ export function installModules(modules: readonly ServerModule[]): void {
 
 export function serverModules(): readonly ServerModule[] {
   return installed;
+}
+
+/** The first installed module's responder, if any. */
+export function responder(): Responder | null {
+  return installed.find((m) => m.responder)?.responder ?? null;
 }
 
 /** The first installed module's reminder for the person behind this request, at this exit. */

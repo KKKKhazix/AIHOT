@@ -44,7 +44,7 @@ function filterKey(category: CategoryKey | null, channel: ChannelKey): string {
 /** Desktop: the filter as a row of tabs beside the search field. */
 export function CategoryTabs({ base, category, channel = "all", layoutId, className = "" }: { base: string; category: CategoryKey | null; channel?: ChannelKey; layoutId: string; className?: string }) {
   const [params] = useSearchParams();
-  return <PillTabs items={filterOptions(base, params, "全部")} active={filterKey(category, channel)} layoutId={layoutId} label="筛选" className={className} />;
+  return <PillTabs items={filterOptions(base, params, "全部").map(o => ({ ...o, prefetch: 'intent' as const }))} active={filterKey(category, channel)} layoutId={layoutId} label="筛选" className={className} />;
 }
 
 /**
@@ -71,8 +71,8 @@ export function FeedBar({ base, category, channel }: { base: "/" | "/all"; categ
             label="看精选或全部"
             active={base === "/" ? "featured" : "all"}
             items={[
-              { key: "featured", label: "精选", to: scope("/"), resetScroll: true },
-              { key: "all", label: "全部", to: scope("/all"), resetScroll: true },
+              { key: "featured", label: "精选", to: scope("/"), resetScroll: true, prefetch: 'intent' },
+              { key: "all", label: "全部", to: scope("/all"), resetScroll: true, prefetch: 'intent' },
             ]}
           />
         }

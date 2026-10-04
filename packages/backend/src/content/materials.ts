@@ -154,6 +154,13 @@ export async function upsertMaterial(m: MaterialInput, db: Db = sql): Promise<Ma
   return "begin" in db ? (db as typeof sql).begin(run) : run(db);
 }
 
+async function lockMaterial(db: Db, identityKey: string) {
+  const [existing] = await db<{ id: string; source_id: string; revision: number; content_hash: string | null; backfill: boolean; published_at: Date | null; title: string; body_text: string | null; excerpt: string | null; participation_mode: string }[]>`
+    SELECT a.id, a.source_id, a.revision, a.content_hash, a.backfill, a.published_at, a.title, a.body_text, a.excerpt, s.participation_mode
+    FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.identity_key = ${identityKey} FOR UPDATE OF a`;
+  return existing;
+}
+
 async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   m = { ...m,
     publishedAt: m.publishedAt && Number.isFinite(m.publishedAt.getTime()) ? m.publishedAt : null,
@@ -164,30 +171,33 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   const title = collapseWhitespace(m.title).slice(0, 1000) || m.url;
 
   const t = decideTimeline(m.publishedAt, discoveredAt, m.backfill);
-  const newId = m.id ?? newArticleId();
-  const hash = contentHash({ title, bodyText: m.bodyText, excerpt: m.excerpt });
-  const [inserted] = await db<{ id: string }[]>`
-    INSERT INTO articles (id, source_id, identity_key, url, title, author, language, published_at, published_at_claim,
-      discovered_at, source_updated_at, timeline_at, backfill, backfill_reason, revision, content_hash, excerpt,
-      body_text, body_html, body_status, media, x_post, raw)
-    VALUES (${newId}, ${m.sourceId}, ${identityKey}, ${m.url}, ${title}, ${m.author ?? null}, ${m.language ?? null},
-      ${t.publishedAt}, ${m.publishedAt ?? null}, ${discoveredAt}, ${m.sourceUpdatedAt ?? null}, ${t.timelineAt},
-      ${t.backfill}, ${t.backfillReason}, 1, ${hash}, ${m.excerpt ?? null}, ${m.bodyText ?? null}, ${m.bodyHtml ?? null},
-      ${m.bodyStatus ?? (m.bodyText ? "ok" : "pending")}, ${db.json((m.media ?? []) as never)},
-      ${m.xPost ? db.json(m.xPost as never) : null}, ${m.raw === undefined ? null : db.json(m.raw as never)})
-    ON CONFLICT (identity_key) DO NOTHING RETURNING id`;
-  if (inserted) {
-    await db`INSERT INTO article_revisions (article_id, revision, content_hash, title, body_text)
-             VALUES (${newId}, 1, ${hash}, ${title}, ${m.bodyText ?? null})`;
-    await db`INSERT INTO article_discoveries (article_id, source_id, via, discovered_at)
-             VALUES (${newId}, ${m.sourceId}, ${m.via}, ${discoveredAt}) ON CONFLICT DO NOTHING`;
-    await reconcileMaterialSource(db, newId, { sourceId: m.sourceId, author: m.author });
-    return { articleId: newId, created: true, revised: false, backfill: t.backfill };
+  // Most listing entries are already stored. Lock and reuse those rows without attempting an
+  // insert of their body and raw payload on every collection. The unique key still arbitrates
+  // concurrent first discoveries; after losing that insert, read and lock its winner.
+  let existing = await lockMaterial(db, identityKey);
+  if (!existing) {
+    const newId = m.id ?? newArticleId();
+    const hash = contentHash({ title, bodyText: m.bodyText, excerpt: m.excerpt });
+    const [inserted] = await db<{ id: string }[]>`
+      INSERT INTO articles (id, source_id, identity_key, url, title, author, language, published_at, published_at_claim,
+        discovered_at, source_updated_at, timeline_at, backfill, backfill_reason, revision, content_hash, excerpt,
+        body_text, body_html, body_status, media, x_post, raw)
+      VALUES (${newId}, ${m.sourceId}, ${identityKey}, ${m.url}, ${title}, ${m.author ?? null}, ${m.language ?? null},
+        ${t.publishedAt}, ${m.publishedAt ?? null}, ${discoveredAt}, ${m.sourceUpdatedAt ?? null}, ${t.timelineAt},
+        ${t.backfill}, ${t.backfillReason}, 1, ${hash}, ${m.excerpt ?? null}, ${m.bodyText ?? null}, ${m.bodyHtml ?? null},
+        ${m.bodyStatus ?? (m.bodyText ? "ok" : "pending")}, ${db.json((m.media ?? []) as never)},
+        ${m.xPost ? db.json(m.xPost as never) : null}, ${m.raw === undefined ? null : db.json(m.raw as never)})
+      ON CONFLICT (identity_key) DO NOTHING RETURNING id`;
+    if (inserted) {
+      await db`INSERT INTO article_revisions (article_id, revision, content_hash, title, body_text)
+               VALUES (${newId}, 1, ${hash}, ${title}, ${m.bodyText ?? null})`;
+      await db`INSERT INTO article_discoveries (article_id, source_id, via, discovered_at)
+               VALUES (${newId}, ${m.sourceId}, ${m.via}, ${discoveredAt}) ON CONFLICT DO NOTHING`;
+      await reconcileMaterialSource(db, newId, { sourceId: m.sourceId, author: m.author });
+      return { articleId: newId, created: true, revised: false, backfill: t.backfill };
+    }
+    existing = await lockMaterial(db, identityKey);
   }
-
-  const [existing] = await db<{ id: string; source_id: string; revision: number; content_hash: string | null; backfill: boolean; published_at: Date | null; title: string; body_text: string | null; excerpt: string | null; participation_mode: string }[]>`
-    SELECT a.id, a.source_id, a.revision, a.content_hash, a.backfill, a.published_at, a.title, a.body_text, a.excerpt, s.participation_mode
-    FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.identity_key = ${identityKey} FOR UPDATE OF a`;
   await db`INSERT INTO article_discoveries (article_id, source_id, via, discovered_at)
            VALUES (${existing!.id}, ${m.sourceId}, ${m.via}, ${discoveredAt}) ON CONFLICT DO NOTHING`;
   const unchanged: MaterialResult = { articleId: existing!.id, created: false, revised: false, backfill: existing!.backfill };

@@ -2,7 +2,8 @@ import { REPORTS, SITE } from "@aihot/site";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/topic";
 import type { TopicPage } from "@aihot/contracts/site";
-import { edgeTtl, loadOr404 } from "../lib/api.server";
+import { edgeTtl, loadOr404, pageExpiresAt } from "../lib/api.server";
+import { cachedLoader } from "../lib/page-reuse";
 import { breadcrumbLd, pageMeta, titled, topicLd } from "../lib/seo";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { BrandMark } from "../components/BrandMark";
@@ -16,6 +17,8 @@ import type { TopicPagePart } from "../modules";
 import { loadParts } from "../site-modules";
 
 export const handle: Screen = { home: "me" };
+export { shouldRevalidate } from "../lib/page-reuse";
+export const clientLoader = cachedLoader<typeof loader>();
 
 /** Selected items of a topic: shared caches keep the page as long as its api answer (one minute). */
 export function headers() {
@@ -28,7 +31,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   // Page 1 lives at the topic's own address (308).
   if (params.page === "1") throw redirect(`/topics/${params.slug}`, 308);
   const data = await loadOr404<TopicPage>(`/api/site/topics/${encodeURIComponent(params.slug)}?page=${page}`, { signal: request.signal });
-  return { data };
+  return { data, expiresAt: pageExpiresAt(60) };
 }
 
 const PARTS = await loadParts((m) => m.topicPage);

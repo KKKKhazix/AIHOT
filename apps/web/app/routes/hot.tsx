@@ -1,7 +1,9 @@
-import { Link, useLoaderData } from "react-router";
+import { useLoaderData } from "react-router";
+import { IntentLink } from "../components/ui/IntentLink";
 import type { HotEntryView, HotResponse } from "@aihot/contracts/site";
 import { subjectAfter, withSubject } from "@aihot/site";
-import { edgeTtl, loadOr404 } from "../lib/api.server";
+import { edgeTtl, loadOr404, pageExpiresAt } from "../lib/api.server";
+import { cachedLoader } from "../lib/page-reuse";
 import { pageMeta } from "../lib/seo";
 import { monthDayTime } from "../lib/format";
 import { Badge } from "../components/ui/Badge";
@@ -14,9 +16,11 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "hot", name: "热点" };
+export { shouldRevalidate } from "../lib/page-reuse";
+export const clientLoader = cachedLoader<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
-  return { hot: await loadOr404<HotResponse>("/api/site/hot", { signal: request.signal }) };
+  return { hot: await loadOr404<HotResponse>("/api/site/hot", { signal: request.signal }), expiresAt: pageExpiresAt(120) };
 }
 
 export function meta() {
@@ -71,9 +75,9 @@ function Badges({ e }: { e: HotEntryView }) {
 /** The whole card opens the event; the title carries the link and stretches over the card. */
 function StoryLink({ e, className }: { e: HotEntryView; className: string }) {
   return (
-    <Link viewTransition to={`/story/${e.story.publicId}`} prefetch="intent" className={`transition-colors after:absolute after:inset-0 after:content-[''] ${className}`}>
+    <IntentLink viewTransition to={`/story/${e.story.publicId}`} className={`transition-colors after:absolute after:inset-0 after:content-[''] ${className}`}>
       {e.story.title}
-    </Link>
+    </IntentLink>
   );
 }
 

@@ -8,9 +8,9 @@ import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
 import { queueProcessing } from "../jobs/content.ts";
 import { BudgetExceededError, completeReceipt } from "../providers/receipts.ts";
 import { fetchRss } from "./rss.ts";
-import { allowed, fetchDetail, fetchWebList, isCallToActionTitle, needsTitle, type DetailNeed } from "./web-list.ts";
+import { fetchDetail, fetchWebList, isCallToActionTitle, needsTitle, type DetailNeed } from "./web-list.ts";
 import { unsupportedConfig } from "./config-keys.ts";
-import { filterPublicationWindow } from "./filters.ts";
+import { admitListing } from "./filters.ts";
 import { fetchJsonList } from "./json-list.ts";
 import { fetchXSearch, planXShards, readXSearch, shardHandle, shardQuery, selfThreadHandle, SHARDABLE_SQL, tweetToCandidate, type XBacklog } from "./x.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
@@ -22,26 +22,6 @@ export interface CollectResult {
   created: number;
   revised: number;
   error?: string;
-}
-
-export function noiseFiltered(c: Candidate, source: SourceRow): boolean {
-  const f = source.config.ingestNoiseFilter;
-  const cats: string[] = c.categories ?? [];
-  if (source.config.denyCategories?.some((d: string) => cats.includes(d))) return true;
-  if (source.config.allowCategories?.length && !source.config.allowCategories.some((a: string) => cats.includes(a))) return true;
-  if (!f) return false;
-  // Case-insensitive: the exemption "agent" keeps "Agent" (words in the lists are lower case).
-  const has = (text: string, words: string[] | undefined) => (words ?? []).some((k) => text.includes(k.toLowerCase()));
-  const title = c.title.toLowerCase();
-  const hay = `${title}\n${(c.excerpt ?? "").toLowerCase()}`;
-  if (has(hay, f.keepIfMatches)) return false;
-  return has(title, f.dropMarkersTitleOnly) || has(hay, f.dropMarkers);
-}
-
-function rewriteUrl(c: Candidate, source: SourceRow): Candidate {
-  const rw = source.config.itemUrlPrefixRewrite;
-  if (rw?.from && rw?.to && c.url.startsWith(rw.from)) return { ...c, url: rw.to + c.url.slice(rw.from.length) };
-  return c;
 }
 
 async function loadSource(id: string): Promise<SourceRow | null> {
@@ -167,8 +147,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
       detail = { pages: x.pages, truncated: x.truncated, backlog: x.backlog.length, backlogPages: x.backlogPages, dropped: x.dropped };
     }
     found = candidates.length;
-    candidates = candidates.filter((c) => allowed(c.url, source)).map((c) => rewriteUrl(c, source)).filter((c) => !noiseFiltered(c, source));
-    candidates = filterPublicationWindow(candidates, source.config.publishedAfter);
+    candidates = admitListing(candidates, source);
     if (source.config.sortByPublishedAt) candidates.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
     // Deduplicate before enrichment and limits: URL aliases must neither buy duplicate detail reads
     // nor crowd other articles out of the window. Use exactly the identity the material will store; a
@@ -325,7 +304,7 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
     for (const m of members) {
       const handle = shardHandle(m)!.toLowerCase();
       const mine = read.tweets.filter((t) => t.user.screen_name.toLowerCase() === handle);
-      const stored = await store(m.id, mine.map(tweetToCandidate).map((c) => rewriteUrl(c, m)).filter((c) => !noiseFiltered(c, m)), null);
+      const stored = await store(m.id, admitListing(mine.map(tweetToCandidate), m), null);
       found += mine.length;
       created += stored.created;
       counts.set(m.id, { found: mine.length, created: stored.created });

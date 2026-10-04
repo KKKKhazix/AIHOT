@@ -1,6 +1,8 @@
 // Failure cases: a first-import cap only postpones paid history processing until the next run;
 // boundary-day, undated or future-dated entries bypass a fixed source publication window;
-// draft and stored-source previews promise entries the same collector will reject.
+// draft and stored-source previews promise entries the same collector will reject: links outside the
+// allowed or inside the denied URL prefixes, entries of a denied category, noise the source's filter
+// drops, or an address before the source's URL rewrite (prefix rules match the address as listed).
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -11,7 +13,7 @@ import { stopBoss } from "@aihot/backend/jobs/queue";
 import { collectSource } from "@aihot/backend/sources/collect";
 import { previewSource, previewStoredSource } from "@aihot/backend/admin/sources";
 
-type Item = { id: string; date: string | null };
+type Item = { id: string; date: string | null; link?: string; category?: string };
 const lists = new Map<string, Item[]>();
 const T = tag();
 const cutoff = new Date(Date.now() - 86400_000);
@@ -25,7 +27,7 @@ const server = http.createServer((req, res) => {
   } else if (path.startsWith("/rss")) {
     res.setHeader("content-type", "application/rss+xml");
     res.end(`<rss version="2.0"><channel><title>Publication window</title>${rows.map(row =>
-      `<item><title>${row.id}</title><link>${base}/article${path}/${row.id}</link>${row.date ? `<pubDate>${new Date(row.date).toUTCString()}</pubDate>` : ""}</item>`).join("")}</channel></rss>`);
+      `<item><title>${row.id}</title><link>${row.link ?? `${base}/article${path}/${row.id}`}</link>${row.category ? `<category>${row.category}</category>` : ""}${row.date ? `<pubDate>${new Date(row.date).toUTCString()}</pubDate>` : ""}</item>`).join("")}</channel></rss>`);
   } else {
     res.setHeader("content-type", "text/html");
     res.end(rows.map(row => `<article><a href="${base}/article${path}/${row.id}">${row.id}</a>${row.date ? `<time datetime="${row.date}"></time>` : ""}</article>`).join(""));
@@ -66,4 +68,35 @@ for (const kind of ["rss", "web_list", "json_list"] as const) test(`${kind} appl
   assert.deepEqual(saved.map(row => row.title), ["current", "latest"]);
   const [queued] = await sql`SELECT count(*)::int AS n FROM pgboss.job j JOIN articles a ON a.id=j.data->>'articleId' WHERE a.source_id=${id}`;
   assert.equal(queued!.n, 2, "excluded history never queues extraction or paid analysis");
+});
+
+test("previews keep exactly what collection stores, under the source's URL, category and noise rules", async () => {
+  const id = `rules-${T}`;
+  const path = `/rss/${id}`;
+  const at = new Date(Date.now() - 60_000).toISOString();
+  const kept = `${base}/article${path}/kept/`;
+  lists.set(path, [
+    { id: "kept", date: at, link: `${kept}1`, category: "AI" },
+    { id: "denied-prefix", date: at, link: `${kept}private/2` },
+    { id: "outside-allowed", date: at, link: `${base}/elsewhere/3` },
+    { id: "denied-category", date: at, link: `${kept}4`, category: "Sports" },
+    { id: "sponsored", date: at, link: `${kept}5` },
+  ]);
+  const sourceConfig = {
+    feedUrl: base + path,
+    allowUrlPrefixes: [kept],
+    denyUrlPrefixes: [`${kept}private/`],
+    denyCategories: ["Sports"],
+    ingestNoiseFilter: { dropMarkers: ["sponsored"] },
+    itemUrlPrefixRewrite: { from: kept, to: "https://example.org/kept/" },
+  };
+  await sql`INSERT INTO sources(id,name,kind,participation_mode,config,next_fetch_at)
+    VALUES(${id},${id},'rss','editorial',${sql.json(sourceConfig)},'2100-01-01')`;
+  const expected = [{ title: "kept", url: "https://example.org/kept/1" }];
+  for (const preview of [await previewSource({ id, kind: "rss", config: sourceConfig }), await previewStoredSource(id)]) {
+    assert.equal(preview!.count, 1);
+    assert.deepEqual(preview!.items.map(({ title, url }) => ({ title, url })), expected);
+  }
+  assert.equal((await collectSource(id)).created, 1);
+  assert.deepEqual((await sql`SELECT title, url FROM articles WHERE source_id=${id}`).map(({ title, url }) => ({ title, url })), expected);
 });

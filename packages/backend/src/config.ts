@@ -24,10 +24,11 @@ function int(name: string, fallback: number): number {
   return parsed;
 }
 
+/** On only when set to true, like every switch read straight from the environment. */
 function bool(name: string, fallback: boolean): boolean {
   const value = env[name];
   if (value === undefined || value === "") return fallback;
-  return value === "1" || value.toLowerCase() === "true";
+  return value === "true";
 }
 
 export const isProduction = env.NODE_ENV === "production";

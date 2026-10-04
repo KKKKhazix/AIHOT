@@ -186,7 +186,7 @@ export default function FeedbackPage() {
     <ReadingLayout aside={<FeedbackAside />}>
       <header>
         <h1 data-page-title="" className="text-[24px] font-semibold leading-[1.3] text-ink">说说你的想法</h1>
-        <p className="mt-2 text-[14.5px] leading-relaxed text-ink-3">发现 bug、想要的功能、看不顺眼的地方，都可以告诉我，我都会看到。</p>
+        <p className="mt-2 text-[14.5px] leading-relaxed text-ink-3">{SITE.feedbackLead}</p>
       </header>
 
       <form
@@ -231,7 +231,7 @@ export default function FeedbackPage() {
             <label htmlFor="fb-email" className={label}>
               邮箱 <span className="font-normal text-ink-4">（选填）</span>
             </label>
-            <input id="fb-email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder="留下邮箱，我可以回信联系你" className={`${field} h-11 px-4 text-[14.5px]`} />
+            <input id="fb-email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder={SITE.feedbackEmailHint} className={`${field} h-11 px-4 text-[14.5px]`} />
           </div>
 
           <div>

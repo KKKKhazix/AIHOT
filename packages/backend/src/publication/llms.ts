@@ -40,9 +40,6 @@ export async function loadLlmsAvailability() {
   };
 }
 
-/** How many ways in, as the heading counts them ("四种"). */
-const WAYS = ["零", "一", "两", "三", "四", "五", "六"];
-
 export function llmsTxt(opts: {
   hasDailies: boolean; hasWeekly: boolean; hasMonthly: boolean;
   topics: Array<{ slug: string; name: string; definition: string }>;
@@ -61,7 +58,7 @@ export function llmsTxt(opts: {
   lines.push(`# ${SITE.name}`, "");
   lines.push(`> ${SITE.description}`, "");
   if (SITE.llmsIntro) lines.push(SITE.llmsIntro, "");
-  lines.push(`## 给 Agent 的${WAYS[3 + opts.modules.ways.length]}种接入方式`, "");
+  lines.push("## 给 Agent 的接入方式", "");
   lines.push(
     `全部匿名只读、无需 API Key，版本统一为 ${v}。选法和配置见 [Agent 接入页](${u("/agent")})。`
     + opts.modules.access.join(""),
@@ -76,8 +73,8 @@ export function llmsTxt(opts: {
   lines.push(`- [MCP Server](${u("/api/mcp")}): 远程 Streamable HTTP，版本 ${v}；提供 ${opts.tools.join("、")} ${opts.tools.length} 个只读工具，和给 Agent 的使用说明里的能力一一对应、回答同源`);
   lines.push(rss("精选摘要 RSS（推荐）", "selected"), rss("精选全文 RSS（按需）", "selected-full"), rss("全部动态 RSS", "all"));
   if (opts.hasDailies) lines.push(rss("日报 RSS", "daily"));
-  if (opts.hasWeekly) lines.push(`- [周报 RSS](${u("/feed/weekly.xml")}): ${EDITION_WHEN.weekly} 北京时间发布的周报，每期附总述和按栏目分好的${REPORTS.entry.noun}目录，保留最近 12 期。`);
-  if (opts.hasMonthly) lines.push(`- [月报 RSS](${u("/feed/monthly.xml")}): ${EDITION_WHEN.monthly} 北京时间发布的月报，每期附总述和按栏目分好的${REPORTS.entry.noun}目录，保留最近 12 期。`);
+  if (opts.hasWeekly) lines.push(`- [周报 RSS](${u("/feed/weekly.xml")}): ${EDITION_WHEN.weekly}（北京时间）发布的周报，每期附总述和按栏目分好的${REPORTS.entry.noun}目录，保留最近 12 期。`);
+  if (opts.hasMonthly) lines.push(`- [月报 RSS](${u("/feed/monthly.xml")}): ${EDITION_WHEN.monthly}（北京时间）发布的月报，每期附总述和按栏目分好的${REPORTS.entry.noun}目录，保留最近 12 期。`);
   lines.push(`- [分类 RSS](${u(`/feed/category/${sample}.xml`)}): 按分类订阅精选，slug 支持 ${PUBLIC_API_CATEGORY_KEYS.join(" / ")}`);
   lines.push(`- [OpenAPI 规范](${u("/openapi-v1.json")}): REST API 的机器可读定义（版本 ${v}，路径是 /api/v1）`);
   lines.push(`- [公开 API · 最近资讯](${u("/api/v1/items")}): JSON，支持 mode=selected/all、window=24h/7d、by=timeline/published（时间口径：默认与网页一致的时间轴，对账原文发布时间用 published）、category、q、limit 与 cursor`);

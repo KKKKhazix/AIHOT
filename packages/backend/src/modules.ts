@@ -73,7 +73,7 @@ export interface LlmsLines {
   usage?: string[];
   /** Its clients built on the Agent guide, by name: the guide's line says Agents without them read it, and that they read it too. */
   guideClients?: string[];
-  /** Ways in of its own beside MCP, RSS and the API, a line each after the guide's; the section's heading counts them. */
+  /** Ways in of its own beside MCP, RSS and the API, a line each after the guide's. */
   ways?: string[];
 }
 

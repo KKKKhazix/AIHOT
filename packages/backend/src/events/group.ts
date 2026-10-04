@@ -2,7 +2,7 @@
 // facts hang on a story, an occurrence with its direct developments. Recall (recall.ts): the same
 // title-and-summary embedding on both sides over the reports of the last 14 days (shared bigrams
 // without an embedding key), plus the same URL and the X post a post replies to or quotes.
-// Identity: one three-way relation judgement over the candidate
+// Identity: one four-way relation judgement over the candidate
 // facts with their representative reports fully described (relate.ts); a merge that is not obvious
 // from similarity is confirmed by a second vendor before it is written; a development attaches only
 // to the fact that started its story, so stories do not grow by chaining. Manual corrections

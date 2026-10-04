@@ -9,7 +9,7 @@ import { PhoneBar } from "../../components/shell/PhoneBar";
  * left rail and its outline in the right (phones get the facts above the text and no outline).
  */
 export function CopyPage({ doc, rendered, eyebrow, footer, aside }: { doc: CopyDocument; rendered: RenderedCopy; eyebrow?: ReactNode; footer?: ReactNode; aside?: ReactNode }) {
-  const facts = (["版本", "生效日期", "运营主体", "备案号"] as const).filter((k) => doc.meta[k]);
+  const facts = (["版本", "生效日期", "运营主体", "联系方式", "备案号"] as const).filter((k) => doc.meta[k]);
   const info = facts.length > 0 && (
     <RailSection title="文档信息">
       <dl className="space-y-2 text-[12.5px]">

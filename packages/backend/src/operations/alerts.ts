@@ -218,7 +218,7 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
 /** What stops when a model service refuses us: the site's own words for its models, else a pointer to the admin. */
 const modelStops = (service: string) => ALERTS.modelStops[service] ?? "用到这家模型的步骤停了（看后台“模型与评测”），新内容可能进不了精选";
 const PROVIDERS: Record<string, { name: string; stops: string; where: string }> = {
-  llm: { name: "默认模型服务", stops: "新文章的精选、摘要、归组和日报停了", where: "模型服务商的控制台" },
+  llm: { name: "默认模型服务", stops: "新文章的精选、摘要、分类和全文翻译，事件的归组和综述都停了，周报月报出刊时没有总述", where: "模型服务商的控制台" },
   zhipu: { name: "智谱", stops: modelStops("zhipu"), where: "智谱开放平台" },
   dashscope: { name: "阿里云百炼", stops: modelStops("dashscope"), where: "阿里云百炼控制台" },
   deepseek: { name: "DeepSeek", stops: modelStops("deepseek"), where: "DeepSeek 开放平台" },

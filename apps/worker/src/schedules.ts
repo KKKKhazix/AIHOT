@@ -34,7 +34,6 @@ const ENGINE_SCHEDULES: Scheduled[] = [
   { name: "reports.compose", cron: "0,30 * * * *", missed: "once", run: () => composeDueReports() },
   // The deletions the privacy notice promises, once their retention periods are over.
   { name: "ops.retention", cron: "30 3 * * *", missed: "once", run: () => dailyRetention() },
-  { name: "sources.icons", cron: "40 4 * * *", missed: "once", run: () => refreshSourceIcons() },
   // IndexNow for new indexable pages (off unless INDEXNOW_SUBMIT_ENABLED).
   { name: "seo.indexnow", cron: "50 5 * * *", missed: "once", run: () => submitIndexNow() },
   // Work a stopped process left half way becomes visible, and unknown paid requests get their one
@@ -51,6 +50,8 @@ const ENGINE_SCHEDULES: Scheduled[] = [
     ? [
         { name: "sources.schedule", cron: "* * * * *", run: () => scheduleDueSources() },
         { name: "sources.adapt-intervals", cron: "20 4 * * *", run: adaptIntervals },
+        // Icons are read from the sources' own sites, so they stop with collection.
+        { name: "sources.icons", cron: "40 4 * * *", missed: "once" as const, run: () => refreshSourceIcons() },
       ]
     : []),
   // WeChat official accounts through Dajiala (paid), each once per its interval; only with its key.

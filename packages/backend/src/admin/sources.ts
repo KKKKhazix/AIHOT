@@ -13,7 +13,7 @@ import { serverModules } from "../modules.ts";
 import { fetchJsonList } from "../sources/json-list.ts";
 import { fetchRss } from "../sources/rss.ts";
 import { assertSupportedConfig } from "../sources/config-keys.ts";
-import { filterPublicationWindow } from "../sources/filters.ts";
+import { admitListing } from "../sources/filters.ts";
 import type { SourceRow } from "../sources/types.ts";
 import { fetchWebList } from "../sources/web-list.ts";
 import { fetchXSearch } from "../sources/x.ts";
@@ -87,7 +87,7 @@ export async function previewSource(draft: Pick<SourceRow, "id" | "kind" | "conf
   else if (source.kind === "json_list") candidates = await fetchJsonList(source);
   else if (source.kind === "x_search") candidates = (await fetchXSearch(source)).candidates;
   else throw new Error(`preview is not available for ${source.kind} sources`);
-  candidates = filterPublicationWindow(candidates, source.config.publishedAfter);
+  candidates = admitListing(candidates, source);
   return {
     ms: Date.now() - started,
     count: candidates.length,

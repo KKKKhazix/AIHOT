@@ -45,6 +45,7 @@ node --env-file=.env --input-type=module -e '
 const { rewriteStoryDigest } = await import("@aihot/backend/events/corrections");
 const { sql } = await import("@aihot/backend/db");
 const [s] = await sql`SELECT id FROM stories WHERE public_id = ${"<事件id>"}`;
+if (!s) throw new Error("没有这个事件 id");
 console.log(await rewriteStoryDigest(s.id, "综述提示词已更新", "ops-script"));
 await sql.end();'
 ```

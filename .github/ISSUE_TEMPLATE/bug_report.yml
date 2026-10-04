@@ -12,8 +12,8 @@ body:
     id: revision
     attributes:
       label: 代码版本
-      description: 在仓库目录执行 git rev-parse --short HEAD；不确定时说明下载或更新日期。
-      placeholder: 提交号或下载日期
+      description: 在仓库目录执行 git rev-parse --short HEAD；不确定时说明下载或更新日期。用 Use this template 生成的仓库，提交号和本仓库对不上，请写生成日期或最近一次同步本仓库的日期。
+      placeholder: 提交号，或下载、生成、同步的日期
     validations:
       required: true
   - type: textarea

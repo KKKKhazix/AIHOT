@@ -170,7 +170,7 @@
       "name": "Mistral AI",
       "kind": "rss",
       "config": {
-        "feedUrl": "https://mistral.ai/rss.xml",
+        "feedUrl": "https://mistral.ai/news/rss",
         "_aihot": {
           "initialBackfillLimit": 8
         }

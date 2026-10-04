@@ -1,12 +1,12 @@
 // The relation between a report and candidate facts: prompts, schemas, candidate
 // descriptions and the pure decision rules. group.ts does the reading and writing around them.
 //
-// A judgement is three-way. SAME_OCCURRENCE: the same real-world happening (one launch with its
-// models, prices and details; the same ruling, report, incident or interview from any outlet).
+// A judgement is one of four relations. SAME_OCCURRENCE: the same real-world happening (one launch
+// with its models, prices and details; the same ruling, report, incident or interview from any outlet).
 // SAME_STORY: a direct development of that happening (teaser and launch, launch and a review or a
 // third-party listing, an incident and the response). UNRELATED: a different happening, even for the
-// same product or company. ROUNDUP: one side is a multi-topic digest. Asking for the three-way
-// relation with both reports fully described is what makes the judge usable: a yes/no question with
+// same product or company. ROUNDUP: one side is a multi-topic digest. Asking for one of these relations
+// with both reports fully described is what makes the judge usable: a yes/no question with
 // "prefer no" refused half of the true merges (measured on labelled pairs).
 import { z } from "zod";
 import { beijingDate, beijingTime } from "@aihot/contracts/time";

@@ -11,3 +11,4 @@
 | `selection.ts` | 入选门槛 |
 | `gold.example.jsonl` | 精选评测样本的格式示例 |
 | `relation-gold.example.jsonl` | 事件关系评测样本的格式示例 |
+| `story-digest-eval.example.jsonl` | 事件综述评测案例的格式示例 |

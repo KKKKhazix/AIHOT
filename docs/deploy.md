@@ -143,6 +143,20 @@ docker compose logs -f --tail 100 api worker web
 
 后台的“运行”页能看到每个定时任务最近的结果，“信源”页能看到每个信源的抓取状况。
 
+### 模型返回空答案或不完整的 JSON
+
+如果模型调用失败，并提示 `Output token limit reached (finish_reason=length)`，说明服务商报告输出额度已用完，返回的答案未通过解析或校验。部分思考模型的思考过程与正式答案共用输出额度，可能在输出答案前就用完；这时 `content` 为空，即使 `reasoning_content` 有文字也不能作为正式答案使用。
+
+默认模型可通过 `.env` 的 `LLM_EXTRA_JSON` 覆盖请求参数。例如服务商支持 `max_tokens` 时：
+
+```dotenv
+LLM_EXTRA_JSON={"max_tokens":10000}
+```
+
+这只是示例额度，不是所有模型的推荐值。按服务商的模型上限和参数说明设置；服务商使用其他参数名时，以其文档为准。已有额外参数要放在同一个 JSON 对象中。也可使用服务商支持的参数关闭思考模式，例如千问的 `{"enable_thinking":false}`。`LLM_EXTRA_JSON` 只影响默认模型，`site/models.ts` 中的命名模型通过各自的 `extra` 配置。
+
+修改 `.env` 后重新创建 API 和 worker 容器（`docker compose up -d --force-recreate api worker`）；修改 `site/models.ts` 后还要重建镜像（`docker compose up -d --build --force-recreate api worker`）。非 Docker 部署重启 API 和 worker。然后检查后台的运行记录。增加输出额度可能增加耗时和费用；框架不会自动提高额度，也不会因为这条诊断立即追加付费调用。没有 `finish_reason=length` 的解析失败，仍需检查模型是否按提示词输出了所需格式。
+
 ## 花多少钱
 
 - **模型**：每条新资料先预筛一次；过了预筛的再评两次分、做一次结构化、写一次标题摘要，然后归组（有相近的报道时才调用），另外还有事件综述、周报月报的总述和精选的全文翻译。日报按规则编排，不调用模型。我们用示范信源在本地试跑，第一次导入的 152 条资料一共用了大约 930 次模型调用。之后每天用多少，取决于你的信源每天更新多少条。后台“模型与评测”页能看到每一步的调用次数和输入输出 token 数。

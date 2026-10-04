@@ -192,8 +192,11 @@ export async function chatJson<S extends z.ZodType>(opts: ChatJsonOptions<S>): P
     parsed = opts.schema.parse(opts.parse ? opts.parse(content) : extractJson(content));
   } catch (error) {
     // Unusable output: record it and let a later attempt pay for a fresh answer.
-    await rejectReceivedResponse(receipt.receiptId, `unusable output: ${String(error).slice(0, 500)}`);
-    throw new ModelOutputError(`Model ${opts.model} returned unusable output for ${opts.subject}: ${String(error).slice(0, 300)}`, receipt.receiptId);
+    const detail = response.choices?.[0]?.finish_reason === "length"
+      ? `Output token limit reached (finish_reason=length); increase the model's output token limit or disable reasoning. ${String(error)}`
+      : String(error);
+    await rejectReceivedResponse(receipt.receiptId, `unusable output: ${detail.slice(0, 500)}`);
+    throw new ModelOutputError(`Model ${opts.model} returned unusable output for ${opts.subject}: ${detail.slice(0, 300)}`, receipt.receiptId);
   }
   return { data: parsed, receiptId: receipt.receiptId, reused: receipt.reused, model: spec.key, usage: response.usage ?? null };
 }

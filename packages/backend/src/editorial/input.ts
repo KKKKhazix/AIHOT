@@ -2,7 +2,7 @@
 import { beijingDate, beijingTime } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
 import { collapseWhitespace, truncate } from "../lib/text.ts";
-import { produceImage } from "../media/images.ts";
+import { produceImage, rasterImage, SVG_PASSTHROUGH_MAX_BYTES } from "../media/images.ts";
 import type { ContentPart } from "../providers/llm.ts";
 import { MAX_BODY_CHARS } from "./writing.ts";
 
@@ -108,11 +108,16 @@ export function buildMaterial(a: AnalyzeInputArticle): string {
  * site's cached thumbnail. None when it cannot be fetched.
  * A post without its own image shows the quoted post's (a reaction to a chart or a launch card).
  */
-export async function firstImagePart(a: AnalyzeInputArticle): Promise<ContentPart | null> {
+export async function firstImagePart(a: Pick<AnalyzeInputArticle, "media"> & Partial<Pick<AnalyzeInputArticle, "xPost">>): Promise<ContentPart | null> {
   const image = [...(a.xPost?.media ?? []), ...(a.xPost?.quoted?.media ?? []), ...(a.media ?? [])].find((m: any) => m.kind === "image" && m.url);
   if (!image) return null;
   try {
-    const { body, type } = await produceImage(String(image.url), "thumb");
+    let { body, type } = await produceImage(String(image.url), "thumb");
+    // The display can retain a large vector to save transfer; the model still needs the bitmap
+    // thumbnail it received before that optimization. Compact SVGs keep their existing omission.
+    if (type === "image/svg+xml" && body.length > SVG_PASSTHROUGH_MAX_BYTES) {
+      ({ body, type } = await rasterImage(body, type, "thumb"));
+    }
     return /^image\/(jpeg|png|webp)$/.test(type) ? { type: "image_url", image_url: { url: `data:${type};base64,${body.toString("base64")}` } } : null;
   } catch {
     return null;

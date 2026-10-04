@@ -1,6 +1,7 @@
 // Image fetch, resize and cache, shared by the signed image proxy and the vision analysis: a (mode, url)
 // is fetched once through the egress route and both get the same file.
 import { createHash, randomUUID } from "node:crypto";
+import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
@@ -13,7 +14,7 @@ const CACHE_DIR = path.join(config.dataDir, "imgcache");
 const ORIGINAL_TTL_MS = 60_000;
 const ORIGINAL_MAX_BYTES = 32 * 1024 * 1024;
 const ORIGINAL_MAX_ENTRIES = 32;
-const SVG_PASSTHROUGH_MAX_BYTES = 128 * 1024;
+export const SVG_PASSTHROUGH_MAX_BYTES = 128 * 1024;
 const recentOriginals = new Map<string, { value: GuardedResponse; until: number }>();
 let originalBytes = 0;
 export interface PreparedImage {
@@ -162,8 +163,10 @@ async function cachedImage(file: string, body: Buffer, type: string, mode: strin
   if (webp) type = "image/webp";
   else if (type === "image/webp") type = (await sharp(body, { animated: true, limitInputPixels: false }).metadata()).mediaType ?? type;
   if (type === "image/svg+xml" && body.length > SVG_PASSTHROUGH_MAX_BYTES) {
+    if (await readFile(`${file}.prepared`).then(() => true, () => false)) return { body, type };
     const image = await resizeImage(body, type, mode);
-    await saveImage(file, image);
+    if (image.type === "image/svg+xml") await writeFile(`${file}.prepared`, "original");
+    else await saveImage(file, image);
     return image;
   }
   if (type !== "image/gif") return { body, type };
@@ -187,6 +190,7 @@ async function produce(url: string, mode: string): Promise<PreparedImage> {
   const image = await resizeImage(res.body, res.headers.get("content-type") ?? "", mode);
   await mkdir(path.dirname(file), { recursive: true });
   await saveImage(file, image);
+  if (image.type === "image/svg+xml" && image.body.length > SVG_PASSTHROUGH_MAX_BYTES) await writeFile(`${file}.prepared`, "original");
   return cachedImage(file, image.body, image.type, mode);
 }
 
@@ -223,7 +227,16 @@ export async function convertAnimated(url: string, mode: string): Promise<number
 }
 
 /** Deterministic output for a signed rendition: the request's Accept header never changes the bytes. */
-export async function resizeImage(body: Buffer, upstreamType: string, mode: string): Promise<{ body: Buffer; type: string }> {
+export function resizeImage(body: Buffer, upstreamType: string, mode: string): Promise<{ body: Buffer; type: string }> {
+  return encodeImage(body, upstreamType, mode, true);
+}
+
+/** A bitmap for consumers that cannot read SVG, using the same dimensions and encoder. */
+export function rasterImage(body: Buffer, upstreamType: string, mode: string): Promise<{ body: Buffer; type: string }> {
+  return encodeImage(body, upstreamType, mode, false);
+}
+
+async function encodeImage(body: Buffer, upstreamType: string, mode: string, vectors: boolean): Promise<{ body: Buffer; type: string }> {
   const ico = decodeIco(body);
   const suppliedType = upstreamType.split(";")[0]!.trim().toLowerCase();
   // Google Storage serves some real WebP images as generic binary. Decode their metadata before
@@ -246,14 +259,20 @@ export async function resizeImage(body: Buffer, upstreamType: string, mode: stri
   if ((meta.pages ?? 1) > 1 || type === "image/gif") return { body, type };
   // Small vectors are already compact and remain sharp at every zoom level. Rasterize oversized
   // SVGs (often screenshots embedded as base64) and avatars at their actual display rendition.
-  if (type === "image/svg+xml" && !avatar && body.length <= SVG_PASSTHROUGH_MAX_BYTES) return { body, type };
+  if (vectors && type === "image/svg+xml" && !avatar && (body.length <= SVG_PASSTHROUGH_MAX_BYTES || (meta.width !== undefined && meta.width < width))) return { body, type };
   const density = type === "image/svg+xml" && meta.width ? Math.max(72, Math.min(300, Math.ceil(width / meta.width * 72))) : 72;
   let image = sharp(input, { ...raw, failOn: "none", density }).rotate();
   image = avatar ? image.resize(width, width, { fit: "cover" }) : image.resize({ width, withoutEnlargement: true });
   // Screenshots and transparent PNGs benefit most from modern encoding. Already lossy JPEGs
   // measured larger at WebP 88, so retain their established encoder/quality instead of growing them.
   if (ico || type === "image/png" || type === "image/svg+xml") {
-    return { body: await image.webp({ quality: 88, alphaQuality: 100, smartSubsample: true, effort: 4 }).toBuffer(), type: "image/webp" };
+    const webp = await image.webp({ quality: 88, alphaQuality: 100, smartSubsample: true, effort: 4 }).toBuffer();
+    // SVG is compressed as text in transit. Rasterizing a compact transfer would add bytes even
+    // when its uncompressed file is larger; retain its sharp vector representation in that case.
+    if (vectors && type === "image/svg+xml" && !avatar && webp.length >= brotliCompressSync(body, {
+      params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 },
+    }).length) return { body, type };
+    return { body: webp, type: "image/webp" };
   }
   if (type === "image/webp") return { body: await image.webp({ quality: 82 }).toBuffer(), type };
   return { body: await image.jpeg({ quality: 82, mozjpeg: true }).toBuffer(), type: "image/jpeg" };

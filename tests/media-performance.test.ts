@@ -2,8 +2,8 @@ import "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { createServer } from "node:http";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
@@ -77,7 +77,7 @@ test("failed originals are not retried for every mode", async () => {
 // A previous encoder's disk entry must not bypass today's rendition rules, refetch the source,
 // rasterize a compact vector, or expose a mismatched MIME while body/type files are replaced.
 test("cached oversized SVGs use current renditions without downloading them again", async () => {
-  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#176b75"/><desc>${"old metadata ".repeat(12000)}</desc></svg>`);
+  const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#176b75"/><desc>${randomBytes(180000).toString("base64")}</desc></svg>`);
   const url = `${base}/cached-vector`;
   const key = createHash("sha256").update(`full|${url}`).digest("hex");
   const file = path.join(dir, "imgcache", key.slice(0, 2), key);
@@ -105,6 +105,44 @@ test("cached oversized SVGs use current renditions without downloading them agai
   await writeFile(smallFile, compact);
   await writeFile(`${smallFile}.type`, "image/svg+xml");
   assert.deepEqual(await produceImage(smallUrl, "full"), { body: compact, type: "image/svg+xml" });
+  assert.equal(imageHits, before);
+});
+
+// SVG can be much smaller over HTTP than its disk size, and its intrinsic display width is
+// independent of a bitmap's pixel count. Neither may regress just to change the image format.
+test("SVG preparation retains compact transfer and intrinsic display size", async () => {
+  const { resizeImage } = await import("@aihot/backend/media/images");
+  const compactTransfer = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#176b75"/><desc>${"compressible metadata ".repeat(10000)}</desc></svg>`);
+  const smallDisplay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="180" height="34"><rect width="180" height="34" fill="#176b75"/><desc>${randomBytes(180000).toString("base64")}</desc></svg>`);
+  for (const [name, body] of [["compact-transfer", compactTransfer], ["small-display", smallDisplay]] as const) {
+    assert.deepEqual(await resizeImage(body, "image/svg+xml", "full"), { body, type: "image/svg+xml" });
+    const url = `${base}/${name}`;
+    const key = createHash("sha256").update(`full|${url}`).digest("hex");
+    const file = path.join(dir, "imgcache", key.slice(0, 2), key);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, body);
+    await writeFile(`${file}.type`, "image/svg+xml");
+    assert.deepEqual(await produceImage(url, "full"), { body, type: "image/svg+xml" });
+    assert.equal(await readFile(`${file}.prepared`, "utf8"), "original");
+    assert.deepEqual(await produceImage(url, "full"), { body, type: "image/svg+xml" });
+  }
+});
+
+test("a retained large SVG still supplies the model's raster thumbnail", async () => {
+  const { firstImagePart } = await import("@aihot/backend/editorial/input");
+  const url = `${base}/model-vector`;
+  const key = createHash("sha256").update(`thumb|${url}`).digest("hex");
+  const file = path.join(dir, "imgcache", key.slice(0, 2), key);
+  const body = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="180" height="34"><rect width="180" height="34" fill="#176b75"/><desc>${randomBytes(180000).toString("base64")}</desc></svg>`);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, body);
+  await writeFile(`${file}.type`, "image/svg+xml");
+  const before = imageHits;
+  const part = await firstImagePart({ media: [{ kind: "image", url }] } as Parameters<typeof firstImagePart>[0]);
+  assert.ok(part && part.type === "image_url");
+  const data = (part as { type: "image_url"; image_url: { url: string } }).image_url.url;
+  assert.match(data, /^data:image\/(jpeg|png|webp);base64,/);
+  assert.equal((await sharp(Buffer.from(data.split(",")[1]!, "base64")).metadata()).width, 720);
   assert.equal(imageHits, before);
 });
 

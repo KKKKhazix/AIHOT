@@ -3,7 +3,7 @@
   "info": {
     "title": "{{siteName}} Public API",
     "version": "{{version}}",
-    "description": "Anonymous, read-only API for clients and Agents. No API key is required.\n\nPicking an endpoint: answer a person's question inside an AI agent -> read /api/v1/agent, which lists Markdown addresses made for agents. Show recent or today's items -> /api/v1/items. Show what is trending right now -> /api/v1/hot-topics. Show the daily digest -> /api/v1/dailies/latest; the weekly and monthly reports -> /api/v1/weeklies/latest and /api/v1/monthlies/latest. Keep a complete local copy of the selected set -> /api/v1/selected/snapshot once, then /api/v1/selected/changes forever.\n\nHow often to poll: use each response's Cache-Control s-maxage as the minimum interval, and always send If-None-Match: an unchanged resource answers 304 with an empty body. On 429 or 503, honour Retry-After. There is no push channel (no SSE, webhooks or streaming): poll on an interval.\n\nKeep responses small: send Accept-Encoding: gzip or br (curl --compressed). To follow new items, page back only until you reach an id you already have instead of re-reading the whole 7-day window on every poll; to keep every selected item, read /api/v1/selected/snapshot once and then only /api/v1/selected/changes.\n\nTitles and summaries are generated from third-party sources; the original is always linked in links.original.",
+    "description": "Anonymous, read-only API for clients and Agents. No API key is required.\n\nPicking an endpoint: answer a person's question inside an AI agent -> read /api/v1/agent, which lists Markdown addresses made for agents. Show recent or today's items -> /api/v1/items. Show what is trending right now -> /api/v1/hot-topics. Show the daily digest -> /api/v1/dailies/latest; the weekly and monthly reports -> /api/v1/weeklies/latest and /api/v1/monthlies/latest. Keep a complete local copy of the selected set -> /api/v1/selected/snapshot once, then /api/v1/selected/changes forever.\n\nHow often to poll: use each response's Cache-Control s-maxage as the minimum interval, and always send If-None-Match: an unchanged resource answers 304 with an empty body. On 429 or 503, honour Retry-After. There is no push channel (no SSE, webhooks or streaming): poll on an interval.\n\nKeep responses small: send Accept-Encoding: gzip or br (curl --compressed). To follow new items, page back only until you reach an id you already have instead of re-reading the whole 7-day window on every poll; to keep every selected item, read /api/v1/selected/snapshot once and then only /api/v1/selected/changes.\n\nReport dates, weeks and months identify fixed editions, but corrections and withdrawn citations can change their public content. Revalidate retained copies with If-None-Match after Cache-Control expires; do not treat a dated report as immutable.\n\nTitles and summaries are generated from third-party sources; the original is always linked in links.original.",
     "termsOfService": "{{siteUrl}}/terms"
   },
   "servers": [
@@ -74,7 +74,7 @@
               ],
               "default": "timeline"
             },
-            "description": "Which timestamp defines the window and the ordering. 'timeline' (default) matches what the website shows: items back-filled more than 72h after publication keep their original publication date, everything else uses the time the site received it, so slow-pushing sources still land inside a 24h window. 'published' uses the third-party publication time only, which drops those slow pushes out of short windows. Both timestamps are always returned on every item as publishedAt and discoveredAt."
+            "description": "Which timestamp defines the window and ordering. 'timeline' (default) matches the site's published timeline: historical or backfilled items can retain their source publication time, including items first found more than 72h after publication; ordinary new items use discovery time, and selected representatives follow their reading group's first appearance. 'published' uses source publication time, falling back to discovery time when it is unknown. publishedAt may be null when the original time is unknown; discoveredAt is the site's receipt time. These returned fields are not client-side cursor or sort keys; pass the returned cursor unchanged."
           },
           {
             "name": "q",
@@ -944,7 +944,7 @@
       "get": {
         "operationId": "dailyByDate",
         "summary": "Get a daily report by Shanghai calendar date",
-        "description": "A single past daily report by Asia/Shanghai calendar date (YYYY-MM-DD). Reports are edited once, but withdrawn citations are removed from later responses. Respect Cache-Control and revalidate with If-None-Match before reusing an expired copy; do not cache a report indefinitely.",
+        "description": "A single past daily report by Asia/Shanghai calendar date (YYYY-MM-DD). Each date identifies a fixed edition, but corrections and withdrawn citations can change its public content. Respect Cache-Control and revalidate with If-None-Match before reusing an expired copy; do not cache a report indefinitely.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ActorUserAgent"
@@ -1473,7 +1473,7 @@
       "get": {
         "operationId": "weeklyByWeek",
         "summary": "Get a weekly report by ISO week",
-        "description": "A single weekly report by ISO week label (YYYY-Www, for example 2026-W39). Withdrawn citations are removed from later responses. Respect Cache-Control and revalidate with If-None-Match before reusing an expired copy; do not cache a report indefinitely.",
+        "description": "A single weekly report by ISO week label (YYYY-Www, for example 2026-W39). Corrections and withdrawn citations can change the public content of this edition. Respect Cache-Control and revalidate with If-None-Match before reusing an expired copy; do not cache a report indefinitely.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ActorUserAgent"
@@ -2003,7 +2003,7 @@
       "get": {
         "operationId": "monthlyByMonth",
         "summary": "Get a monthly report by month",
-        "description": "A single monthly report by calendar month (YYYY-MM, for example 2026-09). Withdrawn citations are removed from later responses. Respect Cache-Control and revalidate with If-None-Match before reusing an expired copy.",
+        "description": "A single monthly report by calendar month (YYYY-MM, for example 2026-09). Corrections and withdrawn citations can change the public content of this edition. Respect Cache-Control and revalidate with If-None-Match before reusing an expired copy.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ActorUserAgent"

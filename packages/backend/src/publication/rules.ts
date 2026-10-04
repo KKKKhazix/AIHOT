@@ -56,8 +56,8 @@ export function mayRedistribute(source: SourceFacts, bodyMode: "full" | "summary
  * Detail pages are noindex by default. Selected items are indexed automatically; an editor
  * can mark any other public page for indexing, or exclude a page, which then stays out.
  */
-export function isIndexable(p: { visibility: string; hasSummary: boolean; selected: boolean; seoIndexedAt: Date | null; seoExcludedAt: Date | null }): boolean {
-  return p.visibility === "public" && p.hasSummary && p.seoExcludedAt === null && (p.selected || p.seoIndexedAt !== null);
+export function isIndexable(p: { visibility: string; sourceMode: string; hasSummary: boolean; selected: boolean; seoIndexedAt: Date | null; seoExcludedAt: Date | null }): boolean {
+  return p.visibility === "public" && hasItemPage(p) && p.hasSummary && p.seoExcludedAt === null && (p.selected || p.seoIndexedAt !== null);
 }
 
 /** Display tags exclude internal entity markers. */

@@ -24,10 +24,9 @@ interface FeedMeta {
   homePath: string;
   pollHintMinutes: number;
   edgeCacheSeconds: number;
-  staleWhileRevalidateSeconds: number;
 }
 
-const CACHE = { edgeCacheSeconds: 300, staleWhileRevalidateSeconds: 900 };
+const CACHE = { edgeCacheSeconds: 300 };
 
 /** What the all feed leaves out: what the site names (FEED_COPY), then what the engine always leaves out. */
 const LEFT_OUT = [...FEED_COPY.allLeavesOut, "未审内容", "低相关条目", "已合并重复条目"];
@@ -48,7 +47,7 @@ export function feedMeta(id: ItemFeedKind | ReportKind): FeedMeta {
 
 export function feedCacheControl(id: ItemFeedKind | ReportKind): string {
   const m = feedMeta(id);
-  return `public, max-age=${m.edgeCacheSeconds}, s-maxage=${m.edgeCacheSeconds}, stale-while-revalidate=${m.staleWhileRevalidateSeconds}`;
+  return `public, max-age=${m.edgeCacheSeconds}, s-maxage=${m.edgeCacheSeconds}, must-revalidate`;
 }
 
 /** RSS <author> needs an address: a no-reply one on the site's own domain. */

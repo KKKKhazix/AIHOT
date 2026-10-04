@@ -63,3 +63,18 @@ test("online DDL cannot accumulate strong table locks across several otherwise s
   assert.throws(() => migrationPlan("ALTER TABLE articles ADD COLUMN flag text; ALTER TABLE publications ADD COLUMN flag text;"), /one statement/);
   assert.throws(() => migrationPlan("CREATE TABLE example (id int); ALTER TABLE articles ADD COLUMN flag text;"), /one statement/);
 });
+
+test("statistics maintenance names one table and its columns without skipping work or evaluating expressions", () => {
+  assert.equal(migrationPlan("CREATE STATISTICS article_release_stats (mcv) ON visibility, selected, seat, visible_after FROM publications;").kind, "statistics");
+  assert.equal(migrationPlan("ANALYZE public.publications (visibility, selected, seat, visible_after);").kind, "statistics");
+  for (const statement of [
+    "CREATE STATISTICS IF NOT EXISTS article_release_stats (mcv) ON selected, visible_after FROM publications;",
+    "CREATE STATISTICS article_release_stats (mcv) ON selected, (random()) FROM publications;",
+    "CREATE STATISTICS article_release_stats (dependencies) ON selected, visible_after FROM publications;",
+    "ANALYZE;",
+    "ANALYZE publications;",
+    "ANALYZE publications(selected), articles(id);",
+    "ANALYZE (SKIP_LOCKED) publications(selected);",
+    "ANALYZE publications(selected); UPDATE publications SET selected = false;",
+  ]) assert.throws(() => migrationPlan(statement), statement);
+});

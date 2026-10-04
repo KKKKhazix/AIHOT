@@ -3,6 +3,7 @@
 // describe one connection, and the hop to the api is a different, pooled one.
 import { request as httpRequest, type IncomingHttpHeaders, type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from "node:http";
 import { API_BASE_URL } from "./api.server.ts";
+import { logError } from "./errors.server.ts";
 
 const API = new URL(API_BASE_URL);
 const HOP_BY_HOP = ["connection", "keep-alive", "proxy-connection", "te", "transfer-encoding", "upgrade"];
@@ -23,7 +24,8 @@ export function proxyToApi(req: IncomingMessage, res: ServerResponse, set: Outgo
     res.writeHead(up.statusCode ?? 502, endToEnd(up.headers));
     up.pipe(res);
   });
-  upstream.on("error", () => {
+  upstream.on("error", (error) => {
+    logError(error, { msg: "api proxy request failed", method: req.method, path: req.url });
     res.statusCode = 502;
     res.end("api unavailable");
   });

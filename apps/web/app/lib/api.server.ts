@@ -2,6 +2,7 @@
 // process never touches the database; SSR reads the api over loopback with keep-alive, one or two
 // requests per page.
 import { data, redirect } from "react-router";
+import { logError } from "./errors.server.ts";
 
 /** Where the api listens (API_BASE_URL, set by the deployment); development uses the default. */
 export const API_BASE_URL = process.env.API_BASE_URL || "http://127.0.0.1:3001";
@@ -10,25 +11,36 @@ export const API_BASE_URL = process.env.API_BASE_URL || "http://127.0.0.1:3001";
 class ApiError extends Error {
   readonly status: number;
   readonly mergedInto: string | null;
-  constructor(status: number, mergedInto: string | null) {
+  readonly requestId: string | null;
+  constructor(status: number, mergedInto: string | null, requestId: string | null) {
     super(`api ${status}`);
     this.status = status;
     this.mergedInto = mergedInto;
+    this.requestId = requestId;
   }
 }
 
 export async function apiGet<T>(path: string, init?: { signal?: AbortSignal; headers?: Record<string, string>; responseHeaders?: Headers }): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { accept: "application/json", "x-aihot-ssr": "1", ...init?.headers },
-    redirect: "manual",
-    signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { mergedInto?: string } | null;
-    throw new ApiError(res.status, res.status === 308 ? (body?.mergedInto ?? null) : null);
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      headers: { accept: "application/json", "x-aihot-ssr": "1", ...init?.headers },
+      redirect: "manual",
+      signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { mergedInto?: string } | null;
+      throw new ApiError(res.status, res.status === 308 ? (body?.mergedInto ?? null) : null, res.headers.get("X-Request-Id"));
+    }
+    res.headers.forEach((value, name) => init?.responseHeaders?.set(name, value));
+    return (await res.json()) as T;
+  } catch (error) {
+    if (!init?.signal?.aborted && (!(error instanceof ApiError) || error.status >= 500)) {
+      logError(error, { msg: "ssr api request failed", method: "GET", path,
+        ...(error instanceof ApiError ? { status: error.status, upstreamRequestId: error.requestId } : {}),
+      });
+    }
+    throw error;
   }
-  res.headers.forEach((value, name) => init?.responseHeaders?.set(name, value));
-  return (await res.json()) as T;
 }
 
 /**

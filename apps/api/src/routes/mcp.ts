@@ -3,6 +3,7 @@
 // layer and answer with the same text as the Agent addresses (publication/agent) and the same JSON as
 // the v1 endpoints.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createMcpHandler, McpServer, type McpHttpHandler } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { POLICY, SITE } from "@aihot/site";
@@ -30,6 +31,7 @@ const USES = [
 ];
 
 const abilities = () => serverModules().flatMap((m) => m.agent?.abilities ?? []);
+const requestLog = new AsyncLocalStorage<FastifyRequest["log"]>();
 
 function instructions(): string {
   const uses = [...USES, ...abilities().map((a) => `${mcpToolName(a.mcp.tool)} ${a.mcp.use}`)];
@@ -60,7 +62,9 @@ function safe<A>(tool: string, run: (args: A) => Promise<ReturnType<typeof ok> |
       return await run(args);
     } catch (error) {
       if (error instanceof SearchBusyError) return fail("busy", "搜索繁忙，请稍后再试。");
-      console.error(JSON.stringify({ level: "error", msg: "mcp tool failed", tool, error: logError(error) }));
+      const log = requestLog.getStore();
+      if (log) log.error({ err: error, tool }, "mcp tool failed");
+      else console.error(JSON.stringify({ level: "error", msg: "mcp tool failed", tool, err: logError(error) }));
       return fail("internal_error", `${SITE.name} 暂时无法完成这个请求，请稍后再试。`);
     }
   };
@@ -352,7 +356,7 @@ export function registerMcp(app: FastifyInstance) {
     const request = new Request(`${config.siteUrl}${(req.raw.url ?? "/api/mcp")}`, { method: req.method, headers, body, signal: gone.signal });
     const parsed = req.method === "POST" && typeof req.body === "object" ? { parsedBody: req.body } : undefined;
     try {
-      return respond(reply, await handlerFor(requestNotice("mcp", req)).fetch(request, parsed));
+      return respond(reply, await requestLog.run(req.log, () => handlerFor(requestNotice("mcp", req)).fetch(request, parsed)));
     } catch (error) {
       req.log.error({ err: error }, "mcp error");
       return reply.code(500).type("application/json").send({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null });

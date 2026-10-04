@@ -9,7 +9,7 @@ import { CONTACT_ALIASES, PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT, config } from "@aihot/backend/config";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
-import { sitemapXml } from "@aihot/backend/publication/sitemap";
+import { loadSitemap } from "@aihot/backend/publication/sitemap";
 import { llmsTxt, loadLlmsAvailability } from "@aihot/backend/publication/llms";
 import { loadContact } from "@aihot/backend/site/contact";
 
@@ -109,8 +109,9 @@ export async function sendFile(req: FastifyRequest, reply: FastifyReply, file: s
 export function registerStatic(app: FastifyInstance) {
   app.get("/sitemap.xml", async (req, reply) => {
     try {
-      const xml = await sitemapXml();
-      return sendTextWithEtag(req, reply, xml, { etagPrefix: "sitemap", cacheControl: "public, max-age=0, s-maxage=300, must-revalidate", contentType: "application/xml" });
+      const { xml, expiresAt } = await loadSitemap();
+      const seconds = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+      return sendTextWithEtag(req, reply, xml, { etagPrefix: "sitemap", cacheControl: seconds > 0 ? `public, max-age=0, s-maxage=${seconds}, must-revalidate` : "no-store", contentType: "application/xml" });
     } catch (error) {
       req.log.error({ err: error }, "sitemap unavailable");
       return reply.code(503).header("Retry-After", "300").header("Cache-Control", "no-store").send("Sitemap temporarily unavailable");
@@ -121,7 +122,7 @@ export function registerStatic(app: FastifyInstance) {
     const text = llmsTxt(await loadLlmsAvailability());
     applyPublicHeaders(reply, { cors: false });
     // Cached like /openapi-v1.json: a release that adds an ability is described everywhere within minutes.
-    return sendTextWithEtag(req, reply, text, { etagPrefix: "llms", cacheControl: "public, max-age=300, stale-while-revalidate=3600", contentType: "text/plain; charset=utf-8" });
+    return sendTextWithEtag(req, reply, text, { etagPrefix: "llms", cacheControl: "public, max-age=300, must-revalidate", contentType: "text/plain; charset=utf-8" });
   });
 
   // The site's public files (site/public/), placeholders filled in; one the site does not have is a 404.

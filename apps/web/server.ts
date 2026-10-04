@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { createRequestListener } from "@react-router/node";
 import { isApiOwned, resolveRedirect } from "@aihot/contracts/http-policy";
 import { proxyToApi } from "./app/lib/api-proxy.server.ts";
+import { logError } from "./app/lib/errors.server.ts";
 
 const PORT = Number(process.env.WEB_PORT || 3000);
 const HOST = process.env.WEB_HOST || "127.0.0.1";
@@ -70,7 +71,7 @@ async function serveStatic(pathname: string, res: import("node:http").ServerResp
 const server = createServer((req, res) => {
   handle(req, res).catch((error: unknown) => {
     const bad = error instanceof BadRequest || error instanceof URIError;
-    if (!bad) console.error(JSON.stringify({ level: "error", msg: "web request failed", path: (req.url ?? "").split("?")[0]!.slice(0, 200), error: String(error).slice(0, 500) }));
+    if (!bad) logError(error, { msg: "web request failed", method: req.method, path: (req.url ?? "").split("?")[0]!.slice(0, 200) });
     if (res.headersSent) return res.destroy();
     res.writeHead(bad ? 400 : 500, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
     res.end(bad ? "Bad request" : "Internal error");
@@ -82,7 +83,9 @@ const server = createServer((req, res) => {
  * Public navigation returns all matched loaders, so `_routes` never changes a cached answer.
  */
 function pageResponse(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) {
-  const url = new URL(req.url ?? "/", "http://web.local");
+  const target = req.url ?? "/";
+  // An origin-form target is a path even when it starts with //, not a new URL authority.
+  const url = new URL(target.startsWith("/") ? `http://web.local${target}` : target, "http://web.local");
   const pathname = decodeURIComponent(url.pathname).replace(/\.data$/, "");
   const publicRead = (req.method === "GET" || req.method === "HEAD") && !/^\/admin(?:\/|$)/i.test(pathname);
   if (publicRead && url.pathname.endsWith(".data")) {
@@ -154,7 +157,7 @@ async function handle(req: import("node:http").IncomingMessage, res: import("nod
 }
 
 process.on("unhandledRejection", (reason) => {
-  console.error(JSON.stringify({ level: "error", msg: "unhandled rejection", error: String(reason).slice(0, 500) }));
+  logError(reason, { msg: "unhandled rejection" });
 });
 
 server.keepAliveTimeout = 65_000;

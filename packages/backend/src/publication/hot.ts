@@ -22,10 +22,16 @@ async function queryLatestHotRanking(): Promise<HotRanking | null> {
   if (!row) return null;
   const now = new Date();
   const entries = row.entries;
-  const current = entries.length ? await sql<{ story_id: number; article_id: string; story_title: string; url: string; source_name: string }[]>`
-    SELECT DISTINCT ON (f.story_id, p.article_id) f.story_id, p.article_id, st.title AS story_title, p.url, s.name AS source_name
+  const current = entries.length ? await sql<{ story_id: number; article_id: string; story_title: string; url: string; source_name: string; latest_at: Date }[]>`
+    SELECT DISTINCT ON (f.story_id, p.article_id) f.story_id, p.article_id, st.title AS story_title, p.url, s.name AS source_name,
+      latest.at AS latest_at
     FROM facts f JOIN stories st ON st.id = f.story_id JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
     JOIN sources s ON s.id = p.source_id
+    JOIN LATERAL (
+      SELECT max(coalesce(p.published_at, p.discovered_at)) AS at
+      FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
+      WHERE f.story_id = st.id AND ${evidenceCondition()} AND ${listedCondition(now)}
+    ) latest ON true
     WHERE f.story_id IN ${sql(entries.map((entry) => entry.storyId))} AND p.article_id IN ${sql(entries.map((entry) => entry.representativeItemId ?? ""))}
       AND ${evidenceCondition()} AND ${listedCondition(now)}
     ORDER BY f.story_id, p.article_id, (fa.role = 'primary') DESC, f.id` : [];
@@ -34,7 +40,7 @@ async function queryLatestHotRanking(): Promise<HotRanking | null> {
   // event to a report it no longer holds; the next normal ranking can choose its replacement.
   const visible = entries.flatMap((entry) => {
     const report = valid.get(`${entry.storyId}:${entry.representativeItemId}`);
-    return report ? [{ ...entry, title: report.story_title, representativeUrl: report.url, representativeSource: report.source_name }] : [];
+    return report ? [{ ...entry, title: report.story_title, latestAt: report.latest_at.toISOString(), representativeUrl: report.url, representativeSource: report.source_name }] : [];
   });
   return { ...row, entries: visible };
 }

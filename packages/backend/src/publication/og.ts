@@ -12,7 +12,8 @@ export async function loadItemShare(id: string) {
       s.name AS source_name, s.participation_mode AS source_mode, p.visibility
     FROM publications p JOIN sources s ON s.id = p.source_id WHERE p.article_id = ${id}`;
   if (!row || !hasItemPage({ visibility: row.visibility, sourceMode: row.source_mode })) return null;
-  return { id: row.id, title: row.title, summary: row.summary, category: row.category, selected: row.selected,
-    score: row.score === null ? null : Math.round(Number(row.score)), timelineAt: row.timeline_at.toISOString(),
+  const summaryOnly = row.visibility === 'summary-only';
+  return { id: row.id, title: row.title, summary: row.summary, category: summaryOnly ? null : row.category, selected: !summaryOnly && row.selected,
+    score: summaryOnly || row.score === null ? null : Math.round(Number(row.score)), timelineAt: row.timeline_at.toISOString(),
     source: { name: publicSourceName(row.source_name) } };
 }

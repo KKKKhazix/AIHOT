@@ -21,8 +21,9 @@ export async function registerPublicationJobs(boss: PgBoss) {
     if (result.reduced > 0) {
       // The hot board may show one of the source's articles: re-rank now rather than within five minutes.
       await computeHotRanking();
-      await emit("sourceRepublished", { sourceId });
     }
+    // Names and redistribution rights are also read live, without changing selected/body-mode.
+    if (result.total > 0) await emit("sourceRepublished", { sourceId });
     await progress(sourceId, { status: "done", ...result, startedAt, finishedAt: new Date().toISOString() });
     return result;
   });

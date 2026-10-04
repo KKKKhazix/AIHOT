@@ -3,6 +3,8 @@
 import { audit } from "../audit.ts";
 import { sql, type Db } from "../db.ts";
 import { publishArticleTx } from "../publication/publish.ts";
+import { emit } from "../modules.ts";
+import { hasItemPage } from "../publication/rules.ts";
 
 /**
  * An UPDATE articles SET fragment: the article's grouping and its "adds value" check are decided again
@@ -58,6 +60,8 @@ export async function reconcileMaterialSource(db: Db, articleId: string, observe
       EXISTS (SELECT 1 FROM analyses an WHERE an.article_id = a.id AND an.input_revision = a.revision AND an.relevance IS NOT NULL) AS analyzed
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId} FOR UPDATE OF a`;
   if (!article) return false;
+  const [previous] = await db<{ visibility: string }[]>`SELECT visibility FROM publications WHERE article_id = ${articleId}`;
+  const wasReadable = !!previous && hasItemPage({ visibility: previous.visibility, sourceMode: article.participation_mode });
   const candidates = await db<Publisher[]>`
     SELECT s.id, s.kind, s.config, s.participation_mode FROM sources s
     WHERE s.tier = 'T1' AND (jsonb_typeof(s.config->'publisherUrlPrefixes') = 'array'
@@ -78,6 +82,7 @@ export async function reconcileMaterialSource(db: Db, articleId: string, observe
   await audit("system", "article.attribution", `article:${articleId}`, "唯一 T1 原发信源与已验证 URL 范围一致（显式配置或已观察官网列表）",
     { sourceId: article.source_id, author: article.author }, { sourceId: publisher.id, author }, { db });
   // This changes attribution and the public seat, not the judgement or selection threshold.
-  await publishArticleTx(db as Parameters<typeof publishArticleTx>[0], articleId);
+  const published = await publishArticleTx(db as Parameters<typeof publishArticleTx>[0], articleId);
+  if (wasReadable && published?.changed) await emit("articleChanged", { id: articleId, kind: "content", reason: "publisher attribution" }, db);
   return true;
 }

@@ -32,6 +32,7 @@ export function siteHandler(fn: Handler): Handler {
       if (error instanceof BadRequest) return sendProblem(req, reply, { status: 400, code: "invalid_request", detail: error.message });
       if (error instanceof InvalidCursorError) return sendProblem(req, reply, { status: 400, code: "invalid_cursor", detail: error.message });
       if (error instanceof SearchBusyError) {
+        req.log = req.log.child({ reason: "search_capacity_exhausted" });
         return sendProblem(req, reply, { status: 503, code: "temporarily_unavailable", detail: "search busy", retryAfter: error.retryAfter });
       }
       req.log.error({ err: error, path: req.url.split("?")[0] }, "site api error");

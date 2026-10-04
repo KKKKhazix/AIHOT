@@ -6,6 +6,7 @@ import { identityKeyForUrl } from "../lib/url.ts";
 import { collapseWhitespace } from "../lib/text.ts";
 import { publishArticleTx } from "../publication/publish.ts";
 import { groupingReset, reconcileMaterialSource } from "./provenance.ts";
+import { emit } from "../modules.ts";
 
 export interface MediaItem {
   kind: "image" | "video";
@@ -262,5 +263,6 @@ export async function reviseMaterial(db: Db, articleId: string, revision: { set:
   // Only withdraw an existing projection; the first publication still belongs to completed analysis.
   if ((await db`SELECT 1 FROM publications WHERE article_id = ${articleId}`).length) {
     await publishArticleTx(db as Tx, articleId);
+    await emit("articleChanged", { id: articleId, kind: "content", reason: "material revision" }, db);
   }
 }

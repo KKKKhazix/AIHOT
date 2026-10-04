@@ -17,6 +17,7 @@ import { sha256 } from "../lib/ids.ts";
 import { modelFor } from "./models.ts";
 import { shutdownSignal } from "../jobs/queue.ts";
 import { promptText, promptVersion } from "./prompts.ts";
+import { emit } from "../modules.ts";
 
 export const TRANSLATE_PROMPT_VERSION = promptVersion("translate-body", "translate-post");
 const BATCH_CHARS = 3500;
@@ -212,12 +213,18 @@ export async function translateArticle(articleId: string): Promise<TranslateResu
 
 async function store(articleId: string, revision: number, title: string, html: string, text: string, complete: boolean) {
   // Never over a translation of a later revision (a slow run finishing after a newer one).
-  await sql`
-    INSERT INTO translations (article_id, lang, revision, title, body_html, body_text, complete, origin)
-    VALUES (${articleId}, 'zh', ${revision}, ${title}, ${html}, ${text}, ${complete}, 'model')
-    ON CONFLICT (article_id, lang) DO UPDATE SET revision = EXCLUDED.revision, title = EXCLUDED.title, body_html = EXCLUDED.body_html,
-      body_text = EXCLUDED.body_text, complete = EXCLUDED.complete, origin = 'model', created_at = now()
-    WHERE translations.origin <> 'source' AND translations.revision <= EXCLUDED.revision`;
+  await sql.begin(async (tx) => {
+    const changed = await tx`
+      INSERT INTO translations (article_id, lang, revision, title, body_html, body_text, complete, origin)
+      VALUES (${articleId}, 'zh', ${revision}, ${title}, ${html}, ${text}, ${complete}, 'model')
+      ON CONFLICT (article_id, lang) DO UPDATE SET revision = EXCLUDED.revision, title = EXCLUDED.title, body_html = EXCLUDED.body_html,
+        body_text = EXCLUDED.body_text, complete = EXCLUDED.complete, origin = 'model', created_at = now()
+      WHERE translations.origin <> 'source' AND translations.revision <= EXCLUDED.revision
+        AND (translations.revision, translations.title, translations.body_html, translations.body_text, translations.complete, translations.origin)
+          IS DISTINCT FROM (EXCLUDED.revision, EXCLUDED.title, EXCLUDED.body_html, EXCLUDED.body_text, EXCLUDED.complete, EXCLUDED.origin)
+      RETURNING article_id`;
+    if (changed.length) await emit("articleChanged", { id: articleId, kind: "body", reason: "body translation" }, tx);
+  });
 }
 
 /** A quoted post worth translating: at least a few letters beyond its links, and not already Chinese. */
@@ -268,10 +275,21 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
       }
     }
     if (!zh) continue;
-    await sql`
-      INSERT INTO quote_translations (tweet_id, text_hash, text_zh, origin) VALUES (${r.tweet_id}, ${hash}, ${zh}, ${origin})
-      ON CONFLICT (tweet_id) DO UPDATE SET text_hash = EXCLUDED.text_hash, text_zh = EXCLUDED.text_zh, origin = EXCLUDED.origin, created_at = now()`;
-    stored += 1;
+    const changed = await sql.begin(async (tx) => {
+      const saved = await tx`
+        INSERT INTO quote_translations (tweet_id, text_hash, text_zh, origin) VALUES (${r.tweet_id}, ${hash}, ${zh}, ${origin})
+        ON CONFLICT (tweet_id) DO UPDATE SET text_hash = EXCLUDED.text_hash, text_zh = EXCLUDED.text_zh, origin = EXCLUDED.origin, created_at = now()
+        WHERE (quote_translations.text_hash, quote_translations.text_zh, quote_translations.origin)
+          IS DISTINCT FROM (EXCLUDED.text_hash, EXCLUDED.text_zh, EXCLUDED.origin)
+        RETURNING tweet_id`;
+      if (!saved.length) return false;
+      const cited = await tx<{ id: string }[]>`
+        SELECT a.id FROM articles a JOIN publications p ON p.article_id = a.id
+        WHERE substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') = ${r.tweet_id}`;
+      for (const { id } of cited) await emit("articleChanged", { id, kind: "body", reason: "quoted post translation" }, tx);
+      return true;
+    });
+    if (changed) stored += 1;
   }
   return stored;
 }

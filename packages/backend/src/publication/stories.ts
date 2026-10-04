@@ -156,8 +156,9 @@ export async function loadStoryDetail(storyId: number, now = new Date()): Promis
     : [{ n: 0 }];
   const [related, topics, texts] = await Promise.all([relatedStories(storyId, now), topicsOfStory(storyId, now), storyTexts([storyId], now)]);
   const text = texts.get(storyId)!;
-  // Shown beside the latest development, so its time; without one, the timeline's newest report.
-  const latestAt = text.latest?.at ?? latestReport.at;
+  // Historical stories without listed evidence retain their latest readable report.
+  const latest = text.latest ?? latestReport;
+  const latestAt = latest.at;
   // Without a digest or a summary of its own, the story opens with its first development's representative report.
   const origin = developments[developments.length - 1]?.representative;
   return {
@@ -172,8 +173,8 @@ export async function loadStoryDetail(storyId: number, now = new Date()): Promis
     digestUpdatedAt: text.digestUpdatedAt?.toISOString() ?? null,
     summary: text.summary,
     excerpt: !text.digest && !text.summary && origin?.summary ? { text: origin.summary, sourceName: publicSourceName(origin.source_name) } : null,
-    latest: text.latest?.title ?? null,
-    latestReport: text.latest ? { id: text.latest.id } : null,
+    latest: latest.title,
+    latestReport: { id: latest.id },
     whyHot: {
       participants48h: Number(why?.p48 ?? 0),
       newParticipants6h: Number(why?.p6 ?? 0),
@@ -301,16 +302,11 @@ export async function v1Story(storyId: number) {
   const now = new Date();
   const content = await storyContent(storyId, now);
   if (!content) return null;
-  const { s, reports, primaryReports, latestReport, firstReportAt } = content;
-  const latestAt = latestReport.at;
-  // v1 measures by its own timeline, not by the digest writer's rule the site follows (story-text.ts): the
-  // digest while every report it was written from is still in it, and the timeline's newest report as the
-  // latest, which v1 requires.
-  const [d] = await sql<{ digest: string | null; digest_updated_at: Date | null; article_ids: string[] | null }[]>`
-    SELECT digest, digest_updated_at, (SELECT article_ids FROM story_digests WHERE story_id = stories.id ORDER BY version DESC LIMIT 1) AS article_ids
-    FROM stories WHERE id = ${storyId}`;
-  const inTimeline = new Set(primaryReports.map((r) => r.id));
-  const digestCurrent = !d?.article_ids?.some((id) => !inTimeline.has(id));
+  const { s, reports, latestReport, firstReportAt } = content;
+  // The latest development and digest follow the same evidence as the website.
+  const text = (await storyTexts([storyId], now)).get(storyId)!;
+  const latest = text.latest ?? latestReport;
+  const latestAt = latest.at;
   const neighbors = (await relatedStories(storyId, now)).map((r) => {
     const links = { aihot: storyUrl(r.public_id), api: v1StoryApiUrl(r.public_id) };
     return { publicId: r.public_id, title: r.title, relation: r.relation, links };
@@ -325,9 +321,9 @@ export async function v1Story(storyId: number) {
       reportCount: reports.length,
       firstReportAt: firstReportAt.toISOString(),
       latestAt: latestAt.toISOString(),
-      latest: latestReport.title,
-      digest: digestCurrent ? d?.digest ?? null : null,
-      digestUpdatedAt: digestCurrent ? d?.digest_updated_at?.toISOString() ?? null : null,
+      latest: latest.title,
+      digest: text.digest,
+      digestUpdatedAt: text.digestUpdatedAt?.toISOString() ?? null,
       links: { aihot: storyUrl(s.public_id) },
       reports: reports.slice(0, 50).map((r) => ({
         id: r.id,

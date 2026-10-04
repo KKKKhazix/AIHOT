@@ -195,7 +195,7 @@ async function readIndex(now: Date): Promise<TopicIndex> {
   return { at: now, bySlug, modules: new Map(await Promise.all(parts.map(async (p) => [p.name, await p.index(members, now)] as const))) };
 }
 
-const indexCache = cached(() => readIndex(new Date()), { freshMs: 60_000, maxStaleMs: 10 * 60_000 });
+const indexCache = cached(() => readIndex(new Date()), { freshMs: 60_000, maxStaleMs: 60_000 });
 
 /** A given `now` reads afresh (tests, a clock other than this minute's). */
 const topicIndex = (now?: Date) => (now ? readIndex(now) : indexCache.get());
@@ -267,8 +267,8 @@ export interface TopicCount {
 }
 
 /** For the sitemap and IndexNow: every topic's pages and when they last changed. */
-export async function topicPageCounts(): Promise<TopicCount[]> {
-  const index = await topicIndex();
+export async function topicPageCounts(now?: Date): Promise<TopicCount[]> {
+  const index = await topicIndex(now);
   return TOPICS.map((t) => {
     const seats = index.bySlug.get(t.slug)!;
     return {
@@ -287,7 +287,7 @@ function poolTotal(t: Topic, now?: Date): Promise<number> {
   const read = async (at: Date) => (await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM publications p WHERE ${listedCondition(at)} AND ${inTopic(t)}`)[0]?.n ?? 0;
   if (now) return read(now);
   let count = poolCounts.get(t.slug);
-  if (!count) poolCounts.set(t.slug, (count = cached(() => read(new Date()), { freshMs: 60_000, maxStaleMs: 10 * 60_000 })));
+  if (!count) poolCounts.set(t.slug, (count = cached(() => read(new Date()), { freshMs: 60_000, maxStaleMs: 60_000 })));
   return count.get();
 }
 

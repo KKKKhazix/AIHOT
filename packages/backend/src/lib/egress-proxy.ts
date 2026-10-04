@@ -5,6 +5,10 @@ import net from "node:net";
 import { Client, ProxyAgent, request, type Dispatcher } from "undici";
 import { isBlockedAddress } from "./url.ts";
 
+// HTTP/2 idle-socket cleanup can emit an unhandled stream error after a request has finished.
+// Apply the same protocol restriction to destinations, DNS-over-HTTPS and TLS proxy connections.
+export const OUTBOUND_HTTP_OPTIONS = { allowH2: false } as const;
+
 type Resolve = (hostname: string) => Promise<string[]>;
 type ConnectOptions<T> = Omit<Dispatcher.ConnectOptions<T>, "origin">;
 type ConnectCallback<T> = (error: Error | null, data: Dispatcher.ConnectData<T>) => void;
@@ -38,12 +42,13 @@ class PinnedProxyClient extends Client {
 }
 
 export function createEgressProxy(proxyUrl: string, resolve: Resolve): ProxyAgent {
-  return new ProxyAgent({ uri: proxyUrl, proxyTunnel: true, clientFactory: (origin, options) => new PinnedProxyClient(origin, options, resolve) });
+  return new ProxyAgent({ uri: proxyUrl, ...OUTBOUND_HTTP_OPTIONS, proxyTls: OUTBOUND_HTTP_OPTIONS,
+    proxyTunnel: true, clientFactory: (origin, options) => new PinnedProxyClient(origin, options, resolve) });
 }
 
 /** The fixed DNS service is reached through the same outbound proxy, never the system resolver. */
 export function createEgressResolver(proxyUrl: string): Resolve {
-  const dns = new ProxyAgent({ uri: proxyUrl, maxResponseSize: 64 * 1024 });
+  const dns = new ProxyAgent({ uri: proxyUrl, ...OUTBOUND_HTTP_OPTIONS, proxyTls: OUTBOUND_HTTP_OPTIONS, maxResponseSize: 64 * 1024 });
   const cache = new Map<string, { addresses: string[]; until: number }>();
   const pending = new Map<string, Promise<string[]>>();
   return (host) => {

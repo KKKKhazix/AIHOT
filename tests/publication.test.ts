@@ -22,6 +22,7 @@ import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle, republishSource } from "@aihot/backend/publication/publish";
 import { computeHotRanking } from "@aihot/backend/events/hot";
 import { latestHotRanking } from "@aihot/backend/publication/hot";
+import { loadItemShare } from "@aihot/backend/publication/og";
 import { buildApp } from "../apps/api/src/app.ts";
 
 const T = tag();
@@ -233,8 +234,7 @@ test("story changes refresh share images and a withdrawal takes down only the st
   const cachedImage = await app.inject({ method: "GET", url: imageUrl, headers: { "if-none-match": String(image.headers.etag) } });
   assert.equal(cachedImage.statusCode, 304);
   for (const response of [image, cachedImage]) {
-    assert.equal(response.headers["cache-control"], "public, max-age=3600, s-maxage=3600, stale-while-revalidate=600");
-    assert.equal(response.headers["x-accel-expires"], "300", "a proxy in front keeps its copy for five minutes");
+    assert.equal(response.headers["cache-control"], "public, max-age=300, s-maxage=3600, must-revalidate");
   }
   await sql`UPDATE stories SET title = 'Corrected event identity' WHERE public_id = ${stories[0]!}`;
   const corrected = await app.inject({ method: "GET", url: imageUrl, headers: { "if-none-match": String(image.headers.etag) } });
@@ -423,13 +423,13 @@ test("unchanged republishing preserves freshness, while URL-only changes still r
   const url = `https://example.com/${T}-corrected`;
   await sql`UPDATE articles SET url = ${url} WHERE id = ${id}`;
   const result = await publishArticle(id);
-  assert.equal(result!.changed, false, "URL is deliberately outside the presentation fingerprint");
+  assert.equal(result!.changed, true, "URL changes are public changes and refresh dependent exits");
   assert.equal(result!.ledger, "upsert", "the public URL change is still recorded for sync clients");
   const changed = await state();
   assert.equal(changed.url, url);
   assert.notEqual(changed.row_version, before.row_version);
   assert.ok(changed.updated_at >= before.updated_at);
-  assert.equal(changed.revision, before.revision);
+  assert.equal(changed.revision, before.revision + 1);
 });
 
 test("share images keep detail metadata and access rules while conditional reads avoid body hydration", async () => {
@@ -456,9 +456,37 @@ test("share images keep detail metadata and access rules while conditional reads
     assert.ok(queries.every((q) => !/body_html|body_text|translations|fact_articles/.test(q)), "cards only load their public metadata");
   } finally { sql.options.debug = previous; }
   await sql`UPDATE publications SET visibility = 'summary-only' WHERE article_id = ${id}`;
-  assert.equal((await get(paths[0]![0]!, { "if-none-match": paths[0]![1]! })).status, 304, "summary-only pages keep the same allowed share summary");
+  assert.equal((await get(paths[0]![0]!, { "if-none-match": paths[0]![1]! })).status, 200, "summary-only images remove the former selected verdict");
   await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${id}`;
   for (const [path, etag] of paths) assert.equal((await get(path!, { "if-none-match": etag! })).status, 404, "cached ETags never bypass current visibility");
+});
+
+// Restricting a selected item to a neutral summary must also remove its selected badge, score,
+// classification and story links from the detail and both share-image projections.
+test("summary-only detail and sharing keep neutral metadata without a selected verdict", async () => {
+  const id = await article();
+  await storyFor(id);
+  await publishArticle(id, released());
+  const before = JSON.parse((await get(`/api/site/items/${id}`)).body);
+  assert.equal(before.selected, true);
+  assert.ok(before.story);
+  await setVisibility(id, { visibility: "summary-only", reason: "neutral summary", version: 0 }, "test");
+  for (const suffix of ["", "/original"]) {
+    const item = JSON.parse((await get(`/api/site/items/${id}${suffix}`)).body);
+    assert.equal(item.title, before.title);
+    assert.equal(item.summary, before.summary);
+    assert.equal(item.links.original, before.links.original);
+    assert.equal(item.selected, false);
+    for (const field of ["score", "reason", "category", "story", "body", "x"]) assert.equal(item[field], null, field);
+    assert.deepEqual(item.tags, []);
+    assert.deepEqual(item.topics, []);
+    assert.equal(item.markdownAvailable, false);
+  }
+  const share = (await loadItemShare(id))!;
+  assert.equal(share.selected, false);
+  assert.equal(share.score, null);
+  assert.equal(share.category, null);
+  assert.equal(share.summary, before.summary);
 });
 
 test("minimal sync projection preserves snapshot fields, pagination bindings and ordered changes", async () => {

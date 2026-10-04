@@ -108,11 +108,10 @@ export interface SitemapEntry {
  */
 export interface EngineHooks {
   /**
-   * An article's public state changed (its visibility, a correction): `reports` when the reports citing it
-   * change with it (a visibility change), `hot` when it is on the hot list.
+   * An article's public content changed; a former event is included when its membership moved.
    */
-  articleChanged: (change: { id: string; reason: string; reports: boolean; hot: boolean }, tx: Db) => Promise<void>;
-  /** A source's articles were published again and some became less public (its participation or licence was reduced). */
+  articleChanged: (change: { id: string; kind: "detail" | "body" | "content"; reason: string; previousStoryIds?: number[] }, tx: Db) => Promise<void>;
+  /** A source's articles were published again after changing its public metadata or permissions. */
   sourceRepublished: (change: { sourceId: string }) => Promise<void>;
   /** A report was published, or what one shows changed. */
   reportsChanged: (change: { reason: string }, tx: Db) => Promise<void>;

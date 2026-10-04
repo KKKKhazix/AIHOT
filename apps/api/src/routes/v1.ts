@@ -17,20 +17,20 @@ type Handler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
 const op = (queryKeys: readonly string[], cacheControl: string) => ({ queryKeys, cacheControl });
 
 export const V1_OPERATIONS = {
-  items: op(["mode", "category", "window", "by", "q", "limit", "cursor"], "public, max-age=60, s-maxage=60, stale-while-revalidate=300"),
-  hotTopics: op([], "public, max-age=60, s-maxage=60, stale-while-revalidate=60"),
-  storyByPublicId: op([], "public, max-age=60, s-maxage=60, stale-while-revalidate=60"),
-  dailies: op(["limit"], "public, max-age=60, s-maxage=60, stale-while-revalidate=300"),
-  latestDaily: op([], "public, max-age=60, s-maxage=60, stale-while-revalidate=300"),
-  dailyByDate: op([], "public, max-age=300, s-maxage=300, stale-while-revalidate=3600"),
-  weeklies: op(["limit"], "public, max-age=300, s-maxage=300, stale-while-revalidate=3600"),
-  latestWeekly: op([], "public, max-age=300, s-maxage=300, stale-while-revalidate=3600"),
-  weeklyByWeek: op([], "public, max-age=300, s-maxage=300, stale-while-revalidate=3600"),
-  monthlies: op(["limit"], "public, max-age=300, s-maxage=300, stale-while-revalidate=3600"),
-  latestMonthly: op([], "public, max-age=300, s-maxage=300, stale-while-revalidate=3600"),
-  monthlyByMonth: op([], "public, max-age=300, s-maxage=300, stale-while-revalidate=3600"),
-  selectedSnapshot: op(["fields", "limit", "page"], "public, max-age=300, s-maxage=300, stale-while-revalidate=900"),
-  selectedChanges: op(["cursor", "limit"], "public, max-age=60, s-maxage=60, stale-while-revalidate=60"),
+  items: op(["mode", "category", "window", "by", "q", "limit", "cursor"], "public, max-age=60, s-maxage=60, must-revalidate"),
+  hotTopics: op([], "public, max-age=60, s-maxage=60, must-revalidate"),
+  storyByPublicId: op([], "public, max-age=60, s-maxage=60, must-revalidate"),
+  dailies: op(["limit"], "public, max-age=60, s-maxage=60, must-revalidate"),
+  latestDaily: op([], "public, max-age=60, s-maxage=60, must-revalidate"),
+  dailyByDate: op([], "public, max-age=300, s-maxage=300, must-revalidate"),
+  weeklies: op(["limit"], "public, max-age=300, s-maxage=300, must-revalidate"),
+  latestWeekly: op([], "public, max-age=300, s-maxage=300, must-revalidate"),
+  weeklyByWeek: op([], "public, max-age=300, s-maxage=300, must-revalidate"),
+  monthlies: op(["limit"], "public, max-age=300, s-maxage=300, must-revalidate"),
+  latestMonthly: op([], "public, max-age=300, s-maxage=300, must-revalidate"),
+  monthlyByMonth: op([], "public, max-age=300, s-maxage=300, must-revalidate"),
+  selectedSnapshot: op(["fields", "limit", "page"], "public, max-age=300, s-maxage=300, must-revalidate"),
+  selectedChanges: op(["cursor", "limit"], "public, max-age=60, s-maxage=60, must-revalidate"),
 };
 
 export function intParam(value: string | undefined, name: string, min: number, max: number, fallback: number): number {
@@ -74,6 +74,7 @@ export function publicHandler(fn: Handler): Handler {
         });
       }
       if (error instanceof SearchBusyError) {
+        req.log = req.log.child({ reason: "search_capacity_exhausted" });
         return sendProblem(req, reply, { status: 503, code: "temporarily_unavailable", detail: "Search is busy; retry later.", retryAfter: error.retryAfter });
       }
       req.log.error({ err: error, path: req.url.split("?")[0] }, "public api error");

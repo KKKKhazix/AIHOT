@@ -51,7 +51,7 @@ after(async () => {
 });
 
 test("issue numbers count the whole series across the navigation's 400-issue limit", async (t) => {
-  // The index is kept for a minute and served stale for ten; moving the clock past both reloads it.
+  // The index is kept for a minute; an expired read waits for its replacement.
   t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
   const refresh = () => t.mock.timers.tick(600_001);
 

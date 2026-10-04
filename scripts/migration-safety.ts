@@ -1,6 +1,6 @@
 // A deliberately small online-DDL vocabulary. Unknown SQL needs an explicit safety design, not an opt-out.
 export const FIRST_ONLINE_MIGRATION = 55;
-export type MigrationPlan = { kind: "transaction" | "validation" } | { kind: "index"; index: string; table: string };
+export type MigrationPlan = { kind: "transaction" | "validation" | "statistics" } | { kind: "index"; index: string; table: string };
 
 // Keep quoted values opaque, including their semicolons and comment markers. SQL bodies are not in
 // the accepted vocabulary; rejecting them also prevents hiding writes in DO or function definitions.
@@ -83,6 +83,10 @@ export function migrationPlan(text: string): MigrationPlan {
     return { kind: "index", index: match[2], table: match[3].replace(/ \. /g, ".") };
   }
   if (new RegExp(`^alter table ${RELATION} validate constraint ${IDENT}$`, "i").test(sql)) return { kind: "validation" };
+  // These take SHARE UPDATE EXCLUSIVE, which permits ordinary reads and writes. Keep ANALYZE
+  // scoped to named columns of one table; SKIP_LOCKED could silently leave its statistics unbuilt.
+  if (new RegExp(`^create statistics ${RELATION} \\( mcv \\) on ${IDENT}(?: , ${IDENT}){1,7} from ${RELATION}$`, "i").test(sql)
+    || new RegExp(`^analyze ${RELATION} \\( ${IDENT}(?: , ${IDENT})* \\)$`, "i").test(sql)) return { kind: "statistics" };
   if (new RegExp(`^create table (?:if not exists )?${RELATION} \\(.*\\)$`, "i").test(sql)
     && !/\b(as|like|inherits|partition)\b/i.test(words)) return { kind: "transaction" };
   if (!singleAction(tokens)) throw new Error("use one ALTER TABLE action per statement");

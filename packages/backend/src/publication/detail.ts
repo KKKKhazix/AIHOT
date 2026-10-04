@@ -6,7 +6,7 @@ import { sql } from "../db.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { textToHtml } from "../content/sanitize.ts";
 import { exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, toItemSummary, xView, type ItemRow } from "./items.ts";
-import { listedCondition } from "./scope.ts";
+import { evidenceCondition, listedCondition } from "./scope.ts";
 import { itemUrl } from "./links.ts";
 import { hasItemPage, publicSourceName } from "./rules.ts";
 import { topicLinks, topicMembership } from "./topics.ts";
@@ -83,6 +83,10 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
   if (row.visibility === "summary-only") {
     const item: SiteItemDetail = {
       ...summary,
+      selected: false,
+      score: null,
+      category: null,
+      story: null,
       reason: null,
       tags: [],
       x: null,
@@ -129,8 +133,8 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
   if (row.fact_id) {
     const [g] = await sql<{ public_id: string; reports: number; sources: number }[]>`
       SELECT f.public_id, count(p.article_id) AS reports, count(DISTINCT p.source_id) AS sources
-      FROM facts f JOIN publications p ON p.fact_id = f.id
-      WHERE f.id = ${row.fact_id} AND ${listedCondition(now)}
+      FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
+      WHERE f.id = ${row.fact_id} AND ${evidenceCondition()} AND ${listedCondition(now)}
       GROUP BY f.public_id`;
     if (g) {
       group = {

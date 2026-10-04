@@ -4,7 +4,7 @@ import { addAbortListener } from "node:events";
 import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
 import { config } from "../config.ts";
 import { assertPublicUrl, guardedLookup } from "./url.ts";
-import { createEgressProxy, createEgressResolver } from "./egress-proxy.ts";
+import { createEgressProxy, createEgressResolver, OUTBOUND_HTTP_OPTIONS } from "./egress-proxy.ts";
 import { DEPLOYMENT, SITE } from "@aihot/site";
 
 /**
@@ -40,7 +40,7 @@ function dispatcherFor(viaProxy: boolean): Dispatcher | undefined {
   }
   if (config.allowPrivateNetworkFetch) return undefined;
   // Direct connections resolve through the guarded lookup: the address actually dialled is checked.
-  directAgent ??= new Agent({ connect: { lookup: guardedLookup as never } });
+  directAgent ??= new Agent({ ...OUTBOUND_HTTP_OPTIONS, connect: { lookup: guardedLookup as never } });
   return directAgent;
 }
 

@@ -7,7 +7,8 @@ import { pickRepresentative, representativePriority } from "@aihot/backend/publi
 import { loadTimeline } from "@aihot/backend/publication/timeline";
 import { loadStoryFollowups } from "@aihot/backend/publication/followups";
 import { loadGroupReports } from "@aihot/backend/publication/groups";
-import { loadStoryDetail, v1Story } from "@aihot/backend/publication/stories";
+import { loadItemDetail } from "@aihot/backend/publication/detail";
+import { loadStoryDetail, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
 import { candidates } from "@aihot/backend/reports/edition";
 import { composeStoryDigest, DIGEST_PROMPT_VERSION, DIGEST_SYSTEM, DigestSchema } from "@aihot/backend/events/digest";
 import { chatJson } from "@aihot/backend/providers/llm";
@@ -16,6 +17,7 @@ import { detachFromFact, moveToFact } from "@aihot/backend/events/corrections";
 import { overrideFields, setVisibility } from "@aihot/backend/admin/content";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { latestHotRanking } from "@aihot/backend/publication/hot";
+import { storyTexts } from "@aihot/backend/publication/story-text";
 
 const key = `evidence-${tag()}`;
 const now = new Date();
@@ -124,6 +126,49 @@ test("mentions cannot choose a timeline origin, anchor, representative, or a lat
   assert.ok(!firstParty.cards.some(c => c.item.id === official), "a stale true projection flag cannot put T1_5 into first-party channel");
 });
 
+// The detail's group badge and its expanded report list must count the same evidence, even while
+// an old projection still points to a fact after a report became a mention or composite.
+test("item detail counts the same fact evidence as its expanded group", async () => {
+  const s = await source("detail-count", "T1");
+  const other = await source("detail-count-other", "T2");
+  const g = await story();
+  const main = await report(s, g, { title: "事件原始报道", hours: 3 });
+  await report(other, g, { title: "事件补充报道", hours: 2 });
+  await report(other, g, { title: "只提及该事件", hours: 1, role: "mention" });
+  const composite = await report(other, g, { title: "多个事件的综合稿", hours: 1 });
+  await sql`UPDATE analyses SET output = output || '{"scope":"composite"}'::jsonb WHERE article_id = ${composite}`;
+  const detail = await loadItemDetail(main, "zh", now);
+  assert.equal(detail.kind, "found");
+  if (detail.kind !== "found") return;
+  const expanded = (await loadGroupReports({ factPublicId: g.factPublicId, channel: "all", category: null, tag: null }, now))!;
+  assert.equal(expanded.reports.length, 2);
+  assert.equal(detail.item.group!.reportCount, expanded.reports.length);
+  assert.equal(detail.item.group!.additionalSourceCount, 1);
+});
+
+// A newer archive report may remain readable without qualifying as news. It cannot become the
+// machine-only latest development while the website points at a different report; archive-only
+// stories still need one shared readable fallback.
+test("website and machine stories choose the same latest development and archive fallback", async () => {
+  const s = await source("latest-scope", "T1");
+  const g = await story();
+  const news = await report(s, g, { title: "仍然公开的最近进展", hours: 3, selected: false });
+  const archive = await report(s, g, { title: "未进入公开列表的近期归档稿", hours: 1, selected: false });
+  await sql`UPDATE publications SET eligible = false WHERE article_id = ${archive}`;
+  for (const [expectedId, expectedTitle, expectedHours] of [[news, "仍然公开的最近进展", 3], [archive, "未进入公开列表的近期归档稿", 1]] as const) {
+    const site = (await loadStoryDetail(g.storyId, now))!;
+    const api = (await v1Story(g.storyId))!.story;
+    assert.equal(site.latest, expectedTitle);
+    assert.equal(site.latestReport!.id, expectedId);
+    assert.equal(site.latestAt, at(expectedHours).toISOString());
+    assert.equal(api.latest, site.latest);
+    assert.equal(api.latestAt, site.latestAt);
+    assert.equal(site.reportCount, 2);
+    assert.equal(api.reportCount, 2);
+    await sql`UPDATE publications SET eligible = false WHERE article_id = ${news}`;
+  }
+});
+
 test("digest input excludes mentions, preserves scoped conditions, and ignores generated latest", async () => {
   const s = await source("digest", "T1");
   const g = await story();
@@ -186,6 +231,88 @@ test("a cleared digest recovers from matching saved evidence without another mod
   assert.ok(digestPrompt.includes("已经更正的资料"));
 });
 
+// A digest can outlive its evidence without losing an article id: titles, summaries, source identity,
+// times and fact conditions can be corrected. New reports alone must not remove the still-valid
+// digest; changed or unlisted evidence must hide it on every read without waiting for another model.
+for (const correction of ["title", "summary", "source", "time", "conditions", "evidence", "unlisted"] as const) {
+  test(`all story exits hide a digest whose ${correction} input changed`, async () => {
+    const s = await source(`read-correction-${correction}`, "T1");
+    const g = await story();
+    const id = await report(s, g, { title: "旧综述所用报道", hours: 2, selected: false });
+    await composeStoryDigest(g.storyId);
+    const original = (await v1Story(g.storyId))!.story.digest;
+    assert.ok(original);
+    await report(s, g, { title: "新抵达而未改变旧证据的报道", hours: 1, selected: false });
+    assert.equal((await storyTexts([g.storyId], now)).get(g.storyId)!.digest, original);
+    assert.equal((await v1Story(g.storyId))!.story.digest, original);
+    if (correction === "title" || correction === "summary") {
+      await overrideFields(id, { fields: { [correction]: "已经核实的更正内容" }, reason: "correct evidence", version: 0 }, "test");
+    }
+    if (correction === "source") await sql`UPDATE sources SET name = '更正后的原发作者' WHERE id = ${s}`;
+    if (correction === "time") await sql`UPDATE publications SET published_at = ${at(3)} WHERE article_id = ${id}`;
+    if (correction === "conditions") await sql`UPDATE facts SET conditions = '更正后的适用条件' WHERE id = ${g.factId}`;
+    if (correction === "evidence") await sql`UPDATE fact_articles SET evidence = 'Corrected source quote.' WHERE article_id = ${id}`;
+    if (correction === "unlisted") await sql`UPDATE publications SET eligible = false WHERE article_id = ${id}`;
+    const calls = provider.hits();
+    const site = (await loadStoryDetail(g.storyId, now))!;
+    const api = (await v1Story(g.storyId))!.story;
+    const hot = (await storyTexts([g.storyId], now)).get(g.storyId)!;
+    for (const [exit, result] of [["site", site], ["v1/agent/mcp", api], ["hot text", hot]] as const) {
+      assert.equal(result.digest, null, `${exit} still publishes corrected evidence`);
+      assert.equal(result.digestUpdatedAt, null, exit);
+    }
+    assert.equal(provider.hits(), calls, "public reads never regenerate a digest");
+  });
+}
+
+// Saved text without a fingerprint or evidence ids cannot establish that its words remain valid.
+// A separate imported story summary must not bring the same withdrawn or corrected words back.
+for (const proof of ["no-hash", "no-ids", "no-version", "different-text"] as const) {
+  test(`story text without ${proof} never republishes unverifiable historical claims`, async () => {
+    const s = await source(`missing-proof-${proof}`, "T1");
+    const g = await story();
+    const id = await report(s, g, { title: "保留的当前报道", hours: 2, selected: false });
+    await composeStoryDigest(g.storyId);
+    await sql`UPDATE stories SET summary = '无证据的历史事件说明' WHERE id = ${g.storyId}`;
+    if (proof === "no-hash") await sql`UPDATE story_digests SET inputs_hash = NULL WHERE story_id = ${g.storyId}`;
+    if (proof === "no-ids") await sql`UPDATE story_digests SET article_ids = '{}' WHERE story_id = ${g.storyId}`;
+    if (proof === "no-version") await sql`DELETE FROM story_digests WHERE story_id = ${g.storyId}`;
+    if (proof === "different-text") await sql`UPDATE stories SET digest = '与有证据版本不一致的旧综述' WHERE id = ${g.storyId}`;
+    const calls = provider.hits();
+    for (const change of ["unchanged", "corrected", "withdrawn"] as const) {
+      if (change === "corrected") await overrideFields(id, { fields: { summary: "更正后的当前摘要" }, reason: "correct historical evidence", version: 0 }, "test");
+      if (change === "withdrawn") {
+        await report(s, g, { title: "撤稿后仍公开的报道", hours: 1, selected: false });
+        await setVisibility(id, { visibility: "withdrawn", reason: "withdraw historical evidence", version: 1 }, "test");
+      }
+      const site = (await loadStoryDetail(g.storyId, now))!;
+      const api = (await v1Story(g.storyId))!.story;
+      const hot = (await storyTexts([g.storyId], now)).get(g.storyId)!;
+      for (const [exit, result] of [["site", site], ["v1/agent/mcp", api], ["hot", hot]] as const) {
+        assert.equal(result.digest, null, `${exit} ${change}`);
+        assert.equal(result.digestUpdatedAt, null, `${exit} ${change}`);
+      }
+      assert.equal(site.summary, null);
+      assert.equal(hot.summary, null);
+      assert.ok(site.latest && site.excerpt?.text, "current evidence remains readable without old generated text");
+    }
+    assert.equal(provider.hits(), calls, "verification never calls a model");
+  });
+}
+
+test("a story summary is visible only while a current public report supports those exact words", async () => {
+  const s = await source("summary-evidence", "T1");
+  const g = await story();
+  const id = await report(s, g, { title: "当前可核实的事实摘要", hours: 2, selected: false });
+  await sql`UPDATE stories SET summary = '当前可核实的事实摘要' WHERE id = ${g.storyId}`;
+  assert.equal((await storyTexts([g.storyId], now)).get(g.storyId)!.summary, "当前可核实的事实摘要");
+  await overrideFields(id, { fields: { summary: "已更正事实摘要" }, reason: "correct supporting report", version: 0 }, "test");
+  assert.equal((await storyTexts([g.storyId], now)).get(g.storyId)!.summary, null);
+  await sql`UPDATE stories SET summary = '已更正事实摘要' WHERE id = ${g.storyId}`;
+  await setVisibility(id, { visibility: "withdrawn", reason: "withdraw supporting report", version: 1 }, "test");
+  assert.equal((await storyTexts([g.storyId], now)).get(g.storyId)!.summary, null);
+});
+
 test("the hot board shows an event under its own title, linked to the fact most sources report", async () => {
   const s = await source("hot", "T2");
   const official = await source("hot-official", "T1");
@@ -209,6 +336,30 @@ test("the hot board shows an event under its own title, linked to the fact most 
   assert.equal((await latestHotRanking())!.entries.find(e => e.storyId === g.storyId)!.title, "OpenAI 发布常驻智能体 Dots", "a retitled event shows at once");
   await sql`UPDATE fact_articles SET role='mention' WHERE article_id=${blog}`;
   assert.ok(!(await latestHotRanking())!.entries.some(e => e.storyId === g.storyId), "regrouped or mention-only representatives leave cached rankings immediately");
+});
+
+// A saved ranking's event clock can still point at a withdrawn report. Public hot metadata must use
+// the same current evidence as the event page, without waiting for another heat computation.
+test("hot exits date latest progress by current event evidence after a withdrawal", async () => {
+  const g = await story("同一事件的当前时间");
+  const ids: string[] = [];
+  for (const [i, hours] of [6, 4, 2].entries()) {
+    const s = await source(`hot-clock-${i}`, i === 0 ? "T1" : "T2");
+    const id = await report(s, g, { title: `当前进展 ${hours}`, hours });
+    ids.push(id);
+    await sql`INSERT INTO story_signals (story_id,article_id,source_id,participant_key,kind,observed_at)
+      VALUES (${g.storyId},${id},${s},${`source:${s}`},'editorial',${at(hours)})`;
+  }
+  await computeHotRanking(new Date());
+  for (const hours of [2, 4]) {
+    const detail = (await loadStoryDetail(g.storyId, now))!;
+    const hot = (await v1HotTopics()).items.find((entry) => entry.links.story.endsWith(g.storyPublicId))!;
+    const common = (await latestHotRanking())!.entries.find((entry) => entry.storyId === g.storyId)!;
+    assert.equal(detail.latestAt, at(hours).toISOString());
+    assert.equal(hot.latestAt, detail.latestAt);
+    assert.equal(common.latestAt, detail.latestAt, "legacy and site share the same current ranking metadata");
+    await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${ids[2]!}`;
+  }
 });
 
 test("an editor moves a report into the fact it repeats: no false development remains and the membership is the editor's", async () => {

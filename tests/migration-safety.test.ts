@@ -45,6 +45,21 @@ test("online migrations permit metadata changes and split constraint validation"
   assert.throws(() => migrationPlan("ALTER TABLE articles ADD COLUMN flag text; ALTER TABLE articles VALIDATE CONSTRAINT positive;"));
 });
 
+// Dropping a table nothing uses: a dependent object must stop it (no CASCADE), and one statement may not
+// lock several tables at once.
+test("a table nothing uses can be dropped alone, never with its dependents", () => {
+  assert.equal(migrationPlan("DROP TABLE IF EXISTS retired_example;").kind, "transaction");
+  assert.equal(migrationPlan("-- retired\nDROP TABLE IF EXISTS public.retired_example;").kind, "transaction");
+  for (const statement of [
+    "DROP TABLE IF EXISTS retired_example CASCADE;",
+    "DROP TABLE retired_example;",
+    "DROP TABLE IF EXISTS retired_example, articles;",
+    "DROP TABLE IF EXISTS retired_example; DROP TABLE IF EXISTS articles;",
+    "DROP INDEX articles_idx;",
+    "ALTER TABLE articles DROP COLUMN flag;",
+  ]) assert.throws(() => migrationPlan(statement), statement);
+});
+
 test("concurrent indexes have one retriable statement per file, outside a transaction", () => {
   const plan = migrationPlan("CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS article_idx ON public.articles (id) WHERE id IS NOT NULL;");
   assert.deepEqual(plan, { kind: "index", index: "article_idx", table: "public.articles" });

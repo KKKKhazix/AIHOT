@@ -93,6 +93,10 @@ export function migrationPlan(text: string): MigrationPlan {
     || new RegExp(`^analyze ${RELATION} \\( ${IDENT}(?: , ${IDENT})* \\)$`, "i").test(sql)) return { kind: "statistics" };
   if (new RegExp(`^create table (?:if not exists )?${RELATION} \\(.*\\)$`, "i").test(sql)
     && !/\b(as|like|inherits|partition)\b/i.test(words)) return { kind: "transaction" };
+  // Dropping a table that no code uses changes the catalog only: no scan or rewrite, and the runner bounds
+  // the wait for its lock. One table and no CASCADE, so an object that still depends on it fails the
+  // migration instead of disappearing with it. Whether its data may go is settled before the change.
+  if (new RegExp(`^drop table if exists ${RELATION}$`, "i").test(sql)) return { kind: "transaction" };
   if (!singleAction(tokens)) throw new Error("use one ALTER TABLE action per statement");
   if (addColumn.test(sql)) {
     if (/\bnot null\b/i.test(words) && (!/\bdefault\b/i.test(words) || /\bdefault null\b/i.test(words))) throw new Error("NOT NULL on a new column requires a non-null constant default");
@@ -100,5 +104,5 @@ export function migrationPlan(text: string): MigrationPlan {
   }
   if (alterDefault.test(sql)) return { kind: "transaction" };
   if (new RegExp(`^alter table ${RELATION} add constraint ${IDENT} (?:check \\(.*\\)|foreign key \\(.*\\) references .*) not valid$`, "i").test(sql)) return { kind: "transaction" };
-  throw new Error(`not safe for an online migration: ${sql.slice(0, 180)}. Use constant-default columns, NOT VALID then separate validation, concurrent indexes, or column MCV statistics with separate column ANALYZE; backfill data in bounded batches outside release migrations.`);
+  throw new Error(`not safe for an online migration: ${sql.slice(0, 180)}. Use constant-default columns, NOT VALID then separate validation, concurrent indexes, column MCV statistics with separate column ANALYZE, or DROP TABLE IF EXISTS for one table nothing uses; backfill data in bounded batches outside release migrations.`);
 }

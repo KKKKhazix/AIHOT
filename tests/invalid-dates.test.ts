@@ -14,8 +14,8 @@ const provider = await stub((_hit, req) => listings.get(req.url) ?? []);
 config.allowPrivateNetworkFetch = true;
 after(async () => { await provider.close(); await stopBoss(); await closeDb(); });
 
-type EpochUnit = "epoch_s" | "epoch_ms";
-function source(id: string, unit: EpochUnit, values: unknown[], initialized = true): SourceRow {
+type DateUnit = "epoch_s" | "epoch_ms" | undefined;
+function source(id: string, unit: DateUnit, values: unknown[], initialized = true): SourceRow {
   const path = `/${id}`;
   listings.set(path, values.map((published, i) => ({ title: `Article ${i}`, url: `https://example.org/${id}/${i}`, published, body: `Article body ${i}` })));
   return {
@@ -34,12 +34,13 @@ const timeline = async (id: string) => (await sql<{
   backfill: boolean; backfill_reason: string | null; revision: number;
 }[]>`SELECT published_at,published_at_claim,discovered_at,timeline_at,backfill,backfill_reason,revision FROM articles WHERE id=${id}`)[0]!;
 
-// A bad middle value cannot silently discard itself or the following valid item. Both configured units matter.
-for (const unit of ["epoch_s", "epoch_ms"] as const) {
+// A bad middle value cannot silently discard itself or the following valid item, in any configured unit.
+const written = { epoch_s: (ms: number) => ms / 1000, epoch_ms: (ms: number) => ms, text: (ms: number) => new Date(ms).toISOString() };
+for (const unit of ["epoch_s", "epoch_ms", "text"] as const) {
   test(`${unit} collection keeps invalid middle claims and later articles, then repeats cleanly`, async () => {
     const now = Math.floor(Date.now() / 1000) * 1000;
-    const factor = unit === "epoch_s" ? 1000 : 1;
-    const s = source(`epoch-collect-${unit}-${T}`, unit, [now / factor, "unknown", { toString: null }, [{ toString: null }], (now - 1000) / factor]);
+    const write = written[unit];
+    const s = source(`date-collect-${unit}-${T}`, unit === "text" ? undefined : unit, [write(now), "unknown", { toString: null }, [{ toString: null }], write(now - 1000)]);
     await saveSource(s);
     const first = await collectSource(s.id);
     assert.deepEqual([first.status, first.found, first.created, first.revised], ["ok", 5, 5, 0]);

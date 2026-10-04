@@ -1,7 +1,7 @@
 // RSS 2.0 / Atom / RDF feeds.
 import { XMLParser } from "fast-xml-parser";
 import { guardedFetch } from "../lib/http-fetch.ts";
-import { collapseWhitespace, stripTags } from "../lib/text.ts";
+import { collapseWhitespace, escapeXml, stripTags } from "../lib/text.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
 import { identityKeyFor } from "../content/materials.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
@@ -32,6 +32,12 @@ function text(v: unknown): string {
     if ("#text" in o) return text(o["#text"]);
   }
   return "";
+}
+
+/** Atom defaults to text: XML entities have already been decoded, and literal markup is not HTML. */
+function atomPlainText(v: unknown): string | null {
+  const type = v && typeof v === "object" ? (v as Record<string, unknown>)["@type"] : undefined;
+  return type === undefined || type === "text" ? text(v) : null;
 }
 
 function arr<T>(v: T | T[] | undefined | null): T[] {
@@ -111,10 +117,10 @@ export function isTeaser(text: string): boolean {
  * page; an entry without a page has none. A short text is taken for a summary, unless the source
  * declares its summary to be the body.
  */
-function feedText(bodyHtml: string | null, summaryHtml: string, source: SourceRow, hasPage = true): Pick<Candidate, "excerpt" | "bodyHtml" | "bodyText" | "bodyStatus"> {
-  const bodyText = bodyHtml ? stripTags(bodyHtml) : null;
+function feedText(bodyHtml: string | null, summaryText: string | null, source: SourceRow, hasPage = true, plainBody: string | null = null): Pick<Candidate, "excerpt" | "bodyHtml" | "bodyText" | "bodyStatus"> {
+  const bodyText = bodyHtml ? collapseWhitespace(plainBody ?? stripTags(bodyHtml)) : null;
   const teaser = !!bodyText && source.participation_mode === "editorial" && isTeaser(bodyText);
-  const excerpt = summaryHtml ? collapseWhitespace(stripTags(summaryHtml)).slice(0, 2000) : teaser ? collapseWhitespace(bodyText!) : null;
+  const excerpt = summaryText !== null ? collapseWhitespace(summaryText).slice(0, 2000) : teaser ? collapseWhitespace(bodyText!) : null;
   return bodyText && (bodyText.length > 280 || source.config.summaryIsBody === true) && !teaser
     ? { excerpt, bodyHtml, bodyText, bodyStatus: "ok" }
     : { excerpt, bodyHtml: null, bodyText: null, bodyStatus: hasPage ? "pending" : "none" };
@@ -195,7 +201,7 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
         title,
         author: text(it["dc:creator"]) || text(it.author) || null,
         publishedAt: parseDate(text(it.pubDate) || text(it["dc:date"]) || text(it.published)),
-        ...feedText(bodyHtml, description, source, !mediaFile && !video),
+        ...feedText(bodyHtml, description ? stripTags(description) : null, source, !mediaFile && !video),
         ...(videoExcerpt ? { excerpt: videoExcerpt } : {}),
         media: media.slice(0, 6),
         categories: arr(it.category).map((c) => text(c)).filter(Boolean),
@@ -212,13 +218,14 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
     for (const e of arr(feed.entry)) {
       const entryBase = new URL(e["@xml:base"] ?? "", feedBase).toString();
       const entryUrl = atomLink(e.link, entryBase);
-      const title = collapseWhitespace(stripTags(text(e.title)));
+      const title = collapseWhitespace(atomPlainText(e.title) ?? stripTags(text(e.title)));
       if (!entryUrl || !title) continue;
-      const content = text(e.content);
-      const summary = text(e.summary);
+      const summary = text(e.summary) ? atomPlainText(e.summary) ?? stripTags(text(e.summary)) : null;
       const video = isVideoPageUrl(entryUrl);
       const videoExcerpt = video ? mediaDescription(e) : null;
-      const bodyHtmlRaw = content || (summaryIsBody && !video ? summary : "");
+      const body = text(e.content) ? e.content : summaryIsBody && !video ? e.summary : null;
+      const plainBody = atomPlainText(body);
+      const bodyHtmlRaw = plainBody === null ? text(body) : escapeXml(plainBody);
       const bodyHtml = bodyHtmlRaw ? sanitizeBody(bodyHtmlRaw, entryUrl) : null;
       out.push({
         url: entryUrl,
@@ -226,7 +233,7 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
         author: text(arr(e.author)[0]?.name) || null,
         publishedAt: parseDate(text(e.published) || text(e.updated)),
         sourceUpdatedAt: parseDate(text(e.updated)),
-        ...feedText(bodyHtml, summary, source, !video),
+        ...feedText(bodyHtml, summary, source, !video, plainBody),
         ...(videoExcerpt ? { excerpt: videoExcerpt } : {}),
         media: bodyHtmlRaw ? imagesFrom(bodyHtmlRaw, entryUrl) : [],
         categories: arr(e.category).map((c: any) => c?.["@term"] ?? text(c)).filter(Boolean),

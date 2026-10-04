@@ -6,8 +6,11 @@ export function articleUtcOffset(config: SourceRow["config"]): string | undefine
   return config.detail?.publishedAtUtcOffset ?? config.publishedAtUtcOffset;
 }
 
-/** A time followed by its zone: "10:00Z", "10:00:00+08:00", "10:00:00 +0000", "10:00:00 GMT". */
-const EXPLICIT_ZONE = /\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(?:Z|[+-]\d{2}:?\d{2}|GMT|UTC)\b/i;
+/**
+ * A time followed by its zone: "10:00Z", "10:00:00+08:00", "10:00:00 +0000", "10:00 PM GMT", "10:00 EST".
+ * CST is no zone here: Date.parse reads US Central, Chinese pages mean China, so it is read in the source's offset.
+ */
+const EXPLICIT_ZONE = /\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(?:[AP]M\s*)?(?:Z|[+-]\d{2}:?\d{2}|GMT|UTC?|[EMP][SD]T|CDT)\b/i;
 
 function calendarDay(y: string | number, mo: string | number, d: string | number): boolean {
   const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
@@ -39,9 +42,11 @@ export function parseLooseDate(value: string | null | undefined, utcOffset = "+0
     if (!Number.isFinite(month) || !calendarDay(english[3]!, new Date(month).getUTCMonth() + 1, english[2]!)) return null;
   }
   if (!numeric && !english) return null;
+  const text = v.replace(/(\d)(st|nd|rd|th)\b/gi, "$1");
   if (EXPLICIT_ZONE.test(v) || /^\d{4}-\d{2}-\d{2}$/.test(v)) {
-    const direct = Date.parse(v);
-    if (Number.isFinite(direct) && /\d{4}/.test(v)) return new Date(direct);
+    const direct = Date.parse(text);
+    if (Number.isFinite(direct)) return new Date(direct);
+    if (!numeric) return null;
   }
   // 2026-09-26 / 2026/09/26 / 2026-09-26T10:00 / 2026年9月26日 (+ optional time), interpreted in the given offset.
   const m = numeric;
@@ -49,10 +54,10 @@ export function parseLooseDate(value: string | null | undefined, utcOffset = "+0
     const [, y, mo, d, h = "00", mi = "00", s = "00"] = m;
     return atOffset(y!, mo!, d!, h, mi, s, utcOffset);
   }
-  // "Sep 26, 2026": Date.parse reads it in the host's zone, so take its fields and place them in the offset.
-  const en = Date.parse(v.replace(/(\d)(st|nd|rd|th)/, "$1"));
+  // Parse English wall-clock fields in UTC so the host's daylight-saving rules cannot shift them.
+  const en = Date.parse(`${text} GMT`);
   if (!Number.isFinite(en)) return null;
-  const local = new Date(en);
-  return atOffset(local.getFullYear(), local.getMonth() + 1, local.getDate(), local.getHours(), local.getMinutes(), local.getSeconds(), utcOffset);
+  const utc = new Date(en);
+  return atOffset(utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate(), utc.getUTCHours(), utc.getUTCMinutes(), utc.getUTCSeconds(), utcOffset);
 }
 

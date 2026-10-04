@@ -2,6 +2,7 @@
 // These are real processes and PostgreSQL transactions with a local model protocol substitute;
 // they do not test provider quality, machine power loss, or a browser journey.
 import { gate, pointModels, stub, tag } from "./setup.ts";
+import { analysisStep, SELECTING_SCORE, type AnalysisStep } from "./analysis-steps.ts";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -14,14 +15,10 @@ import { autoReleaseUnknownReceipts } from "@aihot/backend/operations/recover";
 
 const T = tag();
 const SOURCE = `test-analyze-kill-${T}`;
-type Step = "prefilter" | "score" | "structure" | "understand";
-let calls: Step[] = [];
+let calls: AnalysisStep[] = [];
 let holdPrefilter: { asked: ReturnType<typeof gate<void>>; answer: ReturnType<typeof gate<void>> } | null = null;
 const provider = await stub(async (_hit, request) => {
-  const body = JSON.parse(request.body);
-  const system = String(body.messages[0]?.content ?? "");
-  const step: Step = system.includes("宽召回的AI相关性预筛") ? "prefilter"
-    : system.includes("事件注意力评分器") ? "score" : system.includes("资料结构化助手") ? "structure" : "understand";
+  const step = analysisStep(request.body);
   calls.push(step);
   if (step === "prefilter" && holdPrefilter) {
     const held = holdPrefilter;
@@ -29,7 +26,7 @@ const provider = await stub(async (_hit, request) => {
     await held.answer.promise;
   }
   const content = step === "prefilter" ? { label: "PASS", reason: "AI model release" }
-    : step === "score" ? { attentionScore: 80 }
+    : step === "score" ? { attentionScore: SELECTING_SCORE }
       : step === "structure" ? { category: "ai-models", tags: ["模型发布"], subjects: [], fact: { title: "新模型发布" } }
         : { itemType: "model_release", authorRole: "principal", tags: ["模型发布"], editorialJudgment: "模型有明确的能力提升", titleZh: `新模型发布 ${T}`, summaryZh: "模型发布并提供了评测和价格。" };
   return { id: `stub-${calls.length}`, choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } };
@@ -195,7 +192,7 @@ test("SIGKILL after responses are saved but before the business commit reuses al
   assert.equal(calls.length, 5, "restart sent no additional model requests");
   const [analysis] = await sql`SELECT selected,score,receipt_ids FROM analyses WHERE article_id=${articleId}`;
   assert.equal(analysis?.selected, true);
-  assert.equal(Number(analysis?.score), 80);
+  assert.equal(Number(analysis?.score), SELECTING_SCORE);
   assert.deepEqual(analysis!.receipt_ids.map(String).sort(), receivedIds.slice().sort());
   assert.equal((await sql`SELECT 1 FROM receipts WHERE subject=${subject} AND status='completed'`).length, 5);
   assert.equal((await sql`SELECT 1 FROM receipt_attempts a JOIN receipts r ON r.id=a.receipt_id WHERE r.subject=${subject}`).length, 5);

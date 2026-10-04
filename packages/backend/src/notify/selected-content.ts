@@ -3,7 +3,7 @@ import { sql } from "../db.ts";
 import { itemUrl } from "../publication/links.ts";
 import { publicSourceName } from "../publication/rules.ts";
 import { CATEGORY_LABELS, type CategoryKey } from "@aihot/contracts/taxonomy";
-import { SITE } from "@aihot/site";
+import { ITEM_COPY, SITE } from "@aihot/site";
 
 const MAX_AGE_MS = 12 * 3600_000;
 /** Content groups get first-party (T1) and near-first-party (T1_5) sources only. */
@@ -30,7 +30,7 @@ interface Row {
 
 function card(r: Row) {
   const category = r.category ? CATEGORY_LABELS[r.category] : null;
-  const lines = [r.summary, r.reason ? `**推荐理由**：${r.reason}` : null, `来源：${publicSourceName(r.source_name)}`].filter(Boolean);
+  const lines = [r.summary, r.reason ? `**${ITEM_COPY.reasonLabel}**：${r.reason}` : null, `来源：${publicSourceName(r.source_name)}`].filter(Boolean);
   return {
     header: { title: { tag: "plain_text", content: r.title }, template: "turquoise" },
     elements: [

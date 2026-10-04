@@ -41,12 +41,12 @@ export function ArticleLayout({ children, left, right }: { children: ReactNode; 
   );
 }
 
-/** A titled block in an article rail: a hairline, a small grey title, then the content; no card. */
-export function RailSection({ title, children }: { title: ReactNode; children: ReactNode }) {
+/** A block in an article rail: a hairline, a small grey title (none when the content names itself), then the content; no card. */
+export function RailSection({ title, children }: { title?: ReactNode; children: ReactNode }) {
   return (
     <section className="border-t border-line pt-3.5">
-      <h2 className="text-[12px] font-semibold text-ink-3">{title}</h2>
-      <div className="mt-2.5">{children}</div>
+      {title && <h2 className="text-[12px] font-semibold text-ink-3">{title}</h2>}
+      <div className={title ? "mt-2.5" : undefined}>{children}</div>
     </section>
   );
 }

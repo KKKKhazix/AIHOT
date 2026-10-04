@@ -9,7 +9,7 @@ import { findTopic, TOPIC_GROUPS, TOPICS } from "@aihot/backend/publication/topi
 import { loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
 import { ogEtag, renderOg, type OgCard } from "../og/render.ts";
 import { posterEtag, renderPoster, type Poster } from "../og/poster.ts";
-import { CARDS, subjectAfter, withSubject } from "@aihot/site";
+import { CARDS, ITEM_COPY, REPORTS, subjectAfter, withSubject } from "@aihot/site";
 import { config } from "@aihot/backend/config";
 
 /** The pages' share cards: the site's texts, and the topic count of the topic list. */
@@ -60,7 +60,7 @@ export function registerOg(app: FastifyInstance) {
       title: d.title,
       subtitle: d.summary,
       meta: `${d.source.name} · ${beijingDate(d.timelineAt)}`,
-      badge: d.selected && d.score !== null ? { value: String(Math.round(d.score)), label: "精选评分" } : null,
+      badge: d.selected && d.score !== null && ITEM_COPY.showScore ? { value: String(Math.round(d.score)), label: "精选评分" } : null,
     }, 3600, CONTENT_IMAGE_CACHE);
   });
 
@@ -77,7 +77,7 @@ export function registerOg(app: FastifyInstance) {
       summary: d.summary,
       source: d.source.name,
       date: beijingDate(d.timelineAt),
-      score: d.selected ? d.score : null,
+      score: d.selected && ITEM_COPY.showScore ? d.score : null,
     };
     const tag = `"poster-${posterEtag(poster)}"`;
     reply.header("ETag", tag).header("Cache-Control", CONTENT_IMAGE_CACHE).header("X-Accel-Expires", CONTENT_IMAGE_ORIGIN_SECONDS);
@@ -94,7 +94,7 @@ export function registerOg(app: FastifyInstance) {
       kicker: `${REPORT_NAMES[r.kind]} · ${r.key}`,
       title: r.lead?.title ?? r.title,
       subtitle: r.lead?.leadParagraph ?? r.overview,
-      meta: `${r.sections.reduce((n, s) => n + s.items.length, 0)} 条核心新闻 · 约 ${r.readingMinutes} 分钟读完`,
+      meta: `${r.sections.reduce((n, s) => n + s.items.length, 0)} ${REPORTS.shareUnit} · 约 ${r.readingMinutes} 分钟读完`,
     }, 86400);
   });
 

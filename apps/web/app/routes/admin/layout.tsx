@@ -76,7 +76,7 @@ export default function AdminLayout({ loaderData }: Route.ComponentProps) {
           <RingMark className="size-6 text-accent" />
           <span className="text-[15px] font-semibold tracking-tight text-ink">{`${SITE.name} 后台`}</span>
         </a>
-        <nav className="flex-1 space-y-4 overflow-y-auto">
+        <nav className="scrollbar-thin flex-1 space-y-4 overflow-y-auto">
           {groups.map((g) => (
             <div key={g.group}>
               <div className="mb-1 px-3 text-[11.5px] font-medium tracking-wide text-ink-4">{g.group}</div>

@@ -2,6 +2,20 @@
 // 网页和后端都读它；改完重新构建（docker compose up --build）即可生效。
 // 域名不在这里：部署时用环境变量 SITE_URL 设置。
 
+/**
+ * 日报、周报、月报什么时候出（北京时间，HH:mm）：日报收这个时间之前的 24 小时，周报在每个自然周之后的周一出，
+ * 月报在每月 1 日出。排程、成刊时间窗口、缺期告警和所有提到时间的文案都读它（public/ 里的文件写占位
+ * {{dailyTime}}、{{weeklyTime}}、{{monthlyTime}}）；排程每半小时检查一次，所以写整点或半点。
+ */
+export const EDITION_TIMES = { daily: "08:00", weekly: "10:00", monthly: "10:30" };
+
+/** “每天 08:00”“每周一 10:00”“每月 1 日 10:30”：写进句子里的出刊时间。 */
+export const EDITION_WHEN = {
+  daily: `每天 ${EDITION_TIMES.daily}`,
+  weekly: `每周一 ${EDITION_TIMES.weekly}`,
+  monthly: `每月 1 日 ${EDITION_TIMES.monthly}`,
+};
+
 export const SITE = {
   /** 站名：导航、页面标题、分享图、RSS、MCP、后台都用它。 */
   name: "MyHOT",
@@ -93,6 +107,14 @@ export const POLICY = {
   xPostIsFullText: true,
 } as const;
 
+/** 条目卡片和详情页上的几处说法和显示。 */
+export const ITEM_COPY = {
+  /** 模型写的那句理由叫什么：卡片、详情页、Markdown 导出、给 Agent 的回答和群推送都用它。 */
+  reasonLabel: "推荐理由",
+  /** 读者在网页和分享图上看不看得到 AI 评分。只管显示：公开 API 和 MCP 的数据照样带 score，后台照常显示。 */
+  showScore: true,
+};
+
 /** 关于页的一张二维码卡片。 */
 interface ContactCard {
   kind: string;
@@ -110,14 +132,14 @@ export const ABOUT = {
   /** 大标题：第一行正常颜色，第二行强调色。 */
   headline: ["AI 圈每天都有新动静，", "值得看的，只有几条。"] as [string, string],
   /** 标题下面的一段话。{sources} 会换成实时的信源数；统计没取到时换成 sourcesFallback。 */
-  lead: `${SITE.name} 替你盯着 {sources} 个信源：抓取、归并、打分、精选，每天早上 8 点出一份日报。免费，不用注册。`,
+  lead: `${SITE.name} 替你盯着 {sources} 个信源：抓取、归并、打分、精选，每天早上 ${spokenTime(EDITION_TIMES.daily)}出一份日报。免费，不用注册。`,
   sourcesFallback: "上百",
   /** 信源河动画下面的四个环节。 */
   steps: {
     collect: "官方博客、媒体、X 账号、公众号和各类订阅源都在看；活跃的源 15 分钟就看一次。",
     store: "抓到的都存下来，同一件事的报道归到一起；只计入热度的账号也算在内，热点榜就是从这里算出来的。",
-    select: "模型先看是不是这个行业的事、有没有实际信息，再写中文标题、摘要和推荐理由；营销稿和重复转发进不来。",
-    publish: "每天 08:00 出日报，周一出周报，每月 1 日出月报；最精选的几条可以推到飞书群。",
+    select: `模型先看是不是这个行业的事、有没有实际信息，再写中文标题、摘要和${ITEM_COPY.reasonLabel}；营销稿和重复转发进不来。`,
+    publish: `${EDITION_WHEN.daily} 出日报，周一出周报，每月 1 日出月报；最精选的几条可以推到飞书群。`,
   },
   /**
    * 作者块（选填），null 就不显示。
@@ -153,12 +175,27 @@ export const AGENT = {
   search: { scope: "按公司、产品、人物或话题搜最近 7 天", ask: "这家公司最近发了什么？" },
 };
 
-/** 日报、周报、月报版面上的小字。 */
+/** 日报、周报、月报版面上的说法。 */
 export const REPORTS = {
   /** 报头下面的出版者一行。 */
   imprint: SITE.name.toUpperCase(),
   /** 报头旁边的一个词。 */
   motto: SITE.subject as string,
+  /** 每种报告页面的描述（搜索结果、分享卡片），不带句号；llms.txt 介绍周报、月报时也用它。 */
+  descriptions: {
+    daily: `${SITE.name} ${subjectAfter(`${EDITION_WHEN.daily}（北京时间）发布的`, "行业精编日报")}`,
+    weekly: subjectAfter("每周", "行业综合回顾"),
+    monthly: subjectAfter("每月", "行业盘点"),
+  },
+  /**
+   * 一期里的一条怎么称呼（“4 件大事”）：没有头条时的标题（“这一天的 4 件 AI 大事”）、报头和往期目录的条数、
+   * 周报月报没有总述时的那句话，以及订阅说明里的“按栏目分好的大事”都用它。
+   */
+  entry: { measure: "件", noun: "大事" },
+  /** 报头上其余几个数字后面的说法；精选数和日报期数在关于页、主题页也这样写。 */
+  metricUnits: { sourcesCount: "个来源", firstPartyEvents: "件一手发布", selectedCount: "条精选", reportsCovered: "期日报" },
+  /** 报告分享图上“共几条”的说法。 */
+  shareUnit: "条核心新闻",
 };
 
 /** 运维告警（只发给站长）里随部署而变的几处说法。 */
@@ -193,8 +230,8 @@ export const CARDS: Record<string, { kicker: string; title: string; subtitle: st
   site: { kicker: SITE.name, title: SITE.tagline, subtitle: SITE.description },
   all: { kicker: subjectAfter("全部", "动态"), title: "所有信源的最新动态，一站看完", subtitle: "按时间汇总各信源的最新动态，可按类别与标签筛选。" },
   hot: { kicker: "热点榜", title: "过去 48 小时，大家在讨论什么", subtitle: "热度指数、趋势与组成热度的公开来源。", accent: "hot" },
-  daily: { kicker: withSubject("日报"), title: subjectAfter("每天 8 点，一份读得完的", "日报"), subtitle: `${subjectAfter("前一天值得关注的", "动态")}。` },
-  weekly: { kicker: withSubject("周报"), title: "一周大事，一次看清", subtitle: "本周的主线、重要发布与值得回看的讨论。" },
+  daily: { kicker: withSubject("日报"), title: subjectAfter(`每天 ${spokenTime(EDITION_TIMES.daily)}，一份读得完的`, "日报"), subtitle: `${subjectAfter("前一天值得关注的", "动态")}。` },
+  weekly: { kicker: withSubject("周报"), title: `一周${REPORTS.entry.noun}，一次看清`, subtitle: "本周的主线、重要发布与值得回看的讨论。" },
   monthly: { kicker: withSubject("月报"), title: "一个月的变化", subtitle: "月度主线与关键事件回顾。" },
   about: { kicker: "关于", title: `关于 ${SITE.name}`, subtitle: SITE.description },
   terms: { kicker: "使用规则", title: `${SITE.name} 使用规则`, subtitle: "网站、API、RSS 与 MCP 的使用范围。" },
@@ -229,7 +266,10 @@ export const DEPLOYMENT = {
    * null 就不设上限。环境变量 IMGPROXY_UPSTREAM_MB_PER_MINUTE、IMGPROXY_UPSTREAM_GB_PER_DAY 优先。
    */
   imageUpstreamBudget: null as null | { mbPerMinute: number; gbPerDay: number },
-  /** 抓取时不走出网代理（EGRESS_PROXY_URL）、直接连接的域名，采集和图片共用；仍检查目标地址（选填）。 */
+  /**
+   * 已实测应由服务器直接连接、不走出网代理（EGRESS_PROXY_URL）的域名，采集和图片共用（选填）。
+   * 每次重定向重新按目标域名选路，直连仍检查实际连接地址。
+   */
   directFetchHosts: [] as string[],
   /**
    * 精选评测（scripts/eval-selection.ts）不带参数时用的金标集：文件（相对仓库根目录）、抽样条数、只抽哪一份、门槛扫描范围。
@@ -263,4 +303,10 @@ export function withSubject(noun: string): string {
 export function subjectAfter(text: string, noun?: string): string {
   const gap = /^[A-Za-z0-9]/.test(SITE.subject) ? " " : "";
   return `${text}${gap}${noun ? withSubject(noun) : SITE.subject}`;
+}
+
+/** “8 点”“10 点 30 分”：口语里的 HH:mm。 */
+function spokenTime(time: string): string {
+  const [hour, minute] = time.split(":").map(Number) as [number, number];
+  return `${hour} 点${minute ? ` ${minute} 分` : ""}`;
 }

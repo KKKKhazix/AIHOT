@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLoaderData } from "react-router";
 import type { SiteContact, SiteStats } from "@aihot/contracts/site";
-import { ABOUT, POLICY, SITE, subjectAfter } from "@aihot/site";
+import { ABOUT, POLICY, REPORTS, SITE, subjectAfter } from "@aihot/site";
 import { apiGet, edgeTtl } from "../lib/api.server";
 import { organizationLd, pageMeta } from "../lib/seo";
 import { Kicker } from "../components/ui/Kicker";
@@ -96,14 +96,14 @@ function stagesOf(stats: SiteStats | null): Stage[] {
     {
       no: "03",
       title: "精选",
-      figure: stats && <Figure n={stats.selected} unit="条精选" />,
+      figure: stats && <Figure n={stats.selected} unit={REPORTS.metricUnits.selectedCount} />,
       text: ABOUT.steps.select,
       note: stats && <>过去 24 小时 {stats.day.selected} 条进了精选</>,
     },
     {
       no: "04",
       title: "成刊",
-      figure: stats && <Figure n={stats.dailies} unit="期日报" />,
+      figure: stats && <Figure n={stats.dailies} unit={REPORTS.metricUnits.reportsCovered} />,
       text: ABOUT.steps.publish,
       note: "也可以用 RSS、API、MCP 订阅",
     },

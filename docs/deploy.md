@@ -71,6 +71,25 @@ docker compose run --rm setup && docker compose up -d
 
 迁移成功后再启动服务；迁移失败时先查看错误，不要继续启动。使用 HTTPS 配置的站点继续保留 `--profile https`。旧的 API 和 worker 要在迁移前停下：迁移可能删表删列，旧代码还在跑会出错；正常关闭 worker 会等进行中的付费调用收尾（最长三分多钟）。非 Docker 部署也按“备份、构建、停止 API/worker/web、迁移（`scripts/migrate.ts`）、种子数据（`scripts/seed.ts`）、启动”的顺序更新。
 
+#### 社区修复与新资料的时间规则（2026 年 10 月 4 日）
+
+公开接口版本仍是 4.0.0。迁移 `0055` 在线建一个索引，不锁表。
+
+- **首次导入之后不再收信源的存档**：以前新信源首次导入后，第二次抓取会把订阅里剩下的旧条目全部当历史内容收进来，逐条付费分析（示范源一次就有上千条）。现在之后的抓取只收发布时间在信源加入前 48 小时以内或之后的条目；没有日期的照收，X 账号不受影响，见 [信源](sources.md) 的“旧文不刷屏”。升级前已经收进来的旧条目按原文时间归档，不进“今天”和日报，分析也早已跑完，不用处理。
+- **没有可信发布时间的新资料先不公开**：先不进公开列表、精选、报告、热点和推送，从原信源或原文页读到日期后再判断新旧。日期未知时，文章页、结构化数据和 Agent Markdown 标“收录时间”，RSS 不写 `pubDate`；OpenAPI 注明事件时间线和日报快讯的 `publishedAt` 这时是收录时间。
+- **推理模型的额度改成明确配置**：默认模型设 `LLM_REASONING_TOKENS`，具名模型在 `site/models.ts` 写 `reasoningTokens`。原来只有名字以 `-think` 结尾的具名模型会多给 4000，这个做法去掉了；自己加过这类模型的，补上 `reasoningTokens: 4000` 才保持原来的额度。推理模型把额度用光时，报错会写明 `finish_reason=length` 和该改哪一项。
+- **`site.ts` 多了几项**，自己改过的站合并时对照新文件补上：
+  - `EDITION_TIMES`、`EDITION_WHEN`：日报、周报、月报的出刊时间，原来写死在代码里；排程、日报的时间窗口、缺期告警和提到时间的文案都读它。`public/` 里的文件用占位 `{{dailyTime}}`、`{{weeklyTime}}`、`{{monthlyTime}}`。
+  - `ITEM_COPY`：推荐理由叫什么，网页和分享图上显示不显示评分。
+  - `REPORTS.descriptions`、`entry`、`metricUnits`、`shareUnit`：报告页面的描述和版面上的说法。
+  - `ABOUT`、`CARDS` 里提到出刊时间和推荐理由的文案改成引用上面几项。
+  - `DEPLOYMENT.directImageHosts` 改名为 `directFetchHosts`，采集和图片共用这份直连名单。
+- **公开接口按类别筛选按 `PUBLIC_CATEGORIES` 走**：API、RSS 和 MCP 的 `category` 取所有在公开接口里算作这一类的类别。不合并分类的站（默认就是），按 `tip` 查不再带出观点；没有 `tip` 类别的行业也能通过类型检查。
+- **JSON 接口里不带时区的时间**（如 `2026-09-30 17:43:58`）按信源的 `publishedAtUtcOffset` 读，默认 `+08:00`。以前按服务器时区读，Docker 里是 UTC，所以已有这类信源的新条目时间会提前 8 小时，变成正确值。
+- **RSS**：声明了 `summaryIsBody` 的信源，摘要不论长短都当正文（Atom 的 `summary` 也算）；没有网页的播客单集，原文链接改为音频或视频文件，不再去抓网页。
+- **迁移不能锁表**：新迁移不整表回填或重写，建索引用 `CREATE INDEX CONCURRENTLY`；CI 用 `scripts/check-migrations.ts` 检查。
+- **修复**：信源请求成功却漏掉日期、标题或正文时会补全并记进信源健康；YouTube 视频页不再被当成图片；MCP 请求有大小上限，错误日志去掉凭据；桌面侧栏放大后显示细滚动条；测试按每一步实际的提示词认请求、从 `industry/selection.ts` 读门槛，换行业改写提示词和门槛后不再误报，架构测试在 Windows 上也能判对。
+
 #### 站点文件搬进 `site/`（2026 年 10 月）
 
 公开接口没有变化，版本仍是 4.0.0。
@@ -81,7 +100,6 @@ docker compose run --rm setup && docker compose up -d
 - **只属于你这个站的功能可以做成模块**：放进 `modules/<名字>/`，在 `site/modules/` 的清单里启用，见 [架构](architecture.md) 的“模块”。框架本身不带模块。
 - **Agent 接入页默认打开 MCP**，页面列出 MCP、RSS 和 API 三种接入方式。Agent Markdown 接口仍在 `/api/v1/agent`，可从页面下方“Agent 使用说明”进入。
 - **图片代理可以设流量上限**：`IMGPROXY_UPSTREAM_MB_PER_MINUTE`、`IMGPROXY_UPSTREAM_GB_PER_DAY`（或 `site.ts` 的 `DEPLOYMENT.imageUpstreamBudget`），默认不设。
-- **直连域名设置**从 `DEPLOYMENT.directImageHosts` 改为 `DEPLOYMENT.directFetchHosts`，采集和图片共用，默认空数组。自己配置过直连域名的，把名单移到新字段；这些域名及跳转后的目标仍要经过地址检查。
 - **修复**：同样的数据每次给出同样的字节（排序遇到并列时补上唯一的次序，API 和 RSS 的 ETag 不再无故变化）；网页转给 api 的请求不再带上逐跳头，`Connection: close` 不再让下一个 POST 失败；`llms.txt` 的接入方式按实际数，不再写成四种。
 
 #### 升级到公开接口 4.0.0
@@ -152,7 +170,7 @@ docker compose logs -f --tail 100 api worker web
 
 ## 不用 Docker
 
-需要 Node.js 24.11 以上和 PostgreSQL 16 或 17。
+需要 Node.js 24.11 以上和 PostgreSQL 16 或 17，系统用 Linux 或 macOS；Windows 上请在 WSL2 里运行，或者用上面的 Docker 方式。
 
 ```bash
 npm ci

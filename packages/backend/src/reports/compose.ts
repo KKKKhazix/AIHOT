@@ -4,12 +4,12 @@
 // dailies and a model only writes its overview and introductions, from the brief in the industry pack
 // (industry/prompts/report-period*.md).
 import { z } from "zod";
-import { SITE } from "@aihot/site";
+import { EDITION_TIMES, SITE } from "@aihot/site";
 import { PLAIN_TERMS, RELEASE } from "@aihot/industry/taxonomy";
 import { promptText, promptVersion } from "../editorial/prompts.ts";
 import { modelFor } from "../editorial/models.ts";
 import { ENTITIES, isRelease } from "../editorial/vocabulary.ts";
-import { addDays, beijingDate, beijingMidnight, isoWeekLabel, isoWeekRange, monthRange } from "@aihot/contracts/time";
+import { addDays, beijingAt, beijingDate, beijingTime, isoWeekLabel, isoWeekRange, monthRange } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
 import { logError } from "../lib/log-error.ts";
 import { chatJson } from "../providers/llm.ts";
@@ -75,13 +75,13 @@ async function saveReport(kind: ReportKind, key: string, start: Date, end: Date,
 }
 
 /**
- * Daily report for Beijing date D covers [D-1 08:00, D 08:00) Beijing time. Its most important entry
- * leads, in its own words, and the next three are today's highlights.
+ * Daily report for Beijing date D covers the 24 hours up to the site's edition time on D (EDITION_TIMES).
+ * Its most important entry leads, in its own words, and the next three are today's highlights.
  */
 export async function composeDaily(date: string, reason?: string): Promise<{ key: string; entries: number }> {
   const previous = await savedReport("daily", date);
   if (previous && reason === undefined) return { key: date, entries: previous.entries };
-  const end = new Date(beijingMidnight(date).getTime() + 8 * 3600 * 1000);
+  const end = beijingAt(date, EDITION_TIMES.daily);
   const start = new Date(end.getTime() - 86400000);
   const edition = await dailyEdition(date, start, end);
   // An issue with nothing in it is a failure upstream, not a report: the run fails and is caught up later.
@@ -183,9 +183,9 @@ export function fitted(text: string, max: number): string | null {
 async function composePeriod(kind: "weekly" | "monthly", key: string, startDate: string, endDateInclusive: string, reason: string | undefined) {
   const previous = await savedReport(kind, key);
   if (previous && reason === undefined) return { key, entries: previous.entries };
-  // The dailies' windows run from 08:00 the day before the first to 08:00 on the last.
-  const start = new Date(beijingMidnight(startDate).getTime() - 16 * 3600 * 1000);
-  const end = new Date(beijingMidnight(endDateInclusive).getTime() + 8 * 3600 * 1000);
+  // The dailies' windows run from the edition time the day before the first to that time on the last.
+  const start = beijingAt(addDays(startDate, -1), EDITION_TIMES.daily);
+  const end = beijingAt(endDateInclusive, EDITION_TIMES.daily);
   const { entries, issues } = await periodEntries(startDate, endDateInclusive);
   const top = entries.slice(0, PERIOD_EVENTS[kind]);
   if (!top.length) throw new Error(`${kind} ${key}: no daily entries in the period`);
@@ -247,30 +247,24 @@ export async function composeMonthly(label: string, reason?: string) {
   return composePeriod("monthly", label, range.start, range.end, reason);
 }
 
-const bjParts = (now: Date) => {
-  const iso = new Date(now.getTime() + 8 * 3600000).toISOString();
-  return { hour: Number(iso.slice(11, 13)), minute: Number(iso.slice(14, 16)) };
-};
-
-/** The newest daily due by `now`: today's from 08:00 Beijing time, yesterday's before. */
+/** The newest daily due by `now`: today's from its edition time (Beijing), yesterday's before. */
 export function dueDaily(now = new Date()): string {
   const today = beijingDate(now);
-  return bjParts(now).hour >= 8 ? today : addDays(today, -1);
+  return beijingTime(now) >= EDITION_TIMES.daily ? today : addDays(today, -1);
 }
 
-/** The newest weekly due by `now`: the last complete ISO week from Monday 10:00, the one before until then. */
+/** The newest weekly due by `now`: the last complete ISO week from its edition time on Monday, the one before until then. */
 export function dueWeekly(now = new Date()): string {
   const today = beijingDate(now);
   const dow = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7;
-  const due = dow > 0 || bjParts(now).hour >= 10;
+  const due = dow > 0 || beijingTime(now) >= EDITION_TIMES.weekly;
   return isoWeekLabel(addDays(today, -dow - (due ? 7 : 14)));
 }
 
-/** The newest monthly due by `now`: the last complete month from the 1st 10:30, the one before until then. */
+/** The newest monthly due by `now`: the last complete month from its edition time on the 1st, the one before until then. */
 export function dueMonthly(now = new Date()): string {
   const [y, m, d] = beijingDate(now).split("-").map(Number) as [number, number, number];
-  const { hour, minute } = bjParts(now);
-  const due = d > 1 || hour > 10 || (hour === 10 && minute >= 30);
+  const due = d > 1 || beijingTime(now) >= EDITION_TIMES.monthly;
   const back = due ? 1 : 2;
   const month = (y * 12 + (m - 1) - back);
   return `${Math.floor(month / 12)}-${String((month % 12) + 1).padStart(2, "0")}`;

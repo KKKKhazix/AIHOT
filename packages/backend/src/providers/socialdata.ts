@@ -106,7 +106,10 @@ export async function searchTweets(query: string, opts: { purpose: string; subje
 }
 
 export function tweetText(t: SdTweet): string {
-  let text = t.full_text ?? t.text ?? "";
+  // These escapes belong to the provider's plain-text payload, not markup. Decode once, before
+  // inserting expanded URLs: literal code and the destination URLs must keep their own bytes.
+  const entities: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">" };
+  let text = (t.full_text ?? t.text ?? "").replace(/&(?:amp|lt|gt);/g, entity => entities[entity]!);
   // Expand t.co links and drop trailing media links.
   for (const u of t.entities?.urls ?? []) text = text.replaceAll(u.url, u.expanded_url);
   for (const m of t.extended_entities?.media ?? t.entities?.media ?? []) text = text.replace(/\s*https:\/\/t\.co\/\w+\s*$/, "");

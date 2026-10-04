@@ -1,7 +1,7 @@
 import { useLoaderData } from "react-router";
 import type { Route } from "./+types/report-latest";
 import type { ReportLatestPage } from "@aihot/contracts/site";
-import { SITE, subjectAfter, withSubject } from "@aihot/site";
+import { REPORTS, subjectAfter, withSubject } from "@aihot/site";
 import { edgeTtl, loadOr404 } from "../lib/api.server";
 import { pageMeta, reportLd } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
@@ -21,7 +21,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export function meta({ loaderData, location }: Route.MetaArgs) {
   const kind = loaderData?.kind ?? "daily";
-  const description = kind === "daily" ? `${SITE.name} ${subjectAfter("每天 08:00（北京时间）发布的", "行业精编日报")}。` : kind === "weekly" ? `${subjectAfter("每周", "行业综合回顾")}。` : `${subjectAfter("每月", "行业盘点")}。`;
+  const description = `${REPORTS.descriptions[kind]}。`;
   const report = loaderData?.report;
   return [...pageMeta({
     title: withSubject(KIND_LABEL[kind]),

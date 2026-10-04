@@ -183,6 +183,26 @@ test("the first import keeps its count and age limits; later runs take what was 
   assert.equal(listing.requests[1]!.etag, undefined);
 });
 
+// A corrected listing can reveal that an existing undated item is old. The archive admission rule
+// must still reject a never-seen old item, while allowing metadata repair of the existing identity.
+for (const kind of ["rss", "web_list", "json_list"] as const) test(`${kind} repairs an existing old article without admitting a new old archive item`, async () => {
+  const known = { ...items(`repair-${kind}`, 1)[0]!, date: null };
+  const { id, listing } = await source(`repair-${kind}`, kind, [known]);
+  assert.equal((await collectSource(id)).created, 1);
+  const oldDate = new Date(Date.now() - 14 * 86400000).toISOString();
+  listing.items = [{ ...known, title: "Corrected known article", date: oldDate },
+    { ...known, url: `${known.url}-unseen`, title: "Unseen old article", date: oldDate }];
+  listing.version += 1;
+  const repaired = await collectSource(id);
+  assert.deepEqual([repaired.status, repaired.created, repaired.revised], ["ok", 0, 1]);
+  const [saved] = await sql`SELECT title,published_at,backfill,backfill_reason FROM articles WHERE source_id=${id}`;
+  assert.equal(saved!.title, "Corrected known article");
+  assert.equal(new Date(saved!.published_at).toISOString().slice(0, 19), oldDate.slice(0, 19));
+  assert.equal(saved!.backfill, true);
+  assert.equal(saved!.backfill_reason, "stale-on-discovery");
+  assert.equal(await count(id), 1);
+});
+
 test("a long listing still keeps to the detail budget and to the detail titles already known", async () => {
   const rows = items("detail", 100).map(i => ({ ...i, title: "Read more", date: null }));
   const { id } = await source("detail", "web_list", rows, { detail: { maxFetches: 3, titleSelector: "h1", titleAuthoritative: true, publishedAtSelector: "time" } });
@@ -194,9 +214,9 @@ test("a long listing still keeps to the detail budget and to the detail titles a
   const saved = await sql`SELECT title FROM articles WHERE source_id=${id}`;
   assert.equal(saved.filter(a => a.title.startsWith("详细标题")).length, 3);
   const repeat = await collectSource(id);
-  assert.deepEqual([repeat.status, repeat.created, repeat.revised], ["ok", 0, 0]);
-  assert.equal(detailRequests.length - before, 3);
-  assert.equal(await revisions(id), 100);
+  assert.deepEqual([repeat.status, repeat.created, repeat.revised], ["ok", 0, 3]);
+  assert.equal(detailRequests.length - before, 6, "the next run enriches the next three incomplete articles");
+  assert.equal(await revisions(id), 103);
 });
 
 test("in the tail an alias of a known URL keeps the first record, and URL, category and noise filters still apply", async () => {

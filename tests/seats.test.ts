@@ -10,6 +10,7 @@ import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
+import { ITEM_COPY } from "@aihot/site";
 import { encodeCursor, decodeCursor, queryBinding } from "@aihot/backend/lib/cursor";
 import { loadTimeline } from "@aihot/backend/publication/timeline";
 import { buildApp } from "../apps/api/src/app.ts";
@@ -88,8 +89,8 @@ test("one fact holds one selected seat on v1, RSS and the sync ledger", async ()
   const detail = (await get(`/api/site/items/${first}`)).json as { reason: string | null; sameEvent?: { id: string } | null };
   assert.equal(detail.sameEvent?.id, official);
   assert.equal(detail.reason, null);
-  assert.ok(!(await get(`/items/${first}/markdown`)).body.includes("推荐理由"));
-  assert.ok((await get(`/items/${official}/markdown`)).body.includes("推荐理由"));
+  assert.ok(!(await get(`/items/${first}/markdown`)).body.includes(ITEM_COPY.reasonLabel));
+  assert.ok((await get(`/items/${official}/markdown`)).body.includes(ITEM_COPY.reasonLabel));
   // The website still folds every report of the fact into the reading group.
   const home = (await get(`/api/site/timeline?limit=40&tag=${encodeURIComponent(`t-${T}`)}`)).json.cards as Array<{ item: { id: string }; group: { reportCount: number } | null }>;
   const card = home.find((c) => c.item.id === official);

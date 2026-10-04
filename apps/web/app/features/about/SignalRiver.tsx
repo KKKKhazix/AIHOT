@@ -8,6 +8,7 @@
 // says is also written in the page.
 import { useEffect, useRef, type ReactNode } from "react";
 import { withSubject } from "@aihot/site";
+import { EDITION } from "../report/format";
 
 export interface RiverSource {
   name: string;
@@ -481,7 +482,7 @@ export function SignalRiver({
       const p = L.paper;
       if (x >= p.x - 8 && x <= p.x + p.w + 8 && y >= p.y - 8 && y <= p.y + p.h + 8) {
         hover = { s: null, bundle: null, paper: true };
-        place(x, y, withSubject("日报"), "每天 08:00 出刊");
+        place(x, y, withSubject("日报"), EDITION.daily);
         redraw();
         return;
       }

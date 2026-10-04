@@ -1,5 +1,6 @@
 // Recovery must finish the same evaluation that failed, and commit the release, queue and audit together.
 import { gate, pointModels, Reply, stub, tag } from "./setup.ts";
+import { analysisStep, SELECTING_SCORE } from "./analysis-steps.ts";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
 import { after, afterEach, before, test } from "node:test";
@@ -19,23 +20,19 @@ let refuseScore = true;
 const calls: string[] = [];
 let heldFailure: { input: string; asked: ReturnType<typeof gate<void>>; release: ReturnType<typeof gate<void>> } | null = null;
 const provider = await stub(async (_hit, request) => {
-  const body = JSON.parse(request.body);
   if (heldFailure && request.body.includes(heldFailure.input)) {
     heldFailure.asked.open();
     await heldFailure.release.promise;
     return new Reply(400, { error: "old revision refused" });
   }
-  const system = String(body.messages[0]?.content ?? "");
-  const step = system.includes("宽召回的AI相关性预筛") ? "prefilter"
-    : system.includes("事件注意力评分器") ? "score"
-    : system.includes("资料结构化助手") ? "structure" : "understand";
+  const step = analysisStep(request.body);
   calls.push(step);
   if (step === "score" && refuseScore) {
     refuseScore = false;
     return new Reply(503, { error: "temporary outage" });
   }
   const content = step === "prefilter" ? { label: original ? "BLOCK" : "PASS", reason: "local fixture" }
-    : step === "score" ? { attentionScore: 80 }
+    : step === "score" ? { attentionScore: SELECTING_SCORE }
     : step === "structure" ? { category: "ai-models", tags: [], subjects: [], fact: null }
     : { itemType: "model_release", authorRole: "principal", tags: ["模型发布"], editorialJudgment: "模型能力提升", titleZh: `新判断 ${T}`, summaryZh: "模型发布并提供评测和价格。" };
   return { choices: [{ message: { content: JSON.stringify(content) } }] };

@@ -1,7 +1,7 @@
 // Names, dates and grouping for daily, weekly and monthly reports.
 import type { ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
 import { beijingDate, beijingWeekday, isoWeekLabel, isoWeekRange } from "@aihot/contracts/time";
-import { REPORTS, SITE, subjectAfter } from "@aihot/site";
+import { EDITION_WHEN, REPORTS, SITE, subjectAfter } from "@aihot/site";
 import { RELEASE } from "@aihot/industry/taxonomy";
 import { monthDay, weekdayShort } from "../../lib/format.ts";
 
@@ -24,11 +24,15 @@ export function reportPath(kind: ReportKind, key: string): string {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/** "这一天的 4 件 AI 大事" / "本周的 12 件 AI 大事" / "8 月的 20 件 AI 大事" (the subject from site/site.ts). */
+const { measure, noun } = REPORTS.entry;
+/** "件大事": what an issue counts its entries in, in the site's words (REPORTS.entry). */
+export const ENTRIES_UNIT = `${measure}${noun}`;
+
+/** "这一天的 4 件 AI 大事" / "本周的 12 件 AI 大事" / "8 月的 20 件 AI 大事" (the subject and REPORTS.entry from site/site.ts). */
 export function headline(kind: ReportKind, key: string, count: number): string {
-  if (kind === "daily") return subjectAfter(`这一天的 ${count} 件`, "大事");
-  if (kind === "weekly") return subjectAfter(`本周的 ${count} 件`, "大事");
-  return subjectAfter(`${Number(key.slice(5, 7))} 月的 ${count} 件`, "大事");
+  if (kind === "daily") return subjectAfter(`这一天的 ${count} ${measure}`, noun);
+  if (kind === "weekly") return subjectAfter(`本周的 ${count} ${measure}`, noun);
+  return subjectAfter(`${Number(key.slice(5, 7))} 月的 ${count} ${measure}`, noun);
 }
 
 /** "09.16" for a story inside a week or month. */
@@ -110,21 +114,22 @@ export function dateMark(kind: ReportKind, key: string): { figure: string; top: 
   return { figure: key.slice(5, 7), top: `${key.slice(0, 4)} 年`, bottom: `${Number(key.slice(5, 7))} 月` };
 }
 
-/** When each kind comes out, for the masthead. */
-export const EDITION: Record<ReportKind, string> = { daily: "每天 08:00 出刊", weekly: "每周一出刊", monthly: "每月 1 日出刊" };
+/** When each kind comes out, for the masthead (the times are the site's, EDITION_WHEN). */
+export const EDITION: Record<ReportKind, string> = { daily: `${EDITION_WHEN.daily} 出刊`, weekly: "每周一出刊", monthly: "每月 1 日出刊" };
 
 /**
- * The masthead's figures, in the order a reader wants them. Releases of the pack's headline launch kind
- * (RELEASE, "个新模型" for AI) count only where the pack has one; zero is left out.
+ * The masthead's figures, in the order a reader wants them, in the site's words (REPORTS). Releases of the
+ * pack's headline launch kind (RELEASE, "个新模型" for AI) count only where the pack has one; zero is left out.
  */
+const UNITS = REPORTS.metricUnits;
 const METRICS: Array<[key: string, unit: string]> = [
-  ["totalEvents", "件大事"],
-  ["totalStories", "件大事"],
-  ["sourcesCount", "个来源"],
-  ["firstPartyEvents", "件一手发布"],
+  ["totalEvents", ENTRIES_UNIT],
+  ["totalStories", ENTRIES_UNIT],
+  ["sourcesCount", UNITS.sourcesCount],
+  ["firstPartyEvents", UNITS.firstPartyEvents],
   ...(RELEASE ? [["modelsReleased", RELEASE.unit] as [string, string]] : []),
-  ["selectedCount", "条精选"],
-  ["reportsCovered", "期日报"],
+  ["selectedCount", UNITS.selectedCount],
+  ["reportsCovered", UNITS.reportsCovered],
 ];
 export function metricItems(metrics: Record<string, number>): Array<{ value: number; unit: string }> {
   return METRICS.filter(([k]) => typeof metrics[k] === "number" && (k !== "modelsReleased" || metrics[k]! > 0)).map(([k, unit]) => ({ value: metrics[k]!, unit }));

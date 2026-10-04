@@ -9,6 +9,8 @@ export interface ModelPreset {
   apiKeyEnv: string;
   /** 额外的请求字段，比如短小的结构化任务关掉推理。 */
   extra?: Record<string, unknown>;
+  /** 推理模型先想再答，额外给推理留的输出额度（token），加在每一步自己的额度上。default 用环境变量 LLM_REASONING_TOKENS。 */
+  reasoningTokens?: number;
   /** 接口支持 JSON 模式。 */
   jsonMode: boolean;
   /** 能看图。 */
@@ -27,13 +29,14 @@ export const PRESETS: Record<string, ModelPreset> = {
     service: "zhipu", model: "glm-5.3-flash", baseUrlEnv: "ZHIPU_BASE_URL", apiKeyEnv: "ZHIPU_API_KEY",
     extra: { thinking: { type: "enabled", clear_thinking: false }, reasoning_effort: "high", top_p: 0.95 }, jsonMode: true,
   },
-  // DeepSeek Flash reasons by default; structured tasks switch it off unless the -think variant is used.
+  // DeepSeek Flash reasons by default; structured tasks switch it off. deepseek-flash-think keeps it on,
+  // with room in the output for the reasoning.
   "deepseek-flash": {
     service: "deepseek", model: "deepseek-flash", baseUrlEnv: "DEEPSEEK_BASE_URL", apiKeyEnv: "DEEPSEEK_API_KEY",
     extra: { thinking: { type: "disabled" } }, jsonMode: true,
   },
   "deepseek-flash-think": {
-    service: "deepseek", model: "deepseek-flash", baseUrlEnv: "DEEPSEEK_BASE_URL", apiKeyEnv: "DEEPSEEK_API_KEY", jsonMode: true,
+    service: "deepseek", model: "deepseek-flash", baseUrlEnv: "DEEPSEEK_BASE_URL", apiKeyEnv: "DEEPSEEK_API_KEY", reasoningTokens: 4000, jsonMode: true,
   },
   "qwen3.7-flash": {
     service: "dashscope", model: "qwen3.7-flash", baseUrlEnv: "DASHSCOPE_BASE_URL", apiKeyEnv: "DASHSCOPE_API_KEY",

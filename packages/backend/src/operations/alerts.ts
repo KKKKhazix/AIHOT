@@ -4,14 +4,15 @@
 //   today  — money at risk or only the owner can act: sent at once, repeated at most daily, recovery reported.
 //   digest — other follow-ups: one 09:00 message a day, meant to be handed to the AI.
 // Delivery goes through sendAlert (ops chat, internal-chat fallback; off unless FEISHU_INTERNAL_ENABLED).
-import { beijingDate, beijingTime } from "@aihot/contracts/time";
-import { ALERTS } from "@aihot/site";
+import { beijingAt, beijingDate } from "@aihot/contracts/time";
+import { ALERTS, EDITION_TIMES } from "@aihot/site";
 import { sql } from "../db.ts";
 import { beijingDay, beijingStamp, duration, formatAlert, formatRecovery, sendAlert, type Finding, type Level } from "../notify/feishu.ts";
 import { backupConfigured } from "./backup.ts";
 import { GROUPING_WARN_AFTER_MS, waitingSelectedNews } from "./grouping.ts";
 import { upstreamFindings } from "../media/upstream.ts";
 import { serverModules } from "../modules.ts";
+import { sourceHealth, sourceHealthList } from "../sources/health.ts";
 
 const REPEAT_MS: Record<Exclude<Level, "digest">, number> = { now: 3600_000, today: 24 * 3600_000 };
 
@@ -37,19 +38,20 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
   const [hb] = await sql<{ value: { startedAt?: string } }[]>`SELECT value FROM settings WHERE key = 'heartbeat.worker'`;
   const settled = !hb?.value.startedAt || now - Date.parse(hb.value.startedAt) > 20 * 60_000;
   if (settled && collecting()) {
-    const [last] = await sql<{ at: Date | null }[]>`SELECT max(discovered_at) AS at FROM articles WHERE discovered_at > now() - interval '1 day'`;
+    const [last] = await sql<{ at: Date | null }[]>`SELECT max(a.discovered_at) AS at FROM articles a
+      JOIN sources s ON s.id = a.source_id WHERE s.participation_mode = 'editorial' AND a.discovered_at > now() - interval '1 day'`;
     if (!last?.at || now - last.at.getTime() > QUIET_MINUTES * 60_000) {
       // A site without an enabled source has nothing to collect.
-      const [anySource] = await sql`SELECT 1 FROM sources WHERE enabled LIMIT 1`;
+      const [anySource] = await sql`SELECT 1 FROM sources WHERE enabled AND participation_mode = 'editorial' LIMIT 1`;
       if (anySource) {
         out.push({
           key: "content.collect",
           level: "now",
-          title: "网站停止收录新内容",
-          impact: last?.at ? `最后一篇新文章收录于 ${beijingStamp(last.at)}，之后网站不会出现新内容` : "一天内没有收录任何新文章",
+          title: "网站停止收录新文章",
+          impact: last?.at ? `最后一篇编辑内容收录于 ${beijingStamp(last.at)}，之后没有新文章进入处理` : "一天内没有收录任何编辑内容",
           heals: ALERTS.usualFlow ? `没有，${ALERTS.usualFlow}` : "没有",
           action: "转给 AI 立即处理",
-          detail: `articles.discovered_at 超过 ${QUIET_MINUTES} 分钟没有新值；查 sources.schedule、出网代理与采集失败`,
+          detail: `editorial articles.discovered_at 超过 ${QUIET_MINUTES} 分钟没有新值（热度信号单独评估）；查 sources.schedule、出网代理与采集失败`,
           since: last?.at ?? undefined,
         });
       }
@@ -95,8 +97,9 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
         since: p!.waiting >= 10 && p!.oldest ? p!.oldest : undefined,
       });
     }
-    // The daily report is composed at 08:00, and tried again every half hour until it exists.
-    if (Number(beijingTime(now).slice(0, 2)) >= 10) {
+    // The daily report is composed from its edition time, and tried again every half hour until it exists:
+    // two hours later it is overdue.
+    if (now >= beijingAt(beijingDate(now), EDITION_TIMES.daily).getTime() + 2 * 3600_000) {
       const [r] = await sql`SELECT 1 FROM reports WHERE kind = 'daily' AND key = ${beijingDate(now)}`;
       if (!r) {
         out.push({
@@ -164,6 +167,30 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
   for (const m of serverModules()) if (m.alerts) out.push(...(await m.alerts(now)));
 
   // Follow-ups for the daily digest
+  if (collecting()) {
+    for (const group of await sourceHealth(now)) {
+      if (group.failing.length) out.push({
+        key: `sources.failing.${group.mode}`, level: "digest", title: `${group.name}有 ${group.failing.length} 个信源连续抓取失败`,
+        detail: sourceHealthList(group.failing, s => `连续失败 ${s.fail_count} 次${s.last_error ? `，${s.last_error}` : ""}`) + "；转给 AI 检查抓取错误",
+      });
+      if (group.unstable.length) out.push({
+        key: `sources.unstable.${group.mode}`, level: "digest", title: `${group.name}有 ${group.unstable.length} 个信源反复抓取失败`,
+        detail: sourceHealthList(group.unstable, s => `近 7 天失败 ${s.failed}/${s.runs} 次`) + "；即使最近成功也需检查，避免继续漏收",
+      });
+      if (group.silent.length) out.push({
+        key: `sources.silent.${group.mode}`, level: "digest", title: `${group.name}有 ${group.silent.length} 个信源 7 天未发现新内容`,
+        detail: sourceHealthList(group.silent, s => `近 7 天 ${s.runs} 次抓取、0 条新发现`) + "；需对照原站，区分低频更新与采集失效",
+      });
+      if (group.quality.length) out.push({
+        key: `sources.quality.${group.mode}`, level: "digest", title: `${group.name}有 ${group.quality.length} 个信源需要核实文章质量`,
+        detail: sourceHealthList(group.quality, s => `近 7 天缺发布时间 ${s.undated} 篇、反复修订 ${s.repeated} 篇`) + "；缺时间可能让新闻按历史文章处理，反复修订需核对正文是否混入变化内容",
+      });
+      if (group.detailFailures.length) out.push({
+        key: `sources.details.${group.mode}`, level: "digest", title: `${group.name}有 ${group.detailFailures.length} 个信源详情补全失败`,
+        detail: sourceHealthList(group.detailFailures, s => `近 7 天 ${s.detail_failures} 次`) + "；查看抓取记录中的详情地址与错误",
+      });
+    }
+  }
   const [r] = await sql<{ receipts: number; services: string | null; deliveries: number }[]>`
     SELECT (SELECT count(*)::int FROM receipts WHERE status = 'unknown') AS receipts,
            (SELECT string_agg(DISTINCT service || '/' || purpose, '、') FROM receipts WHERE status = 'unknown') AS services,

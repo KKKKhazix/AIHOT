@@ -2,13 +2,13 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { Await, isRouteErrorResponse, Link, useAsyncError, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/item";
 import type { FeedItemSummary, SiteItemDetail } from "@aihot/contracts/site";
-import { SITE } from "@aihot/site";
+import { ITEM_COPY, SITE } from "@aihot/site";
 import { edgeTtl, loadOr404 } from "../lib/api.server";
 import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
 import { fullDateTime, relativeTime } from "../lib/format";
 import { markRead } from "../lib/local-state";
 import { SameEventBadge, SelectedBadge } from "../components/ui/Badge";
-import { ScoreLabel } from "../components/ui/Score";
+import { ScoreLabel, shownScore } from "../components/ui/Score";
 import { PillTabs } from "../components/ui/Tabs";
 import { ArticleLayout, RailSection } from "../components/ui/Page";
 import { Menu, MenuItem } from "../components/ui/Menu";
@@ -58,7 +58,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
     type: "article",
     noindex: !item.indexable,
     jsonLd: [
-      articleLd({ path: `/items/${item.id}`, headline: item.title, description: item.summary, publishedAt: item.publishedAt ?? item.discoveredAt, basedOn: item.links.original }),
+      articleLd({ path: `/items/${item.id}`, headline: item.title, description: item.summary, publishedAt: item.publishedAt, basedOn: item.links.original }),
       breadcrumbLd([
         { name: SITE.name, path: "/" },
         { name: item.selected ? "精选" : "全部动态", path: item.selected ? "/" : "/all" },
@@ -168,7 +168,8 @@ export default function ItemPage() {
 function ItemPreview({ preview }: { preview: FeedItemSummary }) {
   const [toast, setToast] = useToast();
   const isX = preview.channel === "x" && !!preview.x;
-  const published = preview.publishedAt ?? preview.timelineAt;
+  // Without a reliable date from the original, the card's time is when it was collected, and says so.
+  const shownAt = preview.publishedAt ?? preview.timelineAt;
   return (
     <div className="mx-auto max-w-[var(--page-max-reading)] pb-8">
       <PhoneBar back={{ to: preview.selected ? "/" : "/all", label: preview.selected ? "精选" : "全部" }} title={isX ? preview.x!.authorName : preview.title} />
@@ -177,9 +178,10 @@ function ItemPreview({ preview }: { preview: FeedItemSummary }) {
           <span className="font-semibold text-ink-2">{isX ? preview.x!.authorName : preview.source.name}</span>
           {isX && <span>· @{preview.x!.handle} · X</span>}
           <span>·</span>
-          <time dateTime={published} className="mono">{fullDateTime(published)}</time>
+          {!preview.publishedAt && <span>收录于</span>}
+          <time dateTime={shownAt} className="mono">{fullDateTime(shownAt)}</time>
           {preview.selected && <span className="ml-1">{preview.sameEvent ? <SameEventBadge /> : <SelectedBadge />}</span>}
-          {preview.score !== null && (
+          {shownScore(preview.score) !== null && (
             <span className="ml-1">
               <ScoreLabel score={preview.score} />
             </span>
@@ -194,7 +196,7 @@ function ItemPreview({ preview }: { preview: FeedItemSummary }) {
         )}
         {preview.reason && (
           <section className="mt-6 border-t border-line pt-4">
-            <div className="mb-1 text-[12px] font-semibold text-ink-3">推荐理由</div>
+            <div className="mb-1 text-[12px] font-semibold text-ink-3">{ITEM_COPY.reasonLabel}</div>
             <p className="text-[15px] leading-[1.75] text-ink-2">{preview.reason}</p>
           </section>
         )}
@@ -278,7 +280,9 @@ function ItemView({ item }: { item: SiteItemDetail }) {
   const bodyHtml = lang === "zh" ? (item.body?.zh ?? item.body?.original) : (item.body?.original ?? item.body?.zh);
   const bodyLabel = !item.body ? null : lang === "zh" && item.body.zhKind === "translation" ? "正文 · AI 翻译" : lang === "original" && hasTranslation ? "正文 · 原文" : "正文";
   const isX = item.channel === "x" && !!item.x;
-  const publishedIso = item.publishedAt ?? item.discoveredAt;
+  // Without a reliable date from the original, the time shown is when it was collected, labelled as such.
+  const shownAt = item.publishedAt ?? item.discoveredAt;
+  const timeLabel = item.publishedAt ? "发布时间" : "收录时间";
   const summaryOnly = item.readingMode === "summary-only";
   const showOutline = item.outline.length >= 3;
   const originalLabel = isX ? "在 X 查看原推" : "打开原文";
@@ -338,7 +342,7 @@ function ItemView({ item }: { item: SiteItemDetail }) {
       {moreMenu}
     </div>
   );
-  const verdict = (item.selected || item.score !== null) && (
+  const verdict = (item.selected || shownScore(item.score) !== null) && (
     <div className="flex items-center gap-2">
       {item.selected && (item.sameEvent ? <SameEventBadge /> : <SelectedBadge />)}
       <ScoreLabel score={item.score} />
@@ -353,12 +357,12 @@ function ItemView({ item }: { item: SiteItemDetail }) {
       <div className="mt-1 text-[12.5px] leading-relaxed text-ink-3">
         {isX ? `@${item.x!.handle} · X` : item.author ?? hostOf(item.links.original)}
       </div>
-      <div className="mt-3 text-[12px] text-ink-4">发布时间</div>
-      <time dateTime={publishedIso} className="mono mt-0.5 block text-[12.5px] text-ink-2">
-        {fullDateTime(publishedIso)}
+      <div className="mt-3 text-[12px] text-ink-4">{timeLabel}</div>
+      <time dateTime={shownAt} className="mono mt-0.5 block text-[12.5px] text-ink-2">
+        {fullDateTime(shownAt)}
       </time>
       <div className="mt-0.5 text-[12px] text-ink-4" suppressHydrationWarning>
-        {relativeTime(publishedIso)}
+        {relativeTime(shownAt)}
       </div>
     </RailSection>
   );
@@ -380,12 +384,12 @@ function ItemView({ item }: { item: SiteItemDetail }) {
   const notes = (
     <>
       {item.reason && !summaryOnly ? (
-        <RailSection title="推荐理由">
+        <RailSection title={ITEM_COPY.reasonLabel}>
           {verdict && <div className="mb-3">{verdict}</div>}
           <p className="text-[13.5px] leading-[1.8] text-ink-2">{item.reason}</p>
         </RailSection>
       ) : (
-        verdict && <RailSection title="AI 评分">{verdict}</RailSection>
+        verdict && <RailSection title={shownScore(item.score) !== null ? "AI 评分" : undefined}>{verdict}</RailSection>
       )}
       {item.topics.length > 0 && (
         <RailSection title="主题">
@@ -452,14 +456,15 @@ function ItemView({ item }: { item: SiteItemDetail }) {
             {isX && <span>· @{item.x!.handle} · X</span>}
             {item.author && !isX && <span>· {item.author}</span>}
             <span>·</span>
-            <time dateTime={publishedIso} className="mono">{fullDateTime(publishedIso)}</time>
-            <span suppressHydrationWarning>· {relativeTime(publishedIso)}</span>
+            {!item.publishedAt && <span>收录于</span>}
+            <time dateTime={shownAt} className="mono">{fullDateTime(shownAt)}</time>
+            <span suppressHydrationWarning>· {relativeTime(shownAt)}</span>
             {item.selected && (
               <span className="ml-1 lg:hidden">
                 {item.sameEvent ? <SameEventBadge /> : <SelectedBadge />}
               </span>
             )}
-            {item.score !== null && (
+            {shownScore(item.score) !== null && (
               <span className="ml-1 lg:hidden">
                 <ScoreLabel score={item.score} />
               </span>
@@ -477,7 +482,7 @@ function ItemView({ item }: { item: SiteItemDetail }) {
 
           {item.reason && !summaryOnly && (
             <section className="mt-6 border-t border-line pt-4 lg:hidden">
-              <div className="mb-1 text-[12px] font-semibold text-ink-3">推荐理由</div>
+              <div className="mb-1 text-[12px] font-semibold text-ink-3">{ITEM_COPY.reasonLabel}</div>
               <p className="text-[15px] leading-[1.75] text-ink-2">{item.reason}</p>
             </section>
           )}

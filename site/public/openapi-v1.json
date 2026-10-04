@@ -600,7 +600,7 @@
       "get": {
         "operationId": "dailies",
         "summary": "List daily-report archive entries",
-        "description": "Date index of past daily reports, newest first. Reports are published once a day at 08:00 Asia/Shanghai, so checking this more than a few times a day is wasted work.",
+        "description": "Date index of past daily reports, newest first. Reports are published once a day at {{dailyTime}} Asia/Shanghai, so checking this more than a few times a day is wasted work.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ActorUserAgent"
@@ -768,7 +768,7 @@
       "get": {
         "operationId": "latestDaily",
         "summary": "Get the latest daily report",
-        "description": "The most recent daily report, published once a day at 08:00 Asia/Shanghai. A client that only wants the daily digest should wake up shortly after 08:00 rather than poll around the clock. Agent or tool runtimes that cache a stable URL beyond HTTP cache headers should first request /api/v1/dailies?limit=1 and then fetch /api/v1/dailies/{returned-date}; never guess a date.",
+        "description": "The most recent daily report, published once a day at {{dailyTime}} Asia/Shanghai. A client that only wants the daily digest should wake up shortly after {{dailyTime}} rather than poll around the clock. Agent or tool runtimes that cache a stable URL beyond HTTP cache headers should first request /api/v1/dailies?limit=1 and then fetch /api/v1/dailies/{returned-date}; never guess a date.",
         "responses": {
           "200": {
             "description": "OK",
@@ -1129,7 +1129,7 @@
       "get": {
         "operationId": "weeklies",
         "summary": "List weekly reports",
-        "description": "Index of published weekly reports, newest first: ISO week, its Monday-to-Sunday days, headline and {{siteName}} link. A weekly is published each Monday at 10:00 Asia/Shanghai, compiled from the dailies dated in that week, so checking more than once a day is wasted work.",
+        "description": "Index of published weekly reports, newest first: ISO week, its Monday-to-Sunday days, headline and {{siteName}} link. A weekly is published each Monday at {{weeklyTime}} Asia/Shanghai, compiled from the dailies dated in that week, so checking more than once a day is wasted work.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ActorUserAgent"
@@ -1297,7 +1297,7 @@
       "get": {
         "operationId": "latestWeekly",
         "summary": "Get the latest weekly report",
-        "description": "The most recent weekly report: its headline, overview and the week's most important items grouped by section, chosen from that week's dailies. Published each Monday at 10:00 Asia/Shanghai; a client that wants the weekly digest should fetch it shortly after that rather than poll. Agent or tool runtimes that cache a stable URL beyond HTTP cache headers should first request /api/v1/weeklies?limit=1 and then /api/v1/weeklies/{returned-week}; never guess a week.",
+        "description": "The most recent weekly report: its headline, overview and the week's most important items grouped by section, chosen from that week's dailies. Published each Monday at {{weeklyTime}} Asia/Shanghai; a client that wants the weekly digest should fetch it shortly after that rather than poll. Agent or tool runtimes that cache a stable URL beyond HTTP cache headers should first request /api/v1/weeklies?limit=1 and then /api/v1/weeklies/{returned-week}; never guess a week.",
         "responses": {
           "200": {
             "description": "OK",
@@ -1659,7 +1659,7 @@
       "get": {
         "operationId": "monthlies",
         "summary": "List monthly reports",
-        "description": "Index of published monthly reports, newest first: month, its first and last day, headline and {{siteName}} link. A monthly is published on the 1st of each month at 10:30 Asia/Shanghai, compiled from the dailies dated in that month.",
+        "description": "Index of published monthly reports, newest first: month, its first and last day, headline and {{siteName}} link. A monthly is published on the 1st of each month at {{monthlyTime}} Asia/Shanghai, compiled from the dailies dated in that month.",
         "parameters": [
           {
             "$ref": "#/components/parameters/ActorUserAgent"
@@ -1827,7 +1827,7 @@
       "get": {
         "operationId": "latestMonthly",
         "summary": "Get the latest monthly report",
-        "description": "The most recent monthly report: its headline, overview and the month's most important items grouped by section, chosen from that month's dailies. Published on the 1st of each month at 10:30 Asia/Shanghai. Tool runtimes that cache a stable URL should first request /api/v1/monthlies?limit=1 and then /api/v1/monthlies/{returned-month}; never guess a month.",
+        "description": "The most recent monthly report: its headline, overview and the month's most important items grouped by section, chosen from that month's dailies. Published on the 1st of each month at {{monthlyTime}} Asia/Shanghai. Tool runtimes that cache a stable URL should first request /api/v1/monthlies?limit=1 and then /api/v1/monthlies/{returned-month}; never guess a month.",
         "responses": {
           "200": {
             "description": "OK",
@@ -3839,7 +3839,8 @@
           },
           "publishedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "When the original was published; if the original carries no reliable publication date, when it was collected instead."
           },
           "links": {
             "type": "object",
@@ -4244,7 +4245,8 @@
                 },
                 "publishedAt": {
                   "type": "string",
-                  "format": "date-time"
+                  "format": "date-time",
+                  "description": "When the original was published; if the original carries no reliable publication date, when it was collected instead."
                 },
                 "attribution": {
                   "$ref": "#/components/schemas/Attribution"

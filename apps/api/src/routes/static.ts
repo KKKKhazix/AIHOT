@@ -4,7 +4,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { SITE } from "@aihot/site";
+import { EDITION_TIMES, SITE } from "@aihot/site";
 import { CONTACT_ALIASES, PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT, config } from "@aihot/backend/config";
@@ -32,7 +32,7 @@ const TYPES: Record<string, string> = {
 
 /**
  * A public file's `{{…}}` placeholders: the site's name, address, description, tagline and locale, the
- * public interface version and the category list (JSON-escaped in JSON files). In a JSON document, an
+ * reports' edition times, the public interface version and the category list (JSON-escaped in JSON files). In a JSON document, an
  * `enum` or `examples` list holding "{{categories}}" becomes the list of category keys.
  */
 function fillPlaceholders(text: string, json: boolean): string {
@@ -42,6 +42,9 @@ function fillPlaceholders(text: string, json: boolean): string {
     description: SITE.description,
     tagline: SITE.tagline,
     locale: SITE.locale,
+    dailyTime: EDITION_TIMES.daily,
+    weeklyTime: EDITION_TIMES.weekly,
+    monthlyTime: EDITION_TIMES.monthly,
     version: PUBLIC_INTERFACE_VERSION,
     categoryList: PUBLIC_API_CATEGORY_KEYS.join(", "),
   };

@@ -19,6 +19,11 @@ export function beijingMidnight(date: string): Date {
   return new Date(Date.parse(`${date}T00:00:00+08:00`));
 }
 
+/** UTC instant of an HH:mm Beijing time on the given calendar day. */
+export function beijingAt(date: string, time: string): Date {
+  return new Date(Date.parse(`${date}T${time}:00+08:00`));
+}
+
 export function addDays(date: string, days: number): string {
   const t = Date.parse(`${date}T00:00:00Z`) + days * 86400000;
   return new Date(t).toISOString().slice(0, 10);

@@ -11,14 +11,21 @@ import { closeDb, sql } from "@aihot/backend/db";
 after(closeDb);
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const BACKEND = path.join(ROOT, "packages/backend/src");
+const BACKEND = "packages/backend/src";
 
+/**
+ * The source files under a folder, each named by its path from the repository root with "/" between the
+ * parts on every system (path.relative gives backslashes on Windows): the rules compare and join these
+ * names as POSIX paths.
+ */
 function sources(dir: string): Array<{ file: string; text: string }> {
   const out: Array<{ file: string; text: string }> = [];
   for (const entry of readdirSync(path.join(ROOT, dir), { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile() || !/\.tsx?$/.test(entry.name)) continue;
     const full = path.join(entry.parentPath, entry.name);
-    if (!entry.isFile() || !/\.tsx?$/.test(entry.name) || /[/\\](node_modules|build|\.react-router)[/\\]/.test(full)) continue;
-    out.push({ file: path.relative(ROOT, full), text: readFileSync(full, "utf8") });
+    const file = path.relative(ROOT, full).split(path.sep).join("/");
+    if (/\/(node_modules|build|\.react-router)\//.test(file)) continue;
+    out.push({ file, text: readFileSync(full, "utf8") });
   }
   return out;
 }
@@ -30,7 +37,7 @@ const specifiers = (text: string) => [...text.matchAll(/\b(?:from|import)\s*\(?\
 function backendPath(file: string, spec: string): string | null {
   if (spec.startsWith("@aihot/backend/")) return `${spec.slice("@aihot/backend/".length)}.ts`;
   if (!spec.startsWith(".")) return null;
-  const target = path.relative(BACKEND, path.resolve(ROOT, path.dirname(file), spec));
+  const target = path.posix.relative(BACKEND, path.posix.join(path.posix.dirname(file), spec));
   return target.startsWith("..") ? null : target;
 }
 
@@ -58,7 +65,7 @@ const PUBLIC_READS = [
 ];
 
 test("public routes read content only through the public read layer", () => {
-  const routes = sources("apps/api/src/routes").filter(({ file }) => !PRIVATE_ROUTES.has(path.basename(file)));
+  const routes = sources("apps/api/src/routes").filter(({ file }) => !PRIVATE_ROUTES.has(path.posix.basename(file)));
   const found = violations(routes, (file, spec) => {
     const target = backendPath(file, spec);
     return target !== null && !PUBLIC_READS.some((allowed) => allowed.test(target));
@@ -80,7 +87,7 @@ const OWNERS: Record<string, string> = {
 test("the tables that carry a rule are written only by the module that owns it", () => {
   const found: string[] = [];
   for (const { file, text } of [...sources("packages/backend/src"), ...sources("apps/api/src"), ...sources("apps/worker/src"), ...modules()]) {
-    const own = path.relative("packages/backend/src", file);
+    const own = path.posix.relative(BACKEND, file);
     for (const [, table] of text.matchAll(/\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE)\s+([a-z_]+)\b/gi)) {
       const owner = OWNERS[table!.toLowerCase()];
       if (owner && !own.startsWith(owner)) found.push(`${file} writes ${table} (owner ${owner})`);
@@ -104,7 +111,7 @@ test("the public scope and the composite rule are spelled once, in publication/s
 // tools do not make anything used.
 const PRODUCTION = ["packages/backend/src", "packages/contracts/src", "apps/api/src", "apps/worker/src", "apps/web/app"];
 /** The site's modules (modules/<name>/), their tests and local tools left out. */
-const modules = () => (existsSync(path.join(ROOT, "modules")) ? sources("modules").filter(({ file }) => !/[/\\](tests|scripts)[/\\]/.test(file)) : []);
+const modules = () => (existsSync(path.join(ROOT, "modules")) ? sources("modules").filter(({ file }) => !/\/(tests|scripts)\//.test(file)) : []);
 const production = () => [...PRODUCTION.flatMap((dir) => sources(dir)), { file: "apps/web/server.ts", text: readFileSync(path.join(ROOT, "apps/web/server.ts"), "utf8") }, ...modules()];
 const words = (text: string) => new Set(text.match(/[A-Za-z_][A-Za-z0-9_]*/g));
 
@@ -168,7 +175,7 @@ test("modules do not import other modules", () => {
   const found = violations(modules(), (file, spec) => {
     const owner = file.split("/")[1];
     if (spec.startsWith(".")) {
-      const target = path.relative(ROOT, path.resolve(ROOT, path.dirname(file), spec)).split(path.sep);
+      const target = path.posix.join(path.posix.dirname(file), spec).split("/");
       return target[0] === "modules" && target[1] !== owner;
     }
     const target = /^@aihot\/([^/]+)/.exec(spec)?.[1];

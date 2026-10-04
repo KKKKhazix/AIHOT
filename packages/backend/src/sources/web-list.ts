@@ -1,7 +1,7 @@
-// Web list pages: HTML with selectors, Markdown through Jina Reader, and Docusaurus changelogs.
+// Web list pages: HTML with selectors, Markdown through Jina Reader, and dated changelog sections.
 import * as cheerio from "cheerio";
 import { guardedFetch } from "../lib/http-fetch.ts";
-import { normalizeUrl } from "../lib/url.ts";
+import { identityKeyForUrl, normalizeUrl } from "../lib/url.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { readable, type ExtractedBody } from "../content/extract.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
@@ -10,6 +10,15 @@ import { parseLooseDate } from "./dates.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
 
 const JINA_PREFIX = "https://r.jina.ai/";
+
+/** A date rule names one element; unrelated tooltips must not hide its visible publication date. */
+function elementDate(el: ReturnType<cheerio.CheerioAPI>, utcOffset?: string): Date | null {
+  for (const value of [el.attr("datetime"), el.attr("content"), el.attr("title"), el.text()]) {
+    const date = parseLooseDate(value, utcOffset);
+    if (date) return date;
+  }
+  return null;
+}
 
 /** The datePublished of the page's structured data (JSON-LD, also inside @graph or embedded app state). */
 export function jsonLdPublished($: cheerio.CheerioAPI, html: string): string | null {
@@ -99,11 +108,14 @@ async function fetchListingText(source: SourceRow): Promise<{ text: string; viaJ
   }
   const res = await guardedFetch(url, { headers: { accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8" }, timeoutMs: 25_000 });
   if (res.status !== 200) throw new FetchError(`HTTP ${res.status}`, res.status);
-  return { text: res.text(), viaJina: false, base: source.config.baseUrl ?? url };
+  return { text: res.text(), viaJina: false, base: source.config.baseUrl ?? res.url };
 }
 
+/** A listing title that is no headline: a label that swallowed its summary, or a call to action. */
+export const needsTitle = (title: string) => title.length > 100 || /^(read more|learn more|continue reading|more|阅读全文|阅读更多|查看详情|了解更多)$/i.test(title.trim());
+
 export function fromMarkdown(md: string, base: string, source: SourceRow): Candidate[] {
-  const seen = new Set<string>();
+  const seen = new Map<string, Candidate>();
   const out: Candidate[] = [];
   const listing = String(source.config.url ?? base).replace(JINA_PREFIX, "");
   // Card links wrap an image and the text, [![alt](img) ##### Title …](url "Title"): images go first so the
@@ -115,7 +127,7 @@ export function fromMarkdown(md: string, base: string, source: SourceRow): Candi
     /^[\s>#*+_|-]*(?:\d+[.)]\s*)?[\s*_]*$/.test(text.slice(text.lastIndexOf("\n", at - 1) + 1, at).replace(/\[\]\([^)]*\)/g, ""));
   for (const m of text.matchAll(/\[([^\]]{6,1000})\]\((https?:\/\/[^)\s]+|\/[^)\s]*)(?:\s+"([^"]*)")?\)/g)) {
     const url = absolute(m[2], base);
-    if (!url || seen.has(url) || !allowed(url, source)) continue;
+    if (!url || !allowed(url, source)) continue;
     const section = source.config.preserveUrlFragment === true && new URL(url).hash.length > 1 && listingItself(url, listing);
     if (!section && navigationLink(url, listing)) continue;
     if (source.config.linksStartLine === true && !startsLine(m.index!)) continue;
@@ -124,8 +136,14 @@ export function fromMarkdown(md: string, base: string, source: SourceRow): Candi
     const attr = collapseWhitespace(m[3] ?? "");
     const title = attr.length >= 6 && label.includes(attr) ? attr : label;
     if (title.length < 6) continue;
-    seen.add(url);
-    out.push({ url, title });
+    const previous = seen.get(url);
+    if (previous) {
+      if (needsTitle(previous.title) && !needsTitle(title)) previous.title = title;
+      continue;
+    }
+    const candidate = { url, title };
+    seen.set(url, candidate);
+    out.push(candidate);
   }
   return out;
 }
@@ -152,7 +170,7 @@ export function fromHtml(html: string, base: string, source: SourceRow): Candida
     let publishedAt: Date | null = null;
     if (c.publishedAtSelector) {
       const dateEl = el.find(c.publishedAtSelector).first();
-      publishedAt = parseLooseDate(dateEl.attr("datetime") ?? dateEl.attr("title") ?? dateEl.text(), c.publishedAtUtcOffset);
+      publishedAt = elementDate(dateEl, c.publishedAtUtcOffset);
     }
     if (!publishedAt && c.publishedAtRegex) {
       const m = new RegExp(c.publishedAtRegex).exec($.html(el));
@@ -171,8 +189,41 @@ const DATE_HEADING = /^(?:[^\d:：]{1,12}[:：])?\s*(\d{4})[-/.年](\d{1,2})[-/.
 function headingDate(title: string, utcOffset = "+08:00"): Date | null | undefined {
   const m = DATE_HEADING.exec(title);
   if (!m) return undefined;
-  const t = Date.parse(`${m[1]}-${m[2]!.padStart(2, "0")}-${m[3]!.padStart(2, "0")}T00:00:00${utcOffset}`);
-  return Number.isFinite(t) ? new Date(t) : null;
+  return parseLooseDate(`${m[1]}/${m[2]}/${m[3]}`, utcOffset);
+}
+
+/** Intercom renders each date heading and paragraph in sibling blocks, with persistent heading IDs. */
+function fromIntercomChangelog(html: string, base: string, source: SourceRow): Candidate[] {
+  const $ = cheerio.load(html);
+  const out: Candidate[] = [];
+  $("article .intercom-interblocks-subheading3:has(h3[id]), article .intercom-interblocks-subheading:has(h2[id])").each((_i, node) => {
+    const block = $(node);
+    const heading = block.find("h2[id], h3[id]").first();
+    const date = parseLooseDate(heading.text(), source.config.publishedAtUtcOffset ?? "+00:00");
+    if (!date) return;
+    const parts: string[] = [];
+    const titles: string[] = [];
+    let next = block.next();
+    while (next.length && !next.find("h2, h3").length) {
+      parts.push($.html(next));
+      const paragraph = next.find("p").first();
+      const text = collapseWhitespace(paragraph.text());
+      if (text && paragraph.children().length === 1 && paragraph.children().first().is("b, strong") && text === collapseWhitespace(paragraph.children().first().text())) titles.push(text);
+      next = next.next();
+    }
+    const bodyHtml = sanitizeBody(parts.join(""), base);
+    const bodyText = stripTags(bodyHtml);
+    if (!bodyText.trim()) return;
+    const url = new URL(base);
+    url.hash = heading.attr("id")!;
+    if (!allowed(url.toString(), source)) return;
+    out.push({
+      url: url.toString(), identityKey: identityKeyForUrl(url.toString(), { keepFragment: true })!,
+      title: titles.join(" · ") || collapseWhitespace(heading.text()), publishedAt: date,
+      bodyHtml, bodyText, bodyStatus: "ok",
+    });
+  });
+  return out;
 }
 
 function fromDocusaurusChangelog(html: string, base: string, source: SourceRow): Candidate[] {
@@ -290,6 +341,7 @@ export async function fetchWebList(source: SourceRow): Promise<Candidate[]> {
   if (mode === "mimo_home") out = await fromMimoHome(text, base, source);
   else if (mode === "markdown") out = fromMarkdown(text, base, source);
   else if (mode === "docusaurus_changelog") out = fromDocusaurusChangelog(text, base, source);
+  else if (mode === "intercom_changelog") out = fromIntercomChangelog(text, base, source);
   else out = fromHtml(text, base, source);
   if (out.length === 0) throw new FetchError(`no items matched (${mode})`);
   return out;
@@ -319,12 +371,11 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
   let body: ExtractedBody | null = null;
   if ((need.date && !dateInJina) || (need.title && !titleInJina) || need.summary) {
     const res = await guardedFetch(url, { timeoutMs: 20_000 });
-    if (res.status === 200) {
-      html = res.text();
-      if (need.body && /html/.test(res.headers.get("content-type") ?? "")) {
-        try { body = readable(html, res.url); }
-        catch { /* A failed extraction must not discard the detail metadata. */ }
-      }
+    if (res.status !== 200) throw new FetchError(`HTTP ${res.status} for detail`, res.status);
+    html = res.text();
+    if (need.body && /html/.test(res.headers.get("content-type") ?? "")) {
+      try { body = readable(html, res.url); }
+      catch { /* A failed extraction must not discard the detail metadata. */ }
     }
   }
   const $ = html === null ? null : cheerio.load(html);
@@ -334,7 +385,7 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
   if (need.date && dateText !== null) {
     if ($ && !dateInJina && d.publishedAtSelector) {
       const el = $(d.publishedAtSelector).first();
-      publishedAt = parseLooseDate(el.attr("datetime") ?? el.attr("title") ?? el.text(), d.publishedAtUtcOffset);
+      publishedAt = elementDate(el, d.publishedAtUtcOffset);
     }
     if (!publishedAt && d.publishedAtRegex) publishedAt = parseLooseDate(new RegExp(d.publishedAtRegex).exec(dateText)?.[1], d.publishedAtUtcOffset);
     // An authoritative rule is the only source of the date: when its byline is missing, no other

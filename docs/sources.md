@@ -33,9 +33,9 @@
 { "feedUrl": "https://example.com/feed.xml" }
 ```
 
-可选：`summaryIsBody`（订阅里的摘要就是全文）、`allowCategories` / `denyCategories`（按订阅里的分类过滤）。
+可选：`summaryIsBody`（订阅里的摘要就是全文：RSS 的 `description`、Atom 的 `summary` 不论长短都当正文，不再去抓原文页）、`allowCategories` / `denyCategories`（按订阅里的分类过滤）。
 
-播客条目没有网页链接、但有音视频附件时，原文链接指向附件，条目身份仍沿用订阅提供的标识；不会把音视频文件当文章正文抓取。
+没有网页的播客单集（没有 `<link>`、`guid` 也不是网址），原文链接用它的音频或视频文件，浏览器可以直接播放；这类单集不抓网页，按订阅里的文字处理。
 
 ### web_list
 
@@ -112,7 +112,7 @@
 
 - 接口本身返回数组时，省略 `itemsPath`。`titlePaths`、`summaryPaths`、`authorPaths` 是候选路径数组，按顺序取第一个非空值，例如 `["title", "name"]`。
 - 已有完整网址时用 `{raw:url}`；只有 slug 时可用 `https://example.com/posts/{slug}`。`{字段路径}` 会编码字段值，`{raw:字段路径}` 原样插入。JSON 列表不会自动把相对网址补成绝对网址，模板应产出完整的 HTTP(S) 地址。
-- 日期建议返回带时区的 ISO 字符串；没有时区的 `2026-10-01 09:00:00` 这类日期时间用 `publishedAtUtcOffset` 指定来源时区（默认 `+08:00`），不随服务器时区变化。数字时间戳分别设 `publishedAtUnit: "epoch_s"`（秒）或 `"epoch_ms"`（毫秒），`20261001` 这类日期设 `"yyyymmdd"`。
+- 日期建议返回带时区的 ISO 字符串；`2026-09-30 17:43:58` 这类不带时区的时间，与网页列表一样按 `publishedAtUtcOffset` 读（默认 `+08:00`）；数字时间戳分别设 `publishedAtUnit: "epoch_s"`（秒）或 `"epoch_ms"`（毫秒），`20261001` 这类日期设 `"yyyymmdd"`。
 - 缺少标题或无法生成链接的条目会跳过。非空数组全部映射失败时，会报 `no items mapped (check title/url paths)`；路径不是数组时，会报 `items path did not resolve to an array`。
 
 ### 本地跑通 HTML/JSON 示例
@@ -220,7 +220,7 @@ http.createServer((req, res) => {
 
 首次发现时原文已经发布超过 48 小时的资料、新信源第一次导入的存量条目、标记为回灌的推送，都按原文时间归档：不进入“今天”，也不推送。这条规则所有入口共用，防止一次性导入历史内容刷屏。
 
-首次导入只取配置范围内的一批历史条目；之后的列表抓取跳过早于该信源初始化前 48 小时的旧条目，近期条目不按数量截断。没有日期的条目会先保留，等正文补齐日期后再判断；明确指定详情页日期为准时，列表里的日期不参与筛选。
+新信源第一次导入时，只取列表里前 `_aihot.initialBackfillLimit` 条（默认 30）、`_aihot.initialBackfillMonths` 个月以内（默认 12）的条目。之后的抓取只收发布时间在信源加入前 48 小时以内或之后的条目，列表里更早的存量不再进来，不会为整个订阅存档付费；加入以后发布的条目，排在长列表第几条都会收。列表上没有发布时间的条目照收，等从原文页读到日期后再按上面的规则判断新旧，读到之前不进公开列表和精选。X 账号按抓取位置往后读，不受这条限制。
 
 ## 外部推送接口
 

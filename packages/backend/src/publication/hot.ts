@@ -56,10 +56,11 @@ async function queryExtras(ranking: HotRanking): Promise<Extras> {
   const ids = ranking.entries.map((e) => e.storyId);
   const [faces, texts] = await Promise.all([
     // A participant's face: the source's icon, else the avatar on that account's latest post in the story.
+    // A null lookup key skips the article read; an ON guard can still fetch it before filtering.
     sql<{ name: string; icon_url: string | null; avatar: string | null }[]>`
       SELECT DISTINCT ON (s.id) s.name, s.icon_url, a.x_post->>'avatarUrl' AS avatar
       FROM story_signals ss JOIN sources s ON s.id = ss.source_id
-      LEFT JOIN articles a ON a.id = ss.article_id AND a.x_post ? 'avatarUrl'
+      LEFT JOIN articles a ON a.id = CASE WHEN s.icon_url IS NULL THEN ss.article_id END AND a.x_post ? 'avatarUrl'
       WHERE ss.story_id = ANY(${ids}::bigint[])
       ORDER BY s.id, (a.id IS NULL), a.discovered_at DESC, a.id DESC`,
     storyTexts(ids),

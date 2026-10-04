@@ -58,18 +58,32 @@ async function embedBatch(texts: string[], subject: string): Promise<{ vectors: 
   }
 }
 
+// array_send avoids formatting each float as decimal on the database. Its one-dimensional real[]
+// payload has a 20-byte header, then a four-byte length and a float4 per coordinate. Keep shapes
+// rejected by the text-array reader invalid so the usual replacement path still handles them.
+function storedVector(data: Buffer): number[] | null {
+  if (data.readInt32BE(0) !== 1 || data.readInt32BE(16) !== 1) return null;
+  const vector = new Array<number>(data.readInt32BE(12));
+  for (let i = 0; i < vector.length; i++) {
+    if (data.readInt32BE(20 + i * 8) === -1) return null;
+    vector[i] = data.readFloatBE(24 + i * 8);
+  }
+  return vector;
+}
+
 /** Returns the stored embeddings of report texts, computing and storing the missing ones. */
 export async function ensureEmbeddings(items: Array<{ id: string; text: string }>): Promise<Map<string, number[]>> {
   const out = new Map<string, number[]>();
   if (items.length === 0) return out;
   const hashes = new Map(items.map((item) => [item.id, sha256(item.text)]));
-  const rows = await sql<{ ref_id: string; text_hash: string; vector: number[] }[]>`
-    SELECT ref_id, text_hash, vector FROM embeddings WHERE kind = 'article' AND model = ${EMBEDDING_MODEL} AND ref_id IN ${sql(items.map((i) => i.id))}`;
+  const rows = await sql<{ ref_id: string; text_hash: string; vector: Buffer }[]>`
+    SELECT ref_id, text_hash, array_send(vector) AS vector FROM embeddings WHERE kind = 'article' AND model = ${EMBEDDING_MODEL} AND ref_id IN ${sql(items.map((i) => i.id))}`;
   const have = new Map(rows.map((r) => [r.ref_id, r]));
   const missing = items.filter((i) => {
     const h = have.get(i.id);
-    if (h && h.text_hash === hashes.get(i.id) && VECTOR.safeParse(h.vector).success) {
-      out.set(i.id, h.vector);
+    const vector = h && h.text_hash === hashes.get(i.id) ? storedVector(h.vector) : null;
+    if (vector && VECTOR.safeParse(vector).success) {
+      out.set(i.id, vector);
       return false;
     }
     return true;

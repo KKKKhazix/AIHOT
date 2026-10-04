@@ -75,6 +75,10 @@ docker compose run --rm setup && docker compose up -d
 
 分享图预热现在直接复用后端渲染器，不再请求固定的本机端口。Docker Compose 已移除没有代码读取的 `LOCAL_ROUTER_URL`；自行维护的 Compose 文件也可以删去该项。分享图地址、格式和缓存约定保持不变。
 
+#### 数据库读取优化（2026 年 10 月 4 日）
+
+公开接口版本仍是 4.0.0，接口内容、搜索权重和事件候选范围不变，无需增加环境变量或修改站点配置。新增的 `0056_analyses_composite_id_idx.sql`、`0056_publications_pool_category_timeline_idx.sql` 和 `0057_publications_pool_channel_timeline_idx.sql` 并发建立查询索引；按上面的更新步骤等待 setup 完成即可。迁移不重写文章或已有向量，也不重新调用模型。迁移按完整文件名记录，编号相同的不同文件都会各自执行。
+
 #### 公开出口的更正、撤回与缓存（2026 年 10 月 4 日）
 
 公开接口版本仍是 4.0.0，不需要增加环境变量或修改站点配置。迁移 `0056`、`0057` 创建并收集公开列表的查询统计，不删除数据，也不重写已有内容。

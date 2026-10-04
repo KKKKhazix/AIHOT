@@ -44,6 +44,7 @@ export const rootFactOf = (story: ReturnType<typeof sql> | number) => sql`(
 
 /** Reports of the recall window that belong to a live fact. */
 async function recallPool(): Promise<PoolRow[]> {
+  // Correlate the analysis lookup with articles so its discovery window is applied first.
   return sql<PoolRow[]>`
     SELECT fa.article_id, fa.fact_id, f.story_id, f.title AS fact_title, coalesce(p.revision, 0) AS revision
     FROM fact_articles fa
@@ -51,7 +52,7 @@ async function recallPool(): Promise<PoolRow[]> {
     JOIN stories st ON st.id = f.story_id AND st.merged_into IS NULL
     JOIN articles a ON a.id = fa.article_id
     LEFT JOIN publications p ON p.article_id = a.id
-    WHERE fa.role IN ('primary', 'report') AND NOT ${latestCompositeCondition(sql`fa.article_id`)} AND a.discovered_at > now() - make_interval(days => ${RECALL_DAYS})`;
+    WHERE fa.role IN ('primary', 'report') AND NOT ${latestCompositeCondition(sql`a.id`)} AND a.discovered_at > now() - make_interval(days => ${RECALL_DAYS})`;
 }
 
 type ReadingRow = ReportView & { article_id: string; revision: number };

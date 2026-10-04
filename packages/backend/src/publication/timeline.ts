@@ -54,7 +54,7 @@ const groupedAnchors = cachedByKey(binding, (q: TimelineQuery) => queryGroupedAn
 async function queryGroupedAnchors(q: TimelineQuery, now: Date) {
   const rows = (
     await sql<{ gk: string; anchor_at: Date }[]>`
-      WITH base AS (
+      WITH base AS MATERIALIZED (
         SELECT p.sort_at, CASE WHEN p.fact_id IS NOT NULL AND ${ownFactEvidenceCondition()}
           THEN 'f' || p.fact_id::text ELSE 'a' || p.article_id END AS gk
         FROM publications p

@@ -1,7 +1,7 @@
 // Failure cases for online migrations: table scans under strong locks, unsafe retries, and hidden SQL.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { migrationPlan } from "../scripts/migration-safety.ts";
+import { indexOnEmptyTable, migrationPlan } from "../scripts/migration-safety.ts";
 
 test("online migrations reject writes, blocking indexes and table rewrites before execution", () => {
   for (const statement of [
@@ -67,14 +67,46 @@ test("online DDL cannot accumulate strong table locks across several otherwise s
 test("statistics maintenance names one table and its columns without skipping work or evaluating expressions", () => {
   assert.equal(migrationPlan("CREATE STATISTICS article_release_stats (mcv) ON visibility, selected, seat, visible_after FROM publications;").kind, "statistics");
   assert.equal(migrationPlan("ANALYZE public.publications (visibility, selected, seat, visible_after);").kind, "statistics");
+  assert.equal(migrationPlan('CREATE STATISTICS "public"."release_stats" (MCV) ON "selected", "visible_after" FROM public.publications;').kind, "statistics");
+  assert.equal(migrationPlan('ANALYZE "public"."publications" ("selected");').kind, "statistics");
   for (const statement of [
     "CREATE STATISTICS IF NOT EXISTS article_release_stats (mcv) ON selected, visible_after FROM publications;",
+    "CREATE STATISTICS article_release_stats ON selected, visible_after FROM publications;",
     "CREATE STATISTICS article_release_stats (mcv) ON selected, (random()) FROM publications;",
     "CREATE STATISTICS article_release_stats (dependencies) ON selected, visible_after FROM publications;",
+    "CREATE STATISTICS article_release_stats (mcv, ndistinct) ON selected, visible_after FROM publications;",
+    "CREATE STATISTICS article_release_stats (mcv) ON selected FROM publications;",
+    "CREATE STATISTICS article_release_stats (mcv) ON selected, lower(title) FROM publications;",
+    "CREATE STATISTICS article_release_stats (mcv) ON selected, (visible_after IS NOT NULL) FROM publications;",
+    "CREATE STATISTICS article_release_stats (mcv) ON selected, visible_after FROM publications, articles;",
+    "CREATE STATISTICS article_release_stats (mcv) ON selected, visible_after FROM publications; ANALYZE publications (selected, visible_after);",
     "ANALYZE;",
     "ANALYZE publications;",
+    "ANALYZE VERBOSE publications (selected);",
     "ANALYZE publications(selected), articles(id);",
     "ANALYZE (SKIP_LOCKED) publications(selected);",
+    "ANALYZE (SKIP_LOCKED true) publications(selected);",
+    "ANALYZE publications (lower(title));",
     "ANALYZE publications(selected); UPDATE publications SET selected = false;",
+    "ANALYZE publications (selected); SET statement_timeout = 0;",
+    "VACUUM ANALYZE publications (selected);",
   ]) assert.throws(() => migrationPlan(statement), statement);
+});
+
+test("index definition checks preserve compound operators, adjacent comments and negative operands", () => {
+  for (const [predicate, normalized] of [
+    ["output->>'scope'='composite'", "output ->> 'scope' = 'composite'"],
+    ["output#>>'{kind,name}'='release'", "output #>> '{kind,name}' = 'release'"],
+    ["output@>'{\"active\":true}'::jsonb", "output @> '{\"active\":true}' :: jsonb"],
+    ["id<=-1", "id <= -1"],
+    ["output->-1 IS NOT NULL", "output -> -1 IS NOT NULL"],
+    ["title!~*'-- /* ->> <= literal'", "title !~* '-- /* ->> <= literal'"],
+    ["tags&&ARRAY['one','two']", "tags && ARRAY [ 'one' , 'two' ]"],
+    ["point<->other_point<10", "point <-> other_point < 10"],
+    ["output->>/* scope */'scope'<>'single' AND id>=-- boundary\n0", "output ->> 'scope' <> 'single' AND id >= 0"],
+  ]) {
+    const source = `CREATE INDEX CONCURRENTLY IF NOT EXISTS example_idx ON example (id) WHERE ${predicate};`;
+    assert.equal(indexOnEmptyTable(source), `CREATE INDEX migration_expected_index ON pg_temp.migration_expected_table ( id ) WHERE ${normalized}`);
+    assert.equal(migrationPlan(source).kind, "index");
+  }
 });

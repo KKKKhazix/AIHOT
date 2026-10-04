@@ -1,4 +1,4 @@
-// A deliberately small online-DDL vocabulary. Unknown SQL needs an explicit safety design, not an opt-out.
+// A deliberately small online-migration vocabulary. Unknown SQL needs an explicit safety design, not an opt-out.
 export const FIRST_ONLINE_MIGRATION = 55;
 export type MigrationPlan = { kind: "transaction" | "validation" | "statistics" } | { kind: "index"; index: string; table: string };
 
@@ -39,7 +39,11 @@ function statements(text: string): string[][] {
     }
     if (/^\$(?:[a-z_][a-z0-9_]*)?\$/i.test(rest)) throw new Error("SQL bodies are not online migrations");
     if (quote === ";") { if (tokens.length) result.push(tokens); tokens = []; i++; continue; }
-    const token = /^[a-z_][a-z0-9_$]*|^-?\d+(?:\.\d+)?|^::/i.exec(rest)?.[0] ?? quote;
+    // Keep compound operators intact, stopping before comments. PostgreSQL separates a trailing
+    // +/- from ordinary operators (<=-1, ->-1), except in names containing a special operator char.
+    let operator = /^(?:(?!--|\/\*)[+\-*/<>=~!@#%^&|`?])+/.exec(rest)?.[0];
+    if (operator && !/[~!@#%^&|`?]/.test(operator)) operator = operator.replace(/[+-]+$/, "") || operator[0];
+    const token = /^[a-z_][a-z0-9_$]*|^-?\d+(?:\.\d+)?|^::/i.exec(rest)?.[0] ?? operator ?? quote;
     tokens.push(token);
     i += token.length;
   }
@@ -96,5 +100,5 @@ export function migrationPlan(text: string): MigrationPlan {
   }
   if (alterDefault.test(sql)) return { kind: "transaction" };
   if (new RegExp(`^alter table ${RELATION} add constraint ${IDENT} (?:check \\(.*\\)|foreign key \\(.*\\) references .*) not valid$`, "i").test(sql)) return { kind: "transaction" };
-  throw new Error(`not safe for an online migration: ${sql.slice(0, 180)}. Use constant-default columns, NOT VALID then separate validation, or concurrent indexes; backfill data in bounded batches outside release migrations.`);
+  throw new Error(`not safe for an online migration: ${sql.slice(0, 180)}. Use constant-default columns, NOT VALID then separate validation, concurrent indexes, or column MCV statistics with separate column ANALYZE; backfill data in bounded batches outside release migrations.`);
 }

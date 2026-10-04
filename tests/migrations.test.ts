@@ -142,3 +142,18 @@ test("release statistics fix correlated selection estimates and allow ordered re
     assert.equal(await runMigrations(db, root), 0);
   } finally { await db`RESET random_page_cost`; }
 });
+
+test("a JSON predicate index resumes after its build succeeded without bookkeeping", async () => {
+  await db`CREATE TABLE migration_json (id int, output jsonb)`;
+  const name = "9034_json_predicate.sql";
+  const root = fixture({
+    [`database/migrations/${name}`]: `CREATE INDEX CONCURRENTLY IF NOT EXISTS migration_json_idx ON migration_json (id)
+      WHERE output->>'scope'='composite' AND output#>>'{kind,name}'='release'
+        AND output@>'{"active":true}'::jsonb AND id<=10;`,
+  });
+  assert.equal(await runMigrations(db, root), 1);
+  await db`DELETE FROM schema_migrations WHERE name=${name}`;
+  assert.equal(await runMigrations(db, root), 1, "an existing valid index must pass the definition check on retry");
+  assert.equal(await runMigrations(db, root), 0);
+  assert.equal((await db`SELECT indisvalid FROM pg_index WHERE indexrelid='migration_json_idx'::regclass`)[0].indisvalid, true);
+});

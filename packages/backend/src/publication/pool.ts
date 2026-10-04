@@ -169,7 +169,7 @@ export async function loadPool(query: PoolQuery): Promise<PoolResponse> {
       // A query naming a company also takes the articles about it, ranked first.
       const scored = entityTag ? sql`
           SELECT p.article_id, p.timeline_at, max(matches.part) + (${titleScore}) + (CASE WHEN p.tags @> ${[entityTag]}::text[] THEN 10 ELSE 0 END) AS rel
-          FROM (${matches} UNION ALL SELECT article_id, 0 FROM publications WHERE tags @> ${[entityTag]}::text[]) matches
+          FROM (SELECT article_id, part FROM matches UNION ALL SELECT article_id, 0 FROM publications WHERE tags @> ${[entityTag]}::text[]) matches
           JOIN publications p ON p.article_id = matches.article_id
           WHERE ${listedCondition(now)} ${filters}
           GROUP BY p.article_id, p.timeline_at, p.title, p.tags` : sql`

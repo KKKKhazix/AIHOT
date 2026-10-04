@@ -1,5 +1,5 @@
-// The open-source migrations keep their own numbers: every number is used once, and the session binding
-// migration can run again over an install that already has its columns without touching their data.
+// Session binding keeps its established migration filename and can run again over an install that
+// already has its columns without touching their data. Shared migrations use full filenames as ids.
 import "./setup.ts";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -14,9 +14,8 @@ const binding = files.find((file) => file.endsWith("_admin_session_binding.sql")
 const migration = readFileSync(path.join(dir, binding), "utf8");
 after(closeDb);
 
-test("session binding migration follows upstream migrations with a unique number", () => {
-  const numbers = files.map((file) => file.split("_")[0]);
-  assert.equal(new Set(numbers).size, numbers.length, "migration numbers must be unique");
+test("session binding migration keeps its established unique filename", () => {
+  assert.equal(files.filter((file) => file.endsWith("_admin_session_binding.sql")).length, 1);
   assert.equal(binding, "0041_admin_session_binding.sql");
 });
 

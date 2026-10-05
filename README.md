@@ -19,6 +19,10 @@
 </p>
 
 <p align="center">
+  <b>简体中文</b> · <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
   <a href="#跑起来">跑起来</a> ·
   <a href="docs/customize.md">改成你的行业</a> ·
   <a href="#它是怎么工作的">它是怎么工作的</a> ·
@@ -180,7 +184,3 @@ AIHOT 曾经只是我无数个深夜里，一个很小、很小的念头。
 ## 许可
 
 代码使用 [MIT 许可证](LICENSE)。AIHOT 的名字和 Logo 不在许可范围内。字体有自己的许可，见 [NOTICE](NOTICE)。
-
----
-
-<sub>**In English:** AIHOT ([aihot.news](https://aihot.news)) is an AI news site that collects from many sources, lets a language model screen every item and score the promising ones twice, writes Chinese headlines and summaries, clusters reports of the same story into one event, ranks events by how many independent sources discuss them, and publishes daily, weekly and monthly briefings. This repository is its engine and framework, including every prompt and threshold; a few AI-only features stay on AIHOT. Hand it to your coding agent with `AGENTS.md` and `docs/customize.md` to turn it into a news site for your own field. The documentation is in Chinese.</sub>

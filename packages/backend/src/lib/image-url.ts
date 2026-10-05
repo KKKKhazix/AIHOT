@@ -10,12 +10,11 @@ const TRACKING_HOSTS = new Set([
 export function isNonArticleImage(src: string, width?: string, height?: string): boolean {
   if (width !== undefined && height !== undefined && Number(width) <= 1 && Number(height) <= 1) return true;
   try {
-    const url = new URL(src);
-    if (TRACKING_HOSTS.has(url.hostname)) return true;
-    // HTML video pages are never image bytes. Match the same watch/embed/share
-    // shapes isVideoPageUrl already treats as players (embed, youtu.be, vimeo).
-    return isVideoPageUrl(src);
+    if (TRACKING_HOSTS.has(new URL(src).hostname)) return true;
   } catch {
     return false;
   }
+  // A video page is HTML, never image bytes. The same hosts also serve real icons and thumbnails, and
+  // video links and video elements are outside this image-only exclusion.
+  return isVideoPageUrl(src);
 }

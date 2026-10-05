@@ -27,6 +27,31 @@ export interface ExtractedBody {
 
 const MIN_BODY_CHARS = 200;
 
+/**
+ * Readability leaves out what an inline style hides, but compares style.display and style.visibility
+ * literally, and linkedom keeps the author's case and "!important" in them. A style that sets either is
+ * reduced to what a browser applies: names and keywords in any case, an important declaration over a
+ * later plain one, else the last. The nodes stay in place: Readability restores noscript images beside
+ * their hidden placeholders, and drops every style from the body afterwards.
+ */
+function settleInlineVisibility(document: ReturnType<typeof parseHTML>["document"]) {
+  for (const el of document.querySelectorAll("[style]")) {
+    const style = el.getAttribute("style") ?? "";
+    if (!/display|visibility/i.test(style)) continue;
+    const applied = new Map<string, { value: string; important: boolean }>();
+    for (const declaration of style.split(";")) {
+      const colon = declaration.indexOf(":");
+      const name = declaration.slice(0, colon).trim().toLowerCase();
+      if (colon < 0 || (name !== "display" && name !== "visibility")) continue;
+      const raw = declaration.slice(colon + 1).trim().toLowerCase();
+      const important = /!\s*important$/.test(raw);
+      const value = raw.replace(/!\s*important$/, "").trim();
+      if (value && (important || !applied.get(name)?.important)) applied.set(name, { value, important });
+    }
+    el.setAttribute("style", [...applied].map(([name, { value }]) => `${name}:${value}`).join(";"));
+  }
+}
+
 /** A publication time the page prints without a zone is read in utcOffset (the source's articleUtcOffset). */
 export function readable(html: string, url: string, utcOffset?: string): ExtractedBody | null {
   if (isVideoPageUrl(url)) return null;
@@ -38,6 +63,7 @@ export function readable(html: string, url: string, utcOffset?: string): Extract
   } catch {
     // no head
   }
+  settleInlineVisibility(document);
   const article = new Readability(document as unknown as ConstructorParameters<typeof Readability>[0], { charThreshold: MIN_BODY_CHARS, keepClasses: false }).parse();
   if (!article?.content) return null;
   const clean = trimTrailingChrome(sanitizeBody(article.content, url));

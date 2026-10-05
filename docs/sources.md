@@ -121,6 +121,26 @@
 - 日期建议返回带时区的 ISO 字符串；`2026-09-30 17:43:58` 这类不带时区的时间，与网页列表一样按 `publishedAtUtcOffset` 读（默认 `+08:00`）；数字时间戳分别设 `publishedAtUnit: "epoch_s"`（秒）或 `"epoch_ms"`（毫秒），`20261001` 这类日期设 `"yyyymmdd"`。
 - 缺少标题或无法生成链接的条目会跳过。非空数组全部映射失败时，会报 `no items mapped (check title/url paths)`；路径不是数组时，会报 `items path did not resolve to an array`。
 
+### 可选的网页正文提取增强
+
+原文页正文混入导航、推荐等内容时，`rss`、`web_list`、`json_list` 可以在采集配置里增加 `bodyExtraction`：
+
+```json
+{
+  "bodyExtraction": {
+    "selector": ".article-body",
+    "excludeSelectors": [".newsletter", ".related-content"]
+  }
+}
+```
+
+- `selector` 指定正文区域，必须只匹配一个节点。`excludeSelectors` 可省略或为空数组，只排除该区域内的内容；没有匹配项时不影响提取。
+- 选中区域仍做安全清洗，但不再经过 Readability 内部的正文清理。署名、分享条、标签行和文内推荐等如需移除，写入 `excludeSelectors`。
+- 启用不增加抓取请求；不配置或增强提取失败时，沿用原有提取流程。后台保存和预览会检查配置格式及选择器语法。
+- RSS / JSON 已确认的正文不受影响；修改规则不会自动重提取已确认的历史正文，也不改变全文展示许可。
+
+选择器应匹配原始 HTML，而不是浏览器渲染后新增的节点。配置后检查几篇文章的正文和图片，网站模板变化时更新规则。
+
 ### 本地跑通 HTML/JSON 示例
 
 仓库提供两份虚构示例：[news.html](examples/sources/news.html) 和 [news.json](examples/sources/news.json)，各有两条新闻。它们用于核对选择器和字段映射，不是运营信源；示例文章链接不提供正文。

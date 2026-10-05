@@ -2,19 +2,20 @@
 // know would otherwise fall back silently to the generic parse (menus and sentence fragments as
 // articles, dates never found).
 import type { SourceRow } from "./types.ts";
+import { parseHTML } from "linkedom";
 
 // Rules applied in collect.ts to every kind read through collectSource.
 const PUBLISHER = ["publisherRole", "publisherUrlPrefixes"];
 const COLLECTED = [...PUBLISHER, "_aihot", "allowUrlPrefixes", "denyUrlPrefixes", "ingestNoiseFilter", "itemUrlPrefixRewrite", "sortByPublishedAt", "detail", "fetchPublicContent", "publishedAfter"];
 
 const KEYS: Record<SourceRow["kind"], string[]> = {
-  rss: [...COLLECTED, "feedUrl", "summaryIsBody", "preserveUrlFragment", "allowCategories", "denyCategories"],
+  rss: [...COLLECTED, "bodyExtraction", "feedUrl", "summaryIsBody", "preserveUrlFragment", "allowCategories", "denyCategories"],
   web_list: [
-    ...COLLECTED, "url", "baseUrl", "parseMode", "adapter", "cacheToleranceSeconds", "linksStartLine", "preserveUrlFragment",
+    ...COLLECTED, "bodyExtraction", "url", "baseUrl", "parseMode", "adapter", "cacheToleranceSeconds", "linksStartLine", "preserveUrlFragment",
     "itemSelector", "linkSelector", "titleSelector", "publishedAtSelector", "publishedAtRegex", "publishedAtUtcOffset",
   ],
   json_list: [
-    ...COLLECTED, "url", "mode", "method", "headers", "bodyJson", "jsonKey", "windowVar", "itemsPath", "itemsObjectValues",
+    ...COLLECTED, "bodyExtraction", "url", "mode", "method", "headers", "bodyJson", "jsonKey", "windowVar", "itemsPath", "itemsObjectValues",
     "titlePaths", "summaryPaths", "summaryIsBody", "authorPaths", "publishedAtPath", "publishedAtUnit", "publishedAtUtcOffset", "externalIdPath",
     "urlTemplate", "urlTemplateFallback", "rawDropKeys", "requireBoolean", "minNumeric",
   ],
@@ -31,6 +32,7 @@ const NESTED: Record<string, string[]> = {
   itemUrlPrefixRewrite: ["from", "to"],
   requireBoolean: ["path", "equals"],
   minNumeric: ["path", "min"],
+  bodyExtraction: ["selector", "excludeSelectors"],
   detail: [
     "maxFetches", "publishedAtSelector", "publishedAtRegex", "publishedAtUtcOffset", "publishedAtAuthoritative", "upgradeDatePrecision",
     "titleSelector", "titleRegex", "titleAuthoritative", "summarySelector",
@@ -61,7 +63,7 @@ export function unsupportedConfig(kind: SourceRow["kind"], config: Record<string
       try { const u = new URL(v); return /^https?:$/.test(u.protocol) && !u.username && !u.password && !u.search && !u.hash; } catch { return false; }
     }))) out.push(key);
     else if (VALUES[key] && !VALUES[key]!.includes(String(value))) out.push(`${key}=${String(value)}`);
-    else if (NESTED[key] && value && typeof value === "object") {
+    else if (NESTED[key] && value && typeof value === "object" && (key !== "bodyExtraction" || !Array.isArray(value))) {
       for (const sub of Object.keys(value)) if (!NESTED[key]!.includes(sub)) out.push(`${key}.${sub}`);
     }
   }
@@ -76,4 +78,21 @@ export class UnsupportedConfig extends Error {
 export function assertSupportedConfig(kind: SourceRow["kind"], config: Record<string, unknown>): void {
   const bad = unsupportedConfig(kind, config);
   if (bad.length) throw new UnsupportedConfig(`不支持的配置项：${bad.join("、")}`);
+  // Admin-only checks: stored invalid hints still fail softly during collection.
+  const hints = config.bodyExtraction;
+  if (hints === undefined) return;
+  if (!hints || typeof hints !== "object" || Array.isArray(hints)) {
+    throw new UnsupportedConfig("bodyExtraction 必须是包含 selector 的对象");
+  }
+  const { selector, excludeSelectors } = hints as { selector?: unknown; excludeSelectors?: unknown };
+  if (excludeSelectors !== undefined && !Array.isArray(excludeSelectors)) {
+    throw new UnsupportedConfig("bodyExtraction.excludeSelectors 必须是 CSS 选择器数组");
+  }
+  const { document } = parseHTML("<html><body></body></html>");
+  for (const [index, value] of [selector, ...(excludeSelectors ?? [])].entries()) {
+    const key = index === 0 ? "bodyExtraction.selector" : `bodyExtraction.excludeSelectors[${index - 1}]`;
+    if (typeof value !== "string" || !value.trim()) throw new UnsupportedConfig(`${key} 必须是非空 CSS 选择器`);
+    try { document.querySelectorAll(value); }
+    catch { throw new UnsupportedConfig(`${key} 的 CSS 选择器语法无效`); }
+  }
 }

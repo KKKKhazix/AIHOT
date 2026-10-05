@@ -377,7 +377,7 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
     if (res.status !== 200) throw new FetchError(`HTTP ${res.status} for detail`, res.status);
     html = res.text();
     if (need.body && /html/.test(res.headers.get("content-type") ?? "")) {
-      try { body = readable(html, res.url, offset); }
+      try { body = readable(html, res.url, offset, source.config.bodyExtraction); }
       catch { /* A failed extraction must not discard the detail metadata. */ }
     }
   }

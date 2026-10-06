@@ -2,13 +2,9 @@
 // keyword in another case, "!important", an important declaration followed by a plain one), so text a
 // reader never sees enters the body; or the reverse, a block a later declaration shows again is dropped;
 // or settling the styles removes the hidden placeholder a noscript image is restored beside.
-import "./setup.ts";
 import assert from "node:assert/strict";
-import { after, test } from "node:test";
-import { closeDb } from "@aihot/backend/db";
+import { test } from "node:test";
 import { readable } from "@aihot/backend/content/extract";
-
-after(closeDb);
 
 const prose = "The article explains the research methods, results and limitations, with original evidence for its conclusions. ".repeat(6);
 const marker = "SECONDARY_MARKER: this block sits inside the article. ".repeat(6);

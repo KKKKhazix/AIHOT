@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { sql, closeDb } from '@aihot/backend/db';
 import { loadPool } from '@aihot/backend/publication/pool';
+import { sharedSearch } from '@aihot/backend/lib/cache';
 import { buildApp } from '../apps/api/src/app.ts';
 
 const app = await buildApp();
@@ -73,4 +74,22 @@ test('completed work never hides a withdrawal and rejected work can be retried',
   finally { await sql`ALTER TABLE unavailable_pool_search RENAME TO pool_search`; }
   await sql`UPDATE publications SET visibility='public' WHERE article_id=${id}`;
   assert.deepEqual((await loadPool(query)).items.map(i => i.id), [id]);
+});
+
+test('unrelated completed or rejected searches cannot displace an unfinished shared read', async () => {
+  for (const failing of [false, true]) {
+    const release = gate();
+    let reads = 0;
+    const search = sharedSearch((key: string) => key, async (key) => {
+      if (key === 'held') { reads++; await release.promise; return key; }
+      if (failing) throw new Error('invalid unrelated search');
+      return key;
+    }, () => true);
+    const first = search('held');
+    await Promise.allSettled(Array.from({ length: 250 }, (_, i) => search(`unrelated-${i}`)));
+    const next = search('held');
+    release.open();
+    assert.deepEqual(await Promise.all([first, next]), ['held', 'held']);
+    assert.equal(reads, 1, 'settled searches must not force an identical unfinished query to run twice');
+  }
 });

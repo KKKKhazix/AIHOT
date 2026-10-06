@@ -25,7 +25,7 @@
     "test:standalone": "node --import ./tests/standalone.ts --test --test-concurrency=6 --test-timeout=120000 \"tests/*.standalone.test.ts\" \"modules/*/tests/*.standalone.test.ts\""
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "2.1.0",
+    "@modelcontextprotocol/client": "2.2.0",
     "@playwright/test": "1.61.1",
     "@types/node": "26.6.3",
     "@types/sanitize-html": "2.16.1",

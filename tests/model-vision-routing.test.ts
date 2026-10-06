@@ -2,22 +2,17 @@
 import "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { closeDb, sql } from "@aihot/backend/db";
+import { closeDb } from "@aihot/backend/db";
 import { modelsOverview, switchModel } from "@aihot/backend/admin/models";
 import {
   CAPABILITIES,
   capabilityAcceptsModel,
-  invalidateModelCache,
   modelFor,
   modelSupportsVision,
 } from "@aihot/backend/editorial/models";
 import { MODELS } from "@aihot/backend/providers/llm";
 
-after(async () => {
-  await sql`DELETE FROM settings WHERE key = 'models.understand'`;
-  invalidateModelCache();
-  await closeDb();
-});
+after(closeDb);
 
 test("every step takes a model that reads images; only a step that needs images refuses a text model", async () => {
   const understand = CAPABILITIES.understand;

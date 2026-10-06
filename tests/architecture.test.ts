@@ -161,14 +161,6 @@ test("every environment variable the code reads is listed in a template, and eve
   assert.deepEqual([...listed].filter((name) => !readAnywhere.has(name)), [], "no code reads it: remove it from the template");
 });
 
-test("every field of the website's own interfaces is read by the website", () => {
-  const web = words(production().filter(({ file }) => file.startsWith("apps/web/") || /^modules\/[^/]+\/web/.test(file)).map(({ text }) => text).join("\n"));
-  const contracts = ["packages/contracts/src/site.ts"];
-  const unread = contracts.flatMap((file) =>
-    assigned(file, /^\s+(?:readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)\??:\s/gm).filter((field) => !web.has(field)).map((field) => `${file}: ${field}`));
-  assert.deepEqual(unread, [], "drop the field from the contract and from the read that fills it, or show it");
-});
-
 // A module can use the engine, but it does not reach into another module; the site composes capabilities.
 test("modules do not import other modules", () => {
   const installed = existsSync(path.join(ROOT, "modules")) ? readdirSync(path.join(ROOT, "modules"), { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name) : [];

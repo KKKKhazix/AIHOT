@@ -16,7 +16,7 @@ export function truncate(s: string, max: number, ellipsis = "…"): string {
  * starts a quoted value only after an attribute name. Comments, doctypes and
  * `< a>` keep the old first-`>` behavior because they are not element tags here.
  */
-function stripTagMarkup(html: string): string {
+export function stripTagMarkup(html: string, replacement = " "): string {
   let out = "";
   let at = 0;
   while (at < html.length) {
@@ -68,10 +68,10 @@ function stripTagMarkup(html: string): string {
         }
       }
       // An unfinished quoted tag consumes the rest of the document in the browser tokenizer.
-      if (i === html.length) return out + " ";
+      if (i === html.length) return out + replacement;
     }
     // Preserve the old result for the empty `<>` construct, which the old regex did not match.
-    out += end === start + 1 ? "<>" : " ";
+    out += end === start + 1 ? "<>" : replacement;
     at = end + 1;
   }
   return out;

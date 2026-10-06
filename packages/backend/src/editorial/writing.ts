@@ -2,6 +2,7 @@
 // title/summary prompts for everything else, the output parsing and the deterministic guards. The
 // wording lives in the industry pack (industry/prompts/); a failed guard falls back without a repair call.
 import { IDENTITY_CONTEXT_ALIASES, IDENTITY_LEXICON, PUBLISHER_DOMAINS } from "@aihot/industry/taxonomy";
+import { stripTagMarkup } from "../lib/text.ts";
 import { onlyXArticleLink } from "../sources/x.ts";
 import type { AnalyzeInputArticle } from "./input.ts";
 import { promptText } from "./prompts.ts";
@@ -37,9 +38,7 @@ export function isShortTweet(text: string): boolean {
 /** HTML, URLs (whose /2025/ paths models took for years) and entities out of article text. */
 export function cleanArticleTextForLLM(s: string): string {
   if (!s) return "";
-  return s
-    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
+  return stripTagMarkup(s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " "))
     .replace(/https?:\/\/\S+/gi, " ")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")

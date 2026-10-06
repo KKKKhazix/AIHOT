@@ -3,6 +3,7 @@ import type { OutlineEntry, SiteItemDetail, StoryRef } from "@aihot/contracts/si
 import { ITEM_COPY, SITE } from "@aihot/site";
 import { bodyToMarkdown } from "../content/markdown.ts";
 import { sql } from "../db.ts";
+import { stripTagMarkup } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { textToHtml } from "../content/sanitize.ts";
 import { exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, toItemSummary, xView, type ItemRow } from "./items.ts";
@@ -31,7 +32,7 @@ function withOutline(html: string): { html: string; outline: OutlineEntry[] } {
   const out = html.replace(/<h([2-4])(?: id="sec-\d+")?>([\s\S]*?)<\/h\1>/gi, (_m, level: string, inner: string) => {
     n += 1;
     const id = `sec-${n}`;
-    const text = inner.replace(/<[^>]+>/g, "").trim();
+    const text = stripTagMarkup(inner, "").trim();
     if (text) outline.push({ id, text: text.slice(0, 80), level: Number(level) });
     return `<h${level} id="${id}">${inner}</h${level}>`;
   });

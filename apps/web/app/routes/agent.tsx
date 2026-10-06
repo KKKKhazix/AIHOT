@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { IntentLink } from "../components/ui/IntentLink";
-import { useLoaderData, useNavigate, useSearchParams, type ClientLoaderFunctionArgs, type ShouldRevalidateFunction } from "react-router";
+import { useLoaderData, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/agent";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { SITE } from "@aihot/site";
-import { apiGet, edgeTtl, pageExpiresAt } from "../lib/api.server";
+import { apiGet, cachedPage } from "../lib/api.server";
+import { pageReuse } from "../lib/page-reuse";
 import { listPath, pageMeta, siteUrl } from "../lib/seo";
 import { IconArrowUpRight, IconChevronRight, IconCode, IconPlug, IconRss } from "../components/icons";
 import { Kicker } from "../components/ui/Kicker";
@@ -17,9 +18,7 @@ import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "me", name: "Agent 接入" };
 
-export function headers() {
-  return edgeTtl(300);
-}
+export { pageHeaders as headers } from "../lib/api.server";
 
 const V = PUBLIC_INTERFACE_VERSION;
 
@@ -60,29 +59,21 @@ const useTag = TAG?.useValue ?? (() => null);
 export async function loader({ request }: Route.LoaderArgs) {
   // Only whether the api answers, within three seconds.
   const healthy = await apiGet("/api/health", { signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]) }).then(() => true, () => false);
-  return {
-    tab: tabKey(new URL(request.url).searchParams.get('tab')),
+  return cachedPage(300, {
     healthy,
     // The examples show the configured public address, the same on the server and in the browser; what
     // depends on the time reads the server's.
     base: siteUrl(),
     now: Date.now(),
-    expiresAt: pageExpiresAt(300),
-  };
+  });
 }
 
-let freshUntil = 0;
-export async function clientLoader({ serverLoader }: ClientLoaderFunctionArgs) {
-  const result = await serverLoader<typeof loader>();
-  freshUntil = result.expiresAt;
-  return result;
-}
-clientLoader.hydrate = true as const;
-export const shouldRevalidate: ShouldRevalidateFunction = ({ currentUrl, nextUrl, formMethod, defaultShouldRevalidate }) => {
-  const otherParams = (url: URL) => { const params = new URLSearchParams(url.search); params.delete('tab'); return params.toString(); };
-  const switchTab = !formMethod && currentUrl.pathname === nextUrl.pathname && currentUrl.search !== nextUrl.search && otherParams(currentUrl) === otherParams(nextUrl);
-  return switchTab ? Date.now() >= freshUntil : defaultShouldRevalidate;
-};
+/** The tabs read one result, kept under the address without `tab`. */
+export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>((url) => {
+  const params = new URLSearchParams(url.search);
+  params.delete("tab");
+  return url.pathname + (params.size ? `?${params}` : "");
+});
 
 export function meta({ location }: Route.MetaArgs) {
   const tab = tabKey(new URLSearchParams(location.search).get('tab'));

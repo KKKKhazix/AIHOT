@@ -3,13 +3,14 @@
 //   now   — readers are affected and it has not healed: sent at once, repeated hourly, recovery reported.
 //   today — money at risk or only the owner can act: sent at once, repeated at most daily, recovery reported.
 //   later — other follow-ups: one 09:00 message a day, meant to be handed to the AI.
-// A site's responder (modules.ts) takes every problem that is not the owner's own (Finding.owner) off
-// them; the owner then hears what it hands back, with the same repeats and recoveries, and no digest.
+// A site's responder (modules.ts) filters findings for the owner, preserving repeat and recovery
+// tracking for messages it returns and replacing the default digest policy.
 // Delivery goes through sendAlert (ops chat, internal-chat fallback; off unless FEISHU_INTERNAL_ENABLED).
 import { beijingAt, beijingDate } from "@aihot/contracts/time";
 import { ALERTS, EDITION_TIMES } from "@aihot/site";
 import { sql } from "../db.ts";
 import { beijingDay, beijingStamp, duration, formatAlert, formatRecovery, sendAlert, type Finding, type Level } from "../notify/feishu.ts";
+import { stepsOnService } from "../editorial/models.ts";
 import { backupConfigured } from "./backup.ts";
 import { GROUPING_WARN_AFTER_MS, waitingSelectedNews } from "./grouping.ts";
 import { upstreamFindings } from "../media/upstream.ts";
@@ -17,9 +18,6 @@ import { responder, serverModules } from "../modules.ts";
 import { sourceHealth, sourceHealthList } from "../sources/health.ts";
 
 const REPEAT_MS: Record<Exclude<Level, "later">, number> = { now: 3600_000, today: 24 * 3600_000 };
-
-/** What the content groups receive, as the alerts name it: the engine's cards, then the modules' pushes. */
-const pushes = () => ["精选", ...serverModules().flatMap((m) => m.pushes ?? [])];
 
 // Valves default off: read at call time, only an explicit "true" turns them on.
 const collecting = () => process.env.COLLECT_ENABLED === "true";
@@ -50,9 +48,9 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
           key: "content.collect",
           level: "now",
           title: "网站停止收录新文章",
-          impact: last?.at ? `最后一篇编辑内容收录于 ${beijingStamp(last.at)}，之后没有新文章进入处理` : "一天内没有收录任何编辑内容",
+          impact: last?.at ? `读者看不到新文章：最后一篇收录于 ${beijingStamp(last.at)}` : "读者看不到新文章：一天内没有收录任何文章",
           heals: ALERTS.usualFlow ? `没有，${ALERTS.usualFlow}` : "没有",
-          action: "转给 AI 立即处理",
+          action: "尽快发起一次维护处理",
           detail: `editorial articles.discovered_at 超过 ${QUIET_MINUTES} 分钟没有新值（热度信号单独评估）；查 sources.schedule、出网代理与采集失败`,
           since: last?.at ?? undefined,
         });
@@ -110,7 +108,7 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
           title: "今天的日报还没生成",
           impact: "读者看不到今天的日报",
           heals: "系统每半小时补做一次，到现在还没成功",
-          action: "转给 AI 处理",
+          action: "尽快发起一次维护处理",
           detail: `reports daily ${beijingDate(now)} 不存在；看 reports.compose 的运行记录`,
         });
       }
@@ -129,7 +127,7 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
       key: "deliveries.failed",
       level: "today",
       title: "飞书内容群有推送没发出去",
-      impact: `过去 24 小时 ${refused!.n} 条${pushes().join("或")}通知没进${refused!.target ?? "内容群"}`,
+      impact: `过去 24 小时 ${refused!.n} 条通知没进${refused!.target ?? "内容群"}`,
       heals: "不会自动重发",
       action: "转给 AI 处理；如果推送机器人被移出了群，需要你把它加回去",
       detail: refused!.response ?? "",
@@ -217,20 +215,27 @@ export async function collectFindings(now = Date.now()): Promise<Finding[]> {
   return out;
 }
 
-/** What stops when a model service refuses us: the site's own words for its models, else a pointer to the admin. */
-const modelStops = (service: string) => ALERTS.modelStops[service] ?? "用到这家模型的步骤停了（看后台“模型与评测”），新内容可能进不了精选";
-const PROVIDERS: Record<string, { name: string; stops: string; where: string }> = {
-  llm: { name: "默认模型服务", stops: "新文章的精选、摘要、分类和全文翻译，事件的归组和综述都停了，周报月报出刊时没有总述", where: "模型服务商的控制台" },
-  zhipu: { name: "智谱", stops: modelStops("zhipu"), where: "智谱开放平台" },
-  dashscope: { name: "阿里云百炼", stops: modelStops("dashscope"), where: "阿里云百炼控制台" },
-  deepseek: { name: "DeepSeek", stops: modelStops("deepseek"), where: "DeepSeek 开放平台" },
-  mimo: { name: "小米 MiMo", stops: modelStops("mimo"), where: "小米 MiMo 开放平台" },
+/** What stops when a model service refuses us: the steps that default to its models, else a pointer to the admin. */
+function modelStops(service: string): string {
+  const steps = stepsOnService(service);
+  return steps.length ? `${steps.join("、")}停了` : "用到这家模型的步骤停了（看后台“模型与评测”），新内容可能进不了精选";
+}
+/** `stops` is for the services that are not models; a model service's follows from the steps that use it. */
+const PROVIDERS: Record<string, { name: string; where: string; stops?: string }> = {
+  llm: { name: "默认模型服务", where: "模型服务商的控制台" },
+  zhipu: { name: "智谱", where: "智谱开放平台" },
+  dashscope: { name: "阿里云百炼", where: "阿里云百炼控制台" },
+  deepseek: { name: "DeepSeek", where: "DeepSeek 开放平台" },
+  mimo: { name: "小米 MiMo", where: "小米 MiMo 开放平台" },
   socialdata: { name: "SocialData", stops: "X（推特）上的新内容收不到", where: "SocialData 后台" },
   jina: { name: "Jina", stops: "部分文章取不到正文", where: "Jina 后台" },
   dajiala: { name: "极致了（Dajiala）", stops: "公众号新文章收不到", where: "极致了后台" },
 };
 export const providerName = (service: string) => PROVIDERS[service]?.name ?? service;
-export const providerStops = (service: string) => PROVIDERS[service]?.stops ?? "相关功能停了";
+export const providerStops = (service: string) => {
+  const p = PROVIDERS[service];
+  return p ? (p.stops ?? modelStops(service)) : "相关功能停了";
+};
 export const providerConsole = (service: string) => PROVIDERS[service]?.where ?? `${service} 后台`;
 
 /** Paid services that refuse us (no balance, a dead key), and daily budgets used up. */
@@ -245,10 +250,11 @@ async function providerFindings(): Promise<Finding[]> {
     out.push({
       key: `provider.refused.${p.service}`,
       level: "today",
+      owner: true,
       title: `${providerName(p.service)} 拒绝服务，可能欠费或账号失效`,
       impact: providerStops(p.service),
       heals: "不会",
-      action: `去${providerConsole(p.service)}看余额和账号状态；充值或恢复后系统会自动继续`,
+      action: `去${providerConsole(p.service)}看余额和账号状态，充值或恢复后系统会自动继续；两样都正常的话，发起一次维护查原因`,
       detail: `最近 1 小时被拒 ${p.n} 次：${p.last}`,
     });
   }

@@ -17,8 +17,6 @@ import { buildApp } from "../apps/api/src/app.ts";
 
 const T = `x-license-${tag()}`;
 const app = await buildApp();
-const stories: string[] = [];
-const quotes: string[] = [];
 let n = 0;
 // A site that shows every X post like its title and summary has no unlicensed post text to hide.
 const hidesPosts = { skip: !POLICY.xPostIsFullText && "this site shows every X post's own text" };
@@ -26,16 +24,7 @@ const hidesPosts = { skip: !POLICY.xPostIsFullText && "this site shows every X p
 after(async () => {
   await app.close();
   await stopBoss();
-  try {
-    await sql`DELETE FROM articles WHERE source_id LIKE ${`${T}-%`}`;
-    await sql`DELETE FROM sources WHERE id LIKE ${`${T}-%`}`;
-    if (stories.length) {
-      await sql`DELETE FROM facts WHERE story_id IN (SELECT id FROM stories WHERE public_id::text IN ${sql(stories)})`;
-      await sql`DELETE FROM stories WHERE public_id::text IN ${sql(stories)}`;
-    }
-    if (quotes.length) await sql`DELETE FROM quote_translations WHERE tweet_id IN ${sql(quotes)}`;
-    await sql`DELETE FROM settings WHERE key LIKE ${`republish.source:${T}-%`}`;
-  } finally { await closeDb(); }
+  await closeDb();
 });
 
 async function fixture(options: {
@@ -48,13 +37,12 @@ async function fixture(options: {
   const source = key;
   const tweet = `${Date.now()}${n}0`;
   const quote = `${Date.now()}${n}1`;
-  quotes.push(quote);
   const main = `X-MAIN-${key}`;
   const zh = options.translation === "same" ? main : `X-ZH-${key}`;
   const quoted = `X-QUOTED-${key}`;
   const quotedZh = options.translation === "same" ? quoted : `X-QUOTED-ZH-${key}`;
   const media = `X-MEDIA-${key}`;
-  const summary = options.summary === false ? null : `摘要-${key}`;
+  const summary = options.summary === false || options.shape === "quote-only" ? null : `摘要-${key}`;
   const kind = options.kind ?? "x_search";
   const url = kind === "x_search" ? `https://x.com/license/status/${tweet}` : `https://example.org/${key}`;
   const xPost: XPostData | null = kind === "rss" || options.shape === "missing" ? null : {
@@ -79,7 +67,6 @@ async function fixture(options: {
   }
   await sql`INSERT INTO quote_translations (tweet_id, text_hash, text_zh, origin) VALUES (${quote}, ${key}, ${quotedZh}, 'reused')`;
   const story = randomUUID();
-  stories.push(story);
   const [savedStory] = await sql<{ id: number }[]>`INSERT INTO stories (public_id, title) VALUES (${story}, '许可测试事件') RETURNING id`;
   const fact = `fact-${key}`;
   const [savedFact] = await sql<{ id: number }[]>`INSERT INTO facts (public_id, story_id, title) VALUES (${fact}, ${savedStory!.id}, '许可测试进展') RETURNING id`;
@@ -87,7 +74,7 @@ async function fixture(options: {
   await publishArticle(id, { releasedAt: new Date(Date.now() - 60_000) });
   const [publication] = await sql`SELECT body_mode, eligible FROM publications WHERE article_id = ${id}`;
   assert.equal(publication!.body_mode, options.full && (!options.bodyStatus || options.bodyStatus === "ok") ? "full" : "summary");
-  assert.equal(publication!.eligible, !!summary && (!options.mode || options.mode === "editorial"));
+  assert.equal(publication!.eligible, (!!summary || options.shape === "quote-only") && (!options.mode || options.mode === "editorial"));
   return { id, source, key, fact, story, url, summary, main, zh, quoted, quotedZh, media, markers: [main, zh, quoted, quotedZh, media] };
 }
 

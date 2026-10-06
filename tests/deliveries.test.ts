@@ -1,15 +1,13 @@
 // Failure cases: concurrent claims duplicate a fact; an ambiguous webhook reply looks delivered;
 // a retry bypasses target disable/withdrawal; a mirror sends after the first target awaited a withdrawal.
 // A lost reply must still suppress regrouped siblings; enabling a group must not replay older items.
-// An admin's resolution with a mistyped outcome must not re-send, nor one without a note pass.
 import { gate, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
-import { resendDelivery, resolveDelivery } from "@aihot/backend/notify/deliver";
-import { deliverContent } from "@aihot/backend/notify/deliver";
+import { deliverContent, resendDelivery } from "@aihot/backend/notify/deliver";
 import { pushSelected } from "@aihot/backend/notify/selected";
 
 const T = tag();
@@ -92,17 +90,6 @@ test("a disabled target cannot receive a manual retry", async () => {
     assert.deepEqual(await state(id), before);
     assert.equal(requests.filter((n) => n === id).length, 0);
   } finally { await sql`UPDATE notify_targets SET enabled = true WHERE key = ${TARGET}`; }
-});
-
-test("an admin resolution names a known outcome and a note, or changes and sends nothing", async () => {
-  const id = await delivery();
-  const before = await state(id);
-  for (const input of [{ outcome: "resent", note: "checked the group" }, { outcome: "sent", note: " " }, { outcome: "drop" }]) {
-    // A validation error, which the admin API answers with 400.
-    await assert.rejects(resolveDelivery(id, input as never, "test-admin"), { name: "ZodError" });
-  }
-  assert.deepEqual(await state(id), before);
-  assert.equal(requests.filter((n) => n === id).length, 0);
 });
 
 async function selectedItem() {

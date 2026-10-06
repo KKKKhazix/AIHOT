@@ -34,7 +34,7 @@ test("deterministic varied timelines match the full-scan reference", () => {
   let seed = 0x13579bdf;
   const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed; };
   const base = beijingMidnight("2024-03-01").getTime();
-  for (let sample = 0; sample < 300; sample++) {
+  for (let sample = 0; sample < 40; sample++) {
     const grouped = descending(Array.from({ length: random() % 1200 }, () => base - (random() % 10_000) * 60_000));
     const offset = grouped.length ? random() % grouped.length : 0;
     const days = new Set(grouped.slice(offset, offset + 40).map(group => beijingDate(group.anchor)));

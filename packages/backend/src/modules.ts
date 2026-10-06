@@ -22,8 +22,8 @@ export interface Scheduled {
 }
 
 /**
- * Someone who takes problems off the owner, such as an engineer's or an agent's queue (ServerModule.responder):
- * the owner then hears only what it hands back.
+ * A module's notification routing policy (ServerModule.responder):
+ * the owner hears only what it hands back; held findings do not imply recovery.
  */
 export interface Responder {
   /**
@@ -126,8 +126,9 @@ export interface SitemapEntry {
 export interface EngineHooks {
   /**
    * An article's public content changed; a former event is included when its membership moved.
+   * `reduced`: something public is now shown less, as publication judged it (`PublishResult`).
    */
-  articleChanged: (change: { id: string; kind: "detail" | "body" | "content"; reason: string; previousStoryIds?: number[] }, tx: Db) => Promise<void>;
+  articleChanged: (change: { id: string; kind: "detail" | "body" | "content"; reduced?: boolean; reason: string; previousStoryIds?: number[] }, tx: Db) => Promise<void>;
   /** A source's articles were published again after changing its public metadata or permissions. */
   sourceRepublished: (change: { sourceId: string }) => Promise<void>;
   /** A report was published, or what one shows changed. */
@@ -194,10 +195,8 @@ export interface RequestNotices {
 export interface ServerModule {
   /** Its folder under modules/. */
   name: string;
-  /** Its HTTP routes, registered before the engine's v1 fallbacks (apps/api/src/app.ts). */
+  /** Its HTTP routes, and hooks on the app such as what to flush when it closes, registered before the engine's v1 fallbacks (apps/api/src/app.ts). */
   http?: (app: FastifyInstance) => void;
-  /** Run before the api process exits, to flush what it buffers (apps/api/src/main.ts). */
-  stop?: () => Promise<void>;
   agent?: {
     abilities?: AgentAbility[];
     /** The guide's "目前查不到的" list, after the engine's first entry. */
@@ -224,13 +223,11 @@ export interface ServerModule {
   /** What is wrong now, for the owner's alerts (operations/alerts.ts), after the engine's problems. */
   alerts?: (now: number) => Promise<Finding[]>;
   /**
-   * Takes the problems that are not the owner's own (Finding.owner) off them: the first installed module with
-   * one (operations/alerts.ts, operations/watch.ts). With it, the daily digest and the weekly source report
-   * have no schedule (apps/worker/src/schedules.ts): their follow-ups are its work.
+   * Chooses which problems the owner hears about: the first installed module with one (operations/alerts.ts,
+   * operations/watch.ts). What it holds back is the module's to hand to whoever handles it; with one, the
+   * daily digest and the weekly source report have no schedule (apps/worker/src/schedules.ts).
    */
   responder?: Responder;
-  /** What the content groups receive from it, as the alerts name it: "状态". */
-  pushes?: string[];
   /** Its share of the daily retention run (operations/retention.ts): what it deleted or aggregated. */
   retention?: (now: Date) => Promise<Record<string, unknown>>;
   on?: Partial<EngineHooks>;

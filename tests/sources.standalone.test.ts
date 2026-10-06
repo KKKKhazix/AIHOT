@@ -1,32 +1,21 @@
 // Listing parsers on the page shapes Jina returns for real sites: card links that wrap an image, a title
 // attribute, http links under https prefixes, and navigation that is no post. Also what made articles
 // flip between versions: in-page anchors of an HTML listing and
-// promotions a feed rotates inside its posts. And the Xiaomi MiMo homepage, whose posts have no links in
-// its HTML: read without its adapter, it gave the menu (MiMo Desktop, 简体中文) as articles.
+// promotions a feed rotates inside its posts.
 import "./setup.ts";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { after, test } from "node:test";
 import { config } from "@aihot/backend/config";
 import { sanitizeBody, trimTrailingChrome } from "@aihot/backend/content/sanitize";
-import { fetchDetail, fetchWebList, fromHtml, fromMarkdown } from "@aihot/backend/sources/web-list";
+import { fetchDetail, fromHtml, fromMarkdown } from "@aihot/backend/sources/web-list";
 import { fetchRss } from "@aihot/backend/sources/rss";
 import { fetchJsonList } from "@aihot/backend/sources/json-list";
 import { noiseFiltered } from "@aihot/backend/sources/filters";
 
 const source = (config: Record<string, unknown>) => ({ id: "test-list", config }) as never;
 
-// mimo.xiaomi.com as served on 2026-09-28, cut down: rows that navigate by script, the runtime's chunk
-// map, the route table naming the homepage's chunks, and the chunk with the Blog list among the menu,
-// the model cards, the other sections and a Paper list built at run time.
-const pages: Record<string, (cdn: string) => string> = {
-  "/": (cdn) =>
-    `<html><head><script defer src="${cdn}static/js/lib-react.a6be410a.js"></script><script defer src="${cdn}static/js/4752.2908c99e.js"></script>` +
-    `<script defer src="${cdn}static/js/index.c5195ace.js"></script></head><body><a href="/zh/index">简体中文</a><a href="/mimocode">MiMo Code</a>` +
-    `<a href="/go/desktop">MiMo Desktop</a><a href="/#paper">Paper</a><a href="/#blog">Blog</a><a href="/#joinUs">Join Us</a><div id="blog-list">` +
-    `<div class="blogRow-kPt4Cj" data-font-interactive="true"><h3 data-font-text="true">Diagnosing and Mitigating Tool-Call Repetition in MiMo-V2.6</h3></div></div></body></html>`,
-  // A redesign that moved the list elsewhere.
-  "/redesigned/": (cdn) => `<html><head><script defer src="${cdn}static/js/lib-react.a6be410a.js"></script></head><body><a href="/go/desktop">MiMo Desktop</a></body></html>`,
+const pages: Record<string, () => string> = {
   // The Verge's feed: a teaser that ends in "Read the full story", next to a post whose feed carries it whole.
   "/verge.xml": () =>
     `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">` +
@@ -51,35 +40,12 @@ const pages: Record<string, (cdn: string) => string> = {
   "/ld-post": () =>
     `<html><head><script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","name":"Blog"},` +
     `{"@type":"BlogPosting","headline":"Turn REST APIs into MCP tools","datePublished":"2026-09-24"}]}</script></head><body><p>Post</p></body></html>`,
-  "/cdn/static/js/lib-react.a6be410a.js": () => '"use strict";(self.webpackChunk=self.webpackChunk||[]).push([["lib-react"],{}]);',
-  "/cdn/static/js/index.c5195ace.js": (cdn) =>
-    '(()=>{var e={},a={};function t(d){return a[d]}t.u=e=>"static/js/async/"+e+"."+({6159:"4efb0769",7298:"a1b2c3d4",8557:"2d420be2"})[e]+".js",' +
-    `t.miniCssF=e=>""+e+".css",t.p="${cdn}",t.rv=()=>"1.3.12"})();`,
-  "/cdn/static/js/4752.2908c99e.js": () =>
-    '(self.webpackChunk=self.webpackChunk||[]).push([["4752"],{1:function(e,a,t){let r=[{path:"/",element:o.createElement(S),filePath:"en/index.mdx",' +
-    'preload:async()=>(await S.preload(),Promise.all([t.e("7298"),t.e("6159"),t.e("8557")]).then(t.bind(t,57573))),lang:"en",version:""},' +
-    '{path:"/blog/mimo-v2-6-tool-call-repetition",element:o.createElement(k),filePath:"en/blog/mimo-v2-6-tool-call-repetition.mdx",' +
-    'preload:async()=>(await k.preload(),Promise.all([t.e("7298"),t.e("3583"),t.e("8421")]).then(t.bind(t,1105))),lang:"en",version:""}]}}]);',
-  "/cdn/static/js/async/7298.a1b2c3d4.js": () => '(self.webpackChunk=self.webpackChunk||[]).push([["7298"],{2:function(){}}]);',
-  "/cdn/static/js/async/6159.4efb0769.js": () => '(self.webpackChunk=self.webpackChunk||[]).push([["6159"],{3:function(e,i,t){t.d(i,{H:()=>n})}}]);',
-  "/cdn/static/js/async/8557.2d420be2.js": () =>
-    '(self.webpackChunk=self.webpackChunk||[]).push([["8557"],{57573:function(e,i,t){function h(e){return(0,n.jsxs)(a.Me,{children:[' +
-    '(0,n.jsx)(m.H,{models:[{name:"Xiaomi MiMo-V2.6-Series",desc:"Frontier intelligence, all the modalities, built in public.",imageKey:"mimo-v2-5-pro",link:"/mimo-v2-6"}]}),' +
-    '(0,n.jsx)(d.z,{sectionTitle:"Build with MiMo",experiences:[{title:"MiMo Gallery",link:"/mimo-gallery/",desc:"Step into the world created by MiMo-V2.6"}]}),' +
-    '(0,n.jsx)(r.K,{sectionId:"paper",sectionTitle:"Paper",blogs:l.G.slice().reverse().map(e=>({title:e.title,link:`/paper/${e.slug}`,desc:(0,l.V)(e.date,!1)}))}),' +
-    '(0,n.jsx)(r.K,{sectionTitle:"Blog",initialVisibleCount:8,blogs:[' +
-    '{title:"Diagnosing and Mitigating Tool-Call Repetition in MiMo-V2.6",link:"/blog/mimo-v2-6-tool-call-repetition",desc:"A lesson from scaling RL: the reward blind spot in optimizing for correctness."},' +
-    '{title:"Introducing MiMo-V2.6 series",link:"/mimo-v2-6",desc:"Frontier intelligence, all the modalities, built in public."},' +
-    '{title:"How Xiaomi MiMo-V2.6-Pro Boosts Productivity in New Materials R\\u0026D",link:"/blog/mimo-v2-6-material-research",desc:"From literature review to \\"dry-lab\\" experiments."},' +
-    '{title:"Xiaomi MiMo-V2.5-Pro",link:"/mimo-v2-5-pro/index.html",desc:"A leap in agentic and long horizon coherence."},' +
-    '{title:"MiMo Humanities and Social Sciences Capability Assessment",link:"/blog/mimo-v2-flash-hss",desc:"MiMo Humanities and Social Sciences Capability Assessment"}]}),' +
-    '(0,n.jsx)(c.Q,{sectionTitle:"Join Us",positions:[{title:"Research Scientist - Pre-training",link:"joinUs/pre-training"}],contactEmail:"mimo@xiaomi.com"})]})}}}]);',
 };
 const server = http.createServer((req, res) => {
   const path = req.url ?? "";
   const found = Object.hasOwn(pages, path);
-  res.writeHead(found ? 200 : 404, { "content-type": path.endsWith(".js") ? "application/javascript" : "text/html; charset=utf-8" });
-  res.end(found ? pages[path]!(`${site}/cdn/`) : "");
+  res.writeHead(found ? 200 : 404, { "content-type": "text/html; charset=utf-8" });
+  res.end(found ? pages[path]!() : "");
 });
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
 const site = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -144,21 +110,6 @@ test("promotions a feed rotates inside its posts are left out of the body", () =
   assert.equal(a, b, "the same post whichever promotion it carried");
   assert.ok(!/PODCAST SERIES|Ideas|Foundry Labs|Listen now/.test(a));
   assert.ok(a.includes("native integration"), "the post's own text stays");
-});
-
-test("the MiMo homepage lists its posts and model pages, not its menu", async () => {
-  const out = await fetchWebList(source({ url: `${site}/`, adapter: "mimo_home" }));
-  assert.deepEqual(out, [
-    { url: `${site}/blog/mimo-v2-6-tool-call-repetition`, title: "Diagnosing and Mitigating Tool-Call Repetition in MiMo-V2.6", excerpt: "A lesson from scaling RL: the reward blind spot in optimizing for correctness." },
-    { url: `${site}/mimo-v2-6`, title: "Introducing MiMo-V2.6 series", excerpt: "Frontier intelligence, all the modalities, built in public." },
-    { url: `${site}/blog/mimo-v2-6-material-research`, title: "How Xiaomi MiMo-V2.6-Pro Boosts Productivity in New Materials R&D", excerpt: 'From literature review to "dry-lab" experiments.' },
-    { url: `${site}/mimo-v2-5-pro/index.html`, title: "Xiaomi MiMo-V2.5-Pro", excerpt: "A leap in agentic and long horizon coherence." },
-    { url: `${site}/blog/mimo-v2-flash-hss`, title: "MiMo Humanities and Social Sciences Capability Assessment", excerpt: null },
-  ]);
-});
-
-test("a MiMo homepage without the list fails the fetch instead of listing its menu", async () => {
-  await assert.rejects(fetchWebList(source({ url: `${site}/redesigned/`, adapter: "mimo_home" })), /mimo_home/);
 });
 
 test("a listing that links other articles in its teasers takes only the links that begin a line", () => {

@@ -41,14 +41,13 @@ function store(): Store | null {
 const hex = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
 const hmac = (key: Buffer | string, data: string) => createHmac("sha256", key).update(data).digest();
 
-/** AWS Signature V4 headers for one request (exported for the test vector check). */
-export function signV4(opts: {
-  method: string; url: URL; region: string; service?: string; accessKey: string; secretKey: string; payloadHash: string; headers?: Record<string, string>; now?: Date;
+/** AWS Signature V4 headers for one S3 request. */
+function signV4(opts: {
+  method: string; url: URL; region: string; accessKey: string; secretKey: string; payloadHash: string; headers?: Record<string, string>;
 }): Record<string, string> {
-  const now = opts.now ?? new Date();
-  const amzDate = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const amzDate = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const day = amzDate.slice(0, 8);
-  const service = opts.service ?? "s3";
+  const service = "s3";
   const headers: Record<string, string> = { ...(opts.headers ?? {}), host: opts.url.host, "x-amz-content-sha256": opts.payloadHash, "x-amz-date": amzDate };
   const names = Object.keys(headers).map((h) => h.toLowerCase()).sort();
   const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), String(v).trim()]));

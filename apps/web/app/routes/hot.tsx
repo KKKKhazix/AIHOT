@@ -2,8 +2,8 @@ import { useLoaderData } from "react-router";
 import { IntentLink } from "../components/ui/IntentLink";
 import type { HotEntryView, HotResponse } from "@aihot/contracts/site";
 import { subjectAfter, withSubject } from "@aihot/site";
-import { edgeTtl, loadOr404, pageExpiresAt } from "../lib/api.server";
-import { cachedLoader } from "../lib/page-reuse";
+import { cachedPage, loadOr404 } from "../lib/api.server";
+import { pageReuse } from "../lib/page-reuse";
 import { pageMeta } from "../lib/seo";
 import { monthDayTime } from "../lib/format";
 import { Badge } from "../components/ui/Badge";
@@ -16,11 +16,11 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "hot", name: "热点" };
-export { shouldRevalidate } from "../lib/page-reuse";
-export const clientLoader = cachedLoader<typeof loader>();
+export { pageHeaders as headers } from "../lib/api.server";
+export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
-  return { hot: await loadOr404<HotResponse>("/api/site/hot", { signal: request.signal }), expiresAt: pageExpiresAt(120) };
+  return cachedPage(120, { hot: await loadOr404<HotResponse>("/api/site/hot", { signal: request.signal }) });
 }
 
 export function meta() {
@@ -30,10 +30,6 @@ export function meta() {
     path: "/hot",
     image: "/og/pages/hot.png",
   });
-}
-
-export function headers() {
-  return edgeTtl(120);
 }
 
 const BADGES: Record<HotEntryView["badges"][number], { label: string; tone: "hot" | "accent" | "amber"; hint: string }> = {

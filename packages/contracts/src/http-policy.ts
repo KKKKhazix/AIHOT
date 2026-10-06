@@ -146,11 +146,6 @@ function tables() {
   return built;
 }
 
-/** The engine's redirects, then the site's modules', in the order they are matched. */
-export function redirectRules(): readonly RedirectRule[] {
-  return tables().redirects;
-}
-
 /** The engine's api paths, then the site's modules'. */
 export function apiOwnedPatterns(): readonly RegExp[] {
   return tables().apiPaths;

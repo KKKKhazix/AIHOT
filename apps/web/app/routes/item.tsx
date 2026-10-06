@@ -3,8 +3,8 @@ import { Await, isRouteErrorResponse, Link, useAsyncError, useLoaderData, useNav
 import type { Route } from "./+types/item";
 import type { FeedItemSummary, SiteItemDetail } from "@aihot/contracts/site";
 import { ITEM_COPY, SITE } from "@aihot/site";
-import { edgeTtl, loadOr404, pageExpiresAt } from "../lib/api.server";
-import { cachedLoader } from "../lib/page-reuse";
+import { cachedPage, loadOr404 } from "../lib/api.server";
+import { pageReuse } from "../lib/page-reuse";
 import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
 import { fullDateTime, relativeTime } from "../lib/format";
 import { markRead } from "../lib/local-state";
@@ -27,13 +27,13 @@ import { BarButton, PhoneBar } from "../components/shell/PhoneBar";
 import { isPhone, type Screen } from "../components/shell/screens";
 
 export const handle: Screen = { home: "featured", toolbar: true };
-export { shouldRevalidate } from "../lib/page-reuse";
+export { pageHeaders as headers } from "../lib/api.server";
 
 const PosterSheet = lazy(() => import("../features/item/PosterSheet"));
 
 export async function loader({ params, request }: Route.LoaderArgs) {
   const item = await loadOr404<SiteItemDetail>(`/api/site/items/${encodeURIComponent(params.id)}`, { signal: request.signal });
-  return { item, expiresAt: pageExpiresAt(600) };
+  return cachedPage(600, { item });
 }
 
 type Preview = { item: null; preview: FeedItemSummary; detail: Promise<{ item: SiteItemDetail }> };
@@ -42,12 +42,13 @@ type Preview = { item: null; preview: FeedItemSummary; detail: Promise<{ item: S
  * Phones: an article tapped in a list opens at once with what the card showed (title, summary, reason),
  * while its full text loads. Opened any other way, or on desktop, the page waits for its data as usual.
  */
-const loadPage = cachedLoader<typeof loader>();
+const reuse = pageReuse<typeof loader>();
+export const { shouldRevalidate } = reuse;
 export async function clientLoader(args: ClientLoaderFunctionArgs) {
   const { params } = args;
   const preview = isPhone() && params.id ? takePreview(params.id) : null;
-  if (!preview) return loadPage(args);
-  return { item: null, preview, detail: loadPage(args) } satisfies Preview;
+  if (!preview) return reuse.clientLoader(args);
+  return { item: null, preview, detail: reuse.clientLoader(args) } satisfies Preview;
 }
 clientLoader.hydrate = true as const;
 
@@ -71,10 +72,6 @@ export function meta({ loaderData }: Route.MetaArgs) {
       ]),
     ],
   });
-}
-
-export function headers() {
-  return edgeTtl(600);
 }
 
 /** A 2px accent line across the top that follows long bodies. */
@@ -195,7 +192,7 @@ function ItemPreview({ preview }: { preview: FeedItemSummary }) {
         {!isX && <h1 data-page-title="" className="text-[26px] font-bold leading-[1.38] tracking-[-0.01em] text-ink">{preview.title}</h1>}
         {preview.summary && (
           <section className={isX ? "mt-4" : "mt-7"}>
-            <div className="mb-2 text-[12px] font-semibold text-accent">AI 导读</div>
+            <div className="mb-2 text-[12px] font-semibold text-accent">{isX && preview.summary.replace(/\s+/g, " ").trim() === preview.title ? "原文" : "AI 导读"}</div>
             <p className="text-[18px] leading-[1.7] text-ink">{preview.summary}</p>
           </section>
         )}
@@ -478,7 +475,7 @@ function ItemView({ item }: { item: SiteItemDetail }) {
           {!isX && <h1 data-page-title="" className="text-[26px] font-bold leading-[1.38] tracking-[-0.01em] text-ink lg:text-[32px] lg:leading-[1.34] xl:text-[36px] xl:leading-[1.3]">{item.title}</h1>}
           {!isX && item.originalTitle && <p className="mt-2.5 text-[14px] leading-relaxed text-ink-4">{item.originalTitle}</p>}
 
-          {item.summary && (
+          {item.summary && (!isX || item.summary.replace(/\s+/g, " ").trim() !== item.title) && (
             <section className={isX ? "mt-4" : "mt-7 xl:mt-8"}>
               <div className="mb-2 text-[12px] font-semibold text-accent">{summaryOnly ? "摘要" : "AI 导读"}</div>
               <p className="text-[18px] leading-[1.7] text-ink xl:text-[20px] xl:leading-[1.7]">{item.summary}</p>

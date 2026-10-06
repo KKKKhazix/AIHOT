@@ -1,8 +1,8 @@
-import { data as withHeaders, redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/home";
 import type { TimelineResponse } from "@aihot/contracts/site";
-import { apiDeadlineCache, loadOr404, pageExpiresAt } from "../lib/api.server";
-import { cachedLoader } from "../lib/page-reuse";
+import { cachedPage, loadOr404 } from "../lib/api.server";
+import { pageReuse } from "../lib/page-reuse";
 import { filterParams, itemListLd, listPath, pageMeta, readFilters, siteLd } from "../lib/seo";
 import type { Screen } from "../components/shell/screens";
 import { Timeline } from "../features/feed/Timeline";
@@ -10,8 +10,8 @@ import { HotTopics } from "../features/feed/HotTopics";
 import { ActiveFilters, CategoryTabs, FeedBar, SearchField } from "../features/feed/Filters";
 
 export const handle: Screen = { tab: "featured", name: "精选" };
-export { shouldRevalidate } from "../lib/page-reuse";
-export const clientLoader = cachedLoader<typeof loader>();
+export { pageHeaders as headers } from "../lib/api.server";
+export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
@@ -21,17 +21,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const filters = readFilters(url.searchParams);
   const upstream = new Headers();
   const data = await loadOr404<TimelineResponse>(listPath("/api/site/timeline", filterParams(filters)), { responseHeaders: upstream, signal: request.signal });
-  return withHeaders({ data, filters, expiresAt: pageExpiresAt(60, upstream) }, { headers: apiDeadlineCache(60, Date.now(), upstream) });
+  return cachedPage(60, { data, filters }, upstream);
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
   const path = listPath("/", loaderData ? filterParams(loaderData.filters) : {});
   const titles = loaderData?.data.cards.map((c) => c.item.title) ?? [];
   return pageMeta({ path, jsonLd: path === "/" ? [...siteLd(), itemListLd("/", "精选", titles)] : undefined });
-}
-
-export function headers({ loaderHeaders }: Route.HeadersArgs) {
-  return loaderHeaders;
 }
 
 export default function Home() {

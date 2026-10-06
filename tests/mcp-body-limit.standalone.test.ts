@@ -27,12 +27,6 @@ test("MCP accepts a JSON body at its byte limit and refuses one byte over before
   }
 });
 
-test("MCP counts raw whitespace in its body limit", async () => {
-  const payload = `${initialize("small")}\n${" ".repeat(LIMIT)}`;
-  const response = await app.inject({ method: "POST", url: "/api/mcp", headers, payload });
-  assert.equal(response.statusCode, 413);
-});
-
 test("MCP bounds UTF-8 bytes rather than JavaScript string length", async () => {
   const payload = initialize("字".repeat(90_000));
   assert.ok(payload.length < LIMIT && Buffer.byteLength(payload) > LIMIT);

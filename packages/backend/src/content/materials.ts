@@ -272,7 +272,7 @@ export async function reviseMaterial(db: Db, articleId: string, revision: { set:
            VALUES (${articleId}, ${row!.revision}, ${revision.hash}, ${revision.title}, ${revision.bodyText})`;
   // Only withdraw an existing projection; the first publication still belongs to completed analysis.
   if ((await db`SELECT 1 FROM publications WHERE article_id = ${articleId}`).length) {
-    await publishArticleTx(db as Tx, articleId);
-    await emit("articleChanged", { id: articleId, kind: "content", reason: "material revision" }, db);
+    const published = await publishArticleTx(db as Tx, articleId);
+    await emit("articleChanged", { id: articleId, kind: "content", reduced: published?.reduced, reason: "material revision" }, db);
   }
 }

@@ -30,31 +30,23 @@ for(let f=0;f<2;f++) {
     await sql`INSERT INTO fact_articles (fact_id,article_id,role) VALUES (${fact!.id},${id},'report')`;
   }
 }
-after(async()=>{ await sql`DELETE FROM articles WHERE source_id IN ${sql([source!.id,officialSource!.id])}`; await sql`DELETE FROM facts WHERE story_id = ${story!.id}`; await sql`DELETE FROM stories WHERE id = ${story!.id}`; await sql`DELETE FROM sources WHERE id = ${source!.id}`; await closeDb(); });
+after(closeDb);
 
 // Failure cases: an old launch lifted by a new evaluation; two news facts hidden in one story card;
 // late duplicate reports moving a fact; a representative leaking another fact's sources;
-// a withdrawn representative returned; pagination hydrating reports outside its page.
-test('selected news keeps each fact at its first appearance and hydrates only its representatives',async()=>{
-  let hydrated = 0;
-  const previous = sql.options.debug;
-  sql.options.debug = (_c,q,p)=>{if(q.includes('a.x_post')&&q.includes('WHERE p.article_id IN'))hydrated+=p.filter((v)=>typeof v==='string'&&v.startsWith(key+'-')).length;};
-  try {
-    const timeline = await loadTimeline({channel:'all',category:null,tag:key,now});
-    assert.deepEqual(timeline.cards.map(c=>c.item.id),[`${key}-1-2`,`${key}-0-2`]);
-    assert.deepEqual(timeline.cards.map(c=>c.anchorAt),[new Date(+now-3600000).toISOString(),new Date(+now-10*86400000).toISOString()]);
-    assert.deepEqual(timeline.cards.map(c=>c.group!.reportCount),[6,6]);
-    assert.deepEqual(timeline.cards.map(c=>c.group!.additionalSourceCount),[1,1]);
-    assert.ok(timeline.cards.every(c=>!('latestDevelopment' in c.group!)&&!('developmentCount' in c.group!)), 'news cards carry no event progress');
-    assert.equal(hydrated,2,'the timeline hydrates two news representatives, not all twelve reports');
-    const firstNews=await loadTimeline({channel:'all',category:null,tag:key,now,limit:1});
-    const secondNews=await loadTimeline({channel:'all',category:null,tag:key,now,limit:1,cursor:firstNews.nextCursor});
-    assert.deepEqual([...firstNews.cards,...secondNews.cards].map(c=>c.item.id),timeline.cards.map(c=>c.item.id));
-    hydrated=0;
-    const followups=await loadStoryFollowups(storyPublicId,now);
-    assert.deepEqual(followups!.items.map(i=>i.representative.id),[`${key}-1-2`,`${key}-0-2`],'each fact by its representative, the latest first');
-    assert.equal(hydrated,0,'the event follow-ups hydrate no article');
-    await sql`UPDATE publications SET visibility='withdrawn' WHERE article_id=${key+'-1-2'}`;
-    assert.deepEqual((await loadStoryFollowups(storyPublicId,now))!.items.map(i=>i.representative.id),[`${key}-1-0`,`${key}-0-2`],'a withdrawn representative gives way');
-  } finally {sql.options.debug=previous;}
+// a withdrawn representative returned; pagination splitting a fact across pages.
+test('selected news keeps each fact at its first appearance under its representative',async()=>{
+  const timeline = await loadTimeline({channel:'all',category:null,tag:key,now});
+  assert.deepEqual(timeline.cards.map(c=>c.item.id),[`${key}-1-2`,`${key}-0-2`]);
+  assert.deepEqual(timeline.cards.map(c=>c.anchorAt),[new Date(+now-3600000).toISOString(),new Date(+now-10*86400000).toISOString()]);
+  assert.deepEqual(timeline.cards.map(c=>c.group!.reportCount),[6,6]);
+  assert.deepEqual(timeline.cards.map(c=>c.group!.additionalSourceCount),[1,1]);
+  assert.ok(timeline.cards.every(c=>!('latestDevelopment' in c.group!)&&!('developmentCount' in c.group!)), 'news cards carry no event progress');
+  const firstNews=await loadTimeline({channel:'all',category:null,tag:key,now,limit:1});
+  const secondNews=await loadTimeline({channel:'all',category:null,tag:key,now,limit:1,cursor:firstNews.nextCursor});
+  assert.deepEqual([...firstNews.cards,...secondNews.cards].map(c=>c.item.id),timeline.cards.map(c=>c.item.id));
+  const followups=await loadStoryFollowups(storyPublicId,now);
+  assert.deepEqual(followups!.items.map(i=>i.representative.id),[`${key}-1-2`,`${key}-0-2`],'each fact by its representative, the latest first');
+  await sql`UPDATE publications SET visibility='withdrawn' WHERE article_id=${key+'-1-2'}`;
+  assert.deepEqual((await loadStoryFollowups(storyPublicId,now))!.items.map(i=>i.representative.id),[`${key}-1-0`,`${key}-0-2`],'a withdrawn representative gives way');
 });

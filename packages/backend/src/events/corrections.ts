@@ -130,7 +130,7 @@ export async function requestRegroup(articleId: string, requestId: string, db: D
   await db`UPDATE articles SET ${groupingReset()} WHERE id = ${articleId}`;
   const published = await publishArticleTx(db as Tx, articleId);
   if (published?.changed || previous.length) await emit("articleChanged", {
-    id: articleId, kind: "content", reason: "regroup requested", previousStoryIds: previous.map((r) => r.story_id),
+    id: articleId, kind: "content", reduced: published?.reduced, reason: "regroup requested", previousStoryIds: previous.map((r) => r.story_id),
   }, db);
   return enqueue(QUEUES.group, { articleId }, { singletonKey: `manual:group:${articleId}:${requestId}` }, db);
 }

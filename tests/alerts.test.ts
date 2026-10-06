@@ -165,6 +165,5 @@ test("the ops digest does not describe unknown paid work as harmless or already 
     console.log = log;
     if (enabled === undefined) delete process.env.FEISHU_INTERNAL_ENABLED;
     else process.env.FEISHU_INTERNAL_ENABLED = enabled;
-    await sql`DELETE FROM receipts WHERE logical_key='digest-unknown-impact'`;
   }
 });

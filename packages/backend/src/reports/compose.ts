@@ -4,7 +4,7 @@
 // dailies and a model only writes its overview and introductions, from the brief in the industry pack
 // (industry/prompts/report-period*.md).
 import { z } from "zod";
-import { EDITION_TIMES, SITE } from "@aihot/site";
+import { EDITION_TIMES, REPORTS, SITE } from "@aihot/site";
 import { PLAIN_TERMS, RELEASE } from "@aihot/industry/taxonomy";
 import { promptText, promptVersion } from "../editorial/prompts.ts";
 import { modelFor } from "../editorial/models.ts";
@@ -74,9 +74,17 @@ async function saveReport(kind: ReportKind, key: string, start: Date, end: Date,
   });
 }
 
+/** "10 月 4 日 08:00": one end of a quiet issue's window, as its lead paragraph names it. */
+function windowPoint(at: Date): string {
+  const day = beijingDate(at);
+  return `${Number(day.slice(5, 7))} 月 ${Number(day.slice(8, 10))} 日 ${beijingTime(at)}`;
+}
+
 /**
  * Daily report for Beijing date D covers the 24 hours up to the site's edition time on D (EDITION_TIMES).
- * Its most important entry leads, in its own words, and the next three are today's highlights.
+ * Its most important entry leads, in its own words, and the next three are today's highlights. A window
+ * the editors judged with nothing new in it still has its issue: no entries, and a lead that says so
+ * (REPORTS.quiet).
  */
 export async function composeDaily(date: string, reason?: string): Promise<{ key: string; entries: number }> {
   const previous = await savedReport("daily", date);
@@ -84,14 +92,16 @@ export async function composeDaily(date: string, reason?: string): Promise<{ key
   const end = beijingAt(date, EDITION_TIMES.daily);
   const start = new Date(end.getTime() - 86400000);
   const edition = await dailyEdition(date, start, end);
-  // An issue with nothing in it is a failure upstream, not a report: the run fails and is caught up later.
-  if (edition.entries.length === 0) throw new Error(`daily ${date}: no selected items in its window`);
+  // Nothing judged in the window is a failure upstream, not a quiet day: the run fails and is caught up later.
+  if (edition.entries.length === 0 && edition.stats.judgedReports === 0) throw new Error(`daily ${date}: nothing judged in its window`);
   const issue = arrangeDaily(edition.entries);
-  const [lead, ...rest] = issue.main as [EditionEntry, ...EditionEntry[]];
+  const [lead, ...rest] = issue.main;
   const content = {
     date,
-    lead: { title: lead.entry.title, leadParagraph: lead.entry.summary },
-    leadItemId: lead.entry.itemId,
+    lead: lead
+      ? { title: lead.entry.title, leadParagraph: lead.entry.summary }
+      : { title: REPORTS.quiet.title, leadParagraph: REPORTS.quiet.paragraph.replace("{start}", windowPoint(start)).replace("{end}", windowPoint(end)) },
+    leadItemId: lead?.entry.itemId ?? null,
     highlights: rest.slice(0, 3).map((e) => e.entry.itemId),
     sections: SECTION_ORDER
       .map((label) => ({ label, items: issue.main.filter((e) => sectionOf(e.category) === label).map((e) => e.entry) }))

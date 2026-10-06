@@ -39,11 +39,7 @@ function statements(text: string): string[][] {
     }
     if (/^\$(?:[a-z_][a-z0-9_]*)?\$/i.test(rest)) throw new Error("SQL bodies are not online migrations");
     if (quote === ";") { if (tokens.length) result.push(tokens); tokens = []; i++; continue; }
-    // Keep compound operators intact, stopping before comments. PostgreSQL separates a trailing
-    // +/- from ordinary operators (<=-1, ->-1), except in names containing a special operator char.
-    let operator = /^(?:(?!--|\/\*)[+\-*/<>=~!@#%^&|`?])+/.exec(rest)?.[0];
-    if (operator && !/[~!@#%^&|`?]/.test(operator)) operator = operator.replace(/[+-]+$/, "") || operator[0];
-    const token = /^[a-z_][a-z0-9_$]*|^-?\d+(?:\.\d+)?|^::/i.exec(rest)?.[0] ?? operator ?? quote;
+    const token = /^[a-z_][a-z0-9_$]*|^-?\d+(?:\.\d+)?|^::/i.exec(rest)?.[0] ?? quote;
     tokens.push(token);
     i += token.length;
   }
@@ -58,12 +54,6 @@ const LITERAL = `(?:'(?:[^']|'')*'|-?\\d+(?:\\.\\d+)?|true|false|null)(?: :: ${T
 const addColumn = new RegExp(`^alter table ${RELATION} add column (?:if not exists )?${IDENT} ${TYPE}(?: not null)?(?: default ${LITERAL})?(?: not null)?$`, "i");
 const alterDefault = new RegExp(`^alter table ${RELATION} alter column ${IDENT} (?:set default ${LITERAL}|drop default)$`, "i");
 const indexStart = new RegExp(`^create (unique )?index concurrently if not exists (${IDENT}) on (${RELATION}) `, "i");
-
-/** Let PostgreSQL normalize the intended index on an empty temporary copy, without reading table data. */
-export function indexOnEmptyTable(text: string): string {
-  const sql = statements(text)[0].join(" ");
-  return sql.replace(indexStart, (_match, unique: string | undefined) => `CREATE ${unique ?? ""}INDEX migration_expected_index ON pg_temp.migration_expected_table `);
-}
 
 function singleAction(tokens: string[]) {
   let depth = 0;
@@ -93,16 +83,18 @@ export function migrationPlan(text: string): MigrationPlan {
     || new RegExp(`^analyze ${RELATION} \\( ${IDENT}(?: , ${IDENT})* \\)$`, "i").test(sql)) return { kind: "statistics" };
   if (new RegExp(`^create table (?:if not exists )?${RELATION} \\(.*\\)$`, "i").test(sql)
     && !/\b(as|like|inherits|partition)\b/i.test(words)) return { kind: "transaction" };
-  // Dropping a table that no code uses changes the catalog only: no scan or rewrite, and the runner bounds
-  // the wait for its lock. One table and no CASCADE, so an object that still depends on it fails the
-  // migration instead of disappearing with it. Whether its data may go is settled before the change.
+  // Dropping a table, column or constraint that no code uses changes the catalog only: no scan or rewrite,
+  // and the runner bounds the wait for its lock. One object and no CASCADE, so an object that still depends
+  // on it fails the migration instead of disappearing with it. Whether its data may go is settled before
+  // the change, and the release running while it applies no longer reads or writes it.
   if (new RegExp(`^drop table if exists ${RELATION}$`, "i").test(sql)) return { kind: "transaction" };
   if (!singleAction(tokens)) throw new Error("use one ALTER TABLE action per statement");
+  if (new RegExp(`^alter table ${RELATION} drop (?:column|constraint) if exists ${IDENT}$`, "i").test(sql)) return { kind: "transaction" };
   if (addColumn.test(sql)) {
     if (/\bnot null\b/i.test(words) && (!/\bdefault\b/i.test(words) || /\bdefault null\b/i.test(words))) throw new Error("NOT NULL on a new column requires a non-null constant default");
     return { kind: "transaction" };
   }
   if (alterDefault.test(sql)) return { kind: "transaction" };
   if (new RegExp(`^alter table ${RELATION} add constraint ${IDENT} (?:check \\(.*\\)|foreign key \\(.*\\) references .*) not valid$`, "i").test(sql)) return { kind: "transaction" };
-  throw new Error(`not safe for an online migration: ${sql.slice(0, 180)}. Use constant-default columns, NOT VALID then separate validation, concurrent indexes, column MCV statistics with separate column ANALYZE, or DROP TABLE IF EXISTS for one table nothing uses; backfill data in bounded batches outside release migrations.`);
+  throw new Error(`not safe for an online migration: ${sql.slice(0, 180)}. Use constant-default columns, NOT VALID then separate validation, concurrent indexes, column MCV statistics with separate column ANALYZE, or DROP TABLE IF EXISTS / DROP COLUMN IF EXISTS / DROP CONSTRAINT IF EXISTS for one object nothing uses; backfill data in bounded batches outside release migrations.`);
 }

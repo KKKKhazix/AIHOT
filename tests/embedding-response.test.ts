@@ -1,6 +1,7 @@
 // Failure modes at the paid response boundary: a fully received invalid response is not an unknown
 // outcome; missing/duplicate indices, incomplete dimensions or invalid coordinates cannot enter
-// recall; out-of-order valid vectors must stay attached to their original inputs on receipt replay.
+// recall; out-of-order valid vectors must stay attached to their original inputs on receipt replay,
+// and a batch whose write fails reuses its paid answer instead of buying it again.
 import { stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
@@ -32,21 +33,7 @@ test("unusable embedding responses retain the paid answer and never write partia
   }
 });
 
-test("out-of-order embeddings retain input correspondence and replay without another paid call", async () => {
-  const id = tag();
-  const items = [{ id: `${id}-a`, text: `${id} first` }, { id: `${id}-b`, text: `${id} second` }];
-  answer = { data: [{ index: 1, embedding: vector(2) }, { index: 0, embedding: vector(1) }] };
-  const before = provider.hits();
-  const first = await ensureEmbeddings(items);
-  assert.deepEqual(first.get(items[0]!.id), vector(1));
-  assert.deepEqual(first.get(items[1]!.id), vector(2));
-  await sql`DELETE FROM embeddings WHERE ref_id IN ${sql(items.map((item) => item.id))}`;
-  assert.deepEqual(await ensureEmbeddings(items), first);
-  assert.equal(provider.hits() - before, 1);
-});
-
-
-test("embedding batch rolls back and reuses its paid receipt before completing", async () => {
+test("out-of-order embeddings keep their inputs, and a rolled-back batch reuses its paid receipt", async () => {
   const id = tag();
   const items = [{ id: `${id}-a`, text: `${id} first` }, { id: `${id}-b`, text: `${id} second` }];
   answer = { data: [{ index: 1, embedding: vector(2) }, { index: 0, embedding: vector(1) }] };

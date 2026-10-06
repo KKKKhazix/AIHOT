@@ -1,6 +1,6 @@
 import { assertProductionSecrets, config } from "@aihot/backend/config";
 import { closeDb } from "@aihot/backend/db";
-import { installModules, serverModules } from "@aihot/backend/modules";
+import { installModules } from "@aihot/backend/modules";
 import { SERVER_MODULES } from "@aihot/site/modules/server";
 import { DEPLOYMENT } from "@aihot/site";
 import { feishuLoginConfigured } from "@aihot/backend/admin/auth";
@@ -29,7 +29,6 @@ const shutdown = async () => {
   if (stopping) return;
   stopping = true;
   await app.close();
-  for (const m of serverModules()) await m.stop?.().catch(() => {});
   await closeDb();
   process.exit(0);
 };

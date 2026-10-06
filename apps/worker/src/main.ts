@@ -33,10 +33,14 @@ let stopping = false;
 const shutdown = async () => {
   if (stopping) return;
   stopping = true;
+  const started = performance.now();
   console.log(JSON.stringify({ level: "info", msg: "worker stopping" }));
   clearInterval(heartbeat);
   await stopBoss();
+  const closing = performance.now();
   await closeDb();
+  console.log(JSON.stringify({ level: "info", msg: "worker stopped", elapsedMs: Math.round(performance.now() - started),
+    databaseCloseMs: Math.round(performance.now() - closing) }));
   process.exit(0);
 };
 process.on("SIGTERM", shutdown);

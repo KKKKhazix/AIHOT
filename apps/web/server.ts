@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { createRequestListener } from "@react-router/node";
 import type { ServerBuild } from "react-router";
 import { isApiOwned, resolveRedirect } from "@aihot/contracts/http-policy";
+import { BROWSER_MAX_SECONDS } from "./app/lib/api.server.ts";
 import { proxyToApi } from "./app/lib/api-proxy.server.ts";
 import { logError } from "./app/lib/errors.server.ts";
 
@@ -21,8 +22,6 @@ const HOST = process.env.WEB_HOST || "127.0.0.1";
  */
 const TRUST_PROXY = process.env.TRUST_PROXY === "true";
 const CLIENT_DIR = path.resolve(import.meta.dirname, "build/client");
-/** Browsers keep a page at most this long, so a withdrawal reaches them within minutes. */
-const BROWSER_MAX_SECONDS = 300;
 
 const TYPES: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
@@ -40,9 +39,11 @@ const TYPES: Record<string, string> = {
 
 // A file URL, not a path: on Windows import() reads "C:\..." as a URL with the scheme "c:".
 const build: ServerBuild = await import(pathToFileURL(path.resolve(import.meta.dirname, "build/server/index.js")).href);
-// Keep an empty result for pages without a loader. An older document can still unwrap its route's
-// result, so a changed data shape reaches React's release recovery rather than failing in the router.
-// The client manifest still declares no loader: current documents make no request for these pages.
+// Keep an empty result for pages without a loader. A tab opened before a page lost its loader still asks
+// for that result, and its router rejects a missing one before React's release recovery can run; an empty
+// one reaches the component instead. The client manifest declares no loader, so current documents make no
+// such request. A tab updates only when its reader reloads it, so no date says when the last old one is
+// gone: remove this once such requests stop arriving.
 const routes = Object.fromEntries(Object.entries(build.routes).map(([id, route]) => [id,
   route?.module.default && !route.module.loader ? { ...route, module: { ...route.module, loader: () => null } } : route,
 ]));
@@ -86,7 +87,7 @@ const server = createServer((req, res) => {
 });
 
 /**
- * The one writer of page response headers: a route only says how long shared caches may keep it (edgeTtl).
+ * The one writer of page response headers: a route only says how long shared caches may keep it (cachedPage, edgeTtl).
  * Public navigation returns all matched loaders, so `_routes` never changes a cached answer.
  */
 function pageResponse(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) {

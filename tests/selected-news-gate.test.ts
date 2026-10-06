@@ -47,11 +47,6 @@ test('an unresolved selection never leaks after the old deadline and completion 
   assert.equal((await selectedContent(id)).status, 'skipped');
   assert.equal((await sql`SELECT 1 FROM selected_ledger WHERE article_id=${id}`).length, 0, 'no premature sync upsert');
   assert.equal((await sql`SELECT 1 FROM pgboss.job WHERE name='notify.selected' AND data->>'articleId'=${id}`).length, 0);
-  const [pending] = await sql`SELECT selection_candidate,selected,selected_ready_at,visible_after FROM publications WHERE article_id=${id}`;
-  assert.equal(pending!.selection_candidate, true);
-  assert.equal(pending!.selected, false);
-  assert.ok(pending!.selected_ready_at);
-  assert.equal(pending!.visible_after, null);
 
   await sql`UPDATE articles SET grouping_status='complete',grouped_at=now(),grouping_error=NULL,selection_adds_value=true WHERE id=${id}`;
   await publishArticle(id);

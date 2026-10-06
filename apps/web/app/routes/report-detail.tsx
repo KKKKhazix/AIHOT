@@ -2,8 +2,8 @@ import { data, useLoaderData } from "react-router";
 import type { Route } from "./+types/report-detail";
 import type { ReportDetail, ReportNavigationResponse, ReportKind } from "@aihot/contracts/site";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
-import { apiGet, edgeTtl, loadOr404, pageExpiresAt } from "../lib/api.server";
-import { cachedLoader } from "../lib/page-reuse";
+import { apiGet, cachedPage, loadOr404 } from "../lib/api.server";
+import { pageReuse } from "../lib/page-reuse";
 import { pageMeta, reportLd, titled } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
 import { ReportLayout } from "../features/report/ReportLayout";
@@ -12,8 +12,8 @@ import { KIND_LABEL, feedLink, kindFromPath } from "../features/report/format";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "daily", name: "日报" };
-export { shouldRevalidate } from "../lib/page-reuse";
-export const clientLoader = cachedLoader<typeof loader>();
+export { pageHeaders as headers } from "../lib/api.server";
+export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 const PATTERN: Record<ReportKind, RegExp> = {
   daily: /^\d{4}-\d{2}-\d{2}$/,
@@ -29,7 +29,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     loadOr404<ReportDetail>(`/api/site/reports/${kind}/${key}`, { signal: request.signal }),
     apiGet<ReportNavigationResponse>(`/api/site/reports/${kind}/navigation/${key}`, { signal: request.signal }),
   ]);
-  return { report, index, today: beijingDate(Date.now()), expiresAt: pageExpiresAt(3600) };
+  return cachedPage(3600, { report, index, today: beijingDate(Date.now()) });
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
@@ -45,10 +45,6 @@ export function meta({ loaderData }: Route.MetaArgs) {
     type: "article",
     jsonLd: reportLd(r, path, description),
   }), feedLink(r.kind)];
-}
-
-export function headers() {
-  return edgeTtl(3600);
 }
 
 export default function ReportDetailPage() {

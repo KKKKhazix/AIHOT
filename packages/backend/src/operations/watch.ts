@@ -12,10 +12,11 @@ const WORKER_STALE_MS = 30 * 60_000;
 const WORKER_DOWN: Finding = {
   key: "worker",
   level: "now",
+  owner: true,
   title: "后台处理服务停了，网站不会出现新内容",
   impact: "新内容的采集、处理、推送和日报全部暂停，网站停在旧内容上",
   heals: "系统自动重启没有成功",
-  action: "转给 AI 立即处理",
+  action: "尽快发起一次维护处理",
 };
 
 /**

@@ -6,6 +6,8 @@ import { SITE } from "@aihot/site";
 import { one, sql, type Tx } from "../db.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { collapseWhitespace } from "../lib/text.ts";
+import type { XPostData } from "../content/materials.ts";
+import { originalPostCopy } from "../content/posts.ts";
 import { itemUrl } from "./links.ts";
 import { pickRepresentative, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity } from "./representative.ts";
 import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
@@ -27,7 +29,8 @@ interface ArticleRow {
   backfill: boolean;
   body_status: string;
   body_text: string | null;
-  x_post: unknown;
+  x_post: XPostData | null;
+  x_article: { text?: string } | null;
   grouped_at: Date | null;
   grouping_status: "pending" | "complete" | "failed";
   selection_adds_value: boolean | null;
@@ -110,7 +113,7 @@ export interface PublishOptions {
 export interface PublishResult {
   articleId: string;
   changed: boolean;
-  /** First prepared content or selection refreshes its detail; corrections also invalidate lists. */
+  /** First prepared content or selection only adds to its detail; corrections also change what lists show. */
   changeKind: "detail" | "content";
   selected: boolean;
   visibility: string;
@@ -222,7 +225,7 @@ export async function publishArticle(articleId: string, options: PublishOptions 
     const result = await publishArticleTx(tx, articleId, options);
     // Body and translation writes announce their own changes; an unchanged projection needs no purge.
     if (previous && result?.changed) await emit("articleChanged", {
-      id: articleId, reason: "republication", kind: result.changeKind, previousStoryIds: previous.story_id === null ? [] : [previous.story_id],
+      id: articleId, reason: "republication", kind: result.changeKind, reduced: result.reduced, previousStoryIds: previous.story_id === null ? [] : [previous.story_id],
     }, tx);
     return result;
   });
@@ -231,7 +234,7 @@ export async function publishArticle(articleId: string, options: PublishOptions 
 export async function publishArticleTx(tx: Tx, articleId: string, options: PublishOptions = {}): Promise<PublishResult | null> {
   const [article] = await tx<ArticleRow[]>`
     SELECT id, source_id, url, title, language, published_at, discovered_at, timeline_at, backfill, body_status,
-           body_text, x_post, grouped_at, grouping_status, selection_adds_value
+           body_text, x_post, x_article, grouped_at, grouping_status, selection_adds_value
     FROM articles WHERE id = ${articleId} FOR UPDATE`;
   if (!article) return null;
   // Explicit imports carry an already-public editorial decision, not a new pending judgement.
@@ -266,8 +269,9 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   // An X post carries its Chinese in the summary and translation; without a Chinese title its own
   // text is the title, where an article would still be a half-finished card.
   const zhTitle = analysis?.title_zh?.trim() ? analysis.title_zh : null;
-  const title = pickString(f.title, zhTitle ?? (isChineseTitle || article.x_post ? collapseWhitespace(article.title) : null));
-  const summary = pickString(f.summary, analysis?.summary_zh ?? null);
+  const original = originalPostCopy(article.x_post, article.url, article.x_article);
+  const title = pickString(f.title, original?.title ?? zhTitle ?? (isChineseTitle || article.x_post ? collapseWhitespace(article.title) : null));
+  const summary = pickString(f.summary, original ? original.summary : analysis?.summary_zh ?? null);
   const category = pickString(f.category, analysis?.category ?? null);
   const tags = Array.isArray(f.tags) ? (f.tags as string[]) : [...new Set([...(analysis?.tags ?? []), ...(analysis?.subjects ?? []).map((s) => `entity:${s}`)])];
   const score = typeof f.score === "number" ? f.score : analysis?.score ?? null;
@@ -278,17 +282,18 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
 
   // An undated archive has a readable detail page, but its discovery is not a news timestamp.
   // Explicit imports can retain an editorial decision already published elsewhere.
-  const eligible = isPoolEligible({ participationMode: source.participation_mode, relevance, title, summary })
+  const eligible = isPoolEligible({ participationMode: source.participation_mode, relevance, title, summary, originalPost: !!original })
     && (!article.backfill || article.published_at !== null || !!options.releasedAt);
   const selectionCandidate = isSelectable(eligible, judgedSelected, source.tier);
   // Scoring nominates a report; a completed identity/value decision admits it to selection.
   // A historical import already has its public decision. Preserve that confirmed state on rebuild.
   const selected = selectionCandidate && article.grouping_status === "complete"
     && (f.selected === true || article.selection_adds_value !== false);
-  const reason = selected ? pickString(f.reason, analysis?.reason_zh ?? null) : null;
+  const reason = selected ? pickString(f.reason, original ? null : analysis?.reason_zh ?? null) : null;
   const hasXPost = !!article.x_post;
   const channel = channelOf(source.kind, hasXPost);
-  const bodyMode = bodyModeOf(source, article.body_status, !!article.body_text && article.body_text.length > 0);
+  const hasBody = !!article.body_text || !!article.x_post?.text || !!article.x_post?.media?.length || !!article.x_post?.quoted?.text;
+  const bodyMode = bodyModeOf(source, article.body_status, hasBody);
   const syndicate = mayRedistribute(source, bodyMode);
   const originalTitle = isChineseTitle && title === collapseWhitespace(article.title) ? null : collapseWhitespace(article.title);
 
@@ -334,8 +339,8 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
     && (previous.story_id === null || previous.story_id === next.story_id)
     && (previous.fact_id === null || previous.fact_id === next.fact_id)
     && changedFields.every((key) => firstAnalysisFields.has(key));
-  // A first event link is new metadata, like the first judgement or selection. It refreshes
-  // the item and event's exact URLs; established identities and corrected text invalidate lists.
+  // A first event link is new metadata, like the first judgement or selection: a detail change.
+  // Established identities and corrected text change what lists show.
   const firstIdentity = previous && !previous.selected && previous.fact_id === null && previous.story_id === null
     && previous.visibility === "public" && visibility === "public" && eligible && next.story_id !== null
     && changedFields.every((key) => admissionFields.has(key));

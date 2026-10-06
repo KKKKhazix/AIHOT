@@ -2,8 +2,8 @@ import { useLoaderData } from "react-router";
 import { IntentLink } from "../components/ui/IntentLink";
 import type { ReportIndexEntry, ReportIndexResponse } from "@aihot/contracts/site";
 import { SITE, withSubject } from "@aihot/site";
-import { apiGet, edgeTtl, pageExpiresAt } from "../lib/api.server";
-import { cachedLoader } from "../lib/page-reuse";
+import { apiGet, cachedPage } from "../lib/api.server";
+import { pageReuse } from "../lib/page-reuse";
 import { archiveLd, pageMeta } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
 import { weekdayShort } from "../lib/format";
@@ -14,21 +14,17 @@ import { Nameplate } from "../features/report/Nameplate";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "daily", name: "往期" };
-export { shouldRevalidate } from "../lib/page-reuse";
-export const clientLoader = cachedLoader<typeof loader>();
+export { pageHeaders as headers } from "../lib/api.server";
+export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
   const { items: index } = await apiGet<ReportIndexResponse>("/api/site/reports/daily", { signal: request.signal });
-  return { index, today: beijingDate(Date.now()), expiresAt: pageExpiresAt(600) };
+  return cachedPage(600, { index, today: beijingDate(Date.now()) });
 }
 
 export function meta({ loaderData }: { loaderData?: { index: ReportIndexEntry[] } }) {
   const entries = (loaderData?.index ?? []).map((e: ReportIndexEntry) => ({ path: `/daily/${e.key}`, name: e.title ? `${e.key} · ${e.title}` : `${SITE.name} 日报 · ${e.key}` }));
   return pageMeta({ title: `${withSubject("日报")} · 历史存档`, description: `${SITE.name} 历史日报，按日期归档。`, path: "/daily/archive", image: "/og/pages/daily.png", jsonLd: archiveLd("/daily/archive", `${SITE.name} 日报 · 历史存档`, entries) });
-}
-
-export function headers() {
-  return edgeTtl(600);
 }
 
 export default function DailyArchive() {
@@ -63,9 +59,11 @@ export default function DailyArchive() {
                   </span>
                   <span className="min-w-0">
                     <span className="block text-[15px] font-bold leading-[1.55] text-ink transition-colors group-hover:text-accent">{e.title ?? `${withSubject("日报")} ${e.key}`}</span>
-                    <span className="mt-1 block text-[12px] text-ink-4">
-                      <span className="num">{e.count}</span>{` ${ENTRIES_UNIT}`}
-                    </span>
+                    {!!e.count && (
+                      <span className="mt-1 block text-[12px] text-ink-4">
+                        <span className="num">{e.count}</span>{` ${ENTRIES_UNIT}`}
+                      </span>
+                    )}
                   </span>
                 </IntentLink>
               )}

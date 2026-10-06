@@ -200,6 +200,8 @@ export const REPORTS = {
   metricUnits: { sourcesCount: "个来源", firstPartyEvents: "件一手发布", selectedCount: "条精选", reportsCovered: "期日报" },
   /** 报告分享图上“共几条”的说法。 */
   shareUnit: "件大事",
+  /** 日报时段内有资料经过评判、但没有新大事时的标题与导语。 */
+  quiet: { title: "今日安静，无大事发生", paragraph: `${subjectAfter("北京时间 {start} 至 {end}，没有新的", "大事")}。` },
 };
 
 /** 运维告警（只发给站长）里随部署而变的几处说法。 */

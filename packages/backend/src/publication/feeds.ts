@@ -106,10 +106,17 @@ const FEED_IMAGE_SECONDS = 7 * 86400;
 function fullContent(r: FeedRow, aihot: string): string | null {
   let html: string | null = null;
   const x = r.channel === "x" ? xView({ x_post: r.x_post ?? null, zh_text: r.zh_text ?? null, quoted_zh: r.quoted_zh ?? null }) : null;
-  if (x?.text) {
+  if (x) {
     html = textToHtml(x.translation ?? x.text);
     if (x.quoted?.text) {
       html += `<blockquote><p>引用 @${escapeXml(x.quoted.handle)}：</p>${textToHtml(x.quoted.translation ?? x.quoted.text)}${x.quoted.url ? `<p><a href="${escapeXml(x.quoted.url)}">${escapeXml(x.quoted.url)}</a></p>` : ""}</blockquote>`;
+    }
+    for (const media of r.x_post?.media ?? []) {
+      const url = String(media.url ?? "");
+      if (!/^https?:\/\//i.test(url)) continue;
+      html += media.kind === "video"
+        ? `<p><a href="${escapeXml(url)}">视频</a></p>`
+        : `<p><img src="${escapeXml(url)}" alt="${escapeXml(String(media.alt ?? ""))}"></p>`;
     }
   } else if (r.body_html) {
     html = exportTranslation(r) ?? r.body_html;

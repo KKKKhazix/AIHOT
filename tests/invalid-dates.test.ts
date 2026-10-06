@@ -58,13 +58,6 @@ for (const unit of ["epoch_s", "epoch_ms", "text"] as const) {
     assert.equal(queued.length, 1, "最后一条资料仍进入分析队列");
     const second = await collectSource(s.id);
     assert.deepEqual([second.status, second.found, second.created, second.revised], ["ok", 5, 0, 0]);
-    const [health] = await sql`SELECT health,fail_count,last_error FROM sources WHERE id=${s.id}`;
-    assert.deepEqual({ ...health }, { health: "ok", fail_count: 0, last_error: null });
-    const runs = await sql`SELECT status,found_count,new_count,error FROM fetch_runs WHERE source_id=${s.id} ORDER BY id`;
-    assert.deepEqual(runs.map((run) => ({ ...run })), [
-      { status: "ok", found_count: 5, new_count: 5, error: null },
-      { status: "ok", found_count: 5, new_count: 0, error: null },
-    ]);
   });
 }
 

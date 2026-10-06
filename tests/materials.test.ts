@@ -34,10 +34,10 @@ test("invalid source timestamps remain unknown on inserts and revisions", async 
 });
 
 /** An article as a history import writes it: imported content, no hash, no history row, analysed. */
-async function imported(url: string) {
+async function imported(url: string, title = "Imported title") {
   const id = `imp${tag()}`;
   await sql`INSERT INTO articles (id, source_id, identity_key, url, title, discovered_at, timeline_at, revision, content_hash, body_text, body_status, processing_state)
-            VALUES (${id}, ${SOURCE}, ${identityKeyForUrl(url)}, ${url}, 'Imported title', now(), now(), 1, NULL, 'imported body', 'ok', 'analyzed')`;
+            VALUES (${id}, ${SOURCE}, ${identityKeyForUrl(url)}, ${url}, ${title}, now(), now(), 1, NULL, 'imported body', 'ok', 'analyzed')`;
   return id;
 }
 
@@ -52,15 +52,6 @@ test("concurrent changes to one article each get a revision", async () => {
   const history = await sql<{ revision: number }[]>`SELECT revision FROM article_revisions WHERE article_id = ${first.articleId} ORDER BY revision`;
   assert.equal(article!.revision, 7);
   assert.deepEqual(history.map((h) => h.revision), [1, 2, 3, 4, 5, 6, 7]);
-});
-
-test("an unchanged report does not add a revision", async () => {
-  const url = `https://example.com/same-${tag()}`;
-  const first = await upsertMaterial({ sourceId: SOURCE, url, title: "Same", excerpt: "same", via: "fetch" });
-  const again = await upsertMaterial({ sourceId: SOURCE, url, title: "Same", excerpt: "same", via: "fetch" });
-  assert.equal(again.revised, false);
-  const [article] = await sql<{ revision: number }[]>`SELECT revision FROM articles WHERE id = ${first.articleId}`;
-  assert.equal(article!.revision, 1);
 });
 
 // Failure modes: a corrected revision inherits exhausted retries, a future retry time, or the
@@ -91,10 +82,7 @@ test("a material revision resets old processing failures without resetting uncha
 
 test("an imported article's first report records a baseline, not a revision", async () => {
   const url = `https://example.com/imported-${tag()}`;
-  const id = `imp${tag()}`;
-  // What a history import writes: imported content, no hash, already analysed.
-  await sql`INSERT INTO articles (id, source_id, identity_key, url, title, discovered_at, timeline_at, revision, content_hash, body_text, body_status, processing_state)
-            VALUES (${id}, ${SOURCE}, ${identityKeyForUrl(url)}, ${url}, 'Imported  title', now(), now(), 1, NULL, 'imported body', 'ok', 'analyzed')`;
+  const id = await imported(url, "Imported  title");
   const listed = { sourceId: SOURCE, url, title: "Imported title", excerpt: "feed summary", via: "fetch" as const };
   const first = await upsertMaterial(listed);
   assert.deepEqual([first.articleId, first.revised, first.created], [id, false, false]);

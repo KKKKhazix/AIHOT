@@ -179,14 +179,12 @@ export async function completeLogin(code: string, state: string, stateCookie: st
   const given = unsign(state);
   if (!expected || !given || expected !== given) throw new LoginRejected("登录状态已失效，请重新登录");
   const returnTo = given.split("|")[1] ?? "/admin";
-  // Pin the key and app this sign-in used: a configuration change during the exchange must not rebind it.
-  const loginKey = secret();
   const { user: u, appId } = await feishuUser(code);
   const emailClaim = u.enterprise_email ?? u.email;
   const email = typeof emailClaim === "string" ? emailClaim.toLowerCase() || null : null;
   const unionId = typeof u.union_id === "string" ? u.union_id || null : null;
   const claims: FeishuClaims = { appId, unionId, email };
-  const auth: SessionAuth = { method: "feishu", claims, binding: sessionBinding("feishu", claims, loginKey) };
+  const auth: SessionAuth = { method: "feishu", claims, binding: sessionBinding("feishu", claims, secret()) };
   const allowed = (unionId && config.adminUnionIds.includes(unionId)) || (email && config.adminEmails.includes(email));
   if (!allowed) throw new LoginRejected("这个飞书账号没有后台权限");
   const [existing] = await sql<{ id: number }[]>`

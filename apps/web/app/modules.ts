@@ -129,8 +129,6 @@ export interface WebModule {
     content?: AdminNavEntry[];
     /** Its part of the runs page, drawn from what its server module's admin.runs returns. */
     runs?: Part<ComponentType<{ data: unknown }>>;
-    /** Who reports through the ingest API on its behalf, named on the runs page before anything has. */
-    ingestClients?: string[];
     /** The page the admin opens on instead of the sources (routes/admin/index.tsx); the first module's wins. */
     landing?: string;
     /** Where the model prices are kept: the models page links its 未定价 there (routes/admin/models.tsx). */

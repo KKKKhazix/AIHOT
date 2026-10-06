@@ -1,6 +1,7 @@
 // Source-health evidence for the daily follow-ups and weekly report. A successful HTTP request is
 // not proof of output; discovery channels and editorial publishers are counted separately.
 import { sql } from "../db.ts";
+import { budgetMessage } from "../providers/receipts.ts";
 
 export interface SourceHealthRow {
   id: string;
@@ -22,6 +23,9 @@ export interface SourceHealthRow {
 
 export const SOURCE_USE_NAMES: Record<string, string> = { editorial: "编辑内容", hot_signal: "热度信号" };
 
+/** Matches a saved error that is a spent provider budget. */
+const spentBudget = sql`LIKE ${budgetMessage("%", "%")}`;
+
 /** Seven days of outcomes, including intermittent failures that a later success clears on sources.
  * Provider budget waits and process shutdowns are excluded even when a saved detail run counted
  * them as failures. A request timeout remains a failure. */
@@ -29,11 +33,11 @@ export async function sourceHealth(now = Date.now()) {
   const since = new Date(now - 7 * 86400_000);
   const rows = await sql<SourceHealthRow[]>`
     WITH runs AS (
-      SELECT source_id, count(*) FILTER (WHERE status IN ('ok','failed') AND coalesce(error, '') NOT LIKE 'Budget for % exhausted (%)')::int AS runs,
-        count(*) FILTER (WHERE status = 'failed' AND coalesce(error, '') NOT LIKE 'Budget for % exhausted (%)')::int AS failed,
+      SELECT source_id, count(*) FILTER (WHERE status IN ('ok','failed') AND coalesce(error, '') NOT ${spentBudget})::int AS runs,
+        count(*) FILTER (WHERE status = 'failed' AND coalesce(error, '') NOT ${spentBudget})::int AS failed,
         coalesce(sum((detail->>'detailFailures')::int - (
           SELECT count(*) FROM jsonb_array_elements(detail->'detailErrors') e
-          WHERE e->>'error' LIKE 'Budget for % exhausted (%)'
+          WHERE e->>'error' ${spentBudget}
             OR e->>'error' = 'This operation was aborted'
         )), 0)::int AS detail_failures
       FROM fetch_runs WHERE started_at >= ${since} GROUP BY source_id

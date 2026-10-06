@@ -3,8 +3,8 @@ import { IntentLink } from "../components/ui/IntentLink";
 import { Link, useLoaderData } from "react-router";
 import type { SiteContact, SiteStats } from "@aihot/contracts/site";
 import { ABOUT, POLICY, REPORTS, SITE, subjectAfter } from "@aihot/site";
-import { apiGet, edgeTtl, pageExpiresAt } from "../lib/api.server";
-import { cachedLoader } from "../lib/page-reuse";
+import { apiGet, cachedPage } from "../lib/api.server";
+import { pageReuse } from "../lib/page-reuse";
 import { organizationLd, pageMeta } from "../lib/seo";
 import { Kicker } from "../components/ui/Kicker";
 import { buttonClass } from "../components/ui/Controls";
@@ -14,19 +14,15 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "me", name: "关于" };
-export { shouldRevalidate } from "../lib/page-reuse";
-export const clientLoader = cachedLoader<typeof loader>();
-
-export function headers() {
-  return edgeTtl(300);
-}
+export { pageHeaders as headers } from "../lib/api.server";
+export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
   const [contact, stats] = await Promise.all([
     apiGet<SiteContact>("/api/site/contact", { signal: request.signal }).catch(() => null),
     apiGet<SiteStats>("/api/site/stats", { signal: request.signal }).catch(() => null),
   ]);
-  return { contact, stats, expiresAt: pageExpiresAt(300) };
+  return cachedPage(300, { contact, stats });
 }
 
 export function meta() {

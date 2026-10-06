@@ -106,7 +106,7 @@ export async function searchTweets(query: string, opts: { purpose: string; subje
 }
 
 /** The provider escapes these three plain-text characters. One pass preserves literal entity text. */
-export function decodeTweetEntities(text: string): string {
+function decodeTweetEntities(text: string): string {
   const entities: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">" };
   return text.replace(/&(?:amp|lt|gt);/g, entity => entities[entity]!);
 }

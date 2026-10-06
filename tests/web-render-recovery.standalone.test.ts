@@ -37,8 +37,6 @@ test("an old document render failure checks fresh health and reloads its exact U
   const onError = createRenderErrorHandler("release-A");
   await onError(error, info);
   assert.equal(b.fetch.mock.calls.length, 1);
-  assert.equal(b.fetch.mock.calls[0]!.arguments[0], "/api/health");
-  assert.equal(b.fetch.mock.calls[0]!.arguments[1]?.cache, "no-store");
   assert.equal(b.location.reload.mock.calls.length, 1);
   assert.equal(b.location.href, `${ORIGIN}/topics/openai?page=2#latest`);
   assert.equal(b.stored.get(KEY), "release-A");

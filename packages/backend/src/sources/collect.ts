@@ -188,7 +188,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
     const detailBudget = Number(d?.maxFetches ?? 0);
     let detailUsed = 0;
     let detailPending = 0;
-    let detailBudgetError: string | null = null;
+    let detailBudgetSpent = false;
     const detailErrors: Array<{ url: string; error: string }> = [];
     for (const c of candidates) {
       const stored = known.get(c.identityKey!);
@@ -206,7 +206,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
         body: source.participation_mode === "editorial" && stored?.body_status !== "ok" && !c.bodyText && (!c.bodyStatus || c.bodyStatus === "pending"),
       };
       if (!need.date && !need.title && !need.summary) continue;
-      if (detailBudgetError || detailUsed >= detailBudget) { detailPending += 1; continue; }
+      if (detailBudgetSpent || detailUsed >= detailBudget) { detailPending += 1; continue; }
       detailUsed += 1;
       try {
         const got = await fetchDetail(c.url, source, need);
@@ -228,12 +228,12 @@ export async function collectSource(sourceId: string, opts: { force?: boolean } 
         if (shutdownSignal.signal.aborted) throw error;
         detailPending += 1;
         // A spent provider budget defers the remaining detail work; it is not a source failure.
-        if (error instanceof BudgetExceededError) { detailBudgetError = error.message; continue; }
+        if (error instanceof BudgetExceededError) { detailBudgetSpent = true; continue; }
         detailErrors.push({ url: c.url, error: String(error instanceof Error ? error.message : error).slice(0, 300) });
       }
     }
     if (d) {
-      detail = { ...detail, detailAttempts: detailUsed, detailFailures: detailErrors.length, detailPending, detailErrors, detailBudgetError };
+      detail = { ...detail, detailAttempts: detailUsed, detailFailures: detailErrors.length, detailPending, detailErrors };
       nextCursor.detailRules = detailRules;
       // A validator covers the whole listing: accept 304 only after its detail work is complete.
       if (source.kind === "rss" && detailPending > 0) delete nextCursor.rss;

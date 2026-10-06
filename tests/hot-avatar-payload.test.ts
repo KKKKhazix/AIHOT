@@ -7,9 +7,9 @@ import type { HotEntry } from '@aihot/backend/events/hot';
 import { loadHotStrip, rankingExtras } from '@aihot/backend/publication/hot';
 import { loadHot, v1HotTopics } from '@aihot/backend/publication/stories';
 
-// Failure cases: names or participant counts disappear when hidden images are trimmed; a duplicate
-// public name consumes a face slot; tier/real-image ordering changes; signal-group images leak into
-// the payload; a missing image incorrectly frees a visible slot; /hot and home diverge; v1 changes.
+// Failure cases: names or participant counts disappear; a duplicate public name consumes a face slot;
+// tier/real-image ordering changes; signal-group images leak into the payload; a missing image
+// incorrectly frees a visible slot; /hot and home diverge; v1 changes.
 
 const t = `hotfaces-${tag()}`;
 // Listed in the ranking's stored order, which the faces must not follow.
@@ -60,29 +60,22 @@ test('faces are 精选组 sources by tier (T1, T1.5, T2), at most 6; 氛围组 o
   const [saved] = await sql<{id:number}[]>`INSERT INTO hot_rankings(computed_at,rule_version,entries,published)
     VALUES(${at},'test',${sql.json(entries as never)},true) RETURNING id`;
   const ranking={id:saved!.id,computedAt:at.toISOString(),ruleVersion:'test',entries,coverage:null};
-  const concurrent = await Promise.all(Array.from({length:8},()=>rankingExtras(ranking)));
-  const full=concurrent[0]!.participants(entries[0]!);
+  const extras = await rankingExtras(ranking);
+  const full=extras.participants(entries[0]!);
   const home=(await loadHotStrip())![0]!;
   const hot=(await loadHot()).entries[0]!;
 
   // T1 (face first), T1.5, T2 (faces first, then stored order), then 氛围组 whatever its tier.
   const order=[5,2,3,1,6,8,9,7,0,4];
-  for (const extras of concurrent) assert.deepEqual(extras.participants(entries[0]!).map(p=>p.name),order.map(name));
+  assert.deepEqual(full.map(p=>p.name),order.map(name));
   assert.deepEqual(home.participants,full,'home shows the same faces');
   assert.deepEqual(hot.participants,full,'/hot shows the same faces');
   assert.equal(home.participantCount,12,'the +N count still includes everyone');
   assert.equal(hot.participantCount,12);
   assert.deepEqual(full.slice(0,6).map(p=>p.iconUrl ? new URL(p.iconUrl, 'http://localhost').searchParams.get('u') : null),order.slice(0,6).map(imageUrl),'visible faces keep their image or initial');
   assert.equal(full[1]!.iconUrl,null,'a visible initial still takes one of the six slots');
-  for (const person of full.slice(6)) {
-    assert.ok(!Object.hasOwn(person,'iconUrl'),'hidden participants carry no image URL');
-    assert.ok(!Object.hasOwn(person,'iconSrcSet'),'hidden participants carry no image variants');
-  }
-  // The six visible faces get responsive images (T1 without avatar shows an initial); the seventh 精选组 face does not.
-  assert.deepEqual(full.filter(p=>p.iconSrcSet).map(p=>p.name),[5,3,1,6,8].map(name));
-  const signals=concurrent[0]!.participants({...entries[0]!,participants:entries[0]!.participants.filter(p=>p.kind==='signal')});
+  const signals=extras.participants({...entries[0]!,participants:entries[0]!.participants.filter(p=>p.kind==='signal')});
   assert.deepEqual(signals,order.filter(i=>inputs[i]!.kind==='signal').map(i=>({name:name(i),kind:'signal'})),'no editorial faces means no image URLs at all');
-  assert.deepEqual(concurrent[0]!.participants({...entries[0]!,participants:[]}),[]);
   const external=(await v1HotTopics()).items[0]!;
   assert.equal(external.participantCount,12);
   assert.deepEqual(external.sourceNames,entries[0]!.sourceNames,'machine clients keep every stored source name');

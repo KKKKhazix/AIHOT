@@ -1,9 +1,10 @@
-// Every invariant-test file runs on its own copy of the database, so the files run in parallel
+// Every database test file runs on its own copy of the database, so the files run in parallel
 // without sharing rows, paid-service budgets or an order (package.json). DATABASE_URL names the
 // template, a throwaway database ending in _test or _ci (setup.ts refuses anything else); it is
 // created if missing. As the runner's global setup this module brings the template up to date
 // (migrations) and removes the copies and scratch folders of the run; as a preload in each
 // file's process it copies the template and gives the file its own data and temporary folders.
+// *.standalone.test.ts need no database copy; npm run test:standalone runs them without a database.
 import "./setup.ts";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
@@ -60,9 +61,13 @@ export async function globalTeardown() {
 
 // Worker threads a file starts inherit the preload and its copy.
 if (process.env.NODE_TEST_CONTEXT && isMainThread) {
-  const copy = `${name}_f${process.pid}_${suffix}`;
-  await onServer((db) => db`CREATE DATABASE ${db(copy)} TEMPLATE ${db(name)}`);
-  process.env.DATABASE_URL = urlOf(copy);
+  if (process.argv[1]?.endsWith(".standalone.test.ts")) {
+    await import("./standalone.ts");
+  } else {
+    const copy = `${name}_f${process.pid}_${suffix}`;
+    await onServer((db) => db`CREATE DATABASE ${db(copy)} TEMPLATE ${db(name)}`);
+    process.env.DATABASE_URL = urlOf(copy);
+  }
   const scratch = mkdtempSync(path.join(tmpdir(), scratchPrefix(process.ppid)));
   for (const dir of ["data", "tmp"]) mkdirSync(path.join(scratch, dir));
   process.env.AIHOT_DATA_DIR = path.join(scratch, "data");

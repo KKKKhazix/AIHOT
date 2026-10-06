@@ -12,12 +12,12 @@ import { collectSource } from "@aihot/backend/sources/collect";
 const T = tag();
 const X_SOURCE = `test-x-${T}`;
 
-// SocialData: 450 posts newer than the watermark, newest first an hour apart, 20 a page; `cursor` is the page number.
+// SocialData: 45 posts newer than the watermark, newest first half a day apart, 2 a page; `cursor` is the page number.
 const BASE = BigInt(Date.now()) * 1000n;
 const WATERMARK = BASE + 100n;
-const POSTS = Array.from({ length: 450 }, (_, i) => BASE + 550n - BigInt(i));
+const POSTS = Array.from({ length: 45 }, (_, i) => BASE + 145n - BigInt(i));
 const tweet = (id: bigint) => ({
-  id_str: String(id), tweet_created_at: new Date(Date.now() - Number(BASE + 550n - id) * 3_600_000).toISOString(),
+  id_str: String(id), tweet_created_at: new Date(Date.now() - Number(BASE + 145n - id) * 12 * 3_600_000).toISOString(),
   full_text: `Post ${id} ${T}`, lang: "en", user: { name: "Test account", screen_name: `acct${T}` },
 });
 const socialdata = await stub((_hit, req) => {
@@ -25,7 +25,7 @@ const socialdata = await stub((_hit, req) => {
   const since = BigInt(/since_id:(\d+)/.exec(u.searchParams.get("query") ?? "")?.[1] ?? "0");
   const page = Number(u.searchParams.get("cursor") ?? 0);
   const ids = POSTS.filter((id) => id > since);
-  return { tweets: ids.slice(page * 20, page * 20 + 20).map(tweet), next_cursor: (page + 1) * 20 < ids.length ? String(page + 1) : null };
+  return { tweets: ids.slice(page * 2, page * 2 + 2).map(tweet), next_cursor: (page + 1) * 2 < ids.length ? String(page + 1) : null };
 });
 
 process.env.SOCIALDATA_BASE_URL = socialdata.url;
@@ -50,8 +50,8 @@ test("an X search longer than one run is read to the old watermark over the next
 
   const first = await collectSource(X_SOURCE, { force: true });
   assert.equal(first.status, "ok");
-  assert.equal(await stored(), 400, "a run reads its own pages and ten more of the stretch left over");
-  assert.equal((await cursor()).lastTweetId, String(BASE + 550n), "the watermark moves to the newest post");
+  assert.equal(await stored(), 40, "a run reads its own pages and ten more of the stretch left over");
+  assert.equal((await cursor()).lastTweetId, String(BASE + 145n), "the watermark moves to the newest post");
   assert.equal((await cursor()).xBacklog?.length, 1, "the unread stretch is kept for the next run");
   const [run] = await sql<{ detail: { truncated: boolean; backlog: number } }[]>`SELECT detail FROM fetch_runs WHERE source_id = ${X_SOURCE} ORDER BY id DESC LIMIT 1`;
   assert.deepEqual([run!.detail.truncated, run!.detail.backlog], [true, 1], "the admin sees the stretch still to read");
@@ -62,7 +62,7 @@ test("an X search longer than one run is read to the old watermark over the next
 
   const second = await collectSource(X_SOURCE, { force: true });
   assert.equal(second.status, "ok");
-  assert.equal(await stored(), 450, "every post between the old watermark and the newest is stored");
+  assert.equal(await stored(), 45, "every post between the old watermark and the newest is stored");
   assert.equal((await cursor()).xBacklog, undefined, "nothing is left to read");
   assert.equal(socialdata.hits(), 20 + 1 + 3, "no page is requested twice");
 });

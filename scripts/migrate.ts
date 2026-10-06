@@ -3,27 +3,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type postgres from "postgres";
-import { FIRST_ONLINE_MIGRATION, indexOnEmptyTable, migrationPlan, type MigrationPlan } from "./migration-safety.ts";
-
-async function sameIndexDefinition(session: postgres.ReservedSql, oid: number, table: string, text: string): Promise<boolean> {
-  await session`BEGIN`;
-  try {
-    await session.unsafe(`CREATE TEMP TABLE migration_expected_table (LIKE ${table}) ON COMMIT DROP`);
-    await session.unsafe(indexOnEmptyTable(text));
-    const [match] = await session<{ matches: boolean }[]>`
-      SELECT a.indisunique = e.indisunique AND a.indnullsnotdistinct = e.indnullsnotdistinct
-        AND a.indnkeyatts = e.indnkeyatts AND ac.relam = ec.relam
-        AND a.indclass = e.indclass AND a.indcollation = e.indcollation AND a.indoption = e.indoption
-        AND ARRAY(SELECT pg_get_indexdef(a.indexrelid, n, false) FROM generate_series(1, a.indnatts) n)
-          = ARRAY(SELECT pg_get_indexdef(e.indexrelid, n, false) FROM generate_series(1, e.indnatts) n)
-        AND pg_get_expr(a.indpred, a.indrelid) IS NOT DISTINCT FROM pg_get_expr(e.indpred, e.indrelid) AS matches
-      FROM pg_index a JOIN pg_class ac ON ac.oid = a.indexrelid
-      CROSS JOIN pg_index e JOIN pg_class ec ON ec.oid = e.indexrelid
-      WHERE a.indexrelid = ${oid} AND e.indexrelid = 'pg_temp.migration_expected_index'::regclass`;
-    await session`COMMIT`;
-    return match.matches;
-  } catch (error) { await session`ROLLBACK`; throw error; }
-}
+import { FIRST_ONLINE_MIGRATION, migrationPlan, type MigrationPlan } from "./migration-safety.ts";
 
 export async function runMigrations(sql: postgres.Sql, root: string): Promise<number> {
   const sqlFiles = (dir: string) => existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".sql")).map((name) => ({ name, file: path.join(dir, name) })) : [];
@@ -58,19 +38,16 @@ export async function runMigrations(sql: postgres.Sql, root: string): Promise<nu
         await session`SELECT set_config('statement_timeout', ${plan.kind === "transaction" ? "10s" : "30min"}, false)`;
         if (plan.kind === "index") {
           // A concurrent build's internal transactions cannot be wrapped in our transaction. Its
-          // retry must verify the existing definition, not just trust IF NOT EXISTS and its name.
+          // retry must not trust IF NOT EXISTS: an interrupted build leaves an invalid index of that name.
           const indexName = plan.index.startsWith('"') ? plan.index.slice(1, -1).replaceAll('""', '"') : plan.index.toLowerCase();
-          const existing = await session`SELECT 1 FROM pg_class WHERE relname = ${indexName}
-            AND relnamespace = (SELECT relnamespace FROM pg_class WHERE oid = to_regclass(${plan.table}))`;
           await session.unsafe(text);
-          const [index] = await session<{ oid: number; indisvalid: boolean; same_table: boolean }[]>`
-            SELECT c.oid, i.indisvalid, i.indrelid = to_regclass(${plan.table}) AS same_table
+          const [index] = await session<{ indisvalid: boolean; same_table: boolean }[]>`
+            SELECT i.indisvalid, i.indrelid = to_regclass(${plan.table}) AS same_table
             FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
             WHERE c.relname = ${indexName}
               AND c.relnamespace = (SELECT relnamespace FROM pg_class WHERE oid = to_regclass(${plan.table}))`;
           if (!index?.indisvalid) throw new Error(`index ${plan.index} is missing or invalid; inspect it and DROP INDEX CONCURRENTLY before retrying`);
           if (!index.same_table) throw new Error(`index ${plan.index} belongs to a different table`);
-          if (existing.length && !await sameIndexDefinition(session, index.oid, plan.table, text)) throw new Error(`index ${plan.index} has a different definition; inspect it before retrying`);
           await session`INSERT INTO schema_migrations (name) VALUES (${name})`;
         } else {
           await session`BEGIN`;

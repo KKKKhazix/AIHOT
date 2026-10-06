@@ -1,6 +1,6 @@
 // Reports: a scheduled run that starts late still writes the issue it was due for, never one whose
-// window is still open; an issue with nothing in it is refused rather than published empty; and an
-// older weekly that froze no summaries shows the cited articles' public summaries.
+// window is still open; a daily whose window nothing was judged in is refused rather than published as a
+// quiet day; and an older weekly that froze no summaries shows the cited articles' public summaries.
 import { editionAt, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
@@ -14,9 +14,8 @@ import { SITE } from "@aihot/site";
 
 const T = tag();
 const SOURCE = `test-reports-${T}`;
-const WEEK = `2098-W${String(10 + Math.floor(Math.random() * 40)).padStart(2, "0")}`;
+const WEEK = "2098-W20";
 after(async () => {
-  await sql`DELETE FROM reports WHERE kind = 'weekly' AND key = ${WEEK}`;
   await stopBoss();
   await closeDb();
 });
@@ -32,9 +31,9 @@ test("a late run writes the issue that was due, not today's", () => {
   assert.equal(dueMonthly(editionAt("monthly", "2027-01-15")), "2026-12");
 });
 
-test("a daily with nothing in its window is refused, not published empty", async () => {
+test("a daily with nothing judged in its window is refused, not published as a quiet day", async () => {
   const date = "2098-01-15";
-  await assert.rejects(composeDaily(date), /no selected items/);
+  await assert.rejects(composeDaily(date), /nothing judged/);
   const [row] = await sql`SELECT 1 FROM reports WHERE kind = 'daily' AND key = ${date}`;
   assert.equal(row, undefined);
 });

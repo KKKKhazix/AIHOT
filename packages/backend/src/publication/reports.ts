@@ -55,7 +55,7 @@ async function availability(ids: string[]): Promise<Map<string, Availability>> {
 }
 
 /** Ids among `ids` that are no longer public. Ids absent from this database stay cited as published. */
-export async function unavailableIds(ids: string[]): Promise<Set<string>> {
+async function unavailableIds(ids: string[]): Promise<Set<string>> {
   const unique = [...new Set(ids.filter(Boolean))];
   if (!unique.length) return new Set();
   const rows = await sql<{ id: string }[]>`

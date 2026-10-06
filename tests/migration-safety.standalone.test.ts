@@ -1,7 +1,7 @@
 // Failure cases for online migrations: table scans under strong locks, unsafe retries, and hidden SQL.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { indexOnEmptyTable, migrationPlan } from "../scripts/migration-safety.ts";
+import { migrationPlan } from "../scripts/migration-safety.ts";
 
 test("online migrations reject writes, blocking indexes and table rewrites before execution", () => {
   for (const statement of [
@@ -56,7 +56,27 @@ test("a table nothing uses can be dropped alone, never with its dependents", () 
     "DROP TABLE IF EXISTS retired_example, articles;",
     "DROP TABLE IF EXISTS retired_example; DROP TABLE IF EXISTS articles;",
     "DROP INDEX articles_idx;",
+  ]) assert.throws(() => migrationPlan(statement), statement);
+});
+
+// Dropping a column or a constraint nothing uses: it must not take dependent objects along (CASCADE),
+// bundle several drops or another action into one statement, or fail where it is already gone.
+test("a column or a constraint nothing uses can be dropped alone, never with its dependents", () => {
+  for (const statement of [
+    "ALTER TABLE articles DROP COLUMN IF EXISTS flag;",
+    "ALTER TABLE public.articles DROP COLUMN IF EXISTS flag;",
+    "ALTER TABLE articles DROP CONSTRAINT IF EXISTS positive;",
+  ]) assert.equal(migrationPlan(statement).kind, "transaction", statement);
+  for (const statement of [
     "ALTER TABLE articles DROP COLUMN flag;",
+    "ALTER TABLE articles DROP flag;",
+    "ALTER TABLE articles DROP COLUMN IF EXISTS flag CASCADE;",
+    "ALTER TABLE articles DROP COLUMN IF EXISTS flag RESTRICT;",
+    "ALTER TABLE articles DROP COLUMN IF EXISTS flag, DROP COLUMN IF EXISTS note;",
+    "ALTER TABLE articles DROP COLUMN IF EXISTS flag, ADD COLUMN note text;",
+    "ALTER TABLE articles DROP COLUMN IF EXISTS flag; ALTER TABLE articles DROP COLUMN IF EXISTS note;",
+    "ALTER TABLE articles DROP CONSTRAINT positive;",
+    "ALTER TABLE articles DROP CONSTRAINT IF EXISTS positive CASCADE;",
   ]) assert.throws(() => migrationPlan(statement), statement);
 });
 
@@ -106,22 +126,4 @@ test("statistics maintenance names one table and its columns without skipping wo
     "ANALYZE publications (selected); SET statement_timeout = 0;",
     "VACUUM ANALYZE publications (selected);",
   ]) assert.throws(() => migrationPlan(statement), statement);
-});
-
-test("index definition checks preserve compound operators, adjacent comments and negative operands", () => {
-  for (const [predicate, normalized] of [
-    ["output->>'scope'='composite'", "output ->> 'scope' = 'composite'"],
-    ["output#>>'{kind,name}'='release'", "output #>> '{kind,name}' = 'release'"],
-    ["output@>'{\"active\":true}'::jsonb", "output @> '{\"active\":true}' :: jsonb"],
-    ["id<=-1", "id <= -1"],
-    ["output->-1 IS NOT NULL", "output -> -1 IS NOT NULL"],
-    ["title!~*'-- /* ->> <= literal'", "title !~* '-- /* ->> <= literal'"],
-    ["tags&&ARRAY['one','two']", "tags && ARRAY [ 'one' , 'two' ]"],
-    ["point<->other_point<10", "point <-> other_point < 10"],
-    ["output->>/* scope */'scope'<>'single' AND id>=-- boundary\n0", "output ->> 'scope' <> 'single' AND id >= 0"],
-  ]) {
-    const source = `CREATE INDEX CONCURRENTLY IF NOT EXISTS example_idx ON example (id) WHERE ${predicate};`;
-    assert.equal(indexOnEmptyTable(source), `CREATE INDEX migration_expected_index ON pg_temp.migration_expected_table ( id ) WHERE ${normalized}`);
-    assert.equal(migrationPlan(source).kind, "index");
-  }
 });

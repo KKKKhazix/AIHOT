@@ -3,8 +3,8 @@ import { IntentLink } from "../components/ui/IntentLink";
 import type { ChangelogRelease, ChangelogResponse } from "@aihot/contracts/site";
 import { SITE } from "@aihot/site";
 import { useLoaderData } from "react-router";
-import { apiGet, edgeTtl, pageExpiresAt } from "../lib/api.server";
-import { cachedLoader } from "../lib/page-reuse";
+import { apiGet, cachedPage } from "../lib/api.server";
+import { pageReuse } from "../lib/page-reuse";
 import { pageMeta } from "../lib/seo";
 import { setChangelogSeen } from "../lib/local-state";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
@@ -14,17 +14,13 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "me", name: "更新日志" };
-export { shouldRevalidate } from "../lib/page-reuse";
-export const clientLoader = cachedLoader<typeof loader>();
-
-export function headers() {
-  return edgeTtl(300);
-}
+export { pageHeaders as headers } from "../lib/api.server";
+export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 type Release = ChangelogRelease;
 
 export async function loader({ request }: { request: Request }) {
-  return { ...await apiGet<ChangelogResponse>("/api/site/changelog", { signal: request.signal }), expiresAt: pageExpiresAt(300) };
+  return cachedPage(300, await apiGet<ChangelogResponse>("/api/site/changelog", { signal: request.signal }));
 }
 
 export function meta() {

@@ -2,8 +2,8 @@ import { useLoaderData } from "react-router";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
 import type { Route } from "./+types/topics";
 import type { TopicSummary, TopicsResponse } from "@aihot/contracts/site";
-import { apiGet, edgeTtl, pageExpiresAt } from "../lib/api.server";
-import { cachedLoader } from "../lib/page-reuse";
+import { apiGet, cachedPage } from "../lib/api.server";
+import { pageReuse } from "../lib/page-reuse";
 import { breadcrumbLd, pageMeta, siteUrl } from "../lib/seo";
 import { relativeTime } from "../lib/format";
 import { IconChevronRight } from "../components/icons";
@@ -13,11 +13,11 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { home: "me", name: "主题" };
-export { shouldRevalidate } from "../lib/page-reuse";
-export const clientLoader = cachedLoader<typeof loader>();
+export { pageHeaders as headers } from "../lib/api.server";
+export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
-  return { ...await apiGet<TopicsResponse>("/api/site/topics", { signal: request.signal }), expiresAt: pageExpiresAt(300) };
+  return cachedPage(300, await apiGet<TopicsResponse>("/api/site/topics", { signal: request.signal }));
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
@@ -50,10 +50,6 @@ export function meta({ loaderData }: Route.MetaArgs) {
       breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "主题", path: "/topics" }]),
     ],
   });
-}
-
-export function headers() {
-  return edgeTtl(300);
 }
 
 /** Phones: a row per topic in a grouped list; wider screens: a card per topic. */

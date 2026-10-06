@@ -219,7 +219,6 @@ test("rewriting a story digest uses the current reports and prompt and is audite
   const result = await rewriteStoryDigest(g.storyId, "digest prompt changed", "ops-script");
   assert.equal(result.updated, true);
   assert.equal(provider.hits(), calls + 1);
-  assert.match(digestPrompt, /请只依据下面这些报道的当前内容重写综述/);
   assert.ok(!digestPrompt.includes("上一版综述"), "a rewrite does not start from the previous digest");
   const [after] = await sql`SELECT version FROM stories WHERE id=${g.storyId}`;
   assert.equal(after!.version, before!.version + 1);

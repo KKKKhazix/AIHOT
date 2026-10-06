@@ -61,7 +61,7 @@ async function sendToChat(chatId: string, msgType: "text" | "post" | "interactiv
 
 // Operations alerts
 // Read by the site owner, not an engineer (operations/alerts.ts): what readers see, whether it heals,
-// what the owner must do, and a last line of detail for the AI or engineer it is forwarded to.
+// and what the owner must do.
 
 /** How urgent: readers affected now, money or the owner's hands today, or a follow-up that can wait. */
 export type Level = "now" | "today" | "later";
@@ -75,15 +75,16 @@ export interface Finding {
   impact?: string;
   /** Whether it heals by itself. */
   heals?: string;
-  /** What has to be done; for the owner's own problems, what they do ("转给 AI" when it is engineering work). */
+  /** What has to be done. */
   action?: string;
-  /** For the AI or engineer it goes to. */
+  /** Facts for whoever looks into it: the 09:00 digest lists them, an alert to the owner never carries them. */
   detail?: string;
   /** When the problem began, when known; otherwise when it was first seen. */
   since?: Date;
   /**
-   * Only the owner can act on it: paying, renewing, a device beside them, a judgement on content. A site's
-   * responder (modules.ts) leaves these to them and takes the rest.
+   * The owner hears of it at once, even where a site's responder (modules.ts) hands problems to someone else
+   * first: only the owner can act (paying, renewing, a device beside them, a judgement on content), or
+   * everything has stopped (the whole site, or the worker that runs the checks).
    */
   owner?: true;
 }
@@ -110,7 +111,7 @@ export function duration(ms: number): string {
 export function formatAlert(f: Finding, since: Date, now: number, repeat = false): { title: string; lines: string[] } {
   const level = f.level === "later" ? "today" : f.level;
   const lasting = now - since.getTime() >= 60_000 ? `（已持续 ${duration(now - since.getTime())}）` : "";
-  const lines = [f.impact && `影响：${f.impact}`, f.heals && `会自己好吗：${f.heals}`, f.action && `你需要：${f.action}`, f.detail && `给 AI 的细节：${f.detail}`];
+  const lines = [f.impact && `影响：${f.impact}`, f.heals && `会自己好吗：${f.heals}`, f.action && `你需要：${f.action}`];
   return { title: `${MARK[level]} ${repeat ? "仍未恢复：" : ""}${f.title}${lasting}`, lines: lines.filter((l): l is string => !!l) };
 }
 

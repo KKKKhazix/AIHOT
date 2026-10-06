@@ -42,7 +42,7 @@ export function useAdminAction() {
           body: body === undefined ? undefined : JSON.stringify(body),
         });
         if (res.status === 401) {
-          window.location.href = `/api/auth/login?return=${encodeURIComponent(window.location.pathname)}`;
+          window.location.href = `/api/auth/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}`;
           return null;
         }
         const text = await res.text();

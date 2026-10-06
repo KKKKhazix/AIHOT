@@ -1,5 +1,5 @@
 // Failure cases: a blocked local DNS holds every image in the lookup thread pool; a proxy resolves
-// a checked name to an internal address; CONNECT loses the original HTTP host or IPv6 authority.
+// a checked name to an internal address; CONNECT loses the original HTTP host.
 // Exercise real HTTP CONNECT requests against a local proxy before fixing.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -49,13 +49,4 @@ test("internal, mixed, reserved, empty and malformed DNS answers never reach the
       assert.equal(tunnels.length, before);
     } finally { await agent.close(); }
   }
-});
-
-test("IPv6-only public destinations keep a bracketed CONNECT authority", async () => {
-  const agent = createEgressProxy(proxyUrl, async () => ["2606:4700:4700::1111"]);
-  try {
-    const res = await fetch("http://image.invalid/photo", { dispatcher: agent });
-    assert.equal(await res.text(), "image.invalid");
-    assert.equal(tunnels.at(-1), "[2606:4700:4700::1111]:80");
-  } finally { await agent.close(); }
 });

@@ -42,7 +42,10 @@ test("API error logs keep database codes and frames without row values or query 
   assert.ok(!output.includes('parameters') && !output.includes('detail'));
 });
 
-test("OAuth rejects a failed exchange without logging the upstream response text", () => {
+// One process for every failed exchange: a refusal whose text names credentials, and token or profile
+// answers that are not JSON (the parser would quote them).
+test("OAuth rejects failed exchanges without logging the upstream response text", () => {
+  const marker = "opaque-secret";
   const output = run(`
     import assert from 'node:assert/strict';
     import { buildApp } from ${JSON.stringify(API_APP_URL)};
@@ -50,17 +53,23 @@ test("OAuth rejects a failed exchange without logging the upstream response text
     process.env.FEISHU_LOGIN_APP_ID = 'synthetic-app';
     process.env.FEISHU_LOGIN_APP_SECRET = 'synthetic-secret';
     const app = await buildApp();
-    globalThis.fetch = async () => Response.json({error:${JSON.stringify(MARKER)}}, {status:400});
-    const redirect = loginRedirect('/admin');
-    const state = new URL(redirect.url).searchParams.get('state');
-    const response = await app.inject({url:'/api/auth/callback?'+new URLSearchParams({state, code:'synthetic'}),
-      headers:{cookie:STATE_COOKIE+'='+encodeURIComponent(redirect.stateCookie)}});
-    assert.equal(response.statusCode,403);
-    assert.ok(!response.body.includes(${JSON.stringify(MARKER)}));
+    const refused = async () => Response.json({error:${JSON.stringify(MARKER)}}, {status:400});
+    const broken = (path) => async input => String(input).endsWith(path)
+      ? new Response(${JSON.stringify(marker)}, {status:502}) : Response.json({access_token:'synthetic-token'});
+    for (const upstream of [refused, broken('/token'), broken('/userinfo')]) {
+      globalThis.fetch = upstream;
+      const redirect = loginRedirect('/admin');
+      const state = new URL(redirect.url).searchParams.get('state');
+      const response = await app.inject({url:'/api/auth/callback?'+new URLSearchParams({state,code:'synthetic'}),
+        headers:{cookie:STATE_COOKIE+'='+encodeURIComponent(redirect.stateCookie)}});
+      assert.equal(response.statusCode,403);
+      assert.ok(!response.body.includes(${JSON.stringify(MARKER)}) && !response.body.includes(${JSON.stringify(marker)}));
+    }
     await app.close();
   `);
-  assert.ok(!output.includes(MARKER), "the identity provider's text is not safe log data");
+  assert.ok(!output.includes(MARKER) && !output.includes(marker), "the identity provider's text is not safe log data");
   assert.match(output, /400/, "the upstream HTTP status remains diagnosable");
+  assert.match(output, /502/);
 });
 
 test("the queue's PostgreSQL driver also keeps values out of worker error logs", () => {
@@ -77,29 +86,4 @@ test("the queue's PostgreSQL driver also keeps values out of worker error logs",
   `);
   assert.ok(!output.includes(MARKER));
   assert.match(output, /22P02/);
-});
-
-test("malformed OAuth token and profile responses do not leak JSON-parser excerpts", () => {
-  const marker = "opaque-secret";
-  const output = run(`
-    import assert from 'node:assert/strict';
-    import { buildApp } from ${JSON.stringify(API_APP_URL)};
-    import { loginRedirect, STATE_COOKIE } from '@aihot/backend/admin/auth';
-    process.env.FEISHU_LOGIN_APP_ID = 'synthetic-app';
-    process.env.FEISHU_LOGIN_APP_SECRET = 'synthetic-secret';
-    const app = await buildApp();
-    for (const broken of ['token', 'userinfo']) {
-      globalThis.fetch = async input => String(input).endsWith('/'+broken)
-        ? new Response(${JSON.stringify(marker)}, {status:502}) : Response.json({access_token:'synthetic-token'});
-      const redirect = loginRedirect('/admin');
-      const state = new URL(redirect.url).searchParams.get('state');
-      const response = await app.inject({url:'/api/auth/callback?'+new URLSearchParams({state,code:'synthetic'}),
-        headers:{cookie:STATE_COOKIE+'='+encodeURIComponent(redirect.stateCookie)}});
-      assert.equal(response.statusCode,403);
-      assert.ok(!response.body.includes(${JSON.stringify(marker)}));
-    }
-    await app.close();
-  `);
-  assert.ok(!output.includes(marker));
-  assert.match(output, /502/);
 });

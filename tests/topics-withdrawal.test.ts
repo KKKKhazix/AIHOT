@@ -52,7 +52,7 @@ test("a withdrawn report leaves the topic page and the index while the topic ind
 
   await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${newer}`;
   const page = await loadTopicPage("minimax", 1);
-  assert.notEqual(page?.topic.latest?.title, `minimax 消息 2`, "the page's last update");
+  assert.equal(page?.topic.latest?.title, `minimax 消息 1`, "the page's last update");
   assert.equal((await listTopicSummaries()).topics.find((t) => t.slug === "minimax")?.latest?.title, `minimax 消息 1`, "the index page's headline");
   assert.deepEqual(page?.items.map((i) => i.id), [older], "the list (rows were always checked again)");
 });

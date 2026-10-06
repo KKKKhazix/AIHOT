@@ -28,7 +28,7 @@ const LINK = "inline-flex min-h-7 items-center gap-0.5 font-medium transition-co
 /** What comes before `noun` at the end of `phrase` ("往期 AI " of "往期 AI 周报"), so the kind's name is its own text. */
 const before = (phrase: string, noun: string) => phrase.slice(0, -noun.length);
 
-function Masthead({ report, index }: { report: ReportDetail; index: ReportNavigationEntry[] }) {
+function Masthead({ report, index, quiet }: { report: ReportDetail; index: ReportNavigationEntry[]; quiet: boolean }) {
   const mark = dateMark(report.kind, report.key);
   const label = KIND_LABEL[report.kind];
   return (
@@ -64,15 +64,20 @@ function Masthead({ report, index }: { report: ReportDetail; index: ReportNaviga
         </div>
       </div>
 
-      <div className="flex flex-wrap items-baseline gap-x-8 gap-y-1.5 border-y border-line-strong py-3">
-        {metricItems(report.metrics).map((m) => (
-          <span key={m.unit} className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
-            <span className="num text-[22px] font-bold leading-none tracking-[-0.02em] text-ink @[880px]:text-[24px]">{m.value}</span>
-            <span className="text-[12px] text-ink-4">{m.unit}</span>
-          </span>
-        ))}
-        <span className="ml-auto whitespace-nowrap text-[12px] text-ink-4">约 {report.readingMinutes} 分钟读完</span>
-      </div>
+      {/* A quiet day has no figures to set and nothing to read through: the masthead just closes. */}
+      {quiet ? (
+        <div aria-hidden="true" className="border-t border-line-strong" />
+      ) : (
+        <div className="flex flex-wrap items-baseline gap-x-8 gap-y-1.5 border-y border-line-strong py-3">
+          {metricItems(report.metrics).map((m) => (
+            <span key={m.unit} className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+              <span className="num text-[22px] font-bold leading-none tracking-[-0.02em] text-ink @[880px]:text-[24px]">{m.value}</span>
+              <span className="text-[12px] text-ink-4">{m.unit}</span>
+            </span>
+          ))}
+          <span className="ml-auto whitespace-nowrap text-[12px] text-ink-4">约 {report.readingMinutes} 分钟读完</span>
+        </div>
+      )}
     </header>
   );
 }
@@ -365,6 +370,22 @@ function FrontPage({ report, pages, leadStory, count }: { report: ReportDetail; 
   );
 }
 
+/**
+ * The front page of a day with nothing new: the lead alone across the page, in the lead's own type,
+ * saying so and naming the hours it covers. No highlights, pages or index follow.
+ */
+function QuietFront({ lead }: { lead: NonNullable<ReportDetail["lead"]> }) {
+  return (
+    <section aria-label="头版" className="pt-10 @[880px]:pt-16">
+      <Kicker>头版</Kicker>
+      <h2 className="mt-4 text-[32px] font-black leading-[1.28] tracking-[-0.03em] text-ink [text-wrap:balance] @[520px]:text-[40px] @[1040px]:text-[48px] @[1040px]:leading-[1.22]">
+        {lead.title}
+      </h2>
+      {lead.leadParagraph && <p className="mt-6 max-w-[46em] text-[16.5px] leading-[1.9] text-ink-2 @[880px]:mt-7 @[880px]:text-[17.5px]">{lead.leadParagraph}</p>}
+    </section>
+  );
+}
+
 /** A page of the report: its number in the accent beside its name. */
 export function SectionPage({ id, no, label, children }: { id: string; no?: number; label: string; children: ReactNode }) {
   return (
@@ -450,11 +471,13 @@ export function ReportPaper({ report, index }: { report: ReportDetail; index: Re
   const leadStory = leadStoryOf(report);
   const pages = pagesOf(report, leadStory);
   const count = pages.reduce((sum, p) => sum + p.items.length, 0) + (leadStory ? 1 : 0);
+  // Only a daily comes out with nothing in it: a day the editors judged with nothing new (REPORTS.quiet).
+  const quiet = count === 0 && report.flashes.length === 0;
   return (
     <article className="@container">
-      <Masthead report={report} index={index} />
-      {count === 0 && report.flashes.length === 0 ? (
-        <p className="py-16 text-center text-[14px] text-ink-4">本期没有入选内容。</p>
+      <Masthead report={report} index={index} quiet={quiet} />
+      {quiet ? (
+        report.lead && <QuietFront lead={report.lead} />
       ) : (
         <>
           {!daily && leadStory && report.overview && <Overview text={report.overview} />}

@@ -10,11 +10,14 @@ import { sql, type Db } from "../db.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { shutdownSignal } from "../lib/shutdown.ts";
 
+/** The text of a spent budget's error; with `%` for both parts it is the LIKE pattern that finds every saved one. */
+export const budgetMessage = (service: string, window: string) => `Budget for ${service} exhausted (${window})`;
+
 export class BudgetExceededError extends Error {
   readonly service: string;
   readonly retryAfterSeconds: number;
   constructor(service: string, window: string, retryAfterSeconds: number) {
-    super(`Budget for ${service} exhausted (${window})`);
+    super(budgetMessage(service, window));
     this.service = service;
     this.retryAfterSeconds = retryAfterSeconds;
   }

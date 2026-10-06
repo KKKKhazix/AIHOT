@@ -6,7 +6,7 @@ import { newShortId } from "../lib/ids.ts";
 import { publicCategoryCondition, API_ITEM_COLUMNS, API_ITEM_FROM, type ApiItemRow } from "./items.ts";
 import { listedCondition, seatedCondition } from "./scope.ts";
 import { publicMatchCondition, searchTerms, withSearchCapacity } from "./pool.ts";
-import { cachedByKey, SHARED_ONLY } from "../lib/cache.ts";
+import { sharedSearch } from "../lib/cache.ts";
 import { v1Payload, type V1ItemPayload } from "./publish.ts";
 
 export interface V1ItemsQuery {
@@ -34,15 +34,11 @@ export function rowToV1(row: ApiItemRow): V1ItemPayload {
   });
 }
 
-const sharedSearch = cachedByKey(
+/** Search callers across HTTP and tools share one read. */
+export const v1Items = sharedSearch(
   (q: V1ItemsQuery) => JSON.stringify([q.mode, q.window, q.by, q.category, q.q, q.limit, q.cursor]),
-  (q) => queryItems(q, new Date()), { ...SHARED_ONLY, maxKeys: 200 },
+  queryItems, (q) => !!q.q?.trim(),
 );
-
-/** Search callers across HTTP and tools share unfinished work, with no retained results. */
-export function v1Items(query: V1ItemsQuery, now?: Date): Promise<V1ItemsResult> {
-  return query.q?.trim() && !now ? sharedSearch(query) : queryItems(query, now ?? new Date());
-}
 
 async function queryItems(query: V1ItemsQuery, now: Date): Promise<V1ItemsResult> {
   const windowMs = query.window === "24h" ? 86400000 : 7 * 86400000;

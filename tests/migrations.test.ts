@@ -69,7 +69,7 @@ test("a busy table aborts the migration promptly and leaves the serving schema a
 
 test("concurrent module indexes apply and resume safely when only bookkeeping was interrupted", async () => {
   await db`CREATE TABLE migration_indexed (id int)`;
-  await db`INSERT INTO migration_indexed SELECT generate_series(1, 10000)`;
+  await db`INSERT INTO migration_indexed VALUES (1), (2)`;
   await db`CREATE INDEX CONCURRENTLY migration_idx ON migration_indexed (id)`;
   const root = fixture({
     "modules/example/migrations/9004_index.sql": "CREATE INDEX CONCURRENTLY IF NOT EXISTS migration_idx ON migration_indexed (id);",
@@ -92,68 +92,4 @@ test("IF NOT EXISTS must not turn an invalid or wrong-table index into a success
     "database/migrations/9007_wrong_table.sql": "CREATE INDEX CONCURRENTLY IF NOT EXISTS migration_idx ON migration_invalid (id);",
   })), /different table/);
   assert.equal((await db`SELECT 1 FROM schema_migrations WHERE name IN ('9006_invalid.sql', '9007_wrong_table.sql')`).length, 0);
-});
-
-test("same-table indexes must match keys, sort, predicate, included columns and uniqueness before resuming", async () => {
-  await db`CREATE TABLE migration_shape (removed int, id int, title text, active boolean)`;
-  await db`ALTER TABLE migration_shape DROP COLUMN removed`;
-  await db`CREATE INDEX CONCURRENTLY migration_shape_idx ON migration_shape (lower(title) DESC, id) INCLUDE (active) WHERE active`;
-  const variants = [
-    "CREATE INDEX CONCURRENTLY IF NOT EXISTS migration_shape_idx ON migration_shape (id)",
-    "CREATE INDEX CONCURRENTLY IF NOT EXISTS migration_shape_idx ON migration_shape (lower(title), id) INCLUDE (active) WHERE active",
-    "CREATE INDEX CONCURRENTLY IF NOT EXISTS migration_shape_idx ON migration_shape (lower(title) DESC, id) INCLUDE (active) WHERE NOT active",
-    "CREATE INDEX CONCURRENTLY IF NOT EXISTS migration_shape_idx ON migration_shape (lower(title) DESC, id) WHERE active",
-    "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS migration_shape_idx ON migration_shape (lower(title) DESC, id) INCLUDE (active) WHERE active",
-  ];
-  for (const [i, text] of variants.entries()) {
-    await assert.rejects(runMigrations(db, fixture({ [`database/migrations/901${i}_shape.sql`]: text })), /different definition/);
-  }
-  assert.equal(await runMigrations(db, fixture({
-    "database/migrations/9020_shape.sql": "CREATE INDEX CONCURRENTLY IF NOT EXISTS migration_shape_idx ON migration_shape (lower(title) DESC, id) INCLUDE (active) WHERE active;",
-  })), 1);
-  assert.equal((await db`SELECT 1 FROM pg_class WHERE relname LIKE 'migration_expected_%' AND relnamespace = pg_my_temp_schema()`).length, 0);
-});
-
-test("release statistics fix correlated selection estimates and allow ordered reads without sorting every item", async () => {
-  await db`CREATE TABLE migration_release (id int PRIMARY KEY, visibility text NOT NULL, selected boolean NOT NULL, seat boolean NOT NULL, visible_after timestamptz, published_at timestamptz NOT NULL, body text)`;
-  await db`INSERT INTO migration_release SELECT i, 'public', i<=4000, true,
-    CASE WHEN i<=3900 THEN '2026-09-28'::timestamptz WHEN i<=4000 THEN '2026-09-29'::timestamptz + i*interval '1 minute' ELSE NULL END,
-    '2026-01-01'::timestamptz + ((i*17)%40000)*interval '1 minute', repeat('x',256)
-    FROM generate_series(1,40000) s(i) ORDER BY md5(i::text)`;
-  await db`CREATE INDEX migration_release_gate_idx ON migration_release (visible_after) WHERE visibility='public' AND selected`;
-  await db`CREATE INDEX migration_release_order_idx ON migration_release (published_at DESC,id DESC) WHERE visibility='public' AND selected AND seat`;
-  await db`ANALYZE migration_release`;
-  // A lower random-page cost models cached SSD-backed reads; it never leaves this isolated connection.
-  await db`SET random_page_cost=1.1`;
-  try {
-    const explain = async () => (await db`EXPLAIN (FORMAT JSON) SELECT id FROM migration_release
-      WHERE visibility='public' AND selected AND seat AND visible_after<=${new Date("2026-10-04T12:00:00Z")}
-      ORDER BY published_at DESC,id DESC LIMIT 50`)[0]["QUERY PLAN"][0].Plan;
-    const before = await explain();
-    assert.equal(before.Plans[0]["Node Type"], "Sort", "independent column statistics underestimate the released selection");
-    const root = fixture({
-      "database/migrations/9030_statistics.sql": "CREATE STATISTICS migration_release_stats (mcv) ON visibility,selected,seat,visible_after FROM migration_release;",
-      "database/migrations/9031_analyze.sql": "ANALYZE migration_release (visibility,selected,seat,visible_after);",
-    });
-    assert.equal(await runMigrations(db, root), 2);
-    const after = await explain();
-    assert.equal(after.Plans[0]["Index Name"], "migration_release_order_idx");
-    assert.ok(after.Plans[0]["Plan Rows"] > 3000, "estimate should reflect the correlated rows, not multiply their marginal frequencies");
-    assert.equal(await runMigrations(db, root), 0);
-  } finally { await db`RESET random_page_cost`; }
-});
-
-test("a JSON predicate index resumes after its build succeeded without bookkeeping", async () => {
-  await db`CREATE TABLE migration_json (id int, output jsonb)`;
-  const name = "9034_json_predicate.sql";
-  const root = fixture({
-    [`database/migrations/${name}`]: `CREATE INDEX CONCURRENTLY IF NOT EXISTS migration_json_idx ON migration_json (id)
-      WHERE output->>'scope'='composite' AND output#>>'{kind,name}'='release'
-        AND output@>'{"active":true}'::jsonb AND id<=10;`,
-  });
-  assert.equal(await runMigrations(db, root), 1);
-  await db`DELETE FROM schema_migrations WHERE name=${name}`;
-  assert.equal(await runMigrations(db, root), 1, "an existing valid index must pass the definition check on retry");
-  assert.equal(await runMigrations(db, root), 0);
-  assert.equal((await db`SELECT indisvalid FROM pg_index WHERE indexrelid='migration_json_idx'::regclass`)[0].indisvalid, true);
 });

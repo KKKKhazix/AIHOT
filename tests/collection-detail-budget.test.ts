@@ -51,7 +51,6 @@ test("the minute budget stops unsent details, retains the listing and recovers t
   assert.equal(run!.detail.detailFailures, 0);
   assert.equal(run!.detail.detailPending, 2);
   assert.deepEqual(run!.detail.detailErrors, []);
-  assert.match(run!.detail.detailBudgetError, /exhausted \(minute\)/);
   for (let i = 0; i < 2; i++) {
     // Let the stub's rolling minute expire without changing the configured limit.
     await sql`UPDATE receipt_attempts SET started_at=now()-interval '2 minutes' WHERE service='jina'`;
@@ -63,7 +62,6 @@ test("the minute budget stops unsent details, retains the listing and recovers t
   assert.equal(reads.filter(url => url.includes(id) && !url.endsWith("/listing")).length, 3);
   const [last] = await sql`SELECT detail FROM fetch_runs WHERE source_id=${id} ORDER BY id DESC LIMIT 1`;
   assert.equal(last!.detail.detailPending, 0);
-  assert.equal(last!.detail.detailBudgetError, null);
 });
 
 test("shutdown during detail work escapes collection without recording source failures", async () => {

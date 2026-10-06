@@ -3,15 +3,12 @@
 // issue older than the index losing its number; the calendar marking that issue as not published; the
 // daily archive counting 400 issues beside a masthead that numbers 405.
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
-import { once } from "node:events";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
-import { fileURLToPath } from "node:url";
 import type { ReportDetail, ReportKind, ReportNavigationEntry } from "@aihot/contracts/site";
 import { isoWeekLabel } from "@aihot/contracts/time";
 import { issueNumber, periodGrid } from "../app/features/report/format.ts";
+import { startWebServer, type WebServer } from "./web-server.ts";
 
 const kinds: ReportKind[] = ["daily", "weekly", "monthly"];
 const keys = Object.fromEntries(kinds.map((kind) => [kind, Array.from({ length: 405 }, (_, i) => {
@@ -27,9 +24,7 @@ function report(kind: ReportKind, key: string): ReportDetail {
     lead: null, leadItemId: null, overview: null, highlights: [], sections: [], flashes: [], cover: null, metrics: {}, readingMinutes: 1, prev: null, next: null,
   };
 }
-let web: ChildProcess;
-let origin: string;
-let logs = "";
+let web: WebServer;
 const api = createServer((req, res) => {
   const path = new URL(req.url!, "http://api.local").pathname;
   res.setHeader("Content-Type", "application/json");
@@ -47,37 +42,8 @@ const api = createServer((req, res) => {
   res.end(JSON.stringify({ code: "not_found" }));
 });
 
-before(async () => {
-  api.listen(0, "127.0.0.1");
-  await once(api, "listening");
-  web = spawn(process.execPath, [fileURLToPath(new URL("../server.ts", import.meta.url))], {
-    env: { ...process.env, WEB_PORT: "0", API_BASE_URL: `http://127.0.0.1:${(api.address() as AddressInfo).port}` },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`web did not start: ${logs}`)), 15_000);
-    web.on("exit", () => { clearTimeout(timeout); reject(new Error(`web exited: ${logs}`)); });
-    web.stderr!.on("data", (chunk) => { logs += String(chunk); });
-    web.stdout!.on("data", (chunk) => {
-      logs += String(chunk);
-      const match = logs.match(/"msg":"web started","port":(\d+)/);
-      if (match) {
-        origin = `http://127.0.0.1:${match[1]}`;
-        clearTimeout(timeout);
-        resolve();
-      }
-    });
-  });
-});
-
-after(async () => {
-  if (web && web.exitCode === null) {
-    web.kill("SIGTERM");
-    await once(web, "exit");
-  }
-  api.closeAllConnections();
-  await new Promise<void>((resolve) => api.close(() => resolve()));
-});
+before(async () => { web = await startWebServer(api); });
+after(() => web.stop());
 
 /** The masthead's visible text (the archive's has the same frame). */
 function masthead(html: string): string {
@@ -88,8 +54,8 @@ function masthead(html: string): string {
 
 for (const kind of kinds) {
   test(`the ${kind} masthead numbers the newest of 405 issues 405, not the navigation's 400`, async () => {
-    const response = await fetch(`${origin}/${kind}`);
-    assert.equal(response.status, 200, logs);
+    const response = await fetch(`${web.origin}/${kind}`);
+    assert.equal(response.status, 200, web.logs());
     const visible = masthead(await response.text());
     assert.match(visible, /第\s*405\s*期/);
     assert.doesNotMatch(visible, /第\s*400\s*期/);
@@ -98,8 +64,8 @@ for (const kind of kinds) {
   test(`the oldest ${kind} issue, outside the navigation, keeps its number`, async () => {
     const first = keys[kind][0]!;
     assert.ok(!index(kind).some((entry) => entry.key === first));
-    const response = await fetch(`${origin}/${kind}/${first}`);
-    assert.equal(response.status, 200, logs);
+    const response = await fetch(`${web.origin}/${kind}/${first}`);
+    assert.equal(response.status, 200, web.logs());
     assert.match(masthead(await response.text()), /第\s*1\s*期/);
   });
 
@@ -118,7 +84,7 @@ for (const kind of kinds) {
 }
 
 test("the daily archive counts every issue, as the masthead numbers them", async () => {
-  const response = await fetch(`${origin}/daily/archive`);
-  assert.equal(response.status, 200, logs);
+  const response = await fetch(`${web.origin}/daily/archive`);
+  assert.equal(response.status, 200, web.logs());
   assert.match(masthead(await response.text()), /共\s*405\s*期/);
 });

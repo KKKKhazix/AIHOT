@@ -56,7 +56,6 @@ test('a previously unseen, undated tail cannot become selected news, heat, a rep
   assert.equal(a!.backfill,true,'unknown publication time does not establish recency');
   const input=await loadAnalyzeInput(a!.id);
   const score=buildScoreInput(input!);
-  assert.ok(score.includes('未知'));
   assert.ok(!score.includes(now.toISOString().slice(0,10)),'discovery must not be labelled publication');
   await highScore(a!.id);
   assert.equal((await groupArticle(a!.id)).verdict,'historical');

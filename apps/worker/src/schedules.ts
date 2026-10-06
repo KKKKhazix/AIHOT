@@ -41,7 +41,7 @@ const ENGINE_SCHEDULES: Scheduled[] = [
   { name: "ops.recover", cron: "*/10 * * * *", run: () => recoverStaleWork() },
   { name: "ops.alerts", cron: "*/10 * * * *", run: () => checkAlerts() },
   // One message with other follow-ups and their actual impact (nothing when there are none); a site's
-  // responder takes the follow-ups instead.
+  // responder supplies its own notification policy instead.
   { name: "ops.digest", cron: "0 9 * * *", missed: "once", run: () => sendDigest(), when: () => !responder() },
   // Feedback that did not reach the internal Feishu chat when it was sent (off with FEISHU_INTERNAL_ENABLED).
   { name: "feedback.forward", cron: "*/10 * * * *", run: () => forwardPendingFeedback() },

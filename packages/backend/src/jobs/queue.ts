@@ -83,7 +83,35 @@ export const STOP_TIMEOUT_MS = 195_000;
 
 export async function stopBoss(): Promise<void> {
   shutdownSignal.abort();
-  if (boss) await boss.stop({ graceful: true, timeout: STOP_TIMEOUT_MS });
+  if (boss) {
+    const draining = boss;
+    const started = performance.now();
+    const report = (phase: "start" | "waiting" | "complete") => {
+      // Read this process's workers, including scheduled/internal work. Never log payloads or errors:
+      // they can contain credentials and reader data. Multiple workers on one queue count together.
+      const queues = new Map<string, { queue: string; count: number; oldestMs: number }>();
+      const now = Date.now();
+      for (const work of draining.getWipData({ includeInternal: true })) {
+        if (!work.count) continue;
+        const item = queues.get(work.name) ?? { queue: work.name, count: 0, oldestMs: 0 };
+        item.count += work.count;
+        item.oldestMs = Math.max(item.oldestMs, work.lastJobStartedOn === null ? 0 : Math.max(0, now - work.lastJobStartedOn));
+        queues.set(work.name, item);
+      }
+      const jobs = [...queues.values()].sort((a, b) => a.queue.localeCompare(b.queue));
+      console.log(JSON.stringify({ level: "info", msg: "queue drain", phase,
+        elapsedMs: Math.round(performance.now() - started), count: jobs.reduce((sum, job) => sum + job.count, 0), jobs }));
+    };
+    report("start");
+    const progress = setInterval(() => report("waiting"), 10_000);
+    progress.unref();
+    try {
+      await draining.stop({ graceful: true, timeout: STOP_TIMEOUT_MS });
+      report("complete");
+    } finally {
+      clearInterval(progress);
+    }
+  }
   boss = null;
   starting = null;
 }

@@ -54,6 +54,12 @@ async function article(name: string) {
     bodyStatus: "ok", via: "fetch", backfill: "test fixture", publishedAt: new Date() })).articleId;
 }
 
+/** Wakes this process's analysis workers to fetch now, instead of waiting out their polling interval. */
+async function wakeAnalysis() {
+  const boss = await getBoss();
+  for (const worker of boss.getWipData()) if (worker.name === QUEUES.analyze) boss.notifyWorker(worker.id);
+}
+
 async function waitFor(check: () => Promise<boolean>) {
   const deadline = Date.now() + 15_000;
   while (!(await check())) {
@@ -136,10 +142,12 @@ test("a temporary provider failure resumes the manual evaluation instead of rein
   original = false;
   await registerContentJobs(await getBoss());
   const result = await rerun(id, "analyze", `retry-${T}`, "test");
+  await wakeAnalysis();
   await waitFor(async () => (await sql`SELECT state FROM pgboss.job WHERE id=${result!.jobId}`)[0]?.state === "completed");
   assert.equal((await sql`SELECT processing_attempts FROM articles WHERE id=${id}`)[0]!.processing_attempts, 1);
   await sql`UPDATE articles SET processing_retry_at=now()-interval '1 minute',created_at=now()-interval '10 minutes' WHERE id=${id}`;
   await sweepUnprocessed();
+  await wakeAnalysis();
   await waitFor(async () => (await sql`SELECT 1 FROM pgboss.job WHERE name=${QUEUES.analyze} AND data->>'articleId'=${id} AND state<'completed'`).length === 0);
   assert.equal((await sql`SELECT processing_state FROM articles WHERE id=${id}`)[0]!.processing_state, "analyzed");
   assert.equal((await sql`SELECT selection_candidate FROM publications WHERE article_id=${id}`)[0]!.selection_candidate, true);
@@ -155,6 +163,7 @@ test("a late refusal for an old revision preserves the new revision's completed 
   const release = gate();
   heldFailure = { input: `revision-race`, asked, release };
   const jobId = await queueProcessing(id);
+  await wakeAnalysis();
   await asked.promise;
   try {
     await upsertMaterial({ sourceId: SOURCE, url: `https://example.org/${T}/revision-race`, title: `Corrected ${T}`,

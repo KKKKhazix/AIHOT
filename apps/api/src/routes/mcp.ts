@@ -12,6 +12,7 @@ import { MCP_TOOL_NAMES as T, mcpToolName } from "@aihot/contracts/mcp";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { isValidDate } from "@aihot/contracts/time";
 import { config } from "@aihot/backend/config";
+import { cachedByKey } from "@aihot/backend/lib/cache";
 import { logError } from "@aihot/backend/lib/log-error";
 import { dailyAnswer, hotAnswer, latestAnswer, periodAnswer, searchAnswer, searchItems, storyAnswer } from "@aihot/backend/publication/agent";
 import { v1Items } from "@aihot/backend/publication/v1";
@@ -104,16 +105,12 @@ const MONTHLY_INPUT = z.strictObject({
 
 // Agents repeat the same calls. Answers are kept 30 s, within the minute the v1 HTTP answers are
 // shared for; a failed read is not kept.
-const results = new Map<string, { at: number; value: Promise<unknown> }>();
-function recent<T>(key: string, load: () => Promise<T>): Promise<T> {
-  const hit = results.get(key);
-  if (hit && Date.now() - hit.at < 30_000) return hit.value as Promise<T>;
-  const value = load();
-  value.catch(() => results.delete(key));
-  if (results.size >= 500) results.delete(results.keys().next().value!);
-  results.set(key, { at: Date.now(), value });
-  return value;
-}
+const answers = cachedByKey(
+  ({ key }: { key: string; load: () => Promise<unknown> }) => key,
+  ({ load }) => load(),
+  { freshMs: 30_000, maxStaleMs: 30_000, maxKeys: 500 },
+);
+const recent = <T>(key: string, load: () => Promise<T>) => answers({ key, load }) as Promise<T>;
 
 /** The server: every tool, and with a module's reminder for the person behind the request at connect and after every answer. */
 export function buildMcpServer(notice: McpNotice | null = null): McpServer {
@@ -302,8 +299,7 @@ function respond(reply: FastifyReply, res: Response) {
   });
   reply.header("Cache-Control", "no-store");
   if (!res.body) return reply.send();
-  // Streamed as it comes: a 2026-07-28 client's subscriptions/listen is a long-lived SSE stream (an
-  // acknowledgement, then a keepalive every 15 s), which must reach it unbuffered by any proxy in between.
+  // Streamed as it comes: an SSE answer reaches the client unbuffered by any proxy in between.
   if (res.headers.get("content-type")?.startsWith("text/event-stream")) reply.header("X-Accel-Buffering", "no");
   return reply.send(res.body);
 }
@@ -312,32 +308,14 @@ export function registerMcp(app: FastifyInstance) {
   const hosts = serverModules().flatMap((m) => m.hosts ?? []);
   const allowed = allowedHosts(hosts);
   const options = { legacy: "stateless", maxRequestBodySize: MAX_REQUEST_BODY_SIZE } as const;
-  // One pair of SDK lifetimes per reminder: ordinary requests and the shared subscription router.
-  // Sharing the router preserves its capacity limit and avoids rebuilding capabilities per listener.
-  const handlers = new Map<string, { requests: McpHttpHandler; subscriptions?: McpHttpHandler }>();
-  let retiring = false;
+  // One handler per reminder (none, or each distinct one a module gives), made when first needed.
+  const handlers = new Map<string, McpHttpHandler>();
   const handlerFor = (notice: McpNotice | null) => {
     const key = notice ? JSON.stringify(notice) : "";
     let handler = handlers.get(key);
-    if (!handler) handlers.set(key, (handler = { requests: createMcpHandler(() => buildMcpServer(notice), options) }));
+    if (!handler) handlers.set(key, (handler = createMcpHandler(() => buildMcpServer(notice), options)));
     return handler;
   };
-  handlerFor(null);
-  const drainSubscriptions = async () => {
-    retiring = true;
-    await Promise.all([...handlers.values()].map(channel => channel.subscriptions?.close()));
-  };
-  const retire = () => { drainSubscriptions().catch(err => app.log.error({ err }, "MCP subscription retirement failed")); };
-  // End indefinite streams before the proxy retires, while ordinary requests can still finish
-  // uploading their bodies and reach this process. The signal is local to the deployment host.
-  app.addHook("onListen", async () => { process.on("SIGURG", retire); });
-  app.addHook("onClose", async () => { process.off("SIGURG", retire); });
-  // SSE subscriptions otherwise keep Fastify's server.close waiting until the process is killed.
-  // preClose runs before HTTP draining; onClose would be too late for a never-ending stream.
-  app.addHook("preClose", async () => {
-    await drainSubscriptions();
-    for (const channel of handlers.values()) await channel.requests.close();
-  });
 
   const serve = async (req: FastifyRequest, reply: FastifyReply) => {
     reply.header("Cache-Control", "no-store");
@@ -354,6 +332,13 @@ export function registerMcp(app: FastifyInstance) {
       return reply.code(400).type("application/json").send({ jsonrpc: "2.0", error: { code: -32600, message: "Batch requests are not supported" }, id: null });
     }
     for (const m of serverModules()) m.on?.exitServed?.("mcp", req);
+    // Nothing is ever pushed, so there is nothing to listen for: subscriptions/listen gets the answer
+    // the protocol (and the SDK, for every other one) gives a method the server does not implement.
+    const message = req.method === "POST" && req.body && typeof req.body === "object" ? req.body as { id?: unknown; method?: unknown } : null;
+    if (message?.method === "subscriptions/listen") {
+      const id = typeof message.id === "string" || typeof message.id === "number" ? message.id : null;
+      return reply.code(404).type("application/json").send({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found" } });
+    }
 
     const headers = new Headers();
     for (const [k, v] of Object.entries(req.headers)) {
@@ -361,35 +346,13 @@ export function registerMcp(app: FastifyInstance) {
       headers.set(k, Array.isArray(v) ? v.join(", ") : String(v));
     }
     const body = req.method === "POST" ? (typeof req.body === "string" ? req.body : JSON.stringify(req.body ?? null)) : undefined;
-    // A client that goes away ends the exchange in the SDK too (a subscriptions/listen stream is open
-    // until then).
+    // A client that goes away ends the exchange in the SDK too.
     const gone = new AbortController();
     reply.raw.once("close", () => gone.abort());
     const request = new Request(`${config.siteUrl}${(req.raw.url ?? "/api/mcp")}`, { method: req.method, headers, body, signal: gone.signal });
     const parsed = req.method === "POST" && typeof req.body === "object" ? { parsedBody: req.body } : undefined;
-    const notice = requestNotice("mcp", req);
-    const channel = handlerFor(notice);
-    const listening = req.method === "POST" && req.body && typeof req.body === "object" &&
-      (req.body as { method?: unknown }).method === "subscriptions/listen";
-    // Subscriptions have their own SDK lifetime but share the same notification bus. Closing them
-    // emits the protocol's complete result without cancelling an ordinary call on that bus.
-    const createSubscription = () => createMcpHandler(() => buildMcpServer(notice), { ...options, bus: channel.requests.bus });
-    const handler = listening
-      ? (retiring ? createSubscription() : (channel.subscriptions ??= createSubscription()))
-      : channel.requests;
-    if (listening && retiring) {
-      // A late body gets a short-lived channel which completes immediately. Active listeners are
-      // cancelled individually by their request signal; never close their shared router for one peer.
-      reply.raw.once("close", () => {
-        handler.close().catch(err => req.log.error({ err }, "MCP subscription cleanup failed"));
-      });
-    }
     try {
-      const response = await requestLog.run(req.log, () => handler.fetch(request, parsed));
-      // Covers a listen body accepted by the old proxy but parsed after retirement, or a signal
-      // during the SDK's asynchronous initialization. Neither can start another indefinite stream.
-      if (listening && retiring) await handler.close();
-      return respond(reply, response);
+      return respond(reply, await requestLog.run(req.log, () => handlerFor(requestNotice("mcp", req)).fetch(request, parsed)));
     } catch (error) {
       req.log.error({ err: error }, "mcp error");
       return reply.code(500).type("application/json").send({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null });

@@ -5,7 +5,6 @@ import { gate, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { z } from "zod";
-import { PRESETS } from "@aihot/site/models";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { chatJson, ModelOutputError } from "@aihot/backend/providers/llm";
@@ -118,20 +117,15 @@ test("a fully received non-object model response is unusable output, not an unkn
   }
 });
 
-test("an answer cut off at the output limit says so, and where a reasoning model gets more room", async () => {
-  let maxTokens: unknown;
-  const cut = await stub((_hit, req) => {
-    maxTokens = JSON.parse(req.body).max_tokens;
-    return { id: "stub-cut", choices: [{ message: { content: "" }, finish_reason: "length" }], usage };
-  });
+test("an answer cut off at the output limit is a failed paid answer that says so", async () => {
+  const cut = await stub(() => ({ id: "stub-cut", choices: [{ message: { content: "" }, finish_reason: "length" }], usage }));
   const original = process.env.DEEPSEEK_BASE_URL;
   const subject = `length-${tag()}`;
   process.env.DEEPSEEK_BASE_URL = `${cut.url}/v1`;
   try {
     await assert.rejects(
       chatJson({ model: "deepseek-flash-think", purpose: "invariant_test", subject, promptVersion: "t1", system: "s", user: `input ${subject}`, schema: z.object({ ok: z.boolean() }) }),
-      (error: unknown) => error instanceof ModelOutputError && /finish_reason=length.*reasoningTokens on preset deepseek-flash-think/.test(error.message));
-    assert.equal(maxTokens, 1500 + PRESETS["deepseek-flash-think"]!.reasoningTokens!, "the preset's reasoning tokens on top of the call's own limit");
+      (error: unknown) => error instanceof ModelOutputError && /finish_reason=length/.test(error.message));
     const [r] = await sql`SELECT status, error FROM receipts WHERE subject=${subject}`;
     assert.equal(r!.status, "failed");
     assert.match(r!.error, /finish_reason=length/);

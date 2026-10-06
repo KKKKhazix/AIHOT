@@ -1,6 +1,6 @@
 // The day-grouped feed (精选 home, topics): a time rail with cards on desktop, rows under grey day bars on
 // phones. Keeps its place across back navigation and loads further pages. There is no "new items"
-// prompt: readers refresh for the latest head (feedback #1199) — on phones also by tapping the tab again.
+// prompt: readers refresh for the latest head — on phones also by tapping the tab again.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigation } from "react-router";
 import { Collapse } from "../../components/ui/Presence";

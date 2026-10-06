@@ -19,7 +19,7 @@
     "postgres": "3.4.9",
     "sanitize-html": "2.17.7",
     "satori": "0.33.5",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "turndown": "7.2.4",
     "undici": "8.11.2",
     "uqr": "0.1.3",

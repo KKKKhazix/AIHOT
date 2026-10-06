@@ -48,8 +48,9 @@ export function compositeCondition() {
  * also meets reports without a publication. Missing scope is unknown, never composite.
  */
 export function latestCompositeCondition(article: ReturnType<typeof sql>) {
-  return sql`(SELECT x.output->>'scope' = 'composite' FROM analyses x WHERE x.article_id = ${article}
-    ORDER BY x.input_revision DESC, x.id DESC LIMIT 1) IS TRUE`;
+  return sql`(SELECT scope_analysis.output->>'scope' = 'composite' FROM analyses scope_analysis
+    WHERE scope_analysis.article_id = ${article}
+    ORDER BY scope_analysis.input_revision DESC, scope_analysis.id DESC LIMIT 1) IS TRUE`;
 }
 
 /** `fa` links report `p` to a fact as evidence: a primary or report membership, never a composite. */

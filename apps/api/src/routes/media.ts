@@ -53,7 +53,7 @@ export function registerMedia(app: FastifyInstance) {
       if (error instanceof ImageBudgetExceeded) {
         return reply.code(503).header("Retry-After", "60").header("Cache-Control", "no-store").type("text/plain; charset=utf-8").send("Image proxy is busy; try again later");
       }
-      req.log.warn({ err: error, host: new URL(verdict.url).hostname }, "img-proxy upstream failed");
+      req.log.warn({ err: error, host: new URL(verdict.url).hostname, imageKey: createHash("sha256").update(verdict.url).digest("hex"), mode: verdict.mode }, "img-proxy upstream failed");
       return reply.code(502).header("Cache-Control", imageCacheControl(q.exp!, 60)).type("text/plain; charset=utf-8").send("Upstream image unavailable");
     }
   });

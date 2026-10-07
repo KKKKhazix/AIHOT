@@ -212,6 +212,8 @@ export interface ServerModule {
     entries?: () => Promise<SitemapEntry[]>;
   };
   admin?: {
+    /** Current jobs scheduled outside the worker, by their job_runs name (admin/runs.ts). */
+    currentJobs?: () => Promise<readonly string[]>;
     /** Badges on the admin navigation, by the key its web items name (admin/navigation.ts). */
     counts?: Record<string, () => Promise<number>>;
     /** Its part of the admin's runs page, under its name (admin/runs.ts); its web module draws it. */

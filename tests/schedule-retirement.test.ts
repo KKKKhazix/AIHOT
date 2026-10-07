@@ -13,6 +13,7 @@ import { registerSchedules } from "../apps/worker/src/schedules.ts";
 after(async () => { await stopBoss(); await closeDb(); });
 
 test("retired schedules leave the current overview and execution queues while live jobs and history remain", async () => {
+  let externalJobs = ["external.kept", "kept", "external.kept"];
   const boss = await getBoss();
   const retired = ["cron.retired.scheduled", "cron.retired.unscheduled", "cron.paused", "cron.renamed.old"];
   for (const name of [...retired, "cron.kept", "cron.renamed.new", "business.kept"]) {
@@ -27,11 +28,13 @@ test("retired schedules leave the current overview and execution queues while li
     ('kept', now() - interval '2 days', now() - interval '2 days', 'failed'),
     ('renamed.new', now() - interval '1 hour', now() - interval '1 hour', 'failed'),
     ('renamed.new', now(), now(), 'ok')`;
+  await sql`INSERT INTO job_runs (job, status, finished_at) VALUES
+    ('external.kept', 'failed', now()), ('external.retired', 'failed', now())`;
   installModules([{ name: "test", schedules: [
     { name: "kept", cron: "0 0 1 1 *", run: async () => ({}) },
     { name: "renamed.new", cron: "0 0 1 1 *", run: async () => ({}) },
     { name: "paused", cron: "0 0 1 1 *", when: () => false, run: async () => ({}) },
-  ] }]);
+  ], admin: { currentJobs: async () => externalJobs } }]);
 
   await registerSchedules(boss);
   // Multiple schedule keys must still yield one latest result per task.
@@ -55,6 +58,14 @@ test("retired schedules leave the current overview and execution queues while li
   assert.deepEqual(jobs.map((j) => j.job), ["kept", "renamed.new"]);
   assert.deepEqual(jobs.filter((j) => j.status === "failed").map((j) => j.job), ["kept"]);
   assert.deepEqual(jobs.map((j) => [j.failed_24h, j.runs_24h]), [[0, 0], [1, 2]]);
+  assert.deepEqual(overview.jobs.filter((j) => j.job.startsWith("external.")).map((j) => [j.job, j.status, j.failed_24h, j.runs_24h]),
+    [["external.kept", "failed", 1, 1]]);
+  for (const job of ["external.kept", "external.retired"]) assert.ok(overview.timeline.some((r) => r.job === job));
+  externalJobs = [];
+  const withdrawn = await runsOverview();
+  assert.ok(!withdrawn.jobs.some((j) => j.job.startsWith("external.")));
+  assert.ok(withdrawn.timeline.some((r) => r.job === "external.kept"));
+  assert.equal((await sql`SELECT id FROM job_runs WHERE job = 'external.kept'`).length, 1);
   for (const name of retired) {
     const job = name.slice("cron.".length);
     assert.equal((await sql`SELECT id FROM job_runs WHERE job = ${job}`).length, 1);

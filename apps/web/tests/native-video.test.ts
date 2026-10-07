@@ -7,20 +7,21 @@ import { chromium, webkit, expect, type Browser } from "@playwright/test";
 import type { SiteItemDetail } from "@aihot/contracts/site";
 import { startWebServer, type WebServer } from "./web-server.ts";
 
+// VP8 works in browser builds without proprietary H.264 decoding.
 // Generated locally with ffmpeg from a blue color source: twenty seconds, no audio, no third-party material.
-const clip = await readFile(new URL("./fixtures/native-video.mp4", import.meta.url));
+const clip = await readFile(new URL("./fixtures/native-video.webm", import.meta.url));
 const at = "2026-10-04T08:00:00.000Z";
 let mediaRequests = 0;
 let unsupportedRequests = 0;
 const api = createServer((req, res) => {
   const url = new URL(req.url!, `http://${req.headers.host}`);
-  if (url.pathname === "/video/clip.mp4") {
+  if (url.pathname === "/video/clip.webm") {
     mediaRequests++;
     const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? "");
     const start = range ? Number(range[1]) : 0;
     const end = range?.[2] ? Math.min(Number(range[2]), clip.length - 1) : clip.length - 1;
     res.writeHead(range ? 206 : 200, {
-      "Content-Type": "video/mp4", "Accept-Ranges": "bytes", "Content-Length": end - start + 1,
+      "Content-Type": "video/webm", "Accept-Ranges": "bytes", "Content-Length": end - start + 1,
       ...(range ? { "Content-Range": `bytes ${start}-${end}/${clip.length}` } : {}),
     });
     return res.end(clip.subarray(start, end + 1));
@@ -37,7 +38,7 @@ const api = createServer((req, res) => {
       channel: "news", x: null, originalTitle: "Video fixture", links: { original: "https://example.org/article" },
       story: null, readingMode: "full", author: null, outline: [], relatedStories: [], topics: [], indexable: true,
       markdownAvailable: true, group: null, hasTranslation: true, bodyLanguage: "zh",
-      body: { zh: `<p>点击浏览器原生按钮播放视频。</p><video controls playsinline preload="none" width="320" height="320"><source src="${url.origin}/video/unsupported" type="video/not-supported"><source src="${url.origin}/video/clip.mp4" type="video/mp4"></video>`, original: null, zhKind: "translation", complete: true },
+      body: { zh: `<p>点击浏览器原生按钮播放视频。</p><video controls playsinline preload="none" width="320" height="320"><source src="${url.origin}/video/unsupported" type="video/not-supported"><source src="${url.origin}/video/clip.webm" type="video/webm"></video>`, original: null, zhKind: "translation", complete: true },
     };
     return res.end(JSON.stringify(detail));
   }
@@ -84,7 +85,7 @@ for (const engine of ["Chromium", "WebKit"] as const) {
       // Wait for several frames so WebKit has updated its native play/pause control.
       await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThan(0.5);
       assert.equal(await video.evaluate((node: HTMLVideoElement) => !node.paused && !node.ended), true);
-      assert.match(await video.evaluate((node: HTMLVideoElement) => node.currentSrc), /\/video\/clip\.mp4$/);
+      assert.match(await video.evaluate((node: HTMLVideoElement) => node.currentSrc), /\/video\/clip\.webm$/);
       assert.ok(mediaRequests > beforeRequests, "playback requests the original media server");
       await video.click({ position: playButton });
       await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused && !node.ended)).toBe(true);

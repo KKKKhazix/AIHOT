@@ -4,7 +4,9 @@
 // digits (64 bits): the random digits cannot be compressed, and the full 64 made up about a tenth
 // of a compressed list page. A full-length signature from an older URL is still accepted.
 import { createHmac, timingSafeEqual } from "node:crypto";
+import * as cheerio from "cheerio";
 import { config, credential } from "../config.ts";
+import { normalizeVideos } from "../content/video.ts";
 import { isNonArticleImage } from "../lib/image-url.ts";
 
 import { IMAGE_WIDTHS, RESPONSIVE_MODES, type ProxyMode, type ResponsiveImageKind } from "./renditions.ts";
@@ -69,7 +71,7 @@ export function verifyProxyRequest(params: { u?: string; mode?: string; exp?: st
  */
 export function proxyBodyImages(html: string, absolute = false, lifetimeSeconds = LIFETIME_SECONDS): string {
   const now = Date.now();
-  return html
+  const rewritten = html
     .replace(/<img\b([^>]*)>/gi, (tag: string, attrs: string) => {
       const src = attrs.match(/\ssrc="([^"]+)"/i);
       if (!src) return tag;
@@ -91,4 +93,8 @@ export function proxyBodyImages(html: string, absolute = false, lifetimeSeconds 
       const proxied = proxiedImage(src.replace(/&amp;/g, "&"), "thumb", absolute, now, lifetimeSeconds);
       return proxied ? `<video${pre} poster="${proxied.replace(/&/g, "&amp;")}"` : `<video${pre}`;
     });
+  if (!/<video\b/i.test(rewritten)) return rewritten;
+  const $ = cheerio.load(rewritten, null, false);
+  normalizeVideos($);
+  return $.html();
 }

@@ -3,11 +3,12 @@
 import * as cheerio from "cheerio";
 import sanitizeHtml from "sanitize-html";
 import { isNonArticleImage } from "../lib/image-url.ts";
+import { normalizeVideos } from "./video.ts";
 
 const ALLOWED_TAGS = [
   "p", "br", "hr", "h2", "h3", "h4", "h5", "ul", "ol", "li", "blockquote", "pre", "code", "table", "thead", "tbody",
   "tfoot", "tr", "th", "td", "caption", "a", "img", "figure", "figcaption", "strong", "em", "b", "i", "u", "s", "del",
-  "sup", "sub", "mark", "span", "dl", "dt", "dd", "picture", "video",
+  "sup", "sub", "mark", "span", "dl", "dt", "dd", "picture", "video", "source",
 ];
 
 /** A class naming a promotion block (msr-promo, promo-box …), not text such as "promotion". */
@@ -35,7 +36,7 @@ function dropPromotions(html: string): string {
 const DROP_WHOLE = [
   "script", "style", "noscript", "textarea", "option", "iframe", "object", "embed", "applet", "form", "input", "select",
   "button", "label", "fieldset", "legend", "svg", "link", "meta", "base", "title", "head", "template", "audio",
-  "map", "area", "frame", "frameset", "track", "source", "param",
+  "map", "area", "frame", "frameset", "track", "param",
   // MathML is unwrapped to its text; its LaTeX source and embedded markup are not text.
   "annotation", "annotation-xml", "mglyph",
 ];
@@ -47,7 +48,8 @@ export function sanitizeBody(html: string, baseUrl?: string): string {
     allowedAttributes: {
       a: ["href", "title"],
       img: ["src", "alt", "width", "height", "title"],
-      video: ["src", "poster", "width", "height"],
+      video: ["src", "poster", "width", "height", "controls", "playsinline", "preload"],
+      source: ["src", "type"],
       code: ["class"],
       pre: ["class"],
       th: ["colspan", "rowspan", "align"],
@@ -56,6 +58,7 @@ export function sanitizeBody(html: string, baseUrl?: string): string {
     },
     allowedClasses: { code: [/^language-[\w-]+$/], pre: [/^language-[\w-]+$/] },
     allowedSchemes: ["http", "https"],
+    allowedSchemesAppliedToAttributes: ["href", "src", "poster"],
     allowedSchemesByTag: { img: ["http", "https", "data"] },
     allowProtocolRelative: true,
     transformTags: {
@@ -72,9 +75,15 @@ export function sanitizeBody(html: string, baseUrl?: string): string {
         const src = unwrapProxyUrl(attribs["data-src"] || attribs["data-original"] || attribs.src || "");
         return { tagName, attribs: { ...attribs, src: resolveUrl(src, baseUrl) } };
       },
-      video: (tagName, attribs) => ({
+      // Preserve configured media URLs; custom lazy attributes only fill missing values.
+      video: (tagName, attribs) => {
+        const src = attribs.src?.trim() || attribs["data-src"]?.trim() || "";
+        const poster = attribs.poster?.trim() || attribs["data-poster"]?.trim() || "";
+        return { tagName, attribs: { ...attribs, src: resolveUrl(src, baseUrl), poster: resolveUrl(unwrapProxyUrl(poster), baseUrl) } };
+      },
+      source: (tagName, attribs) => ({
         tagName,
-        attribs: { ...attribs, ...(attribs.poster ? { poster: resolveUrl(unwrapProxyUrl(attribs.poster), baseUrl) } : {}) },
+        attribs: { ...attribs, src: resolveUrl(attribs.src?.trim() || attribs["data-src"]?.trim() || "", baseUrl) },
       }),
     },
     // Empty paragraphs go in normalizeBlocks, which sees nested images: a frame only knows its direct
@@ -95,6 +104,7 @@ const BLOCK_TAGS = new Set(["p", "h2", "h3", "h4", "h5", "ul", "ol", "li", "bloc
  */
 export function normalizeBlocks(html: string): string {
   const $ = cheerio.load(html, null, false);
+  normalizeVideos($);
   $("p").each((_, el) => {
     const p = $(el);
     if (!p.text().trim() && !p.find("img, video, picture").length) p.remove();

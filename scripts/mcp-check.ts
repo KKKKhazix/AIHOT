@@ -1,6 +1,7 @@
 // Verifies the public MCP contract with the official SDK client: server identity, the exact tool set,
-// representative read calls, domain errors and schema validation. It is safe against an empty database;
-// --full also has every tool answer once in full, which needs a populated site (reports and a hot story).
+// representative read calls, domain errors and schema validation. It is safe against an empty database.
+// Modules without checkArgs are called only if their input accepts {}; otherwise only discovery is checked.
+// --full also checks successful report and story reads, which need a populated site.
 // node scripts/mcp-check.ts [url] [--full]
 import { Client } from "@modelcontextprotocol/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
@@ -13,7 +14,11 @@ const args = process.argv.slice(2);
 const full = args.includes("--full");
 const url = new URL(args.find((a) => !a.startsWith("--")) ?? "http://127.0.0.1:3001/api/mcp");
 /** The site's modules' tools, after the engine's. */
-const moduleTools = SERVER_MODULES.flatMap((m) => m.agent?.abilities ?? []).map((a) => mcpToolName(a.mcp.tool));
+const moduleTools = SERVER_MODULES.flatMap((m) => m.agent?.abilities ?? []).map((a) => ({
+  name: mcpToolName(a.mcp.tool),
+  args: a.mcp.checkArgs,
+  input: a.mcp.input,
+}));
 const client = new Client({ name: `${SITE.mcpPrefix}-mcp-check`, version: "1.0.0" });
 
 function firstText(result: Awaited<ReturnType<Client["callTool"]>>): string {
@@ -57,7 +62,7 @@ try {
 
   const listed = await client.listTools();
   const actualNames = listed.tools.map((tool) => tool.name).sort();
-  const expectedNames = [...MCP_TOOLS.map((tool) => tool.name), ...moduleTools].sort();
+  const expectedNames = [...MCP_TOOLS.map((tool) => tool.name), ...moduleTools.map((tool) => tool.name)].sort();
   console.log("tools:", actualNames.join(", "));
   if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) {
     throw new Error(`tool list mismatch: expected [${expectedNames.join(", ")}], got [${actualNames.join(", ")}]`);
@@ -67,7 +72,11 @@ try {
   await call(T.latest, { limit: 2 });
   await call(T.search, { q: "OpenAI", limit: 2 });
   await call(T.hot, { limit: 3 });
-  for (const name of moduleTools) await call(name, {});
+  for (const tool of moduleTools) {
+    if (tool.args !== undefined) await call(tool.name, tool.args);
+    else if ((await tool.input.safeParseAsync({})).success) await call(tool.name, {});
+    else console.log(`${tool.name} → discovery only (no checkArgs and input rejects {})`);
+  }
 
   // Exercise the remaining tools without depending on seeded reports/stories.
   await call(T.daily, { date: "2026-02-30" }, { error: true, code: "invalid_request" });

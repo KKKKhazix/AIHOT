@@ -68,6 +68,8 @@ export interface AgentAbility {
     use: string;
     description: string;
     input: z.ZodObject;
+    /** Optional successful empty-site call for scripts/mcp-check.ts; without it, only inputs accepting {} are called. */
+    checkArgs?: Record<string, unknown>;
     /** The text (the same answer) and the structured content. */
     run: (args: Record<string, unknown>) => Promise<{ text: string; structured: Record<string, unknown> }>;
   };

@@ -1,7 +1,8 @@
 // analyzeArticle: the judging and writing steps, each with its own prompt from the industry pack
 // (industry/prompts/):
 //   1. prefilter: does the material belong to this industry at all (wide recall). Only BLOCK stops an
-//      item; UNKNOWN goes on like PASS (a BLOCK given while material is missing counts as UNKNOWN);
+//      item; a BLOCK given while material is missing counts as UNKNOWN. Without material or a
+//      displayable original post, UNKNOWN waits for a new material revision before later steps;
 //   2. score: two independent scores against the source tier's threshold (industry/selection.ts) decide 精选;
 //   3. structure: category, tags, subjects and the current news fact, beside scoring;
 //   4. writing, once the structure is in: the Chinese title, summary and reason by the content
@@ -409,8 +410,10 @@ async function runSummarize(a: AnalyzeInputArticle, opts: StepOpts): Promise<Non
 export async function runAnalysis(a: AnalyzeInputArticle, opts: StepOpts = {}): Promise<AnalysisRun> {
   checkAnalysisRunning();
   const prefilter = await runSelectionPrefilter(a, opts);
-  // UNKNOWN is let through (its material is as complete as it will get); BLOCK stops here.
+  // Missing article text waits for a later revision; displayable original posts keep their judgement.
   if (prefilter.label === "BLOCK") return { prefilter, scores: null, writing: null, structure: null };
+  const original = originalPostCopy(a.xPost, a.url);
+  if (missingEvidence(a) && !original) return { prefilter, scores: null, writing: null, structure: null };
   // The structure step needs nothing from the scores: it runs beside them.
   const structure = runStructure(a, opts).then((value) => ({ value }), (error: unknown) => ({ error }));
   try {
@@ -419,7 +422,6 @@ export async function runAnalysis(a: AnalyzeInputArticle, opts: StepOpts = {}): 
     const near = sum !== null && (sum >= scores!.threshold * SCORE_CALLS || sum > UNDERSTAND_FLOOR * SCORE_CALLS);
     const s = await structure;
     if ("error" in s) throw s.error;
-    const original = originalPostCopy(a.xPost, a.url);
     const writing: NonNullable<AnalysisRun["writing"]> = original
       ? { kind: "verbatim", model: null, titleZh: original.title, summaryZh: original.summary ?? "", reasonZh: null, receiptIds: [], reused: true }
       : (near ? await runUnderstand(a, opts) : null) ?? (await runSummarize(a, opts));
@@ -437,7 +439,7 @@ export function normalizeAnalysis(run: AnalysisRun) {
   const titleZh = collapseWhitespace(run.writing?.titleZh ?? "");
   const summaryZh = (run.writing?.summaryZh ?? "").trim();
   // Original posts can consist entirely of media. Model-written copy still needs a title and summary.
-  const relevance = label === "BLOCK" ? "block" : run.writing && (!titleZh || (!summaryZh && run.writing.kind !== "verbatim")) ? "unknown" : "pass";
+  const relevance = label === "BLOCK" ? "block" : !run.writing || !titleZh || (!summaryZh && run.writing.kind !== "verbatim") ? "unknown" : "pass";
   // Selected when the two scores add up to twice the tier threshold; the mean, floored, is the score
   // shown (it never decides a half point on its own).
   const values = run.scores && !run.scores.refused ? run.scores.values : null;

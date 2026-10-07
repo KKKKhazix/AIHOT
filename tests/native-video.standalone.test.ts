@@ -42,6 +42,8 @@ test("video source candidates retain order, types and lazy URLs without opening 
   assert.equal($("picture img").attr("src"), "https://publisher.example/image.png");
   assert.ok($("video").is("[controls]"));
   assert.doesNotMatch(html, /srcset|orphan|javascript:/);
+  const nested = cheerio.load(sanitizeBody('<video><custom><source src="/nested.mp4"></custom><source src="/direct.mp4"></video>', base));
+  assert.deepEqual(nested("source").map((_, el) => nested(el).attr("src")).get(), ["https://publisher.example/direct.mp4"], "unwrapping unknown tags cannot promote a fallback source into a media candidate");
 });
 
 test("unsafe media cannot survive normalization and empty players keep only safe fallback content", () => {

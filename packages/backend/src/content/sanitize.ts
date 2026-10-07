@@ -15,13 +15,13 @@ const ALLOWED_TAGS = [
 const PROMO_CLASS = /(?:^|[-_])promo(?:$|[-_])/i;
 
 /**
- * Promotions a site places inside its posts and rotates between loads (Microsoft Research puts a
- * different podcast or product box into each post of its feed). They are no part of the post, and
- * keeping them made every fetch look like a new version of the article.
+ * Drop promotions and non-video source elements before unknown containers are unwrapped. Rotating
+ * promotions are not article material, and a nested fallback source is not a video candidate.
  */
-function dropPromotions(html: string): string {
-  if (!/promo/i.test(html)) return html;
+function dropNonBodyMarkup(html: string): string {
+  if (!/promo|<source\b/i.test(html)) return html;
   const $ = cheerio.load(html, null, false);
+  $("source").filter((_, el) => !$(el).parent().is("video")).remove();
   $("[class]")
     .filter((_, el) => ($(el).attr("class") ?? "").split(/\s+/).some((c) => PROMO_CLASS.test(c)))
     .remove();
@@ -42,7 +42,7 @@ const DROP_WHOLE = [
 ];
 
 export function sanitizeBody(html: string, baseUrl?: string): string {
-  const cleaned = sanitizeHtml(dropPromotions(html), {
+  const cleaned = sanitizeHtml(dropNonBodyMarkup(html), {
     allowedTags: ALLOWED_TAGS,
     nonTextTags: DROP_WHOLE,
     allowedAttributes: {

@@ -20,16 +20,16 @@ export function AdminPage({ title, subtitle, actions, children }: { title: React
   );
 }
 
-export function Card({ title, right, children, className = "", pad = true }: { title?: ReactNode; right?: ReactNode; children: ReactNode; className?: string; pad?: boolean }) {
+export function Card({ title, right, children, className = "", pad = true, scrollable = false }: { title?: ReactNode; right?: ReactNode; children: ReactNode; className?: string; pad?: boolean; scrollable?: boolean }) {
   return (
-    <section className={`rounded-panel bg-surface ring-1 ring-line ${className}`}>
+    <section className={`rounded-panel bg-surface ring-1 ring-line ${scrollable ? "flex max-h-[480px] min-h-0 min-w-0 flex-col" : ""} ${className}`}>
       {(title || right) && (
-        <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+        <div className={`flex items-center justify-between gap-3 border-b border-line px-4 py-3 ${scrollable ? "shrink-0" : ""}`}>
           <h2 className="text-[14px] font-semibold text-ink">{title}</h2>
           {right && <div className="flex items-center gap-2 text-[12.5px] text-ink-3">{right}</div>}
         </div>
       )}
-      <div className={pad ? "p-4" : ""}>{children}</div>
+      <div className={`${pad ? "p-4" : ""} ${scrollable ? "flex min-h-0 flex-1 flex-col" : ""}`}>{children}</div>
     </section>
   );
 }
@@ -94,15 +94,15 @@ export interface Column<T> {
   align?: "right";
 }
 
-export function DataTable<T>({ rows, columns, rowKey, empty = "暂无数据", onRowClick, dense }: { rows: T[]; columns: Column<T>[]; rowKey: (r: T) => string | number; empty?: ReactNode; onRowClick?: (r: T) => void; dense?: boolean }) {
+export function DataTable<T>({ rows, columns, rowKey, empty = "暂无数据", onRowClick, dense, scrollable = false }: { rows: T[]; columns: Column<T>[]; rowKey: (r: T) => string | number; empty?: ReactNode; onRowClick?: (r: T) => void; dense?: boolean; scrollable?: boolean }) {
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (
-    <div className="overflow-x-auto">
+    <div className={scrollable ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"} tabIndex={scrollable ? 0 : undefined}>
       <table className="w-full min-w-[640px] border-collapse text-left text-[13px]">
         <thead>
           <tr className="border-b border-line text-[12px] text-ink-3">
             {columns.map((c) => (
-              <th key={c.key} className={`whitespace-nowrap px-3 py-2 font-medium ${c.align === "right" ? "text-right" : ""} ${c.className ?? ""}`}>
+              <th key={c.key} className={`whitespace-nowrap px-3 py-2 font-medium ${scrollable ? "sticky top-0 z-10 bg-surface" : ""} ${c.align === "right" ? "text-right" : ""} ${c.className ?? ""}`}>
                 {c.label}
               </th>
             ))}

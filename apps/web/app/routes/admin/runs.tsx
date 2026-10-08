@@ -59,9 +59,9 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
       </div>
 
       {r.grouping.waiting > 0 && (
-        <Card className="mb-5" title="等待去重确认的精选" right={<span>{num(r.grouping.waiting)} 条等待 · {num(r.grouping.needsAttention)} 条超过 10 分钟</span>} pad={false}>
+        <Card className="mb-5" title="等待去重确认的精选" right={<span>{num(r.grouping.waiting)} 条等待 · {num(r.grouping.needsAttention)} 条超过 10 分钟</span>} pad={false} scrollable>
           <p className="px-4 py-3 text-[13px] text-ink-3">这些新闻已达到精选条件，确认是否重复后才会进入精选。最多展示等待最久的 30 条。</p>
-          <DataTable dense rows={r.grouping.items} rowKey={(item) => item.articleId} columns={[
+          <DataTable scrollable dense rows={r.grouping.items} rowKey={(item) => item.articleId} columns={[
             { key: "title", label: "新闻", render: (item) => <Link className="text-accent" to={`/admin/content/${item.articleId}`}>{item.title}</Link> },
             { key: "since", label: "开始等待", render: (item) => <Time at={item.since} /> },
             { key: "recovery", label: "下一步", render: (item) => <Badge tone={item.recovery === "manual" ? "bad" : "warn"}>{item.recovery === "manual" ? "需处理后恢复" : item.recovery === "receipt" ? "等待付费结果自动恢复" : "自动处理中"}</Badge> },
@@ -71,8 +71,8 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
       )}
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <Card title="队列" pad={false}>
-          <DataTable
+        <Card title="队列" pad={false} scrollable>
+          <DataTable scrollable
             dense
             rows={[...backlog.entries()]}
             rowKey={([name]) => name}
@@ -89,8 +89,8 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
             ]}
           />
         </Card>
-        <Card title="定时任务" pad={false}>
-          <DataTable
+        <Card title="定时任务" pad={false} scrollable>
+          <DataTable scrollable
             dense
             rows={r.jobs}
             rowKey={(j) => j.job}
@@ -106,8 +106,8 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
       </div>
 
       {r.failedJobs.length > 0 && (
-        <Card className="mt-5" title="24 小时内失败的队列任务" pad={false}>
-          <DataTable
+        <Card className="mt-5" title="24 小时内失败的队列任务" pad={false} scrollable>
+          <DataTable scrollable
             dense
             rows={r.failedJobs}
             rowKey={(j) => j.name}
@@ -122,8 +122,8 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
       )}
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <Card title="需要核对的付费回执" right={<span>{Object.entries(r.receipts.counts).map(([k, v]) => `${k} ${v}`).join(" · ")}</span>} pad={false}>
-          <DataTable
+        <Card title="需要核对的付费回执" right={<span>{Object.entries(r.receipts.counts).map(([k, v]) => `${k} ${v}`).join(" · ")}</span>} pad={false} scrollable>
+          <DataTable scrollable
             dense
             rows={r.receipts.issues}
             rowKey={(x) => x.id}
@@ -138,8 +138,8 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
             ]}
           />
         </Card>
-        <Card title="需要核实的投递" pad={false}>
-          <DataTable
+        <Card title="需要核实的投递" pad={false} scrollable>
+          <DataTable scrollable
             dense
             rows={r.deliveries}
             rowKey={(d) => d.id}
@@ -156,8 +156,8 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <Card title="延迟或失败的信源" right={<Link className="text-accent" to="/admin/sources?health=failing">全部失败信源</Link>} pad={false}>
-          <DataTable
+        <Card title="延迟或失败的信源" right={<Link className="text-accent" to="/admin/sources?health=failing">全部失败信源</Link>} pad={false} scrollable>
+          <DataTable scrollable
             dense
             rows={r.lagging}
             rowKey={(s) => s.id}
@@ -179,9 +179,9 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
               {r.errors.length > 0 && <Button size="sm" onClick={() => setRequeue("")}>全部重新处理</Button>}
             </span>
           }
-          pad={false}
+          pad={false} scrollable
         >
-          <DataTable
+          <DataTable scrollable
             dense
             rows={r.errors}
             rowKey={(e) => e.error}
@@ -200,24 +200,22 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
       {PARTS.map(({ name, part: Part }) => (r.modules[name] != null ? <Part key={name} data={r.modules[name]} /> : null))}
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <Card title="任务时间线" pad={false}>
-          <div className="max-h-[420px] overflow-y-auto">
-            <DataTable
-              dense
-              rows={r.timeline}
-              rowKey={(t) => t.id}
-              columns={[
-                { key: "at", label: "开始", render: (t) => <span className="num whitespace-nowrap">{bj(t.started_at)}</span> },
-                { key: "j", label: "任务", render: (t) => <span className="font-mono text-[12px]">{t.job}</span> },
-                { key: "s", label: "结果", render: (t) => <Badge tone={t.status === "ok" ? "ok" : t.status === "failed" ? "bad" : "muted"} title={t.error ?? undefined}>{t.status ?? "运行中"}</Badge> },
-                { key: "d", label: "耗时", align: "right", render: (t) => duration(t.started_at, t.finished_at) },
-              ]}
-            />
-          </div>
+        <Card title="任务时间线" pad={false} scrollable>
+          <DataTable scrollable
+            dense
+            rows={r.timeline}
+            rowKey={(t) => t.id}
+            columns={[
+              { key: "at", label: "开始", render: (t) => <span className="num whitespace-nowrap">{bj(t.started_at)}</span> },
+              { key: "j", label: "任务", render: (t) => <span className="font-mono text-[12px]">{t.job}</span> },
+              { key: "s", label: "结果", render: (t) => <Badge tone={t.status === "ok" ? "ok" : t.status === "failed" ? "bad" : "muted"} title={t.error ?? undefined}>{t.status ?? "运行中"}</Badge> },
+              { key: "d", label: "耗时", align: "right", render: (t) => duration(t.started_at, t.finished_at) },
+            ]}
+          />
         </Card>
-        <Card title="外部上报" pad={false}>
+        <Card title="外部上报" pad={false} scrollable>
           {r.ingest.length ? (
-            <DataTable
+            <DataTable scrollable
               dense
               rows={r.ingest}
               rowKey={(e) => `${e.client}-${e.created_at}`}

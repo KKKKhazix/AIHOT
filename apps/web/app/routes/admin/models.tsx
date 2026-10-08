@@ -40,7 +40,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
       subtitle="每项能力当前用哪个模型、来自哪里（后台切换 > 环境变量 > 代码默认），以及近期的成功率、耗时与费用。切换只影响之后的新任务，已有结果不重算；换精选模型前先看 SelectBench 同批对比。"
       actions={<FilterChips param="days" options={[{ value: "1", label: "24 小时" }, { value: "", label: "7 天" }, { value: "30", label: "30 天" }]} />}
     >
-      <div className="grid gap-5">
+      <div className="grid grid-cols-1 gap-5">
         {m.capabilities.map((c) => {
           const total = c.usage.reduce((a, u) => a + u.calls, 0);
           return (
@@ -49,7 +49,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
               title={
                 <span className="inline-flex flex-wrap items-center gap-2">
                   {c.label}
-                  <span className="font-mono text-[12px] font-normal text-ink-3">{c.current.model}</span>
+                  <span className="font-mono text-[12px] font-normal text-ink-3 [overflow-wrap:anywhere]">{c.current.model}</span>
                   <Badge tone={c.current.source === "admin" ? "accent" : "muted"}>{SOURCE_LABEL[c.current.source]}</Badge>
                 </span>
               }
@@ -110,7 +110,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
         })}
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+      <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
         <Card title="切换记录" pad={false}>
           {m.history.length ? (
             <DataTable

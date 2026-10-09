@@ -10,6 +10,7 @@ import { completeReceipt } from "../providers/receipts.ts";
 import { latestCompositeCondition } from "../publication/scope.ts";
 import { mergeStoryInto } from "./merge.ts";
 import { RECALL_DAYS, rootFactOf } from "./recall.ts";
+import { RELATED_MIN_REPORTS } from "./related.ts";
 import {
   PAIR_SYSTEM, PairSchema, RELATE_PROMPT_VERSION, STORY_REVIEW_MIN_CONFIDENCE, TIE_MIN_CONFIDENCE, firmlyTied, pairUser,
   type Relation, type ReportView,
@@ -119,9 +120,6 @@ export async function consolidate(storyIds: number[]): Promise<Consolidation[]> 
   return out;
 }
 
-/** Reports that must tie two stories that stay apart before each lists the other as a related event. */
-const RELATED_MIN_REPORTS = 2;
-
 /**
  * A multi-topic digest is a report of the story's root fact (digests now only mention facts, so this
  * marks older stories; one that mentions the root does not count): the story is neither merged nor
@@ -136,7 +134,8 @@ const startedByRoundup = (story: ReturnType<typeof sql>) => sql`EXISTS (
  * comparison) list each other as related events: at least two reports decided in the recall window,
  * each firmly tied to a fact of the other story, none of them a roundup, neither story started by
  * one. A single tie is too often a stray answer about one candidate among many. Links are only
- * added; a merged story drops out where links are read.
+ * added; public reads check saved bridge evidence after explicit changes, independently of the
+ * recall window. A merged story drops out where links are read.
  */
 export async function linkRelatedStories(): Promise<{ added: number }> {
   const [row] = await sql<{ added: number }[]>`

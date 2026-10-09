@@ -6,6 +6,7 @@ import { sql } from "../db.ts";
 import { cachedByKey, SHARED_ONLY } from "../lib/cache.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { behindSources, currentSignals, heatSeries, sourceClocks, type HotRanking } from "../events/hot.ts";
+import { relatedEvidence, RELATED_MIN_REPORTS } from "../events/related.ts";
 import { pickRepresentative, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity } from "./representative.ts";
 import { compositeCondition, evidenceCondition, listedCondition, storyReportCondition } from "./scope.ts";
 import { publicSourceName } from "./rules.ts";
@@ -126,7 +127,13 @@ async function storyContent(storyId: number, now: Date) {
 async function relatedStories(storyId: number, now: Date) {
   return sql<{ public_id: string; title: string; relation: "storyline" | "related" }[]>`
     SELECT st.public_id::text, st.title, l.relation FROM story_links l JOIN stories st ON st.id = l.other_id
-    WHERE l.story_id = ${storyId} AND st.merged_into IS NULL AND EXISTS (
+    LEFT JOIN LATERAL (
+      SELECT count(*) FILTER (WHERE valid) AS reports, bool_and(valid) AS unchanged
+      FROM ${relatedEvidence(sql`l.story_id`, sql`l.other_id`, now)} evidence
+    ) support ON l.relation = 'related'
+    WHERE l.story_id = ${storyId} AND st.merged_into IS NULL
+      AND (l.relation <> 'related' OR support.unchanged IS NOT FALSE OR support.reports >= ${RELATED_MIN_REPORTS})
+      AND EXISTS (
       SELECT 1 FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
       JOIN sources s ON s.id = p.source_id
       WHERE f.story_id = st.id AND ${evidenceCondition()} AND ${storyReportCondition(now)}

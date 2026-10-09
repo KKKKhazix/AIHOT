@@ -183,6 +183,11 @@ export function ApiPanel(props: AgentPanelProps) {
       </PanelHead>
       <CodeBlock className="mt-6" title="第一个请求" lang="bash" code={`${curl} '${items}'`} />
 
+      <Block title="按分类筛选">
+        <p>在资讯请求中加上 <Mono>category</Mono>，只取对应分类；不传则包含全部分类。返回条目的 <Mono>category</Mono> 也使用下表中的值。</p>
+        <Table head={["分类", "请求参数"]} rows={FEED_CATEGORIES.map(([key, name]) => [name, <Mono>{`category=${key}`}</Mono>])} />
+      </Block>
+
       <Block title="用得省，也更快">
         <Tips
           items={[

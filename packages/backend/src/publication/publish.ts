@@ -4,6 +4,7 @@
 import { toPublicApiCategory } from "@aihot/contracts/taxonomy";
 import { SITE } from "@aihot/site";
 import { one, sql, type Tx } from "../db.ts";
+import { audit } from "../audit.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { collapseWhitespace } from "../lib/text.ts";
 import type { XPostData } from "../content/materials.ts";
@@ -217,6 +218,20 @@ async function syncLedger(tx: Tx, articleId: string, now: Date): Promise<"upsert
   const seq = await appendLedger(tx, articleId, "remove", null, now);
   await tx`UPDATE selected_state SET in_set = false, payload_hash = NULL, last_seq = ${seq} WHERE article_id = ${articleId}`;
   return "remove";
+}
+
+/** Refresh a saved sync payload after a public-format change, without rerunning editorial decisions. */
+export async function refreshSelectedPayload(articleId: string, actor: string, reason: string): Promise<"upsert" | "remove" | null> {
+  return sql.begin(async (tx) => {
+    await tx`SELECT 1 FROM articles WHERE id = ${articleId} FOR UPDATE`;
+    const [before] = await tx`SELECT in_set, payload_hash, last_seq FROM selected_state WHERE article_id = ${articleId}`;
+    const op = await syncLedger(tx, articleId, new Date());
+    if (op) {
+      const [after] = await tx`SELECT in_set, payload_hash, last_seq FROM selected_state WHERE article_id = ${articleId}`;
+      await audit(actor, "content.refresh-selected-payload", `content:${articleId}`, reason, before, after, { db: tx });
+    }
+    return op;
+  });
 }
 
 export async function publishArticle(articleId: string, options: PublishOptions = {}): Promise<PublishResult | null> {

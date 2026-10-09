@@ -249,7 +249,7 @@ export function periodAnswer(r: PeriodReport, kind: "weekly" | "monthly", via: V
 }
 
 
-/** A public category with the website categories published as it: "教程与观点". */
+/** The readable labels of the website categories published as one public category. */
 function publicCategoryName(key: PublicApiCategoryKey): string {
   return CATEGORIES.filter((c) => toPublicApiCategory(c.key) === key).map((c) => c.label).join("与");
 }
@@ -264,7 +264,7 @@ export function agentGuide(): string {
   const unavailable = serverModules().flatMap((m) => m.agent?.unavailable ?? []);
   const requests = serverModules().flatMap((m) => m.agent?.requests ?? []);
   const categories = PUBLIC_API_CATEGORY_KEYS.map((key) => `${key}（${publicCategoryName(key)}）`);
-  // Examples use a real category: the second-to-last (papers in the AI pack).
+  // Examples use one of the site's configured public categories.
   const sample = PUBLIC_API_CATEGORY_KEYS.at(-2) ?? PUBLIC_API_CATEGORY_KEYS[0];
   const lines = [
     `# ${SITE.name} 使用说明（给 Agent）`,

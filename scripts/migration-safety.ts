@@ -89,6 +89,14 @@ export function migrationPlan(text: string): MigrationPlan {
   // the change, and the release running while it applies no longer reads or writes it.
   if (new RegExp(`^drop table if exists ${RELATION}$`, "i").test(sql)) return { kind: "transaction" };
   if (!singleAction(tokens)) throw new Error("use one ALTER TABLE action per statement");
+  // Only these per-table vacuum triggers: catalog changes under SHARE UPDATE EXCLUSIVE, without
+  // disabling maintenance, changing its resource limits or broadening the storage-parameter syntax.
+  const vacuum = new RegExp(`^alter table ${RELATION} set \\( (.*) \\)$`, "i").exec(sql);
+  if (vacuum) {
+    const parameters = vacuum[1].split(" , ").map((part) => /^(autovacuum_vacuum(?:_insert)?_scale_factor) = (\d+(?:\.\d+)?)$/i.exec(part));
+    if (parameters.every((parameter) => parameter && Number(parameter[2]) > 0 && Number(parameter[2]) <= 1)
+      && new Set(parameters.map((parameter) => parameter![1].toLowerCase())).size === parameters.length) return { kind: "transaction" };
+  }
   if (new RegExp(`^alter table ${RELATION} drop (?:column|constraint) if exists ${IDENT}$`, "i").test(sql)) return { kind: "transaction" };
   if (addColumn.test(sql)) {
     if (/\bnot null\b/i.test(words) && (!/\bdefault\b/i.test(words) || /\bdefault null\b/i.test(words))) throw new Error("NOT NULL on a new column requires a non-null constant default");
@@ -96,5 +104,5 @@ export function migrationPlan(text: string): MigrationPlan {
   }
   if (alterDefault.test(sql)) return { kind: "transaction" };
   if (new RegExp(`^alter table ${RELATION} add constraint ${IDENT} (?:check \\(.*\\)|foreign key \\(.*\\) references .*) not valid$`, "i").test(sql)) return { kind: "transaction" };
-  throw new Error(`not safe for an online migration: ${sql.slice(0, 180)}. Use constant-default columns, NOT VALID then separate validation, concurrent indexes, column MCV statistics with separate column ANALYZE, or DROP TABLE IF EXISTS / DROP COLUMN IF EXISTS / DROP CONSTRAINT IF EXISTS for one object nothing uses; backfill data in bounded batches outside release migrations.`);
+  throw new Error(`not safe for an online migration: ${sql.slice(0, 180)}. Use constant-default columns, NOT VALID then separate validation, concurrent indexes, column MCV statistics with separate column ANALYZE, bounded per-table vacuum scale factors, or DROP TABLE IF EXISTS / DROP COLUMN IF EXISTS / DROP CONSTRAINT IF EXISTS for one object nothing uses; backfill data in bounded batches outside release migrations.`);
 }

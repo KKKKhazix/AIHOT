@@ -2,7 +2,12 @@
 // deadline; a saved copy may bridge a restart only for the remainder of that original lifetime.
 import { mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { config } from "../config.ts";
+import { ABOUT, ACCESS, AGENT, POLICY, SITE } from "@aihot/site";
+import { config, REPO_ROOT } from "../config.ts";
+import { sha256, stableJson } from "../lib/ids.ts";
+import { loadChangelog } from "../site/meta.ts";
+import { latestHotRanking } from "./hot.ts";
+import { ITEM_FROM } from "./items.ts";
 import { sql } from "../db.ts";
 import { cached, SHARED_ONLY } from "../lib/cache.ts";
 import { escapeXml } from "../lib/text.ts";
@@ -21,50 +26,87 @@ let lastGood: SitemapDocument | null = null;
 
 type Entry = SitemapEntry;
 
-async function build(at: Date): Promise<string> {
+/**
+ * One inventory for XML discovery and change notifications. A sitemap bounds its advertised history;
+ * notifications read the complete inventory, so crossing that display limit is never a withdrawal.
+ * Collection pages have content identities, not invented modification dates: a removed member can
+ * change a page without leaving a reliable timestamp on its surviving members.
+ */
+export async function loadDiscoveryEntries(at = new Date(), limits?: { stories: number; urls: number }): Promise<Entry[]> {
   const entries: Entry[] = [];
-  const [latestItem] = await sql<{ t: Date | null }[]>`SELECT max(p.timeline_at) AS t FROM publications p WHERE ${selectedCondition(at)}`;
-  const [latestDaily] = await sql<{ key: string | null; t: Date | null }[]>`SELECT max(key) AS key, max(generated_at) AS t FROM reports WHERE kind = 'daily'`;
-  const now = latestItem?.t ?? new Date();
+  const [activity] = limits ? [] : await sql<{ selected: string | null; listed: string | null }[]>`
+    SELECT md5(string_agg(p.article_id || ':' || p.revision::text, ',' ORDER BY p.timeline_at DESC, p.article_id)
+             FILTER (WHERE ${selectedCondition(at)})) AS selected,
+           md5(string_agg(p.article_id || ':' || p.revision::text, ',' ORDER BY p.timeline_at DESC, p.article_id)
+             FILTER (WHERE ${listedCondition(at)})) AS listed
+    FROM publications p WHERE ${listedCondition(at)}`;
+  const reports = await sql<{ kind: string; key: string; t: Date | null; revision: string }[]>`
+    SELECT r.kind, r.key,
+      CASE WHEN citations.revision IS NULL THEN greatest(r.updated_at, r.generated_at) END AS t,
+      md5(concat_ws('|', r.revision::text, r.updated_at::text, citations.revision)) AS revision
+    FROM reports r LEFT JOIN LATERAL (
+      SELECT md5(string_agg(p.article_id || ':' || p.revision::text || ':' || (${listedCondition(at)})::text,
+          ',' ORDER BY p.article_id)) AS revision
+      FROM publications p WHERE p.article_id IN (
+        SELECT value #>> '{}' FROM jsonb_path_query(r.content, '$.**.itemId') AS cited(value))
+    ) citations ON true ORDER BY r.kind, r.key DESC`;
+  const reportRevision = (kind: string) => sha256(stableJson(reports.filter((r) => r.kind === kind)));
+  const topics = await topicPageCounts(at, !limits);
   entries.push(
-    { loc: "/", lastmod: now, changefreq: "hourly", priority: 1 },
-    { loc: "/all", lastmod: now, changefreq: "hourly", priority: 0.9 },
-    { loc: "/daily", lastmod: latestDaily?.t, changefreq: "daily", priority: 0.9 },
-    { loc: "/hot", lastmod: now, changefreq: "hourly", priority: 0.9 },
-    { loc: "/daily/archive", lastmod: latestDaily?.t, changefreq: "daily", priority: 0.7 },
-    { loc: "/weekly", changefreq: "weekly", priority: 0.7 },
-    { loc: "/monthly", changefreq: "monthly", priority: 0.6 },
-    { loc: "/topics", changefreq: "daily", priority: 0.7 },
-    // The modules' pages, between the content pages and the site's own.
+    { loc: "/", revision: activity?.selected ?? "", changefreq: "hourly", priority: 1 },
+    { loc: "/all", revision: activity?.listed ?? "", changefreq: "hourly", priority: 0.9 },
+    { loc: "/daily", revision: reportRevision("daily"), changefreq: "daily", priority: 0.9 },
+    { loc: "/hot", revision: limits ? undefined : sha256(stableJson((await latestHotRanking())?.entries ?? [])), changefreq: "hourly", priority: 0.9 },
+    { loc: "/daily/archive", revision: reportRevision("daily"), changefreq: "daily", priority: 0.7 },
+    { loc: "/weekly", revision: reportRevision("weekly"), changefreq: "weekly", priority: 0.7 },
+    { loc: "/monthly", revision: reportRevision("monthly"), changefreq: "monthly", priority: 0.6 },
+    { loc: "/topics", revision: sha256(stableJson(topics)), changefreq: "daily", priority: 0.7 },
     ...serverModules().flatMap((m) => m.sitemap?.pages ?? []),
-    { loc: "/agent", lastmod: now, changefreq: "weekly", priority: 0.7 },
-    { loc: "/about", changefreq: "monthly", priority: 0.5 },
-    { loc: "/terms", changefreq: "monthly", priority: 0.4 },
-    { loc: "/privacy", changefreq: "monthly", priority: 0.4 },
-    { loc: "/changelog", lastmod: now, changefreq: "weekly", priority: 0.5 },
+    { loc: "/agent", revision: sha256(stableJson([SITE, ACCESS, AGENT])), changefreq: "weekly", priority: 0.7 },
+    { loc: "/about", revision: sha256(stableJson(ABOUT)), changefreq: "monthly", priority: 0.5 },
+    { loc: "/terms", revision: sha256(stableJson([POLICY.terms, await readFile(path.join(REPO_ROOT, "site/pages/terms.md"), "utf8")])), changefreq: "monthly", priority: 0.4 },
+    { loc: "/privacy", revision: sha256(stableJson([POLICY.privacy, await readFile(path.join(REPO_ROOT, "site/pages/privacy.md"), "utf8")])), changefreq: "monthly", priority: 0.4 },
+    { loc: "/changelog", revision: sha256(stableJson(loadChangelog())), changefreq: "weekly", priority: 0.5 },
   );
-  const reports = await sql<{ kind: string; key: string; generated_at: Date }[]>`SELECT kind, key, generated_at FROM reports ORDER BY kind, key DESC`;
-  for (const r of reports) entries.push({ loc: `/${r.kind}/${r.key}`, lastmod: r.generated_at, changefreq: r.kind === "daily" ? "never" : "monthly", priority: r.kind === "daily" ? 0.6 : 0.6 });
-  for (const t of await topicPageCounts(at)) {
+  for (const r of reports) entries.push({ loc: `/${r.kind}/${r.key}`, lastmod: r.t, revision: r.revision, changefreq: "monthly", priority: 0.6 });
+  for (const t of topics) {
     if (!t.indexable) continue;
-    entries.push({ loc: `/topics/${t.slug}`, lastmod: t.changedAt, changefreq: "daily", priority: 0.6 });
-    for (let p = 2; p <= t.pages; p++) entries.push({ loc: `/topics/${t.slug}/page/${p}`, lastmod: t.changedAt, changefreq: "weekly", priority: 0.3 });
+    entries.push({ loc: `/topics/${t.slug}`, revision: t.revision, changefreq: "daily", priority: 0.6 });
+    for (let p = 2; p <= t.pages; p++) entries.push({ loc: `/topics/${t.slug}/page/${p}`, revision: t.revision, changefreq: "weekly", priority: 0.3 });
   }
-  // Stories with listed evidence of their own; pages that only gather reports grouped elsewhere (imported
-  // story levels, regrouped history) or only mention facts are reachable but not listed.
-  const stories = await sql<{ public_id: string; latest_at: Date | null }[]>`
-    SELECT public_id::text, latest_at FROM stories WHERE merged_into IS NULL AND EXISTS (
+  // A story needs listed evidence of its own. Its identity follows current readable reports as well
+  // as the digest, so a correction or regrouping is visible even when latest_at does not advance.
+  const stories = await sql<{ public_id: string; revision: string }[]>`
+    SELECT st.public_id::text, md5(concat_ws('|', st.title, st.summary, st.digest, st.digest_updated_at::text,
+      st.version::text, members.revision)) AS revision
+    FROM stories st JOIN LATERAL (
+      SELECT md5(string_agg(concat_ws(':', p.article_id, p.revision::text, fa.role, f.updated_at::text, s.name),
+        ',' ORDER BY p.article_id, f.id)) AS revision
+      FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
+      JOIN sources s ON s.id = p.source_id
+      WHERE f.story_id = st.id AND ${storyReportCondition(at)}
+    ) members ON true
+    WHERE st.merged_into IS NULL AND EXISTS (
       SELECT 1 FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
-      WHERE f.story_id = stories.id AND ${evidenceCondition()} AND ${listedCondition(at)})
-    ORDER BY latest_at DESC NULLS LAST, id DESC LIMIT 500`;
-  for (const s of stories) entries.push({ loc: `/story/${s.public_id}`, lastmod: s.latest_at, changefreq: "daily", priority: 0.5 });
+      WHERE f.story_id = st.id AND ${evidenceCondition()} AND ${listedCondition(at)})
+    ORDER BY st.latest_at DESC NULLS LAST, st.id DESC ${limits ? sql`LIMIT ${limits.stories}` : sql``}`;
+  for (const s of stories) entries.push({ loc: `/story/${s.public_id}`, revision: s.revision, changefreq: "daily", priority: 0.5 });
   for (const m of serverModules()) if (m.sitemap?.entries) entries.push(...(await m.sitemap.entries()));
-  const items = await sql<{ id: string; t: Date }[]>`
-    SELECT p.article_id AS id, p.updated_at AS t FROM publications p JOIN sources s ON s.id = p.source_id
+  // Material/translation timestamps can also record a retry or a state repair. Hash the content;
+  // without a dedicated public modification clock, omitting lastmod is more accurate than guessing.
+  const items = await sql<{ id: string; revision: string }[]>`
+    SELECT p.article_id AS id,
+      md5(concat_ws('|', p.revision::text, a.content_hash, tr.title, tr.body_html, tr.body_text, tr.complete::text, qt.text_zh,
+        s.name, s.icon_url, st.public_id::text, st.title)) AS revision
+    ${ITEM_FROM}
     WHERE ${storyReportCondition(at)} AND p.indexable
-    ORDER BY p.timeline_at DESC, p.article_id DESC LIMIT ${MAX_URLS - entries.length}`;
-  for (const it of items) entries.push({ loc: `/items/${it.id}`, lastmod: it.t, changefreq: "monthly", priority: 0.5 });
+    ORDER BY p.timeline_at DESC, p.article_id DESC ${limits ? sql`LIMIT ${Math.max(0, limits.urls - entries.length)}` : sql``}`;
+  for (const it of items) entries.push({ loc: `/items/${it.id}`, revision: it.revision, changefreq: "monthly", priority: 0.5 });
+  return limits ? entries.slice(0, limits.urls) : entries;
+}
 
+async function build(at: Date): Promise<string> {
+  const entries = await loadDiscoveryEntries(at, { stories: 500, urls: MAX_URLS });
   const body = entries
     .slice(0, MAX_URLS)
     .map((e) => {

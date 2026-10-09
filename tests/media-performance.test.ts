@@ -177,7 +177,7 @@ test("concurrent cold OG and poster requests all succeed with identical cached b
 test("successive responsive candidates reuse the completed original download", async () => {
   const before = imageHits;
   const url = `${base}/successive`;
-  const small = await produceImage(url, "image-336");
+  const small = await produceImage(url, "card");
   const large = await produceImage(url, "image-1200");
   const avatar = await produceImage(url, "avatar-48");
   assert.equal(imageHits - before, 1);
@@ -196,7 +196,7 @@ test("responsive URLs and web body candidates retain exact signatures and stable
     const query = Object.fromEntries(u.searchParams);
     assert.equal(verifyProxyRequest(query, now).ok, true);
     assert.equal(width, query.mode === "card" ? "336w" : "720w");
-    assert.equal(verifyProxyRequest({ ...query, mode: "image-1600" }, now).ok, false);
+    assert.equal(verifyProxyRequest({ ...query, mode: "full" }, now).ok, false);
   }
   const html = '<p><img src="https://example.org/image.png?a=1&amp;b=2" width="800" height="400"></p>';
   assert.ok(!proxyBodyImages('<img src="https://example.org/small.png" width="160" height="80">').includes('srcset='));
@@ -220,7 +220,7 @@ test("image HTTP responses keep earlier URLs valid, reject tampering before fetc
   registerMedia(app);
   const url = `${base}/http-image`;
   const exp = String(Math.ceil(Date.now() / 1000) + 3600);
-  const params = new URLSearchParams({ u: url, mode: "image-336", exp, sig: signature(url, "image-336", exp) });
+  const params = new URLSearchParams({ u: url, mode: "card", exp, sig: signature(url, "card", exp) });
   const before = imageHits;
   const invalidParams = new URLSearchParams(params);
   invalidParams.set("sig", "invalid");
@@ -236,7 +236,7 @@ test("image HTTP responses keep earlier URLs valid, reject tampering before fetc
   assert.equal((await app.inject({ url: `/api/img-proxy?${old}` })).statusCode, 200);
   // Current URLs carry the first 16 hex digits; a wrong short signature is refused like a long one.
   const { proxiedImage } = await import("@aihot/backend/media/imgproxy");
-  const short = proxiedImage(url, "image-336")!;
+  const short = proxiedImage(url, "card")!;
   assert.match(short, /&sig=[0-9a-f]{16}$/);
   assert.equal((await app.inject({ url: short })).statusCode, 200);
   assert.equal((await app.inject({ url: short.replace(/sig=(.)/, (_m, c: string) => `sig=${c === "0" ? "1" : "0"}`) })).statusCode, 403);
@@ -253,7 +253,7 @@ test("image validators save unchanged bytes only after signature verification", 
   registerMedia(app);
   const url = `${base}/validated-image`;
   const exp = String(Math.ceil(Date.now() / 1000) + 3600);
-  const params = new URLSearchParams({ u: url, mode: "image-336", exp, sig: signature(url, "image-336", exp) });
+  const params = new URLSearchParams({ u: url, mode: "card", exp, sig: signature(url, "card", exp) });
   try {
     const first = await app.inject({ url: `/api/img-proxy?${params}` });
     const etag = String(first.headers.etag);
@@ -275,7 +275,7 @@ test("image validators save unchanged bytes only after signature verification", 
     bad.set("sig", "0".repeat(16));
     const expired = new URLSearchParams(params);
     expired.set("exp", String(Math.floor(Date.now() / 1000) - 1));
-    expired.set("sig", signature(url, "image-336", expired.get("exp")!));
+    expired.set("sig", signature(url, "card", expired.get("exp")!));
     for (const query of [bad, expired]) {
       const denied = await app.inject({ url: `/api/img-proxy?${query}`, headers: { "if-none-match": etag } });
       assert.equal(denied.statusCode, 403);
@@ -305,7 +305,7 @@ test("image failures are cached for at most a minute and never beyond the signat
     for (const lifetime of [3600, 15]) {
       const url = `${base}/fail`;
       const exp = String(Math.floor(Date.now() / 1000) + lifetime);
-      const params = new URLSearchParams({ u: url, mode: "image-336", exp, sig: signature(url, "image-336", exp) });
+      const params = new URLSearchParams({ u: url, mode: "card", exp, sig: signature(url, "card", exp) });
       const failed = await app.inject({ url: `/api/img-proxy?${params}`, headers: { "if-none-match": "*" } });
       assert.equal(failed.statusCode, 502);
       const cache = String(failed.headers["cache-control"]);
@@ -329,7 +329,7 @@ test("pending animations expire at caches, then publish the prepared disk rendit
   registerMedia(app);
   const url = `${base}/anim.gif`;
   const exp = String(Math.ceil(Date.now() / 1000) + 3600);
-  const params = new URLSearchParams({ u: url, mode: "image-720", exp, sig: signature(url, "image-720", exp) });
+  const params = new URLSearchParams({ u: url, mode: "thumb", exp, sig: signature(url, "thumb", exp) });
   const first = await app.inject({ url: `/api/img-proxy?${params}` });
   assert.equal(first.statusCode, 200);
   assert.match(String(first.headers["cache-control"]), /max-age=60, s-maxage=60/);
@@ -350,16 +350,16 @@ test("pending animations expire at caches, then publish the prepared disk rendit
   const ttl = Number(/s-maxage=(\d+)/.exec(String(prepared.headers["cache-control"]))?.[1]);
   assert.ok(ttl > 3500 && ttl <= 3601, "the signature's remaining hour, never the seven-day ceiling");
   assert.equal(animationHits, fetched);
-  const unchanged = await produceImage(`${base}/tiny.gif`, "image-720");
+  const unchanged = await produceImage(`${base}/tiny.gif`, "thumb");
   assert.equal(unchanged.pendingAnimation, true);
-  assert.equal(await convertAnimated(`${base}/tiny.gif`, "image-720"), 0);
-  const ready = await produceImage(`${base}/tiny.gif`, "image-720");
+  assert.equal(await convertAnimated(`${base}/tiny.gif`, "thumb"), 0);
+  const ready = await produceImage(`${base}/tiny.gif`, "thumb");
   assert.deepEqual(ready.body, tinyGif);
   assert.equal(ready.pendingAnimation, undefined);
-  const unsupported = await produceImage(`${base}/over-budget.gif`, "image-720");
+  const unsupported = await produceImage(`${base}/over-budget.gif`, "thumb");
   assert.deepEqual(unsupported.body, overBudgetGif);
   assert.equal(unsupported.pendingAnimation, undefined);
-  assert.equal(await convertAnimated(`${base}/over-budget.gif`, "image-720"), 0);
+  assert.equal(await convertAnimated(`${base}/over-budget.gif`, "thumb"), 0);
   await app.close();
 });
 
@@ -369,18 +369,18 @@ test("binary-labelled real images work, but binary-labelled error pages still re
   const { proxiedImage } = await import("@aihot/backend/media/imgproxy");
   const app = Fastify();
   registerMedia(app);
-  const image = await app.inject({ url: proxiedImage(`${base}/binary-image`, "image-336")! });
+  const image = await app.inject({ url: proxiedImage(`${base}/binary-image`, "card")! });
   assert.equal(image.statusCode, 200);
   assert.equal(image.headers["content-type"], "image/webp");
   assert.equal((await sharp(image.rawPayload).metadata()).width, 336);
-  const error = await app.inject({ url: proxiedImage(`${base}/binary-error`, "image-336")! });
+  const error = await app.inject({ url: proxiedImage(`${base}/binary-error`, "card")! });
   assert.equal(error.statusCode, 502);
   // Arduino's CDN serves real JPEG/PNG bytes under this generic MIME alias. A 200 HTML error with
   // the same label must still fail; accepting the label alone would disguise an upstream failure.
-  const alias = await app.inject({ url: proxiedImage(`${base}/binary-alias`, "image-336")! });
+  const alias = await app.inject({ url: proxiedImage(`${base}/binary-alias`, "card")! });
   assert.equal(alias.statusCode, 200);
   assert.equal((await sharp(alias.rawPayload).metadata()).width, 336);
-  const aliasError = await app.inject({ url: proxiedImage(`${base}/binary-alias-error`, "image-336")! });
+  const aliasError = await app.inject({ url: proxiedImage(`${base}/binary-alias-error`, "card")! });
   assert.equal(aliasError.statusCode, 502);
   await app.close();
 });

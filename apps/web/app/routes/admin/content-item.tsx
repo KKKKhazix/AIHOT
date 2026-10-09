@@ -41,7 +41,7 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
   const { run, pending } = useAdminAction();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [visibility, setVisibility] = useState<string>(p?.visibility ?? "public");
-  const [fields, setFields] = useState({ title: "", summary: "", reason: "", category: "", tags: "", selected: "", silent: "" });
+  const [fields, setFields] = useState({ title: "", summary: "", reason: "", category: "", tags: "", scoreMode: "", score: "", selected: "", silent: "" });
   const [mergeInto, setMergeInto] = useState("");
   const version = c.override?.version ?? 0;
   const base = `/api/admin/content/${encodeURIComponent(a.id)}`;
@@ -56,6 +56,8 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
       reason: String(f.reason ?? ""),
       category: String(f.category ?? ""),
       tags: Array.isArray(f.tags) ? (f.tags as string[]).join(", ") : "",
+      scoreMode: f.score === null ? "none" : typeof f.score === "number" ? "value" : "",
+      score: typeof f.score === "number" ? String(f.score) : "",
       selected: f.selected === undefined ? "" : String(f.selected),
       silent: f.silent === undefined ? "" : String(f.silent),
     });
@@ -345,6 +347,9 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
           else if (c.override?.fields.category !== undefined) clear.push("category");
           if (fields.tags.trim()) next.tags = fields.tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean);
           else if (c.override?.fields.tags !== undefined) clear.push("tags");
+          if (fields.scoreMode === "none") next.score = null;
+          else if (fields.scoreMode === "value") next.score = Number(fields.score);
+          else if (c.override?.fields.score !== undefined) clear.push("score");
           for (const k of ["selected", "silent"] as const) {
             if (fields[k] === "true" || fields[k] === "false") next[k] = fields[k] === "true";
             else if (c.override?.fields[k] !== undefined) clear.push(k);
@@ -363,6 +368,14 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
             </Select>
           </Field>
           <Field label="标签（逗号分隔）"><Input value={fields.tags} onChange={(e) => setFields({ ...fields, tags: e.target.value })} /></Field>
+          <Field label="评分">
+            <Select value={fields.scoreMode} onChange={(e) => setFields({ ...fields, scoreMode: e.target.value })}>
+              <option value="">按模型</option>
+              <option value="none">撤销评分</option>
+              <option value="value">人工评分</option>
+            </Select>
+          </Field>
+          {fields.scoreMode === "value" && <Field label="分数（0–100）"><Input type="number" min={0} max={100} step="any" required value={fields.score} onChange={(e) => setFields({ ...fields, score: e.target.value })} /></Field>}
           <Field label="精选">
             <Select value={fields.selected} onChange={(e) => setFields({ ...fields, selected: e.target.value })}>
               <option value="">按模型</option>

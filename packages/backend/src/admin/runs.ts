@@ -28,22 +28,26 @@ export async function runsOverview(): Promise<Runs> {
     errors,
     ingest,
     grouping,
+    [retrying],
+    modules,
   ] = await Promise.all([
     sql<{ key: string; value: Heartbeat; updated_at: Date }[]>`SELECT key, value, updated_at FROM settings WHERE key LIKE 'heartbeat.%' ORDER BY key`,
     sql<Runs["jobs"]>`
-      WITH latest AS (
-        SELECT DISTINCT ON (job) job, started_at, finished_at, status, left(error, 400) AS error
-        FROM job_runs
-        -- Registered worker schedules and the modules' current external jobs; the timeline retains history.
-        WHERE EXISTS (SELECT 1 FROM pgboss.schedule s WHERE s.name = 'cron.' || job_runs.job)
-          OR job_runs.job = ANY(${currentJobs}::text[])
-        ORDER BY job, started_at DESC, id DESC
-      ), counts AS (
-        SELECT job, count(*) FILTER (WHERE status = 'failed')::int AS failed_24h, count(*)::int AS runs_24h
-        FROM job_runs WHERE started_at > now() - interval '24 hours' GROUP BY job
+      WITH current_jobs AS (
+        -- Start with live schedules, so each indexed lookup reads one task rather than all history.
+        SELECT substring(name FROM 6) AS job FROM pgboss.schedule WHERE name LIKE 'cron.%'
+        UNION SELECT unnest(${currentJobs}::text[])
       )
-      SELECT latest.*, coalesce(counts.failed_24h, 0) AS failed_24h, coalesce(counts.runs_24h, 0) AS runs_24h
-      FROM latest LEFT JOIN counts USING (job) ORDER BY job`,
+      SELECT current_jobs.job, latest.*, counts.failed_24h, counts.runs_24h
+      FROM current_jobs
+      JOIN LATERAL (
+        SELECT started_at, finished_at, status, left(error, 400) AS error FROM job_runs
+        WHERE job = current_jobs.job ORDER BY started_at DESC, id DESC LIMIT 1
+      ) latest ON true
+      CROSS JOIN LATERAL (
+        SELECT count(*) FILTER (WHERE status = 'failed')::int AS failed_24h, count(*)::int AS runs_24h
+        FROM job_runs WHERE job = current_jobs.job AND started_at > now() - interval '24 hours'
+      ) counts ORDER BY current_jobs.job`,
     sql<Runs["timeline"]>`SELECT id, job, started_at, finished_at, status, left(error, 300) AS error FROM job_runs ORDER BY started_at DESC, id DESC LIMIT 80`,
     sql<Runs["queues"]>`
       SELECT name, state, count(*)::int AS n, min(created_on) AS oldest FROM pgboss.job
@@ -72,10 +76,11 @@ export async function runsOverview(): Promise<Runs> {
       FROM articles WHERE processing_state = 'failed' AND discovered_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 20`,
     sql<Runs["ingest"]>`SELECT client, kind, status, left(error, 200) AS error, summary, created_at FROM ingest_events ORDER BY created_at DESC, id DESC LIMIT 20`,
     waitingSelectedNews(),
+    // Articles waiting to retry after a passing provider problem (they are not failed).
+    sql<{ n: number; next: Date | null }[]>`
+      SELECT count(*)::int AS n, min(processing_retry_at) AS next FROM articles WHERE processing_state = 'new' AND processing_attempts > 0`,
+    Promise.all(serverModules().flatMap((m) => (m.admin?.runs ? [m.admin.runs().then((part) => [m.name, part] as const)] : []))),
   ]);
-  // Articles waiting to retry after a passing provider problem (they are not failed).
-  const [retrying] = await sql<{ n: number; next: Date | null }[]>`
-    SELECT count(*)::int AS n, min(processing_retry_at) AS next FROM articles WHERE processing_state = 'new' AND processing_attempts > 0`;
   const now = Date.now();
   return {
     checkedAt: new Date(now).toISOString(),
@@ -96,7 +101,7 @@ export async function runsOverview(): Promise<Runs> {
     errors,
     retrying: { count: retrying?.n ?? 0, next: retrying?.next ?? null },
     ingest,
-    modules: Object.fromEntries(await Promise.all(serverModules().flatMap((m) => (m.admin?.runs ? [m.admin.runs().then((part) => [m.name, part] as const)] : [])))),
+    modules: Object.fromEntries(modules),
   };
 }
 

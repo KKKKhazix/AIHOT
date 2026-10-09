@@ -64,6 +64,34 @@ async function get(url: string, headers: Record<string, string> = {}) {
   return { status: res.statusCode, body: res.body, etag: res.headers.etag as string | undefined };
 }
 
+// Failure modes: a revoked score falls back to the erroneous model score, zero is treated as
+// missing, republishing loses a correction, invalid scores or stale edits alter public state,
+// or removing a correction cannot restore the saved model result without paying again.
+test("manual score corrections, including no score, survive every public projection and rebuild", async () => {
+  const id = await article();
+  await sql`UPDATE articles SET grouping_status = 'complete' WHERE id = ${id}`;
+  await publishArticle(id, released());
+  assert.equal(JSON.parse((await get(`/api/site/items/${id}`)).body).score, 90);
+  for (const score of [-1, 101, "0", Number.NaN]) {
+    await assert.rejects(overrideFields(id, { fields: { score }, reason: "invalid score", version: 0 }, "test"));
+  }
+  await overrideFields(id, { fields: { score: null, selected: false }, reason: "unsupported launch revoked", version: 0 }, "test");
+  await publishArticle(id);
+  const detail = JSON.parse((await get(`/api/site/items/${id}`)).body);
+  assert.equal(detail.score, null);
+  assert.equal(detail.selected, false);
+  const items = JSON.parse((await get(`/api/v1/items?mode=all&q=${encodeURIComponent(detail.title)}&limit=10`)).body).items;
+  assert.equal(items.find((i: { id: string }) => i.id === id)?.score, null);
+  assert.equal((await loadItemShare(id))?.score, null);
+  assert.ok(!(await get("/feed.xml")).body.includes(id), "revoked selection leaves RSS");
+  assert.equal(Number((await sql`SELECT score FROM analyses WHERE article_id = ${id}`)[0]!.score), 90, "the paid result stays intact");
+  await assert.rejects(overrideFields(id, { fields: { score: 99 }, reason: "stale correction", version: 0 }, "test"));
+  await overrideFields(id, { fields: { score: 0 }, reason: "verified zero score", version: 1 }, "test");
+  assert.equal(JSON.parse((await get(`/api/site/items/${id}`)).body).score, 0);
+  await overrideFields(id, { fields: {}, clear: ["score"], reason: "restore saved scoring", version: 2 }, "test");
+  assert.equal(JSON.parse((await get(`/api/site/items/${id}`)).body).score, 90);
+});
+
 // Export failures to guard before changing conversion: flattened table relationships, invented
 // headings/merged cells, lost numeric units, and full text leaking after a licence reduction.
 test("Markdown preserves a table's headings, caption, links, alignment and multiline cells in both languages", async () => {

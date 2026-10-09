@@ -300,7 +300,10 @@ export function Halftone({ seed, className = "", children }: { seed: string; cla
       paintTint();
       redraw();
     };
-    const theme = new MutationObserver(recolour);
+    const theme = new MutationObserver((changes) => {
+      if (changes.some((change) => change.attributeName === "data-font")) rebuild();
+      else recolour();
+    });
     const scheme = matchMedia("(prefers-color-scheme: dark)");
     const onScheme = recolour;
 
@@ -312,7 +315,7 @@ export function Halftone({ seed, className = "", children }: { seed: string; cla
       setDrawn(true);
       redraw();
       resize.observe(host);
-      theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class"] });
+      theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-font", "class"] });
       scheme.addEventListener("change", onScheme);
       if (hover && !still) {
         canvas.addEventListener("pointermove", onMove);

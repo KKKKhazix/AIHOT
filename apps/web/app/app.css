@@ -12,6 +12,10 @@
    --------------------------------------------------------------------------- */
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* The initial family is the reader's standard browser font, unlike system-ui or sans-serif. */
+:root[data-font="browser"] { font-family: initial; }
+[data-font="browser"] body, [data-font="browser"] .font-sans { font-family: inherit; }
 /* Touch screens (no hover): pressed states for rows and cards. */
 @custom-variant touch (@media (hover: none));
 

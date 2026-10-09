@@ -7,7 +7,7 @@ import { sql } from "../db.ts";
 import { beijingDate } from "@aihot/contracts/time";
 import { sha256 } from "../lib/ids.ts";
 import { embeddingsAvailable, ensureEmbeddings } from "../providers/embeddings.ts";
-import { lexicalSimilarity, reportText, type CandidateView, type ReportView, type ReadingContext } from "./relate.ts";
+import { GROUP_BODY_CHARS, lexicalSimilarity, reportText, type CandidateView, type ReportView, type ReadingContext } from "./relate.ts";
 import { latestCompositeCondition, ownFactEvidenceCondition, selectedCondition } from "../publication/scope.ts";
 import { pickRepresentative, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity, type RepresentativeRow } from "../publication/representative.ts";
 
@@ -190,7 +190,7 @@ export async function recallSelectedBackground(queryId: string, queryText: strin
   if (!picked.length) return [];
   // Read only the saved text of the few matching reports; never fetch or extract for this comparison.
   const bodies = new Map((await sql<{ id: string; text: string | null }[]>`
-    SELECT id, left(body_text, 6000) AS text FROM articles WHERE id = ANY(${picked.map(r => r.article_id)})`
+    SELECT id, left(body_text, ${GROUP_BODY_CHARS}) AS text FROM articles WHERE id = ANY(${picked.map(r => r.article_id)})`
   ).map(r => [r.id, r.text]));
   return picked.map(({ article_id, revision, ...report }) => ({ report, sourceText: bodies.get(article_id) ?? null }));
 }

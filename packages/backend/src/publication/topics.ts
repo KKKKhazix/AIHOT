@@ -14,6 +14,7 @@ import { REPO_ROOT } from "../config.ts";
 import { sql } from "../db.ts";
 import { ENTITIES } from "../editorial/vocabulary.ts";
 import { cached, type Cached } from "../lib/cache.ts";
+import { sha256, stableJson } from "../lib/ids.ts";
 import { serverModules } from "../modules.ts";
 import { ITEM_COLUMNS, ITEM_FROM, toFeedItemSummary, type ItemRow } from "./items.ts";
 import { evidenceCondition, listedCondition, ownFactEvidenceCondition, seatedCondition, selectedCondition, storyReportCondition } from "./scope.ts";
@@ -113,6 +114,8 @@ function inTopic(t: Topic) {
 /** A selected report in the topic index: the facts about it that the topic pages and their modules' parts read. */
 export interface TopicMember {
   id: string;
+  /** Public projection changes, including corrections that leave the timeline unchanged. */
+  revision: number;
   at: Date;
   /** When the selected report became visible. */
   released: Date;
@@ -141,6 +144,7 @@ export interface TopicMember {
 
 interface SeatRow {
   id: string;
+  revision: number;
   at: Date;
   released: Date;
   title: string;
@@ -172,7 +176,7 @@ interface TopicIndex {
 async function readSeats(now: Date, ids?: string[], topics: Topic[] = TOPICS): Promise<TopicMember[]> {
   const rows = await sql<SeatRow[]>`
     WITH seats AS (
-      SELECT p.article_id AS id, p.timeline_at AS at, p.visible_after AS released, p.title, p.score, (s.tier = 'T1') AS first_party,
+      SELECT p.article_id AS id, p.revision, p.timeline_at AS at, p.visible_after AS released, p.title, p.score, (s.tier = 'T1') AS first_party,
         p.category, p.original_title, p.published_at, p.tags, p.fact_id,
         f.subject AS fact_subject, f.action AS fact_action, f.occurred_at AS fact_occurred_at, a.output->>'scope' AS scope,
         st.public_id::text AS story, ${topicMembership(topics)} AS topics
@@ -191,7 +195,7 @@ async function readSeats(now: Date, ids?: string[], topics: Topic[] = TOPICS): P
     SELECT seats.*, dates.fact_published_at FROM seats LEFT JOIN dates ON dates.fact_id = seats.fact_id
     ORDER BY seats.at DESC, seats.id DESC`;
   return rows.map((r) => ({
-    id: r.id, at: r.at, released: r.released, title: r.title, topics: r.topics,
+    id: r.id, revision: r.revision, at: r.at, released: r.released, title: r.title, topics: r.topics,
     score: r.score, firstParty: r.first_party, category: r.category, factId: r.fact_id, story: r.story,
     originalTitle: r.original_title, publishedAt: r.published_at, factPublishedAt: r.fact_published_at, tags: r.tags,
     factSubject: r.fact_subject, factAction: r.fact_action, factOccurredAt: r.fact_occurred_at, scope: r.scope,
@@ -273,20 +277,30 @@ export interface TopicCount {
   slug: string;
   pages: number;
   indexable: boolean;
-  /** When a report last appeared in the topic. */
-  changedAt: Date | null;
+  /** Content identity includes removed reports and module contributions, not just the latest arrival. */
+  revision?: string;
 }
 
-/** For the sitemap and IndexNow: every topic's pages and when they last changed. */
-export async function topicPageCounts(now?: Date): Promise<TopicCount[]> {
+/** For discovery: every topic's pages and their current content identity. */
+export async function topicPageCounts(now?: Date, revisions = false): Promise<TopicCount[]> {
   const index = await topicIndex(now);
+  const brands = revisions ? await companyBrands() : null;
   return TOPICS.map((t) => {
     const seats = index.bySlug.get(t.slug)!;
+    let revision: string | undefined;
+    if (revisions) {
+      const current = new Map(seats.map((s) => [s.id, s]));
+      const parts = serverModules().flatMap((m) => {
+        const part = m.topics?.page?.read({ topic: t, page: 1, members: seats, index: index.modules.get(m.name), now: index.at });
+        return part ? [[m.name, part.part(current)]] : [];
+      });
+      revision = sha256(stableJson([t, seats, parts, brands?.get(t.slug) ?? null]));
+    }
     return {
       slug: t.slug,
       pages: Math.max(1, Math.ceil(seats.length / TOPIC_PAGE_SIZE)),
       indexable: isIndexable(seats.length, recentCount(seats, index.at)),
-      changedAt: seats.reduce<Date | null>((m, s) => (!m || s.released > m ? s.released : m), null),
+      ...(revision ? { revision } : {}),
     };
   });
 }

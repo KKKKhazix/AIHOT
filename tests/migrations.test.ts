@@ -93,3 +93,23 @@ test("IF NOT EXISTS must not turn an invalid or wrong-table index into a success
   })), /different table/);
   assert.equal((await db`SELECT 1 FROM schema_migrations WHERE name IN ('9006_invalid.sql', '9007_wrong_table.sql')`).length, 0);
 });
+
+// Storage metadata changes must coexist with normal readers/writers, retain the heap and row data,
+// and be recorded once so retrying a release does not repeat work.
+test("bounded vacuum settings apply without rewriting data or waiting for ordinary reads and writes", async () => {
+  await db`CREATE TABLE migration_vacuum (id int PRIMARY KEY)`;
+  await db`INSERT INTO migration_vacuum VALUES (1), (2)`;
+  const before = (await db`SELECT relfilenode FROM pg_class WHERE oid = 'migration_vacuum'::regclass`)[0].relfilenode;
+  const root = fixture({
+    "modules/example/migrations/9008_vacuum.sql": "ALTER TABLE migration_vacuum SET (autovacuum_vacuum_insert_scale_factor = 0.02, autovacuum_vacuum_scale_factor = 0.02);",
+  });
+  await other.begin(async (tx) => {
+    await tx`LOCK TABLE migration_vacuum IN ROW EXCLUSIVE MODE`;
+    assert.equal(await runMigrations(db, root), 1);
+  });
+  assert.equal(await runMigrations(db, root), 0);
+  const [after] = await db`SELECT relfilenode, reloptions FROM pg_class WHERE oid = 'migration_vacuum'::regclass`;
+  assert.equal(after.relfilenode, before);
+  assert.deepEqual([...after.reloptions].sort(), ["autovacuum_vacuum_insert_scale_factor=0.02", "autovacuum_vacuum_scale_factor=0.02"]);
+  assert.deepEqual((await db`SELECT id FROM migration_vacuum ORDER BY id`).map((row) => row.id), [1, 2]);
+});

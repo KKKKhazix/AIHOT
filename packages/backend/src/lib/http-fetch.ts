@@ -1,7 +1,7 @@
 // Outbound HTTP for collectors, the image proxy and the paid APIs: SSRF guard, routing, limits.
 import net from "node:net";
 import { addAbortListener } from "node:events";
-import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
+import { Agent, Pool, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
 import { config } from "../config.ts";
 import { assertPublicUrl, guardedLookup } from "./url.ts";
 import { createEgressProxy, createEgressResolver, OUTBOUND_HTTP_OPTIONS } from "./egress-proxy.ts";
@@ -33,14 +33,20 @@ function proxied(url: URL, route: EgressRoute): boolean {
   return net.isIP(host) === 0 && !host.endsWith(".cn") && !host.endsWith(".local") && !DEPLOYMENT.directFetchHosts.includes(host);
 }
 
+// Per-edition limits are optional; missing hosts keep the runtime default (normally 16 KiB).
+function destinationPool(origin: string | URL, options: object): Pool {
+  const limits = (DEPLOYMENT as { responseHeaderLimits?: Partial<Record<string, number>> }).responseHeaderLimits;
+  return new Pool(origin, { ...options, maxHeaderSize: limits?.[new URL(origin).hostname] });
+}
+
 function dispatcherFor(viaProxy: boolean): Dispatcher | undefined {
   if (viaProxy) {
-    proxyAgent ??= createEgressProxy(config.egressProxyUrl!, egressResolver());
+    proxyAgent ??= createEgressProxy(config.egressProxyUrl!, egressResolver(), destinationPool);
     return proxyAgent;
   }
   if (config.allowPrivateNetworkFetch) return undefined;
   // Direct connections resolve through the guarded lookup: the address actually dialled is checked.
-  directAgent ??= new Agent({ ...OUTBOUND_HTTP_OPTIONS, connect: { lookup: guardedLookup as never } });
+  directAgent ??= new Agent({ ...OUTBOUND_HTTP_OPTIONS, connect: { lookup: guardedLookup as never }, factory: destinationPool });
   return directAgent;
 }
 

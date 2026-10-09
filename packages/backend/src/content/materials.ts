@@ -145,6 +145,29 @@ export function identityKeyFor(m: MaterialInput): string {
 }
 
 /**
+ * A publisher's stable entry ID survives a URL rename. Reuse the earliest material for that ID within
+ * its source; new entries still use URL identity, so another discovery of the same URL converges.
+ * Existing duplicate rows remain untouched. Only collectors declaring an external ID call this.
+ */
+export async function reuseExternalMaterialIdentities<C extends Pick<MaterialInput, "identityKey" | "raw">>(sourceId: string, candidates: C[], db: Db = sql): Promise<C[]> {
+  const externalId = (raw: unknown): string | null => {
+    const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>).externalId : null;
+    return typeof value === "string" && value.length > 0 ? value : typeof value === "number" && Number.isFinite(value) ? String(value) : null;
+  };
+  const ids = [...new Set(candidates.map(c => externalId(c.raw)).filter((id): id is string => id !== null))];
+  if (ids.length === 0) return candidates;
+  const rows = await db<{ external_id: string; identity_key: string }[]>`
+    SELECT DISTINCT ON (raw->>'externalId') raw->>'externalId' AS external_id, identity_key
+    FROM articles WHERE source_id = ${sourceId} AND raw->>'externalId' = ANY(${ids}::text[])
+    ORDER BY raw->>'externalId', discovered_at, id`;
+  const known = new Map(rows.map(row => [row.external_id, row.identity_key]));
+  return candidates.map(candidate => {
+    const key = known.get(externalId(candidate.raw) ?? "");
+    return key ? { ...candidate, identityKey: key } : candidate;
+  });
+}
+
+/**
  * Stores material. Existing identities get a discovery record, and a new revision only when the
  * stored content really changes. Concurrent reports of the same material are serialised on the row,
  * so every change gets its own revision number. Returns whether processing is needed.

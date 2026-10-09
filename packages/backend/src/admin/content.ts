@@ -220,6 +220,7 @@ const FieldsSchema = z
     reason: z.string().max(1000),
     category: z.enum(CATEGORY_KEYS as unknown as [string, ...string[]]),
     tags: z.array(z.string().max(60)).max(20),
+    score: z.number().min(0).max(100).nullable(),
     selected: z.boolean(),
     silent: z.boolean(),
   })

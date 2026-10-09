@@ -15,6 +15,9 @@ import { promptText, promptVersion } from "../editorial/prompts.ts";
 export const RELATE_PROMPT_VERSION = promptVersion("group-pair", "group-signal");
 export const BATCH_PROMPT_VERSION = promptVersion("group-batch");
 
+/** Saved original evidence per report, shared by rendering and selected-background retrieval. */
+export const GROUP_BODY_CHARS = 10_000;
+
 export const RELATIONS = ["SAME_OCCURRENCE", "SAME_STORY", "UNRELATED", "ROUNDUP"] as const;
 export type Relation = (typeof RELATIONS)[number];
 
@@ -101,7 +104,7 @@ export function describeReport(r: ReportView, label: string, extra = "", summary
     f && (f.subject || f.action || f.object)
       ? `事实要素：主体=${f.subject || "?"}；动作=${f.action || "?"}；对象=${f.object || "?"}；日期=${f.occurredAt || "未知"}`
       : null,
-    r.sourceText ? `【原文证据】\n${r.sourceText.slice(0, 6000)}\n【原文证据结束】` : null,
+    r.sourceText ? `【原文证据】\n${r.sourceText.slice(0, GROUP_BODY_CHARS)}\n【原文证据结束】` : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -120,7 +123,7 @@ export function batchUser(query: ReportView, cands: CandidateView[], queryLabel 
     .join("\n\n");
   const background = reading.map(({ report, sourceText }, i) => [
     describeReport(report, `已公开精选阅读背景 R${i + 1}`, "（只比较信息覆盖，不是事实候选）", 2000),
-    sourceText ? `【该已选报道的原文证据】\n${sourceText.slice(0, 6000)}\n【原文证据结束】` : null,
+    sourceText ? `【该已选报道的原文证据】\n${sourceText.slice(0, GROUP_BODY_CHARS)}\n【原文证据结束】` : null,
   ].filter(Boolean).join("\n")).join("\n\n");
   return `${describeReport(query, queryLabel)}\n\n${list}${background ? `\n\n${background}` : ""}\n\n${queryLabel}与每个候选的关系是什么？${background ? "同时比较所有已公开精选内容，判断新增价值；无事实候选时 decisions=[]。" : ""}`;
 }

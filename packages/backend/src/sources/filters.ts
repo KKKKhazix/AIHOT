@@ -5,12 +5,11 @@ import { allowed } from "./web-list.ts";
 
 /**
  * What a source keeps from its listing: links inside its URL prefix rules (matched as listed), then
- * moved by its URL rewrite, without its denied categories and noise, inside its publication window.
- * Collection and the preview both read listings through it, so a preview shows what a run would store.
+ * moved by its URL rewrite, without its denied categories and noise. Publication admission happens
+ * after article-page enrichment, because a listing need not carry the article's publication date.
  */
-export function admitListing<C extends Candidate>(candidates: C[], source: SourceRow, now = Date.now()): C[] {
-  const kept = candidates.filter((c) => allowed(c.url, source)).map((c) => rewriteUrl(c, source)).filter((c) => !noiseFiltered(c, source));
-  return filterPublicationWindow(kept, source.config.publishedAfter, now);
+export function admitListing<C extends Candidate>(candidates: C[], source: SourceRow): C[] {
+  return candidates.filter((c) => allowed(c.url, source)).map((c) => rewriteUrl(c, source)).filter((c) => !noiseFiltered(c, source));
 }
 
 export function noiseFiltered(c: Candidate, source: SourceRow): boolean {
@@ -34,7 +33,7 @@ function rewriteUrl<C extends Candidate>(c: C, source: SourceRow): C {
 }
 
 /** A fixed publication boundary excludes history and dates that cannot prove an item is in range. */
-function filterPublicationWindow<C extends Candidate>(candidates: C[], publishedAfter: string | undefined, now: number): C[] {
+export function filterPublicationWindow<C extends Candidate>(candidates: C[], publishedAfter: string | undefined, now = Date.now()): C[] {
   if (!publishedAfter) return candidates;
   const after = Date.parse(publishedAfter);
   const latest = now + FUTURE_TOLERANCE_MS;

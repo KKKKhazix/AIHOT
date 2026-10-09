@@ -10,6 +10,7 @@ import { closeDb, sql } from "@aihot/backend/db";
 import { sha256 } from "@aihot/backend/lib/ids";
 
 const T = `recall-cache-${tag()}`;
+const savedBackground = '正文'.repeat(3500) + '阅读背景后半部证据' + '正文'.repeat(2000) + '上限之外';
 const provider = await stub((_hit, req) => ({ data: (JSON.parse(req.body).input as string[])
   .map((_text, index) => ({ index, embedding: [1, 0] })) }));
 const env = { ...process.env, EMBEDDING_MODEL: T, EMBEDDING_DIMS: "0",
@@ -25,7 +26,7 @@ test("fact and reading recall agree across cold, full and overflowing vector cac
   const items = ["first", "second", "background"].map(name => ({ id: `${T}-${name}`, text: `${T}-${name}。` }));
   for (const [index, item] of items.entries()) {
     await sql`INSERT INTO articles (id, source_id, identity_key, url, title, body_text, discovered_at, timeline_at, published_at)
-      VALUES (${item.id}, ${T}, ${item.id}, ${`https://example.org/${item.id}`}, ${item.id}, 'saved background', now(), now(), now())`;
+      VALUES (${item.id}, ${T}, ${item.id}, ${`https://example.org/${item.id}`}, ${item.id}, ${savedBackground}, now(), now(), now())`;
     await sql`INSERT INTO publications (article_id, title, source_id, channel, url, discovered_at, timeline_at, sort_at, selected, visible_after, revision)
       VALUES (${item.id}, ${item.id}, ${T}, 'news', ${`https://example.org/${item.id}`}, now(), now(), now(), ${index === 2}, now(), 1)`;
     if (index < 2) {
@@ -72,7 +73,8 @@ test("fact and reading recall agree across cold, full and overflowing vector cac
   assert.equal(cold.facts[0]!.score, 1);
   assert.ok(Math.abs(cold.facts[1]!.score - 0.8) < 1e-6);
   assert.equal(cold.background.length, 1);
-  assert.equal(cold.background[0]!.sourceText, "saved background");
+  assert.ok(cold.background[0]!.sourceText?.includes('阅读背景后半部证据'));
+  assert.ok(!cold.background[0]!.sourceText?.includes('上限之外'));
   for (const size of [29_999, 30_000]) await t.test(`initial cache size ${size}`, async () => {
     assert.deepEqual(await run(size), cold);
   });

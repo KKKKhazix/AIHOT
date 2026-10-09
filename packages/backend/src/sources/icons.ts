@@ -4,6 +4,7 @@
 import { sql } from "../db.ts";
 import { guardedFetch, DEFAULT_UA } from "../lib/http-fetch.ts";
 import { produceImage } from "../media/images.ts";
+import { sourceOwnsPost } from "./account.ts";
 
 const BATCH = 200;
 // A site without an icon rarely grows one; 公众号 misses are mostly WeChat turning the server away for a while.
@@ -19,7 +20,7 @@ async function refreshXAvatars(): Promise<number> {
       SELECT DISTINCT ON (a.source_id) a.source_id, a.x_post->>'avatarUrl' AS avatar
       FROM articles a JOIN sources xs ON xs.id = a.source_id AND xs.kind = 'x_search'
       WHERE a.x_post ? 'avatarUrl'
-        AND lower(xs.name) LIKE '%(@' || lower(a.x_post->>'handle') || ')'
+        AND ${sourceOwnsPost(sql`xs.name`, sql`a.x_post->>'handle'`)}
       ORDER BY a.source_id, a.discovered_at DESC
     ) x
     WHERE s.id = x.source_id AND s.icon_url IS DISTINCT FROM x.avatar

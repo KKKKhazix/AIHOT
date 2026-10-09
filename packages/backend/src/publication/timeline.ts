@@ -1,5 +1,5 @@
-// Selected news timeline: one card per fact, or per standalone article. Only duplicate reports
-// fold together. Each fact stays at its first appearance; other news in its story never moves it.
+// Selected news timeline: ordinary reports fold by fact; standalone and independent-source articles
+// keep their own cards. Each ordinary fact stays at its first appearance.
 import type { GroupInfo, TimelineCard, TimelineFilters, TimelineResponse } from "@aihot/contracts/site";
 import { beijingDate, beijingMidnight } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
@@ -10,7 +10,7 @@ import {
   ITEM_COLUMNS, ITEM_FROM, categoryCondition, channelCondition, tagCondition, toFeedItemSummary,
   type ItemRow,
 } from "./items.ts";
-import { evidenceCondition, listedCondition, ownFactEvidenceCondition, selectedCondition } from "./scope.ts";
+import { evidenceCondition, foldableSelectionCondition, listedCondition, ownFactEvidenceCondition, selectedCondition } from "./scope.ts";
 
 export interface TimelineQuery extends TimelineFilters {
   cursor?: string | null;
@@ -55,7 +55,7 @@ async function queryGroupedAnchors(q: TimelineQuery, now: Date) {
   const rows = (
     await sql<{ gk: string; anchor_at: Date }[]>`
       WITH base AS MATERIALIZED (
-        SELECT p.sort_at, CASE WHEN p.fact_id IS NOT NULL AND ${ownFactEvidenceCondition()}
+        SELECT p.sort_at, CASE WHEN p.fact_id IS NOT NULL AND ${ownFactEvidenceCondition()} AND ${foldableSelectionCondition()}
           THEN 'f' || p.fact_id::text ELSE 'a' || p.article_id END AS gk
         FROM publications p
         WHERE ${selectedCondition(now)} ${filterSql(q)}
@@ -114,7 +114,7 @@ export async function loadTimeline(q: TimelineQuery): Promise<Omit<TimelineRespo
         SELECT p.fact_id, p.article_id AS id, p.body_mode, p.score, p.timeline_at, ${REPRESENTATIVE_COLUMNS}
         FROM publications p JOIN sources s ON s.id = p.source_id LEFT JOIN facts f ON f.id = p.fact_id
         WHERE p.fact_id IN ${sql(factIds)}
-          AND ${selectedCondition(now)} AND ${ownFactEvidenceCondition()} ${filterSql(q)}`
+          AND ${selectedCondition(now)} AND ${ownFactEvidenceCondition()} AND ${foldableSelectionCondition()} ${filterSql(q)}`
       : Promise.resolve([] as Member[]),
     groupPool(q, now, factIds),
   ]);

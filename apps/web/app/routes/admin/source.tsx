@@ -2,7 +2,7 @@ import { SITE } from "@aihot/site";
 import { useState } from "react";
 import { Link } from "react-router";
 import type { Route } from "./+types/source";
-import type { AdminSource, AdminSourceDetail, AdminSourcePreview } from "@aihot/contracts/admin";
+import { REPLACEABLE_SOURCE_KINDS, type AdminSource, type AdminSourceDetail, type AdminSourcePreview, type AdminSourceUpdate } from "@aihot/contracts/admin";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { bj, duration, num } from "../../features/admin/format";
@@ -20,11 +20,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: `${loaderData?.source.name ?? "信源"} · ${SITE.name} 后台` }];
 
-type Draft = Pick<AdminSource, "name" | "interval_minutes" | "tier" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext"> & { tags: string; config: string };
+type Draft = Pick<AdminSource, "name" | "kind" | "interval_minutes" | "tier" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext"> & { tags: string; config: string };
 
 function draftOf(s: AdminSource): Draft {
   return {
     name: s.name,
+    kind: s.kind,
     interval_minutes: s.interval_minutes,
     tier: s.tier,
     participation_mode: s.participation_mode,
@@ -53,7 +54,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
   }
   const base = `/api/admin/sources/${encodeURIComponent(s.id)}`;
 
-  const patch = (): Record<string, unknown> | null => {
+  const patch = (): AdminSourceUpdate["patch"] | null => {
     let config: unknown;
     try {
       config = JSON.parse(draft.config);
@@ -76,7 +77,8 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
       const was = k === "tags" ? s.tags : k === "config" ? s.config : before[k];
       if (JSON.stringify(v) !== JSON.stringify(was)) changed[k] = v;
     }
-    return changed;
+    if (draft.kind !== s.kind) changed.config = config;
+    return changed as AdminSourceUpdate["patch"];
   };
   const changes = (() => {
     try {
@@ -101,11 +103,15 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
           <Button
             busy={pending === "preview"}
             onClick={async () => {
-              const r = await run<AdminSourcePreview>("POST", `${base}/preview`, {}, { label: "preview", revalidate: false });
+              const p = patch();
+              if (!p) return;
+              const r = changes && (REPLACEABLE_SOURCE_KINDS as readonly string[]).includes(draft.kind)
+                ? await run<AdminSourcePreview>("POST", "/api/admin/sources/preview", { id: s.id, kind: draft.kind, config: p.config ?? s.config, participation_mode: draft.participation_mode }, { label: "preview", revalidate: false })
+                : await run<AdminSourcePreview>("POST", `${base}/preview`, {}, { label: "preview", revalidate: false });
               if (r) setPreview(r);
             }}
           >
-            预览抓取
+            预览当前配置
           </Button>
           <Button busy={pending === "fetch"} onClick={() => run("POST", `${base}/fetch`, {}, { label: "fetch", success: "已加入采集队列" })}>
             立即采集
@@ -158,6 +164,13 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
               <Field label="名称">
                 <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
               </Field>
+              {(REPLACEABLE_SOURCE_KINDS as readonly string[]).includes(s.kind) && (
+                <Field label="采集方式" hint="调整后保留信源与历史内容；请填写对应的完整配置并预览">
+                  <Select value={draft.kind} onChange={(e) => { setDraft({ ...draft, kind: e.target.value }); setPreview(null); }}>
+                    {REPLACEABLE_SOURCE_KINDS.map(kind => <option key={kind} value={kind}>{KIND_LABEL[kind]}</option>)}
+                  </Select>
+                </Field>
+              )}
               <Field label="采集间隔（分钟）">
                 <Input type="number" min={1} max={1440} value={draft.interval_minutes} onChange={(e) => setDraft({ ...draft, interval_minutes: Number(e.target.value) })} />
               </Field>
@@ -281,13 +294,14 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
       <ReasonDialog
         open={dialog === "save"}
         title="保存信源设置"
-        description={`将修改：${Object.keys(patchPreview(draft, s)).join("、") || "无"}`}
+        description={`${draft.kind !== s.kind ? `采集方式由 ${KIND_LABEL[s.kind]} 调整为 ${KIND_LABEL[draft.kind]}，保留历史内容。` : ""}将修改：${Object.keys(patchPreview(draft, s)).join("、") || "无"}`}
         busy={pending === "save"}
         onClose={() => setDialog(null)}
         onSubmit={async (reason) => {
           const p = patch();
           if (!p) return false;
-          const r = await run("PATCH", base, { patch: p, version: new Date(s.updated_at).toISOString(), reason }, { label: "save", success: "已保存" });
+          const body: AdminSourceUpdate = { patch: p, version: new Date(s.updated_at).toISOString(), reason };
+          const r = await run("PATCH", base, body, { label: "save", success: "已保存" });
           return r !== null;
         }}
       />

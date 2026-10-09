@@ -116,6 +116,8 @@ export function defineQueue<T>(queue: ModuleQueue<T>): ModuleQueue<T> {
 
 export interface SitemapEntry {
   loc: string;
+  /** Stable public-content identity for update notifications; never rendered into the sitemap. */
+  revision?: string;
   lastmod?: Date | null;
   changefreq?: string;
   priority?: number;
@@ -197,6 +199,8 @@ export interface RequestNotices {
 export interface ServerModule {
   /** Its folder under modules/. */
   name: string;
+  /** Sources whose selected articles keep independent cards/seats without changing admission or event identity (publication/rules.ts, scope.ts). */
+  independentSelectedSources?: readonly string[];
   /** Its HTTP routes, and hooks on the app such as what to flush when it closes, registered before the engine's v1 fallbacks (apps/api/src/app.ts). */
   http?: (app: FastifyInstance) => void;
   agent?: {

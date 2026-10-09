@@ -1,5 +1,6 @@
 // A discovery channel is not the publisher. Explicit T1 URL scopes are verified ownership, even
-// when collection is paused. Implicit web-list scopes need an actual discovery of this article.
+// when collection is paused. Shared-platform scopes and implicit web-list scopes also need an
+// actual discovery of this article by the publisher's filtered source.
 import { audit } from "../audit.ts";
 import { sql, type Db } from "../db.ts";
 import { publishArticleTx } from "../publication/publish.ts";
@@ -33,6 +34,7 @@ export function publisherOwnsUrl(source: Publisher, rawUrl: string): boolean {
   // ownership. Match the configured origin and path boundary without broadening either.
   const url = ownershipUrl(rawUrl);
   if (!url) return false;
+  if (source.config.publisherRequiresDiscovery === true && !Array.isArray(source.config.publisherUrlPrefixes)) return false;
   let scopes: string[];
   if (Array.isArray(source.config.publisherUrlPrefixes)) {
     scopes = source.config.publisherUrlPrefixes.filter((v): v is string => typeof v === "string");
@@ -62,7 +64,10 @@ export async function reconcileMaterialSource(db: Db, articleId: string, observe
   if (!article) return false;
   const candidates = await db<Publisher[]>`
     SELECT s.id, s.kind, s.config, s.participation_mode FROM sources s
-    WHERE s.tier = 'T1' AND (jsonb_typeof(s.config->'publisherUrlPrefixes') = 'array'
+    WHERE s.tier = 'T1'
+      AND (s.config->'publisherRequiresDiscovery' IS DISTINCT FROM 'true'::jsonb
+        OR EXISTS (SELECT 1 FROM article_discoveries d WHERE d.article_id = ${articleId} AND d.source_id = s.id))
+      AND (jsonb_typeof(s.config->'publisherUrlPrefixes') = 'array'
       OR (s.kind = 'web_list' AND NOT (s.config ? 'publisherUrlPrefixes')
         AND EXISTS (SELECT 1 FROM article_discoveries d WHERE d.article_id = ${articleId} AND d.source_id = s.id)))`;
   const owned = candidates.filter((s) => publisherOwnsUrl(s, article.url));

@@ -4,6 +4,12 @@
 // rule in SQL, and grouping takes the composite rule from here too. What a publication holds is
 // derived once, at publish time, by publish.ts and rules.ts.
 import { sql } from "../db.ts";
+import { independentSelectedSources } from './rules.ts';
+
+/** These reports share their fact's display slot; independent sources keep their own selected card. */
+export function foldableSelectionCondition() {
+  return sql`(NOT p.selected OR p.source_id <> ALL(${independentSelectedSources()}::text[]))`;
+}
 
 /**
  * Only confirmed news enters p.selected (publish.ts). The release timestamp also supports
@@ -29,8 +35,8 @@ export function selectedCondition(now: Date) {
 }
 
 /**
- * The selected set as machines receive it (v1, RSS, the sync ledger): one seat per fact, held by its
- * representative (publish.ts settleSeats).
+ * The selected set as machines receive it (v1, RSS, the sync ledger): the representative of ordinary
+ * reports of each fact, plus any independently displayed selected articles (publish.ts settleSeats).
  */
 export function seatedCondition(now: Date) {
   return sql`p.visibility = 'public' AND p.selected AND p.seat AND p.visible_after <= ${now}`;

@@ -27,6 +27,50 @@ export interface ExtractedBody {
 
 const MIN_BODY_CHARS = 200;
 
+/** Restore only completed React streaming boundaries, without evaluating any page script. */
+function settleStreamedContent(document: ReturnType<typeof parseHTML>["document"]) {
+  for (const script of document.querySelectorAll("script:not([src])")) {
+    const type = script.getAttribute("type")?.toLowerCase();
+    if (type && type !== "text/javascript" && type !== "application/javascript") continue;
+    const text = script.textContent ?? "";
+    // React emits a standalone completion call, or appends it to its runtime definition. Do not
+    // interpret occurrences inside data, comments, documentation strings or arbitrary programs.
+    const call = /\$RC\("(B:[\w:.-]+)","(S:[\w:.-]+)"\)\s*;?\s*$/.exec(text);
+    if (!call) continue;
+    const before = text.slice(0, call.index).trim();
+    if (before && !(/^\$R[BCV]=/.test(before) && before.includes("$RC=function(") && before.endsWith("};"))) continue;
+    const boundary = document.getElementById(call[1]!);
+    const segment = document.getElementById(call[2]!);
+    const start = boundary?.previousSibling;
+    const parent = boundary?.parentNode;
+    if (!boundary || boundary.localName !== "template" || !segment?.hasAttribute("hidden") || !parent
+      || !start || start.nodeType !== 8 || !["$?", "$~"].includes(start.textContent ?? "") || segment.contains(boundary)) continue;
+    let end = boundary.nextSibling;
+    let depth = 0;
+    while (end) {
+      if (end.nodeType === 8) {
+        const marker = end.textContent;
+        if (marker === "/$") {
+          if (depth === 0) break;
+          depth -= 1;
+        } else if (["$", "$?", "$!", "$~"].includes(marker ?? "")) depth += 1;
+      }
+      end = end.nextSibling;
+    }
+    if (!end) continue;
+    let fallback = boundary.nextSibling;
+    parent.removeChild(boundary);
+    while (fallback && fallback !== end) {
+      const next = fallback.nextSibling;
+      parent.removeChild(fallback);
+      fallback = next;
+    }
+    while (segment.firstChild) parent.insertBefore(segment.firstChild, end);
+    segment.remove();
+    start.textContent = "$";
+  }
+}
+
 /**
  * Readability leaves out what an inline style hides, but compares style.display and style.visibility
  * literally, and linkedom keeps the author's case and "!important" in them. A style that sets either is
@@ -63,6 +107,7 @@ export function readable(html: string, url: string, utcOffset?: string): Extract
   } catch {
     // no head
   }
+  settleStreamedContent(document);
   settleInlineVisibility(document);
   const article = new Readability(document as unknown as ConstructorParameters<typeof Readability>[0], { charThreshold: MIN_BODY_CHARS, keepClasses: false }).parse();
   if (!article?.content) return null;

@@ -8,7 +8,8 @@ import type { Screen } from "../components/shell/screens";
 import { edgeTtl } from "../lib/api.server";
 import { webModules } from "../site-modules";
 import { pageMeta } from "../lib/seo";
-import { useStarred } from "../lib/local-state";
+import { setFontPreference, useFontPreference, useStarred } from "../lib/local-state";
+import { Select } from "../components/ui/Controls";
 import { ThemeSwitch } from "../components/shell/ThemeSwitch";
 import { IconBookmark, IconChevronRight, IconGrid, IconHeart, IconMessage, IconMoon, IconPlug, IconSparkles } from "../components/icons";
 
@@ -67,6 +68,7 @@ export default function MorePage() {
   const root = useRouteLoaderData<typeof rootLoader>("root");
   const changelogDot = useChangelogDot(root?.changelogVersion ?? null);
   const starred = useStarred();
+  const font = useFontPreference();
   // The count is this browser's: shown once the page runs here, never in the shared server copy.
   const [here, setHere] = useState(false);
   useEffect(() => setHere(true), []);
@@ -83,6 +85,14 @@ export default function MorePage() {
             </span>
             <span className="flex-1">外观</span>
             <ThemeSwitch className="w-[126px]" />
+          </li>
+          <li className="flex min-h-[56px] items-center gap-3 px-4 text-[16px] font-medium text-ink">
+            <span className="w-5 text-center text-ink-3" aria-hidden="true">Aa</span>
+            <span className="flex-1">字体</span>
+            <Select aria-label="字体" value={font ?? "system"} onChange={(e) => setFontPreference(e.target.value === "browser" ? "browser" : null)}>
+              <option value="system">默认字体</option>
+              <option value="browser">浏览器默认字体</option>
+            </Select>
           </li>
         </Group>
         <Group title="工具与入口">

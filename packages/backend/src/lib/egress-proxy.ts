@@ -2,7 +2,7 @@
 // can spend 20 s on a blocked name and occupy the lookup pool for unrelated images. Letting the proxy
 // resolve an unchecked name instead would allow DNS rebinding into this host or its private network.
 import net from "node:net";
-import { Client, ProxyAgent, request, type Dispatcher } from "undici";
+import { Client, ProxyAgent, request, type Agent, type Dispatcher } from "undici";
 import { isBlockedAddress } from "./url.ts";
 
 // HTTP/2 idle-socket cleanup can emit an unhandled stream error after a request has finished.
@@ -41,9 +41,9 @@ class PinnedProxyClient extends Client {
   }
 }
 
-export function createEgressProxy(proxyUrl: string, resolve: Resolve): ProxyAgent {
+export function createEgressProxy(proxyUrl: string, resolve: Resolve, factory?: Agent.Options["factory"]): ProxyAgent {
   return new ProxyAgent({ uri: proxyUrl, ...OUTBOUND_HTTP_OPTIONS, proxyTls: OUTBOUND_HTTP_OPTIONS,
-    proxyTunnel: true, clientFactory: (origin, options) => new PinnedProxyClient(origin, options, resolve) });
+    proxyTunnel: true, factory, clientFactory: (origin, options) => new PinnedProxyClient(origin, options, resolve) });
 }
 
 /** The fixed DNS service is reached through the same outbound proxy, never the system resolver. */

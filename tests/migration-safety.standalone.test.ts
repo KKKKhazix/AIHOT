@@ -45,6 +45,34 @@ test("online migrations permit metadata changes and split constraint validation"
   assert.throws(() => migrationPlan("ALTER TABLE articles ADD COLUMN flag text; ALTER TABLE articles VALIDATE CONSTRAINT positive;"));
 });
 
+// Vacuum tuning must not disable cleanup, alter unrelated storage settings, evaluate expressions,
+// escape the numeric bounds, repeat a parameter or bundle another table action/statement.
+test("online vacuum tuning accepts only bounded insert and dead-tuple scale factors", () => {
+  for (const statement of [
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_insert_scale_factor = 0.02);",
+    "ALTER TABLE public.analytics_events SET (autovacuum_vacuum_scale_factor = 1);",
+    'ALTER TABLE "public"."analytics_events" SET (autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_insert_scale_factor = 0.02);',
+    "ALTER TABLE analytics_events SET (AUTOVACUUM_VACUUM_INSERT_SCALE_FACTOR = 0.02, AUTOVACUUM_VACUUM_SCALE_FACTOR = 1.0);",
+  ]) assert.equal(migrationPlan(statement).kind, "transaction", statement);
+  for (const statement of [
+    "ALTER TABLE analytics_events SET (autovacuum_enabled = false);",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_insert_threshold = -1);",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_insert_scale_factor = 0);",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_scale_factor = -0.02);",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_scale_factor = 1.01);",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_scale_factor = '0.02');",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_scale_factor = 0.01 + 0.01);",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_scale_factor = 2e-2);",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_scale_factor = NaN);",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_scale_factor = 0.02, fillfactor = 50);",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_scale_factor = 0.02, autovacuum_vacuum_scale_factor = 0.03);",
+    "ALTER TABLE analytics_events RESET (autovacuum_vacuum_scale_factor);",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_scale_factor = 0.02), ADD COLUMN flag text;",
+    "ALTER TABLE analytics_events SET (autovacuum_vacuum_scale_factor = 0.02); SET lock_timeout = 0;",
+    "ALTER SYSTEM SET autovacuum_vacuum_scale_factor = 0.02;",
+  ]) assert.throws(() => migrationPlan(statement), statement);
+});
+
 // Dropping a table nothing uses: a dependent object must stop it (no CASCADE), and one statement may not
 // lock several tables at once.
 test("a table nothing uses can be dropped alone, never with its dependents", () => {

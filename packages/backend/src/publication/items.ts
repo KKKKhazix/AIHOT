@@ -6,8 +6,9 @@ import { POLICY } from "@aihot/site";
 import { sql, type Db } from "../db.ts";
 import { isEmptyOrLinkOnly } from "../content/posts.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
+import { sourceOwnsPost } from "../sources/account.ts";
 import { displayTags, publicSourceName } from "./rules.ts";
-import { seatedCondition } from "./scope.ts";
+import { foldableSelectionCondition, seatedCondition } from "./scope.ts";
 
 export interface ItemRow {
   id: string;
@@ -34,6 +35,8 @@ export interface ItemRow {
   /** Participation mode of the source now (editorial, hot_signal, isolated). */
   source_mode: string;
   x_post: Record<string, any> | null;
+  /** Current source icon only when that account is this post's author. */
+  author_avatar_url?: string | null;
   author: string | null;
   language: string | null;
   story_public_id: string | null;
@@ -49,6 +52,7 @@ export const ITEM_COLUMNS = sql`
   p.selected, p.seat, p.channel, p.url, p.published_at, p.discovered_at, p.timeline_at, p.visibility,
   p.body_mode, p.indexable, p.fact_id, s.name AS source_name, s.participation_mode AS source_mode,
   a.x_post, a.author, a.language,
+  CASE WHEN s.kind = 'x_search' AND ${sourceOwnsPost(sql`s.name`, sql`a.x_post->>'handle'`)} THEN s.icon_url END AS author_avatar_url,
   st.public_id::text AS story_public_id, st.title AS story_title,
   CASE WHEN p.channel = 'x' THEN tr.body_text END AS zh_text, qt.text_zh AS quoted_zh`;
 
@@ -108,7 +112,7 @@ function mediaView(m: Record<string, any>, mode: "card" | "thumb" | "full" = "th
   };
 }
 
-export function xView(row: Pick<ItemRow, "x_post" | "zh_text"> & Partial<Pick<ItemRow, "quoted_zh">>, compact = false, responsive = compact): XPostView | null {
+export function xView(row: Pick<ItemRow, "x_post" | "zh_text"> & Partial<Pick<ItemRow, "quoted_zh" | "author_avatar_url">>, compact = false, responsive = compact): XPostView | null {
   const x = row.x_post;
   if (!x) return null;
   const quoted = x.quoted && typeof x.quoted === "object"
@@ -120,11 +124,12 @@ export function xView(row: Pick<ItemRow, "x_post" | "zh_text"> & Partial<Pick<It
   const media = ((x.media ?? []) as Array<Record<string, any>>)
     .map((raw) => ({ raw, view: mediaView(raw, compact || !responsive ? "thumb" : "full", responsive) }))
     .filter((entry): entry is { raw: Record<string, any>; view: MediaView } => entry.view !== null);
-  const avatarSrcSet = responsive ? proxiedImageSet(x.avatarUrl, "avatar") : null;
+  const avatarUrl = row.author_avatar_url ?? x.avatarUrl;
+  const avatarSrcSet = responsive ? proxiedImageSet(avatarUrl, "avatar") : null;
   return {
     authorName: String(x.authorName ?? x.handle ?? ""),
     handle: String(x.handle ?? ""),
-    avatarUrl: proxiedImage(x.avatarUrl, "avatar"),
+    avatarUrl: proxiedImage(avatarUrl, "avatar"),
     ...(avatarSrcSet ? { avatarSrcSet } : {}),
     text: String(x.text ?? ""),
     translation: !isEmptyOrLinkOnly(String(x.text ?? "")) && row.zh_text && row.zh_text.trim() !== String(x.text ?? "").trim() ? row.zh_text : null,
@@ -203,7 +208,7 @@ export async function seatHolders(rows: ItemRow[], now: Date, db: Db = sql): Pro
   if (!yielding.length) return new Map();
   const holders = await db<{ fact_id: number; id: string; title: string }[]>`
     SELECT p.fact_id, p.article_id AS id, p.title FROM publications p
-    WHERE p.fact_id IN ${db([...new Set(yielding.map((r) => r.fact_id!))])} AND ${seatedCondition(now)}`;
+    WHERE p.fact_id IN ${db([...new Set(yielding.map((r) => r.fact_id!))])} AND ${seatedCondition(now)} AND ${foldableSelectionCondition()}`;
   const byFact = new Map(holders.map((h) => [Number(h.fact_id), { id: h.id, title: h.title }]));
   return new Map(yielding.flatMap((r) => (byFact.has(Number(r.fact_id)) ? [[r.id, byFact.get(Number(r.fact_id))!] as const] : [])));
 }

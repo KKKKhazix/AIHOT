@@ -1,4 +1,14 @@
 // Publication rules. Each rule is defined once here and used by every exit.
+import { serverModules } from '../modules.ts';
+
+/** Presentation exceptions never alter scoring, selection eligibility or fact membership. */
+export function independentSelectedSources(): string[] {
+  return [...new Set(serverModules().flatMap(m => m.independentSelectedSources ?? []))];
+}
+
+export function isIndependentSelectedSource(sourceId: string): boolean {
+  return independentSelectedSources().includes(sourceId);
+}
 
 export interface SourceFacts {
   id: string;

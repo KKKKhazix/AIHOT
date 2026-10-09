@@ -27,6 +27,7 @@ function reportText(r: ImportReport): string {
   const parts = [`新增收藏 ${r.starredAdded} 条`, `已读记录 ${r.readAdded} 条`];
   if (r.starredSkipped || r.readSkipped) parts.push(`超出上限或格式不对而跳过 ${r.starredSkipped + r.readSkipped} 条`);
   if (r.themeApplied) parts.push("已沿用导入的深浅色设置");
+  if (r.fontApplied) parts.push("已沿用导入的字体设置");
   if (r.readFailed) parts.push("已读记录没能保存（浏览器存储已满或不可用）");
   return parts.join("，");
 }

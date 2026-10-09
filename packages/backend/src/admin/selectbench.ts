@@ -80,7 +80,8 @@ export async function selectBenchRun(id: string, f: { model?: string; outcome?: 
   if (!run) return null;
   const outcome = f.outcome ?? null;
   // One row per case with every model's decision, so disagreements are visible side by side.
-  const rows = await sql<AdminSelectBenchCases["rows"]>`
+  const [rows, strata] = await Promise.all([
+    sql<AdminSelectBenchCases["rows"]>`
     SELECT case_id, min(title) AS title, min(stratum) AS stratum, min(gold) AS gold,
            jsonb_object_agg(model, jsonb_build_object('decision', decision, 'score', score, 'relevance', relevance, 'category', category, 'reason', reason, 'error', error, 'receiptId', receipt_id)) AS by_model
     FROM selectbench_results WHERE run_id = ${id} AND (${f.stratum ?? null}::text IS NULL OR stratum = ${f.stratum ?? null})
@@ -95,7 +96,8 @@ export async function selectBenchRun(id: string, f: { model?: string; outcome?: 
         WHEN 'error' THEN decision IS NULL
         ELSE true END))
       AND (${!!f.disagree} IS FALSE OR count(DISTINCT decision) > 1)
-    ORDER BY min(stratum), case_id LIMIT 400`;
-  const strata = await sql<AdminSelectBenchCases["strata"]>`SELECT stratum, count(DISTINCT case_id)::int AS n FROM selectbench_results WHERE run_id = ${id} GROUP BY 1 ORDER BY 2 DESC`;
+    ORDER BY min(stratum), case_id LIMIT 400`,
+    sql<AdminSelectBenchCases["strata"]>`SELECT stratum, count(DISTINCT case_id)::int AS n FROM selectbench_results WHERE run_id = ${id} GROUP BY 1 ORDER BY 2 DESC`,
+  ]);
   return { run, rows, strata };
 }

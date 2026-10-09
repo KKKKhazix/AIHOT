@@ -24,7 +24,7 @@ export function meta() {
 }
 
 /**
- * "我的", reached from the desktop sidebar or phone's last tab: this browser's bookmarks and appearance first,
+ * "我的", the phone's last tab (the address stays /more): this browser's bookmarks and appearance first,
  * then the tools, then the site's own pages.
  */
 type Row = { to: string; label: string; icon: ReactNode; detail?: ReactNode };

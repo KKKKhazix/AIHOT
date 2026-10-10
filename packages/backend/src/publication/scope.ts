@@ -59,6 +59,17 @@ export function latestCompositeCondition(article: ReturnType<typeof sql>) {
     ORDER BY scope_analysis.input_revision DESC, scope_analysis.id DESC LIMIT 1) IS TRUE`;
 }
 
+/**
+ * Evidence for a later identity decision: not a composite and not explicitly withdrawn.
+ * A summary-only report or one awaiting publication keeps its existing eligibility.
+ * Historical memberships and judgements are retained independently of this predicate.
+ */
+export function groupingEvidenceCondition(article: ReturnType<typeof sql>) {
+  return sql`NOT ${latestCompositeCondition(article)} AND NOT EXISTS (
+    SELECT 1 FROM publications grouping_publication
+    WHERE grouping_publication.article_id = ${article} AND grouping_publication.visibility = 'withdrawn')`;
+}
+
 /** `fa` links report `p` to a fact as evidence: a primary or report membership, never a composite. */
 export function evidenceCondition() {
   return sql`fa.role <> 'mention' AND NOT ${compositeCondition()}`;

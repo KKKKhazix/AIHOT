@@ -7,7 +7,7 @@ import { beijingDate } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt } from "../providers/receipts.ts";
-import { latestCompositeCondition } from "../publication/scope.ts";
+import { groupingEvidenceCondition } from "../publication/scope.ts";
 import { mergeStoryInto } from "./merge.ts";
 import { RECALL_DAYS, rootFactOf } from "./recall.ts";
 import { RELATED_MIN_REPORTS } from "./related.ts";
@@ -33,11 +33,11 @@ async function storyRoot(storyId: number): Promise<StoryRoot | null> {
     SELECT f.subject, f.action, f.object, f.occurred_at, p.title, p.summary, s.name AS source, (s.tier = 'T1') AS first_party,
            coalesce(p.published_at, p.discovered_at) AS at,
            (SELECT min(coalesce(q.published_at, q.discovered_at)) FROM fact_articles z JOIN publications q ON q.article_id = z.article_id
-            WHERE z.fact_id = f.id AND z.role IN ('primary', 'report') AND NOT ${latestCompositeCondition(sql`z.article_id`)}) AS started_at,
+            WHERE z.fact_id = f.id AND z.role IN ('primary', 'report') AND ${groupingEvidenceCondition(sql`z.article_id`)}) AS started_at,
            EXISTS (SELECT 1 FROM grouping_decisions d WHERE d.article_id = fa.article_id AND d.verdict = 'roundup') AS roundup
     FROM facts f
     JOIN stories st ON st.id = f.story_id AND st.origin <> 'manual'
-    JOIN fact_articles fa ON fa.fact_id = f.id AND fa.role IN ('primary', 'report') AND NOT ${latestCompositeCondition(sql`fa.article_id`)}
+    JOIN fact_articles fa ON fa.fact_id = f.id AND fa.role IN ('primary', 'report') AND ${groupingEvidenceCondition(sql`fa.article_id`)}
     JOIN publications p ON p.article_id = fa.article_id
     JOIN sources s ON s.id = p.source_id
     WHERE f.id = ${rootFactOf(storyId)}
@@ -127,7 +127,7 @@ export async function consolidate(storyIds: number[]): Promise<Consolidation[]> 
  */
 const startedByRoundup = (story: ReturnType<typeof sql>) => sql`EXISTS (
   SELECT 1 FROM fact_articles r JOIN grouping_decisions d ON d.article_id = r.article_id AND d.verdict = 'roundup'
-  WHERE r.fact_id = ${rootFactOf(story)} AND r.role <> 'mention')`;
+  WHERE r.fact_id = ${rootFactOf(story)} AND r.role <> 'mention' AND ${groupingEvidenceCondition(sql`r.article_id`)})`;
 
 /**
  * Stories that stay apart although reports tie them (a reaction, a development of a later fact, a
@@ -145,7 +145,7 @@ export async function linkRelatedStories(): Promise<{ added: number }> {
     ties AS (
       SELECT DISTINCT l.article_id, own.story_id AS a, other.story_id AS b
       FROM latest l
-      JOIN fact_articles fa ON fa.article_id = l.article_id AND fa.role IN ('primary', 'report') AND NOT ${latestCompositeCondition(sql`fa.article_id`)}
+      JOIN fact_articles fa ON fa.article_id = l.article_id AND fa.role IN ('primary', 'report') AND ${groupingEvidenceCondition(sql`fa.article_id`)}
       JOIN facts own ON own.id = fa.fact_id
       CROSS JOIN LATERAL jsonb_array_elements(l.candidates) c
       JOIN facts other ON other.id = (c->>'id')::bigint

@@ -6,7 +6,10 @@ import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { getBoss, stopBoss } from "@aihot/backend/jobs/queue";
-import { checkAlerts, collectFindings, sendDigest } from "@aihot/backend/operations/alerts";
+import { checkAlerts, collectFindings, providerStops, sendDigest } from "@aihot/backend/operations/alerts";
+import { CAPABILITIES } from "@aihot/backend/editorial/models";
+import { MODELS } from "@aihot/backend/providers/llm";
+import { READER_WORDING } from "@aihot/industry/wording";
 import { runsOverview } from "@aihot/backend/admin/runs";
 
 process.env.COLLECT_ENABLED = "false";
@@ -57,6 +60,20 @@ test("an outage is announced once, repeated hourly, and closed with one recovery
 
 // Backup failures may overwrite the latest-attempt summary. Alert age must use the last successful
 // run; repeated failures must not reset it. With no success ever, age starts at the first attempt.
+test("a model service's outage names the steps that call it, not the wording step while the word list is empty", () => {
+  const service = MODELS[CAPABILITIES.wording.default]!.service;
+  const wording = CAPABILITIES.wording.label.split("（")[0]!;
+  const list = READER_WORDING as Array<readonly [RegExp, string]>;
+  const kept = list.splice(0);
+  try {
+    assert.ok(!providerStops(service).includes(wording), "nothing to look for: the step never calls a model");
+    list.push([/禁用词/u, "换一个说法"]);
+    assert.ok(providerStops(service).includes(wording));
+  } finally {
+    list.splice(0, list.length, ...kept);
+  }
+});
+
 test("backup failures still escalate after fifty hours without a success", async () => {
   Object.assign(process.env, {
     DB_BACKUP_STORE_SECRET_ID: "test-backup-key", DB_BACKUP_STORE_SECRET_KEY: "test-backup-secret",

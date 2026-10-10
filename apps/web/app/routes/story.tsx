@@ -40,7 +40,8 @@ export function meta({ loaderData }: Route.MetaArgs) {
     type: "article",
     jsonLd: [
       storyLd(s),
-      breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "热点榜", path: "/hot" }, { name: s.title, path: `/story/${s.publicId}` }]),
+      // Under the board only while it is a way in, as the back link.
+      breadcrumbLd([{ name: SITE.name, path: "/" }, ...(inNav("/hot") ? [{ name: "热点榜", path: "/hot" }] : []), { name: s.title, path: `/story/${s.publicId}` }]),
     ],
   });
 }
@@ -423,16 +424,12 @@ export default function StoryPage() {
               {!story.whyHot.observationComplete && <p className="mt-2 text-[12px] leading-relaxed text-ink-4">部分信源观测不完整，以上仅为已观察到的参与。</p>}
               <p className="mt-2 text-[12px] text-ink-4">
                 <span className="num">{story.whyHot.recentReports24h}</span> 篇近期报道
-                {story.whyHot.rank && (
+                {story.whyHot.rank && inNav("/hot") && (
                   <>
                     <span className="mx-1">·</span>
-                    {inNav("/hot") ? (
-                      <Link to="/hot" className="text-accent hover:underline">
-                        热点榜第 {story.whyHot.rank} 名
-                      </Link>
-                    ) : (
-                      <>热点榜第 {story.whyHot.rank} 名</>
-                    )}
+                    <Link to="/hot" className="text-accent hover:underline">
+                      热点榜第 {story.whyHot.rank} 名
+                    </Link>
                   </>
                 )}
               </p>

@@ -48,7 +48,8 @@ const provider = await stub((_hit, req) => {
   // Copy with a word a site keeps from readers (added to the pack's list below), and its mended form: whole (WORDY),
   // refused by the provider, with a number changed, or with as many such words as before.
   if (step === "understand" && WORDY.includes(marker)) return answer({ itemType: ITEM_TYPES[0], authorRole: "principal", tags: [], editorialJudgment: `理由里有禁用词 ${marker}`, titleZh: `标题里有禁用词 ${marker}`, summaryZh: `${marker} 的摘要。第二句补充 3 个数字。` });
-  if (step === "wording" && marker === "REFUSAL") return new Reply(400, { contentFilter: [{ level: 1, role: "user" }], error: { code: "1301", message: "系统检测到输入或生成内容可能包含不安全或敏感内容" } });
+  // A refusal in a provider's own words: each provider words its own, and the same request would meet it again.
+  if (step === "wording" && marker === "REFUSAL") return new Reply(400, { error: { message: "request refused", type: "invalid_request_error" } });
   if (step === "wording") {
     const unmended = marker === "UNMENDED" ? "有禁用词" : "换了说法";
     return answer({ titleZh: `标题里${unmended} ${marker}`, summaryZh: `${marker} 的摘要。第二句补充 ${marker === "RENUMBER" ? 4 : 3} 个数字。`, reasonZh: `理由里${unmended} ${marker}` });

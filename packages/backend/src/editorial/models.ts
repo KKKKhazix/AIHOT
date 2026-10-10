@@ -2,6 +2,7 @@
 // own model), an environment override, and an admin switch kept in settings (every switch is audited).
 // Read at call time and cached for a minute, so a switch applies to the next call without a restart; a
 // changed model only affects work done from then on (history is not re-judged).
+import { READER_WORDING } from "@aihot/industry/wording";
 import { DEFAULTS } from "@aihot/site/models";
 import { sql } from "../db.ts";
 import { serverModules } from "../modules.ts";
@@ -16,6 +17,8 @@ export interface Capability {
   purposes: string[];
   /** The step needs a model that reads images. */
   vision?: boolean;
+  /** The step has nothing to do on this site, so a service's outage does not stop it. */
+  idle?: () => boolean;
 }
 
 export const CAPABILITIES = {
@@ -23,7 +26,7 @@ export const CAPABILITIES = {
   score: { label: "精选评分（两次独立评分，按信源分级门槛）", env: "SCORE_MODEL", default: DEFAULTS.score ?? "default", purposes: ["score_article"] },
   understand: { label: "内容理解（入选和接近入选的标题、摘要、推荐理由，能看图时看首图）", env: "UNDERSTAND_MODEL", default: DEFAULTS.understand ?? "default", purposes: ["understand_article"] },
   summarize: { label: "标题摘要（其余文章的中文标题与摘要）", env: "SUMMARIZE_MODEL", default: DEFAULTS.summarize ?? "default", purposes: ["summarize_article"] },
-  wording: { label: "改用词（标题、摘要、理由用了本站不用的词时，只改这些词）", env: "WORDING_MODEL", default: DEFAULTS.wording ?? "default", purposes: ["mend_wording"] },
+  wording: { label: "改用词（标题、摘要、理由用了本站不用的词时，只改这些词）", env: "WORDING_MODEL", default: DEFAULTS.wording ?? "default", purposes: ["mend_wording"], idle: () => !READER_WORDING.length },
   structure: { label: "结构抽取（分类、标签、主体公司、事件事实，不写读者文字）", env: "STRUCTURE_MODEL", default: DEFAULTS.structure ?? "default", purposes: ["structure_article"] },
   group: { label: "事件归组（新报道与候选事实的关系：同一次发生、同一事件的进展、无关；被同一篇报道连起来的两个事件是否同一事件）", env: "GROUP_MODEL", default: DEFAULTS.group ?? "default", purposes: ["group_article", "group_signal", "group_story"] },
   groupReview: { label: "归组复核（相似度不高的合并、两个事件的合并，写入前再读一遍；最好换一家模型）", env: "GROUP_REVIEW_MODEL", default: DEFAULTS.groupReview ?? "default", purposes: ["group_review", "group_story_review"] },
@@ -45,7 +48,7 @@ export function capabilities(): Record<string, Capability> {
 /** Names of the steps whose default model belongs to a service: what stops when that service refuses us. */
 export function stepsOnService(service: string): string[] {
   return Object.values(capabilities())
-    .filter((c) => MODELS[c.default]?.service === service)
+    .filter((c) => MODELS[c.default]?.service === service && !c.idle?.())
     .map((c) => c.label.split("（")[0]!);
 }
 

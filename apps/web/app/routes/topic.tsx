@@ -59,7 +59,8 @@ export function meta({ loaderData }: Route.MetaArgs) {
   const parts = partsOf(data);
   const path = page > 1 ? `/topics/${topic.slug}/page/${page}` : `/topics/${topic.slug}`;
   const text = page > 1 ? `${topic.name}的精选归档第 ${page} 页。${topic.definition}` : description(data, parts);
-  const crumbs = breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "主题", path: "/topics" }, { name: topic.name, path: `/topics/${topic.slug}` }]);
+  // Under the topics page only while it is a way in, as the back link.
+  const crumbs = breadcrumbLd([{ name: SITE.name, path: "/" }, ...(inNav("/topics") ? [{ name: "主题", path: "/topics" }] : []), { name: topic.name, path: `/topics/${topic.slug}` }]);
   return pageMeta({
     title: page > 1
       ? `${topic.name} 精选 · 第 ${page} 页`

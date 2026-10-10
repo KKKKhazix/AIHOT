@@ -403,9 +403,10 @@ async function mendWording(a: AnalyzeInputArticle, w: NonNullable<AnalysisRun["w
       schema: MendSchema, temperature: 0.1, maxTokens: 2048, attemptTag: tagged(opts.attemptTag, "wording"),
     });
   } catch (error) {
-    // An answer that is not the copy asked for, or the provider's refusal (as in writing), leaves the first copy;
-    // its receipt stays failed (seen on the runs page, and asked again the next time the item is analysed).
-    if (error instanceof ModelOutputError || isContentFilter(error)) return w;
+    // An answer that is not the copy asked for, or a refusal the same request would meet again (each provider words
+    // its own), leaves the first copy: a mend that cannot be had must not hold the item back. Its receipt stays failed
+    // (seen on the runs page, and asked again the next time the item is analysed); a busy provider is tried again later.
+    if (error instanceof ModelOutputError || (error instanceof ProviderRejectedError && !error.retryable)) return w;
     throw error;
   }
   const copy = finalizeCopy(t, { titleZh: res.data.titleZh, summaryZh: res.data.summaryZh });

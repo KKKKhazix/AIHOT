@@ -36,10 +36,8 @@ const agentWays = () => [...webModules().flatMap((m) => m.agentWays ?? []), "MCP
 /** The modules' tools first, then the engine's. */
 const tools = (): Row[] => [
   ...webModules().flatMap((m) => m.tools ?? []),
-  ...[
-    { to: "/topics", label: "主题", icon: <IconGrid size={20} /> },
-    { to: "/agent", label: "Agent 接入", icon: <IconPlug size={20} />, detail: agentWays().slice(0, 3).join(" · ") },
-  ].filter((r) => inNav(r.to)),
+  ...(inNav("/topics") ? [{ to: "/topics", label: "主题", icon: <IconGrid size={20} /> }] : []),
+  { to: "/agent", label: "Agent 接入", icon: <IconPlug size={20} />, detail: agentWays().slice(0, 3).join(" · ") },
 ];
 
 function Group({ title, children }: { title?: string; children: ReactNode }) {

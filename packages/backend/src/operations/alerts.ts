@@ -268,6 +268,8 @@ interface AlertState {
 const DAILY_PREFIX = "report.daily:";
 const dailyDate = (key: string) => key.startsWith(DAILY_PREFIX) && isValidDate(key.slice(DAILY_PREFIX.length))
   ? key.slice(DAILY_PREFIX.length) : undefined;
+/** Missing dailies are looked for, and announced ones followed, over the last seven Beijing calendar days. */
+const dailyScanFrom = (now: number) => addDays(beijingDate(now), -6);
 
 async function alertState(): Promise<AlertState> {
   const [row] = await sql<{ value: AlertState }[]>`SELECT value FROM settings WHERE key = 'alerts.state'`;
@@ -291,9 +293,10 @@ async function dailyReportFindings(now: number): Promise<Finding[]> {
   const starts = [activity?.first_report, activity?.first_attempt && beijingDate(activity.first_attempt)]
     .filter((date): date is string => !!date && isValidDate(date)).sort();
   const start = starts[0] ?? today;
-  // Bound new gap discovery, but never expire an already announced missing edition.
-  const dates = new Set(Object.keys(state).map(dailyDate).filter((date): date is string => !!date));
-  for (let date = addDays(today, -6); date <= today; date = addDays(date, 1)) {
+  // New gaps and announced editions alike are followed for the scan window; checkAlerts closes older ones.
+  const from = dailyScanFrom(now);
+  const dates = new Set(Object.keys(state).map(dailyDate).filter((date): date is string => !!date && date >= from));
+  for (let date = from; date <= today; date = addDays(date, 1)) {
     if (date >= start) dates.add(date);
   }
   const overdue = [...dates].filter(date => now >= beijingAt(date, EDITION_TIMES.daily).getTime() + 2 * 3600_000).sort();
@@ -334,7 +337,14 @@ export async function checkAlerts(now = Date.now()) {
     const date = dailyDate(key);
     if (date) {
       const [report] = await sql`SELECT 1 FROM reports WHERE kind = 'daily' AND key = ${date}`;
-      if (!report) continue;
+      if (!report && date >= dailyScanFrom(now)) continue;
+      if (!report) {
+        // Past the scan window a missing edition is closed with one message instead of reminded about forever.
+        await sendAlert(`${date} 的日报没能补出，停止提醒`, [`读者看不到 ${date} 的日报；缺期从 ${beijingStamp(new Date(open.since))} 起，已超出七天的检查范围`]);
+        sent.push(`${key}:expired`);
+        delete state[key];
+        continue;
+      }
     }
     const msg = formatRecovery(open.title, new Date(open.since), now);
     await sendAlert(msg.title, msg.lines);

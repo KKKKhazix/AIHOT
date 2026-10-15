@@ -47,10 +47,38 @@ export class ProviderRejectedError extends Error {
 /**
  * The HTTP rule for every provider: an answer outside 2xx means the request was not taken. Rate limits
  * and server errors may pass; any other status is a refusal the same request would meet again.
+ *
+ * A refusal that names a billing limit is neither: the account is out of credit, plan or balance, so the
+ * same request fails the same way until someone pays. It is reported as a spent budget — that is what the
+ * pipeline already knows how to wait for — and stops calls to the service for a while, so an exhausted
+ * plan costs one refused request per cooldown instead of one per article retry.
  */
+const QUOTA_REFUSAL = /(quota|usage limit|usage_limit|insufficient|out of credit|balance|arrear|good standing|欠费|余额|额度)/i;
+export const PROVIDER_QUOTA_COOLDOWN_SECONDS = 900;
+export const quotaStopKey = (service: string) => `provider.quota.${service}`;
+
 export function assertAccepted(service: string, status: number, body: string): void {
   if (status >= 200 && status < 300) return;
+  if ((status === 402 || status === 403 || status === 429) && QUOTA_REFUSAL.test(body)) {
+    throw new BudgetExceededError(service, "provider", PROVIDER_QUOTA_COOLDOWN_SECONDS);
+  }
   throw new ProviderRejectedError(`${service} HTTP ${status}: ${body.slice(0, 500)}`, status, status === 429 || status >= 500);
+}
+
+/** Until when calls to this service are stopped, in epoch milliseconds; null when it may be called. */
+export async function quotaStopUntil(tx: Db, service: string): Promise<number | null> {
+  const [row] = await tx<{ value: { until?: string } }[]>`SELECT value FROM settings WHERE key = ${quotaStopKey(service)}`;
+  const until = Date.parse(row?.value?.until ?? "");
+  return Number.isFinite(until) && until > Date.now() ? until : null;
+}
+
+/** Record the cooldown a billing refusal implies, and drop the expired ones while we are here. */
+async function stopForQuota(tx: Db, service: string): Promise<void> {
+  const until = new Date(Date.now() + PROVIDER_QUOTA_COOLDOWN_SECONDS * 1000).toISOString();
+  await tx`INSERT INTO settings (key, value, updated_by) VALUES (${quotaStopKey(service)}, ${tx.json({ until })}, 'receipts')
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`;
+  await tx`DELETE FROM settings WHERE key LIKE 'provider.quota.%'
+           AND coalesce((value->>'until')::timestamptz, 'epoch') < now() - interval '1 day'`;
 }
 
 export interface CallOutcome {
@@ -97,6 +125,9 @@ interface ReceiptRow {
 async function checkBudget(tx: Db, service: string): Promise<void> {
   const [budget] = await tx<{ per_minute: number; per_hour: number; per_day: number }[]>`
     SELECT per_minute, per_hour, per_day FROM budgets WHERE service = ${service}`;
+  // A service that said the account cannot pay is not called again until its cooldown runs out.
+  const stopped = await quotaStopUntil(tx, service);
+  if (stopped !== null) throw new BudgetExceededError(service, "provider", Math.ceil((stopped - Date.now()) / 1000));
   if (!budget) return; // default rows come with the migrations; a service an operator removed is unlimited
   // Every request sent counts, retries of the same logical request included.
   const [counts] = await tx<{ minute: number; hour: number; day: number }[]>`
@@ -167,12 +198,16 @@ export async function paidRequest(req: ReceiptRequest, call: () => Promise<CallO
   try {
     outcome = await call();
   } catch (error) {
-    const status = error instanceof ProviderRejectedError ? "failed" : "unknown";
+    // A billing refusal never ran the request, so it is a failure to record, not an unknown outcome —
+    // and it stops the next calls to that service for a while.
+    const quota = error instanceof BudgetExceededError;
+    const status = error instanceof ProviderRejectedError || quota ? "failed" : "unknown";
     // "unknown": the request may have reached the provider (timeout, reset): do not re-send automatically.
-    const message = (error instanceof ProviderRejectedError ? error.message : String(error)).slice(0, 2000);
+    const message = (error instanceof ProviderRejectedError || quota ? error.message : String(error)).slice(0, 2000);
     await sql.begin(async (tx) => {
       await tx`UPDATE receipts SET status = ${status}, error = ${message}, updated_at = now() WHERE id = ${receiptId}`;
       await tx`UPDATE receipt_attempts SET status = ${status}, error = ${message}, latency_ms = ${Date.now() - started}, finished_at = now() WHERE id = ${attemptId}`;
+      if (quota) await stopForQuota(tx, req.service);
     });
     // The first transport failure needs the same durable identity as a later unknown-result retry.
     if (status === "unknown") throw new ReceiptUnknownError(receiptId, message, { cause: error });

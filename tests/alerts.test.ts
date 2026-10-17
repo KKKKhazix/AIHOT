@@ -71,6 +71,27 @@ test("an outage is announced once, repeated hourly, and closed with one recovery
 
 // Backup failures may overwrite the latest-attempt summary. Alert age must use the last successful
 // run; repeated failures must not reset it. With no success ever, age starts at the first attempt.
+test("a service stopped for an exhausted account is reported at once, and its recovery closes it", async () => {
+  process.env.COLLECT_ENABLED = "true";
+  try {
+    const key = `provider.quota.${MODELS[await modelFor("summarize")]!.service}`;
+    const until = new Date(Date.now() + 10 * 60_000).toISOString();
+    await sql`INSERT INTO settings (key, value, updated_by) VALUES (${key}, ${sql.json({ until })}, 'test')
+              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+    const finding = (await collectFindings(Date.now())).find((f) => f.key === key);
+    assert.ok(finding, "the stop is reported without waiting for refused requests to add up");
+    assert.equal(finding.owner, true, "only the owner can pay");
+    assert.match(finding.title, /额度用尽/);
+    assert.match(finding.detail!, /暂停调用至/);
+    // The stop is a state, not an event: once it lapses the finding is gone and the alert closes itself.
+    await sql`UPDATE settings SET value = jsonb_build_object('until', (now() - interval '1 minute')::text) WHERE key = ${key}`;
+    assert.equal((await collectFindings(Date.now())).find((f) => f.key === key), undefined);
+    await sql`DELETE FROM settings WHERE key = ${key}`;
+  } finally {
+    process.env.COLLECT_ENABLED = "false";
+  }
+});
+
 test("a model service's outage names the steps that call it, not the wording step while the word list is empty", async () => {
   const service = MODELS[await modelFor("wording")]!.service;
   const wording = CAPABILITIES.wording.label.split("（")[0]!;

@@ -9,7 +9,7 @@ import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { chatJson, ModelOutputError } from "@aihot/backend/providers/llm";
 import { embeddingsAvailable } from "@aihot/backend/providers/embeddings";
-import { BudgetExceededError, logicalKeyFor, markStalePendingReceipts, paidRequest, ReceiptUnknownError } from "@aihot/backend/providers/receipts";
+import { assertAccepted, BudgetExceededError, logicalKeyFor, markStalePendingReceipts, paidRequest, quotaStopKey, ReceiptUnknownError } from "@aihot/backend/providers/receipts";
 import { autoReleaseUnknownReceipts } from "@aihot/backend/operations/recover";
 
 const usage = { prompt_tokens: 80, completion_tokens: 20, total_tokens: 100 };
@@ -212,10 +212,35 @@ test("concurrent distinct requests cannot both spend the last service budget slo
   assert.equal(attempts!.count, 1, "the refused request must not reserve another paid attempt");
 });
 
+test("a provider that says the account cannot pay stops the calls instead of burning retries", async () => {
+  const service = `invariant-quota-${tag()}`;
+  let sent = 0;
+  const refusal = async () => {
+    sent += 1;
+    // The real one: a Go plan 429 whose body names the plan's usage limit.
+    assertAccepted(service, 429, '{"type":"error","error":{"type":"GoUsageLimitError","message":"Go plan usage limit reached"}}');
+    return { response: { ok: true } };
+  };
+  const first = { service, purpose: "invariant_test", identity: "first" };
+  await assert.rejects(paidRequest(first, refusal), BudgetExceededError);
+  const [row] = await sql<{ status: string; error: string }[]>`SELECT status, error FROM receipts WHERE logical_key = ${logicalKeyFor(first)}`;
+  assert.equal(row!.status, "failed", "a billing refusal never ran the request");
+  assert.match(row!.error, /Budget for .* exhausted \(provider\)/, "recorded in the form the pipeline already waits for");
+
+  // The next call is stopped before it is sent: one refused request per cooldown, not one per article.
+  await assert.rejects(paidRequest({ service, purpose: "invariant_test", identity: "second" }, refusal), BudgetExceededError);
+  assert.equal(sent, 1, "no second request reaches the provider while the cooldown holds");
+
+  // A stop, not a verdict: once the cooldown runs out the service is called again.
+  await sql`UPDATE settings SET value = jsonb_build_object('until', (now() - interval '1 minute')::text) WHERE key = ${quotaStopKey(service)}`;
+  await paidRequest({ service, purpose: "invariant_test", identity: "third" }, async () => { sent += 1; return { response: { ok: true } }; });
+  assert.equal(sent, 2, "calls resume after the cooldown");
+  await sql`DELETE FROM settings WHERE key = ${quotaStopKey(service)}`;
+});
+
 // Failure modes: checking only the shortest window loses sustained-spend limits; counting expired
 // attempts never restores the allowance. Exercise each longer window without exhausting the others.
-for (const window of [
-  { name: "hour", insideMs: 2 * 60_000, expiredMs: 61 * 60_000, perHour: 1, perDay: 100 },
+for (const window of [  { name: "hour", insideMs: 2 * 60_000, expiredMs: 61 * 60_000, perHour: 1, perDay: 100 },
   { name: "day", insideMs: 2 * 3_600_000, expiredMs: 25 * 3_600_000, perHour: 100, perDay: 1 },
 ]) test(`the ${window.name} budget independently refuses a paid request until its attempt expires`, async () => {
   const service = `invariant-${window.name}-budget-${tag()}`;

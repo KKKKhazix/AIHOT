@@ -242,6 +242,23 @@ export const providerConsole = (service: string) => PROVIDERS[service]?.where ??
 /** Paid services that refuse us (no balance, a dead key), and daily budgets used up. */
 async function providerFindings(): Promise<Finding[]> {
   const out: Finding[] = [];
+  // A service stopped because its account is out of credit: the pipeline is waiting, not failing, so this
+  // is reported the moment it happens instead of after three refused requests have added up.
+  const stopped = await sql<{ service: string; until: string }[]>`
+    SELECT replace(key, 'provider.quota.', '') AS service, value->>'until' AS until FROM settings
+    WHERE key LIKE 'provider.quota.%' AND coalesce((value->>'until')::timestamptz, 'epoch') > now() ORDER BY key`;
+  for (const s of stopped) {
+    out.push({
+      key: `provider.quota.${s.service}`,
+      level: "today",
+      owner: true,
+      title: `${providerName(s.service)} 额度用尽，已暂停调用`,
+      impact: await providerStops(s.service),
+      heals: "不会，需要充值或换 key；恢复后系统会自己接上",
+      action: `去${providerConsole(s.service)}看余额与套餐，充值或换 key；不用重启，下一次调用会自己继续`,
+      detail: `被拒后暂停调用至 ${beijingStamp(new Date(s.until))}，期间文章留在待处理、不计为失败`,
+    });
+  }
   const refused = await sql<{ service: string; n: number; last: string }[]>`
     SELECT service, count(*)::int AS n, (array_agg(left(error, 200) ORDER BY started_at DESC))[1] AS last FROM receipt_attempts
     WHERE status = 'failed' AND started_at > now() - interval '1 hour'

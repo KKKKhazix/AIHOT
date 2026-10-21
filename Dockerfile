@@ -1,6 +1,6 @@
 # One image for every role: setup (migrations and seed), api, worker and web.
 # Build arg NPM_REGISTRY switches the npm registry (e.g. https://registry.npmmirror.com in mainland China).
-FROM node:24-trixie-slim AS base
+FROM node:24.22.1-trixie-slim AS base
 WORKDIR /app
 # pg_dump for the optional database backups (Debian's client matches the PostgreSQL 17 server in compose).
 RUN apt-get update \

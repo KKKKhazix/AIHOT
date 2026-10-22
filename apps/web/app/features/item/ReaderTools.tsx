@@ -54,7 +54,7 @@ function Tool({ icon, label, onClick, href, pressed }: { icon: ReactNode; label:
   );
 }
 
-export function ReaderToolbar({ item, originalUrl, originalLabel, onOutline, onShare }: {
+export function ReaderToolbar({ item, originalUrl, originalLabel, onOutline, onShare, shareLabel = "分享" }: {
   item: Starrable;
   /** Missing while the article is still loading. */
   originalUrl?: string;
@@ -62,6 +62,7 @@ export function ReaderToolbar({ item, originalUrl, originalLabel, onOutline, onS
   /** Long reads: opens the outline. */
   onOutline?: () => void;
   onShare: () => void;
+  shareLabel?: string;
 }) {
   const hidden = useReadingDown();
   const star = useStar(item);
@@ -82,7 +83,7 @@ export function ReaderToolbar({ item, originalUrl, originalLabel, onOutline, onS
           }
         />
         {onOutline && <Tool onClick={onOutline} label="目录" icon={<IconList size={22} />} />}
-        <Tool onClick={onShare} label="分享" icon={<IconShare size={22} />} />
+        <Tool onClick={onShare} label={shareLabel} icon={<IconShare size={22} />} />
         {originalUrl ? <Tool href={originalUrl} label={originalLabel} icon={<IconExternal size={22} />} /> : <Tool label={originalLabel} icon={<IconExternal size={22} />} />}
       </div>
     </nav>

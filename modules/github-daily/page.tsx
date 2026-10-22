@@ -7,7 +7,7 @@ import type { Screen } from "@aihot/web/components/shell/screens";
 interface Item { rank: number; repository: string; url: string; description: string; language: string | null; starsTotal: number; starsToday: number; aiSummary?: string | null }
 interface Response { date: string; sourceUrl: string; items: Item[] }
 
-export const handle: Screen = { tab: "me", name: "GitHub 日榜" };
+export const handle: Screen = { tab: "github-daily", name: "GitHub 日榜" };
 export const headers = pageHeaders;
 
 export async function loader({ request }: { request: Request }) {

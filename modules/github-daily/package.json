@@ -1,0 +1,10 @@
+{
+  "name": "@aihot/github-daily",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./module": "./module.ts",
+    "./server": "./server.ts",
+    "./web": "./web.tsx"
+  }
+}

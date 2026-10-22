@@ -7,7 +7,7 @@ import http from "node:http";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
-import { translateArticle, translatePending } from "@aihot/backend/editorial/translate";
+import { translateArticle, translatePending, importBodyTranslation } from "@aihot/backend/editorial/translate";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { autoReleaseUnknownReceipts } from "@aihot/backend/operations/recover";
 import { publishArticle } from "@aihot/backend/publication/publish";
@@ -439,4 +439,22 @@ test("account 429 pauses translation without spending the article attempts", asy
     if(original===undefined) delete process.env.TRANSLATE_MODEL; else process.env.TRANSLATE_MODEL=original;
     await denied.close();
   }
+});
+
+
+test("external model translation import restores against the exact body and rejects a stale source", async () => {
+  const sourceHtml = '<p>The imported price is ten dollars.</p>';
+  const { articleId } = await upsertMaterial({sourceId:SOURCE,url:`${URL_}-external`,title:'Imported body',
+    language:'en',bodyHtml:sourceHtml,bodyText:'The imported price is ten dollars.',bodyStatus:'ok',via:'import'});
+  const input = {articleId,sourceHtml,title:'导入正文',html:'<p>导入价格为十美元。</p><script>bad()</script>',complete:true};
+  await importBodyTranslation(input);
+  const [saved] = await sql`SELECT revision,body_html,origin,created_at FROM translations WHERE article_id=${articleId}`;
+  assert.equal(saved.origin,'model');
+  assert.equal(saved.body_html,'<p>导入价格为十美元。</p>');
+  await importBodyTranslation(input);
+  assert.equal((await sql`SELECT created_at FROM translations WHERE article_id=${articleId}`)[0].created_at.getTime(),saved.created_at.getTime());
+  await upsertMaterial({sourceId:SOURCE,url:`${URL_}-external`,title:'Imported body',language:'en',
+    bodyHtml:'<p>The price is twenty dollars.</p>',bodyText:'The price is twenty dollars.',bodyStatus:'ok',via:'import'});
+  await assert.rejects(importBodyTranslation(input),/source changed/);
+  assert.equal((await sql`SELECT revision FROM translations WHERE article_id=${articleId}`)[0].revision,saved.revision);
 });

@@ -2,12 +2,13 @@ import { useLoaderData } from "react-router";
 import { apiGet, cachedPage, pageHeaders } from "@aihot/web/lib/api.server";
 import { pageMeta } from "@aihot/web/lib/seo";
 import { IconArrowUpRight, IconGithub } from "@aihot/web/components/icons";
+import { ReportChannelTabs } from "@aihot/web/features/report/ReportChannelTabs";
 import type { Screen } from "@aihot/web/components/shell/screens";
 
 interface Item { rank: number; repository: string; url: string; description: string; language: string | null; starsTotal: number; starsToday: number; aiSummary?: string | null }
 interface Response { date: string; sourceUrl: string; items: Item[] }
 
-export const handle: Screen = { tab: "github-daily", name: "GitHub 日榜" };
+export const handle: Screen = { tab: "daily", name: "GitHub 日榜" };
 export const headers = pageHeaders;
 
 export async function loader({ request }: { request: Request }) {
@@ -29,6 +30,7 @@ export default function GithubDailyPage() {
   const maxStarsToday = Math.max(...data.items.map((item) => item.starsToday), 1);
   return (
     <main className="mx-auto w-full max-w-[900px] px-4 pb-16 pt-8 sm:px-8 lg:pt-12">
+      <ReportChannelTabs active="github" />
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-accent"><IconGithub size={16} /> GitHub Trending</div>

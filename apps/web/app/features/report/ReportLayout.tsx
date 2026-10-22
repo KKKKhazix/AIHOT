@@ -4,6 +4,7 @@ import { BarButton, PhoneBar, type BackTarget } from "../../components/shell/Pho
 import { OutlineSheet, type OutlineEntry } from "../../components/ui/OutlineSheet";
 import { IconList } from "../../components/icons";
 import { KindSwitch, ReportArchive, ReportPhoneNav } from "./ReportNav";
+import { ReportChannelTabs } from "./ReportChannelTabs";
 
 /**
  * Report pages sit beside their own archive column (desktop), flush against the site sidebar. Phones get
@@ -46,7 +47,7 @@ export function ReportLayout({ kind, index, current, today, outline = [], back, 
             {outline.length > 0 && <OutlineSheet title="本期目录" open={outlineOpen} onClose={() => setOutlineOpen(false)} outline={outline} />}
           </>
         )}
-        <div className="w-full lg:max-w-[1160px]">{children}</div>
+        <div className="w-full lg:max-w-[1160px]"><ReportChannelTabs active="daily" />{children}</div>
       </div>
     </div>
   );

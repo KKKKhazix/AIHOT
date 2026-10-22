@@ -10,7 +10,7 @@
     "modules/*"
   ],
   "engines": {
-    "node": ">=24.11"
+    "node": ">=24.22.1"
   },
   "overrides": {
     "fflate": "0.7.5"

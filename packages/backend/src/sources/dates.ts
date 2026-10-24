@@ -102,24 +102,26 @@ const RELATIVE_UNITS: Record<string, number> = { 秒: 1e3, 分钟: 60e3, 分: 60
  * A page's own element printing an age instead of a date ("20小时前", "2天前", "昨天", "3 hours ago"), counted back
  * from `now`, the moment it was read. Only the whole text of a date rule's element is read this way: a sentence
  * that mentions "两天前" is no date. Some listing pages print the age for an article's first days and the date
- * only after, so every new article came in undated and missed that day's news. Hours and minutes keep a time;
- * days keep the calendar day in the source's offset.
+ * only after, so every new article came in undated and missed that day's news. Hours and minutes keep a time,
+ * however many; days keep the calendar day in the source's offset.
  */
 export function readRelativeDate(value: string | null | undefined, now: Date, utcOffset = "+08:00"): PublicationDate {
   const v = collapse(value);
   const none = { publishedAt: null, publicationTime: null };
   if (!v) return none;
   let ms: number | null = null;
+  let unit = "";
   if (/^(刚刚|just now)$/i.test(v)) ms = 0;
-  else if (/^(昨天|yesterday)$/i.test(v)) ms = 86400e3;
-  else if (v === "前天") ms = 2 * 86400e3;
+  else if (/^(昨天|yesterday)$/i.test(v)) [ms, unit] = [86400e3, "day"];
+  else if (v === "前天") [ms, unit] = [2 * 86400e3, "day"];
   else {
     const m = /^(\d{1,3})\s*(秒|分钟|分|小时|天)前$/.exec(v) ?? /^(\d{1,3})\s+(second|minute|min|hour|hr|day)s?\s+ago$/i.exec(v);
-    if (m) ms = Number(m[1]) * RELATIVE_UNITS[m[2]!.toLowerCase()]!;
+    if (m) [ms, unit] = [Number(m[1]) * RELATIVE_UNITS[m[2]!.toLowerCase()]!, m[2]!.toLowerCase()];
   }
   if (ms === null) return none;
   const at = new Date(now.getTime() - ms);
-  if (ms < 86400e3) return { publishedAt: at, publicationTime: at.toISOString() };
+  // The text's own unit sets the precision: "47小时前" keeps its time, though it is more than a day back.
+  if (unit !== "天" && unit !== "day") return { publishedAt: at, publicationTime: at.toISOString() };
   const offsetMs = Date.UTC(2000, 0, 1) - atOffset(2000, 1, 1, 0, 0, 0, utcOffset)!.getTime();
   const day = new Date(at.getTime() + offsetMs).toISOString().slice(0, 10);
   return { publishedAt: atOffset(day.slice(0, 4), day.slice(5, 7), day.slice(8, 10), 0, 0, 0, utcOffset), publicationTime: day };

@@ -179,6 +179,8 @@ test("a date rule's element that prints an age counts back from the moment it is
   assert.deepEqual(readRelativeDate("20小时前", now), { publishedAt: new Date("2026-10-23T05:30:00.000Z"), publicationTime: "2026-10-23T05:30:00.000Z" });
   assert.deepEqual(readRelativeDate(" 15 分钟前 ", now), { publishedAt: new Date("2026-10-24T01:15:00.000Z"), publicationTime: "2026-10-24T01:15:00.000Z" });
   assert.deepEqual(readRelativeDate("3 hours ago", now, "+00:00"), { publishedAt: new Date("2026-10-23T22:30:00.000Z"), publicationTime: "2026-10-23T22:30:00.000Z" });
+  // More than a day of hours is still hours: its time is kept, not cut to a calendar day.
+  assert.deepEqual(readRelativeDate("47小时前", now), { publishedAt: new Date("2026-10-22T02:30:00.000Z"), publicationTime: "2026-10-22T02:30:00.000Z" });
   // Days keep the calendar day in the source's offset.
   assert.deepEqual(readRelativeDate("2天前", now), { publishedAt: new Date("2026-10-21T16:00:00.000Z"), publicationTime: "2026-10-22" });
   assert.deepEqual(readRelativeDate("昨天", now), { publishedAt: new Date("2026-10-22T16:00:00.000Z"), publicationTime: "2026-10-23" });

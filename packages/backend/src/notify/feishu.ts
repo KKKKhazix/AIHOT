@@ -1,5 +1,6 @@
 // Feishu delivery. Two separate apps: the login app (admin OAuth) and the message app (internal
-// feedback chat, operations alert chat, image upload). Content groups use custom bot webhooks.
+// feedback chat, operations alert chat, image upload). Content groups use custom bot webhooks, and so do
+// alerts when FEISHU_ALERT_WEBHOOK_URL is set (they are plain text; feedback screenshots need the app).
 // Alerts and feedback never go to content groups, and content never goes to internal chats.
 // Everything outward is off unless explicitly enabled (development and tests stay silent).
 import { readFile, unlink } from "node:fs/promises";
@@ -107,7 +108,10 @@ export function formatRecovery(title: string, since: Date, now: number): { title
   return { title: `✅ 已恢复：${title}`, lines: [`持续 ${duration(now - since.getTime())}（${beijingStamp(since)} 起）`] };
 }
 
-/** Operations alert: the alert chat, falling back to the internal feedback chat — never a content group. */
+/**
+ * Operations alert: the alert group's bot webhook, else the alert chat, falling back to the internal
+ * feedback chat — never a content group.
+ */
 export async function sendAlert(title: string, lines: string[]): Promise<"sent" | "disabled"> {
   // Production needs no label; any other environment that has sending on says which one it is.
   const text = `${config.environmentName === "production" ? "" : `【${config.environmentName}】`}${title}\n${lines.join("\n")}`;
@@ -115,10 +119,55 @@ export async function sendAlert(title: string, lines: string[]): Promise<"sent" 
     console.log(JSON.stringify({ level: "warn", msg: "alert (not sent: FEISHU_INTERNAL_ENABLED is off)", title, lines }));
     return "disabled";
   }
+  const webhook = credential("integrations", "FEISHU_ALERT_WEBHOOK_URL");
+  if (webhook) {
+    for (const piece of webhookPieces(text)) {
+      await webhookTurn();
+      const result = await sendWebhook(webhook, { msg_type: "text", content: { text: piece } });
+      if (result.status !== "sent") throw new Error(`feishu alert webhook ${result.status}: ${result.body}`);
+    }
+    return "sent";
+  }
   const chat = credential("integrations", "FEISHU_ALERT_CHAT_ID") ?? credential("integrations", "FEISHU_INTERNAL_CHAT_ID");
   if (!chat) return "disabled";
   await sendToChat(chat, "text", { text });
   return "sent";
+}
+
+// A custom bot takes at most 5 requests a second, 100 a minute and 20 KB a request (Feishu's custom bot
+// guide); the app's text messages took 150 KB. One check can send many alerts, and the digests are long.
+const WEBHOOK_GAP_MS = 600;
+const WEBHOOK_TEXT_BYTES = 18_000;
+let webhookNext = 0;
+
+async function webhookTurn(): Promise<void> {
+  const wait = webhookNext - performance.now();
+  webhookNext = Math.max(webhookNext, performance.now()) + WEBHOOK_GAP_MS;
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+}
+
+/** Bytes the text takes in the request body, where quotes, backslashes and line breaks are escaped. */
+const jsonBytes = (text: string) => Buffer.byteLength(JSON.stringify(text)) - 2;
+
+/** The text in pieces that fit a request, cut after a line where one fits; joined they are the text. */
+function webhookPieces(text: string): string[] {
+  const pieces: string[] = [];
+  let rest = text;
+  while (jsonBytes(rest) > WEBHOOK_TEXT_BYTES) {
+    let end = 0;
+    let bytes = 0;
+    for (const ch of rest) {
+      bytes += jsonBytes(ch);
+      if (bytes > WEBHOOK_TEXT_BYTES) break;
+      end += ch.length;
+    }
+    const line = rest.lastIndexOf("\n", end - 1);
+    if (line > 0) end = line + 1;
+    pieces.push(rest.slice(0, end));
+    rest = rest.slice(end);
+  }
+  pieces.push(rest);
+  return pieces;
 }
 
 /** A screenshot that still cannot be uploaded this long after the feedback is given up: the text goes without it. */
@@ -186,11 +235,15 @@ export async function forwardFeedbackToFeishu(id: number): Promise<"sent" | "dis
 }
 
 /** Custom-bot webhook for content groups (selected cards and other pushes). */
-export async function postWebhook(url: string, card: unknown): Promise<{ status: "sent" | "failed" | "unknown"; body: string }> {
+export function postWebhook(url: string, card: unknown): Promise<{ status: "sent" | "failed" | "unknown"; body: string }> {
+  return sendWebhook(url, { msg_type: "interactive", card });
+}
+
+async function sendWebhook(url: string, message: unknown): Promise<{ status: "sent" | "failed" | "unknown"; body: string }> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ msg_type: "interactive", card }),
+    body: JSON.stringify(message),
     signal: AbortSignal.timeout(15_000),
   });
   const body = await res.text();

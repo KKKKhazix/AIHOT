@@ -250,6 +250,48 @@
         }
       }
     },
+    "/api/v1/items/{id}": {
+      "get": {
+        "operationId": "itemById",
+        "summary": "Get one public article and its readable detail",
+        "description": "Use an id returned by /api/v1/items. The response includes the site's public summary and the detail page fields. Body content is included only when the source permits website full-text display; summary-only items contain neutral metadata, while withdrawn or otherwise unavailable items return 404. Send If-None-Match and respect the 60-second shared-cache window. The default language is zh; original requests the source-language body where available.",
+        "parameters": [
+          { "$ref": "#/components/parameters/ActorUserAgent" },
+          { "$ref": "#/components/parameters/IfNoneMatch" },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[a-zA-Z0-9_-]+$" }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["zh", "original"], "default": "zh" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public article detail.",
+            "headers": {
+              "ETag": { "schema": { "type": "string" } },
+              "Cache-Control": { "schema": { "type": "string" } }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ItemDetailResponse" }
+              }
+            }
+          },
+          "304": { "$ref": "#/components/responses/NotModified" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
     "/api/v1/hot-topics": {
       "get": {
         "operationId": "hotTopics",
@@ -3506,6 +3548,112 @@
           "attribution": {
             "$ref": "#/components/schemas/Attribution"
           }
+        }
+      },
+      "ItemDetail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Item" },
+          {
+            "type": "object",
+            "required": [
+              "timelineAt", "tags", "channel", "story", "x", "readingMode", "author", "body", "outline",
+              "relatedStories", "topics", "group", "hasTranslation", "bodyLanguage"
+            ],
+            "properties": {
+              "timelineAt": { "type": "string", "format": "date-time" },
+              "tags": { "type": "array", "items": { "type": "string" } },
+              "channel": { "type": "string", "enum": ["news", "x"] },
+              "story": {
+                "anyOf": [
+                  { "type": "object", "required": ["publicId", "title"], "properties": { "publicId": { "type": "string" }, "title": { "type": "string" } } },
+                  { "type": "null" }
+                ]
+              },
+              "x": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": ["authorName", "handle", "avatarUrl", "quoted", "media"],
+                    "properties": {
+                      "authorName": { "type": "string" },
+                      "handle": { "type": "string" },
+                      "avatarUrl": { "type": ["string", "null"], "format": "uri" },
+                      "avatarSrcSet": { "type": "string" },
+                      "quoted": {
+                        "anyOf": [
+                          {
+                            "type": "object", "required": ["authorName", "handle", "text", "url", "translation"],
+                            "properties": {
+                              "authorName": { "type": "string" }, "handle": { "type": "string" }, "text": { "type": "string" },
+                              "url": { "type": "string", "format": "uri" }, "translation": { "type": ["string", "null"] }
+                            }
+                          },
+                          { "type": "null" }
+                        ]
+                      },
+                      "media": {
+                        "type": "array",
+                        "items": {
+                          "type": "object", "required": ["kind", "url", "width", "height", "alt", "poster"],
+                          "properties": {
+                            "kind": { "type": "string", "enum": ["image", "video"] }, "url": { "type": "string", "format": "uri-reference" },
+                            "fullUrl": { "type": "string", "format": "uri-reference" }, "srcSet": { "type": "string" },
+                            "width": { "type": ["integer", "null"] }, "height": { "type": ["integer", "null"] },
+                            "alt": { "type": ["string", "null"] }, "poster": { "type": ["string", "null"], "format": "uri-reference" }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  { "type": "null" }
+                ]
+              },
+              "sameEvent": {
+                "anyOf": [
+                  { "type": "object", "required": ["id", "title"], "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+                  { "type": "null" }
+                ]
+              },
+              "readingMode": { "type": "string", "enum": ["full", "summary-only"] },
+              "author": { "type": ["string", "null"] },
+              "body": {
+                "anyOf": [
+                  {
+                    "type": "object", "required": ["zh", "original", "zhKind", "complete"],
+                    "properties": {
+                      "zh": { "type": ["string", "null"], "description": "Sanitized HTML in Chinese, only when this is the selected reading language." },
+                      "original": { "type": ["string", "null"], "description": "Sanitized HTML in the original language, only when this is the selected reading language." },
+                      "zhKind": { "type": ["string", "null"], "enum": ["translation", "original", null] }, "complete": { "type": "boolean" }
+                    }
+                  },
+                  { "type": "null" }
+                ]
+              },
+              "outline": {
+                "type": "array", "items": { "type": "object", "required": ["id", "text", "level"], "properties": { "id": { "type": "string" }, "text": { "type": "string" }, "level": { "type": "integer", "minimum": 2, "maximum": 4 } } }
+              },
+              "relatedStories": {
+                "type": "array", "items": { "type": "object", "required": ["publicId", "title"], "properties": { "publicId": { "type": "string" }, "title": { "type": "string" } } }
+              },
+              "topics": { "type": "array", "items": { "type": "object", "required": ["slug", "name"], "properties": { "slug": { "type": "string" }, "name": { "type": "string" } } } },
+              "group": {
+                "anyOf": [
+                  { "type": "object", "required": ["factId", "reportCount", "additionalSourceCount"], "properties": { "factId": { "type": "string" }, "reportCount": { "type": "integer" }, "additionalSourceCount": { "type": "integer" } } },
+                  { "type": "null" }
+                ]
+              },
+              "hasTranslation": { "type": "boolean" },
+              "bodyLanguage": { "type": "string", "enum": ["zh", "original"] }
+            }
+          }
+        ]
+      },
+      "ItemDetailResponse": {
+        "type": "object",
+        "required": ["schemaVersion", "item"],
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "item": { "$ref": "#/components/schemas/ItemDetail" }
         }
       },
       "ItemMinimal": {

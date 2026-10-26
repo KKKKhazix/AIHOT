@@ -1,5 +1,6 @@
 // Item detail and Markdown export, both behind the same visibility and licence rules.
 import type { OutlineEntry, SiteItemDetail, StoryRef } from "@aihot/contracts/site";
+import { toPublicApiCategory, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { ITEM_COPY, SITE } from "@aihot/site";
 import { bodyToMarkdown } from "../content/markdown.ts";
 import { sql } from "../db.ts";
@@ -24,6 +25,15 @@ interface DetailRow extends ItemRow {
 export type DetailResult =
   | { kind: "found"; item: SiteItemDetail; row: DetailRow }
   | { kind: "not_found" };
+
+export interface V1ItemDetailResponse {
+  schemaVersion: 1;
+  item: Omit<SiteItemDetail, "links" | "category" | "indexable" | "markdownAvailable"> & {
+    links: { aihot: string; original: string };
+    category: PublicApiCategoryKey | null;
+    attribution: { name: string; url: string };
+  };
+}
 
 /** Adds stable ids to h2–h4 and returns the outline. */
 function withOutline(html: string): { html: string; outline: OutlineEntry[] } {
@@ -165,6 +175,47 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
     bodyLanguage: reading.bodyLanguage,
   };
   return { kind: "found", item, row };
+}
+
+/** Stable v1 projection of an article page, without fields used only by the first-party site's renderer. */
+export async function v1ItemDetail(id: string, language: "zh" | "original" = "zh"): Promise<V1ItemDetailResponse | null> {
+  const result = await loadItemDetail(id, language);
+  if (result.kind === "not_found") return null;
+  const { item } = result;
+  const url = itemUrl(item.id);
+  return {
+    schemaVersion: 1,
+    item: {
+      id: item.id,
+      title: item.title,
+      originalTitle: item.originalTitle,
+      summary: item.summary,
+      source: item.source,
+      links: { aihot: url, original: item.links.original },
+      publishedAt: item.publishedAt,
+      discoveredAt: item.discoveredAt,
+      category: item.category ? toPublicApiCategory(item.category) : null,
+      score: item.score,
+      selected: item.selected,
+      reason: item.reason,
+      attribution: { name: SITE.name, url },
+      timelineAt: item.timelineAt,
+      tags: item.tags,
+      channel: item.channel,
+      story: item.story,
+      x: item.x,
+      ...(item.sameEvent ? { sameEvent: item.sameEvent } : {}),
+      readingMode: item.readingMode,
+      author: item.author,
+      body: item.body,
+      outline: item.outline,
+      relatedStories: item.relatedStories,
+      topics: item.topics,
+      group: item.group,
+      hasTranslation: item.hasTranslation,
+      bodyLanguage: item.bodyLanguage,
+    },
+  };
 }
 
 /**

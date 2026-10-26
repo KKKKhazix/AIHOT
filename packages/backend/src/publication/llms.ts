@@ -78,6 +78,7 @@ export function llmsTxt(opts: {
   lines.push(`- [分类 RSS](${u(`/feed/category/${sample}.xml`)}): 按分类订阅精选，slug 支持 ${PUBLIC_API_CATEGORY_KEYS.join(" / ")}`);
   lines.push(`- [OpenAPI 规范](${u("/openapi-v1.json")}): REST API 的机器可读定义（版本 ${v}，路径是 /api/v1）`);
   lines.push(`- [公开 API · 最近资讯](${u("/api/v1/items")}): JSON，支持 mode=selected/all、window=24h/7d、by=timeline/published（时间口径：默认与网页一致的时间轴，对账原文发布时间用 published）、category、q、limit 与 cursor`);
+  lines.push(`- [公开 API · 单篇详情](${u("/api/v1/items/{id}")}): 通过列表返回的 id 查询文章详情；language=zh/original 可选，正文按信源全文许可提供`);
   lines.push(`- [公开 API · 当前热点](${u("/api/v1/hot-topics")}): 热点榜 Top 100；每条含从 1 开始的 rank，不返回热度值，links.story 指向事件页`);
   lines.push(`- [公开 API · 事件详情](${u("/api/v1/stories/{publicId}")}): 事件报道时间线 + 随演化更新的 AI 综述；publicId 只来自 hot-topics 的 links.story 或事件间引用，不要猜测`);
   lines.push(...opts.modules.api);

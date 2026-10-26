@@ -168,6 +168,35 @@ test("site reading sends one language while exports retain both, including after
   assert.equal((await get(`/api/site/items/${id}/original`)).status, 404);
 });
 
+test("v1 article detail is versioned, conditional, and obeys the source full-text licence", async () => {
+  const id = await article();
+  await publishArticle(id, released());
+  const response = await get(`/api/v1/items/${id}`);
+  assert.equal(response.status, 200);
+  const body = JSON.parse(response.body);
+  assert.equal(body.schemaVersion, 1);
+  assert.equal(body.item.id, id);
+  assert.match(body.item.links.original, new RegExp(`^https://example\\.com/${T}-\\d+$`));
+  assert.equal(body.item.links.aihot, `${config.siteUrl}/items/${id}`);
+  assert.ok(body.item.body.zh?.includes(`FULLTEXT-${T}`) || body.item.body.original?.includes(`FULLTEXT-${T}`));
+  assert.ok(response.etag);
+  assert.equal((await get(`/api/v1/items/${id}`, { "if-none-match": response.etag! })).status, 304);
+  assert.equal((await get(`/api/v1/items/${id}?language=unsupported`)).status, 400);
+
+  await sql`UPDATE sources SET site_fulltext = false WHERE id = ${SOURCE}`;
+  try {
+    await publishArticle(id);
+    const limited = JSON.parse((await get(`/api/v1/items/${id}`)).body);
+    assert.equal(limited.item.body, null);
+    assert.equal(limited.item.summary, body.item.summary);
+
+    await setVisibility(id, { visibility: "withdrawn", reason: "test", version: 0 }, "test");
+    assert.equal((await get(`/api/v1/items/${id}`)).status, 404);
+  } finally {
+    await sql`UPDATE sources SET site_fulltext = true WHERE id = ${SOURCE}`;
+  }
+});
+
 test("revoking a source's licence takes its articles off every exit", async () => {
   const id = await article();
   await publishArticle(id, released());

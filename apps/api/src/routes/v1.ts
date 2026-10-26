@@ -6,6 +6,7 @@ import { config } from "@aihot/backend/config";
 import { InvalidCursorError } from "@aihot/backend/lib/cursor";
 import { SearchBusyError } from "@aihot/backend/publication/pool";
 import { selectedChanges, selectedSnapshot, SnapshotRequiredError, v1Items } from "@aihot/backend/publication/v1";
+import { v1ItemDetail } from "@aihot/backend/publication/detail";
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
 import { isPeriodKey, v1Dailies, v1Daily, v1Period, v1Periods } from "@aihot/backend/publication/reports";
 import { isValidDate } from "@aihot/contracts/time";
@@ -18,6 +19,7 @@ const op = (queryKeys: readonly string[], cacheControl: string) => ({ queryKeys,
 
 export const V1_OPERATIONS = {
   items: op(["mode", "category", "window", "by", "q", "limit", "cursor"], "public, max-age=60, s-maxage=60, must-revalidate"),
+  itemById: op(["language"], "public, max-age=60, s-maxage=60, must-revalidate"),
   hotTopics: op([], "public, max-age=60, s-maxage=60, must-revalidate"),
   storyByPublicId: op([], "public, max-age=60, s-maxage=60, must-revalidate"),
   dailies: op(["limit"], "public, max-age=60, s-maxage=60, must-revalidate"),
@@ -100,6 +102,16 @@ export function registerV1(app: FastifyInstance) {
     if (q.cursor !== undefined && q.cursor.length === 0) throw new InvalidCursorError("empty cursor");
     const body = await v1Items({ mode, window, by, category, q: search, limit, cursor: q.cursor ?? null });
     return sendV1(req, reply, body, { etagPrefix: "v1-items", cacheControl: V1_OPERATIONS.items.cacheControl });
+  }));
+
+  app.get("/api/v1/items/:id", publicHandler(async (req, reply) => {
+    const q = strictQuery(req, V1_OPERATIONS.itemById.queryKeys);
+    const id = (req.params as { id: string }).id;
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "No public item exists for this id.", cacheControl: "public, max-age=60" });
+    const language = enumParam(q.language, "language", ["zh", "original"] as const, "zh");
+    const body = await v1ItemDetail(id, language);
+    if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "No public item exists for this id.", cacheControl: "public, max-age=60" });
+    return sendV1(req, reply, body, { etagPrefix: `v1-item-${id}-${language}`, cacheControl: V1_OPERATIONS.itemById.cacheControl });
   }));
 
   app.get("/api/v1/hot-topics", publicHandler(async (req, reply) => {

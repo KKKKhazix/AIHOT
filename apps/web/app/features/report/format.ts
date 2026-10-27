@@ -1,9 +1,9 @@
 // Names, dates and grouping for daily, weekly and monthly reports.
 import { REPORT_NAMES, type ReportNavigationEntry, type ReportKind } from "@aihot/contracts/site";
-import { beijingDate, beijingWeekday, isoWeekLabel, isoWeekRange, monthDay } from "@aihot/contracts/time";
+import { beijingDate, beijingWeekday, isoWeekLabel, isoWeekRange, monthDay as engineMonthDay } from "@aihot/contracts/time";
 import { EDITION_WHEN, REPORTS, SITE, subjectAfter } from "@aihot/site";
 import { RELEASE } from "@aihot/industry/taxonomy";
-import { weekdayShort } from "../../lib/format.ts";
+import { monthDay, weekdayShort } from "../../lib/format.ts";
 
 export const KINDS: ReportKind[] = ["daily", "weekly", "monthly"];
 export const KIND_PATH: Record<ReportKind, string> = { daily: "/daily", weekly: "/weekly", monthly: "/monthly" };
@@ -88,7 +88,7 @@ export function archiveMark(kind: ReportKind, key: string): { big: string; small
 
 /** Short chip label for the phone switcher: "今天", "9月26日", "9月第2周", "8 月". */
 export function chipLabel(kind: ReportKind, key: string, index: ReportNavigationEntry[], today: string): string {
-  if (kind === "daily") return key === today ? "今天" : monthDay(key);
+  if (kind === "daily") return key === today ? "今天" : engineMonthDay(key, today);
   if (kind === "monthly") return `${Number(key.slice(5, 7))} 月`;
   const group = archiveGroups("weekly", index).find((g) => g.entries.some((e) => e.key === key));
   const entry = group?.entries.find((e) => e.key === key);
@@ -134,9 +134,9 @@ export function metricItems(metrics: Record<string, number>): Array<{ value: num
   return METRICS.filter(([k]) => typeof metrics[k] === "number" && (k !== "modelsReleased" || metrics[k]! > 0)).map(([k, unit]) => ({ value: metrics[k]!, unit }));
 }
 
-/** "前一日 · 9月25日", "上一期 · 第 37 周", "下一期 · 7 月". */
-export function neighbourLabel(kind: ReportKind, key: string, direction: "prev" | "next"): string {
-  if (kind === "daily") return `${direction === "prev" ? "前一日" : "后一日"} · ${monthDay(key)}`;
+/** "前一日 · 9月25日", "上一期 · 第 37 周", "下一期 · 7 月". A day of another year than `now` (Beijing) carries its year. */
+export function neighbourLabel(kind: ReportKind, key: string, direction: "prev" | "next", now: number = Date.now()): string {
+  if (kind === "daily") return `${direction === "prev" ? "前一日" : "后一日"} · ${monthDay(key, now)}`;
   const which = direction === "prev" ? "上一期" : "下一期";
   return kind === "weekly" ? `${which} · 第 ${Number(key.slice(6))} 周` : `${which} · ${Number(key.slice(5, 7))} 月`;
 }

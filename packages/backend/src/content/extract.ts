@@ -33,7 +33,12 @@ const MIN_BODY_CHARS = 200;
  * Paths that serve a sign-in form rather than the page that was asked for. A path segment, never a
  * substring: "/auth-for-agents" and "/authors/x" are ordinary pages.
  */
-const AUTH_PATH = /(?:^|\/)(?:login|log-in|signin|sign-in|register|signup|sign-up|authorize|oauth2?|sso|auth)(?:\/|$)/i;
+// Sign-in paths read from the final address, never the text. login|log-in|log_in|signin|sign-in|sign_in|
+// register|signup|sign-up|sign_up cover the naming schemes sites use (Devise's /users/sign_in among them);
+// wp-login.php is WordPress's login page; the extension alternatives read /login.php, /register.html —
+// a segment only counts when it ends at a delimiter (a real page path or an extension), so a page that
+// merely carries an auth word ("login.company", "sso-products") stays content.
+const AUTH_PATH = /(?:^|\/)(?:login|log-in|log_in|signin|sign-in|sign_in|register|signup|sign-up|sign_up|authorize|oauth2?|sso|auth|wp-login(?:\.php)?)(?:\/|$|\.(?:php|aspx?|html?|jsp))/i;
 
 /** Whether an address is a sign-in form's own path (a listing's "Log in" link is no post either). */
 export function isSignInUrl(url: string): boolean {

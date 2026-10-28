@@ -22,8 +22,13 @@ import {
 } from "@aihot/backend/admin/auth";
 import { sendProblem } from "../http/respond.ts";
 
-/** Cookies are Secure whenever the site is served over HTTPS. */
-const secure = () => config.siteUrl.startsWith("https://");
+/**
+ * A cookie is Secure when the request itself arrived over HTTPS: the browser judges it against the
+ * page's origin, so a plain-HTTP entry (a LAN address, a published container port) drops a Secure
+ * cookie at sign-in and the session never sticks. Behind a TLS-terminating proxy, trustProxy makes
+ * `req.protocol` reflect X-Forwarded-Proto, so the public HTTPS entry keeps its Secure cookie.
+ */
+const secure = (req: FastifyRequest) => req.protocol === "https";
 
 /**
  * Password attempts: at most 10 per client address and 50 in all per 15 minutes. The overall cap holds
@@ -73,9 +78,9 @@ export function adminHandler(fn: AdminHandler) {
 }
 
 /** Feishu sign-in: the state cookie, then Feishu's authorization page. */
-function feishuRedirect(reply: FastifyReply, returnTo: string) {
+function feishuRedirect(req: FastifyRequest, reply: FastifyReply, returnTo: string) {
   const { url, stateCookie } = loginRedirect(returnTo);
-  reply.header("Set-Cookie", cookie(STATE_COOKIE, stateCookie, 600, secure())).header("Cache-Control", "no-store");
+  reply.header("Set-Cookie", cookie(STATE_COOKIE, stateCookie, 600, secure(req))).header("Cache-Control", "no-store");
   return reply.redirect(url, 302);
 }
 
@@ -91,7 +96,7 @@ export function registerAdminAuth(app: FastifyInstance) {
     );
     // A live session does not need signing in again: go straight to where the visitor was headed.
     if (await sessionPrincipal(req.headers.cookie)) return reply.header("Cache-Control", "no-store").redirect(safeReturn(returnTo), 302);
-    if (feishuLoginConfigured() && !config.adminPassword) return feishuRedirect(reply, returnTo);
+    if (feishuLoginConfigured() && !config.adminPassword) return feishuRedirect(req, reply, returnTo);
     return reply.header("Cache-Control", "no-store").redirect(loginPage(returnTo), 302);
   });
 
@@ -109,7 +114,7 @@ export function registerAdminAuth(app: FastifyInstance) {
       if (tooManyAttempts(String(req.ip))) return reply.redirect(loginPage(returnTo, "too-many"), 303);
       try {
         const { token, returnTo: target } = await passwordLogin(String(b.password ?? ""), returnTo, req.headers["user-agent"]);
-        reply.header("Set-Cookie", cookie(SESSION_COOKIE, token, SESSION_DAYS * 86400, secure()));
+        reply.header("Set-Cookie", cookie(SESSION_COOKIE, token, SESSION_DAYS * 86400, secure(req)));
         return reply.redirect(target, 303);
       } catch (error) {
         if (!(error instanceof LoginRejected)) req.log.error({ err: error }, "admin login failed");
@@ -119,7 +124,7 @@ export function registerAdminAuth(app: FastifyInstance) {
     // Signing out is a plain form too: outside this scope its empty urlencoded body would be a 415.
     form.post("/api/auth/logout", async (req, reply) => {
       await endSession(req.headers.cookie);
-      reply.header("Set-Cookie", cookie(SESSION_COOKIE, "", 0, secure())).header("Cache-Control", "no-store");
+      reply.header("Set-Cookie", cookie(SESSION_COOKIE, "", 0, secure(req))).header("Cache-Control", "no-store");
       return reply.redirect("/", 303);
     });
   });
@@ -128,7 +133,7 @@ export function registerAdminAuth(app: FastifyInstance) {
   app.get("/api/auth/feishu", async (req, reply) => {
     const returnTo = String((req.query as Record<string, string>).return ?? "/admin");
     if (!feishuLoginConfigured()) return reply.header("Cache-Control", "no-store").redirect(loginPage(returnTo), 302);
-    return feishuRedirect(reply, returnTo);
+    return feishuRedirect(req, reply, returnTo);
   });
 
   // The callback registered in the Feishu open platform: the state cookie comes back here.
@@ -137,7 +142,7 @@ export function registerAdminAuth(app: FastifyInstance) {
     reply.header("Cache-Control", "no-store");
     try {
       const { token, returnTo } = await completeLogin(String(q.code ?? ""), String(q.state ?? ""), parseCookies(req.headers.cookie)[STATE_COOKIE], req.headers["user-agent"]);
-      reply.header("Set-Cookie", [cookie(SESSION_COOKIE, token, SESSION_DAYS * 86400, secure()), cookie(STATE_COOKIE, "", 0, secure())]);
+      reply.header("Set-Cookie", [cookie(SESSION_COOKIE, token, SESSION_DAYS * 86400, secure(req)), cookie(STATE_COOKIE, "", 0, secure(req))]);
       return reply.redirect(returnTo, 302);
     } catch (error) {
       const message = error instanceof LoginRejected ? error.message : "登录失败，请稍后再试";

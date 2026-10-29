@@ -15,7 +15,7 @@ const PASSWORD_B = `test-password-b-${T}`;
 const SECRET_A = `test-session-secret-a-${T}`;
 const SECRET_B = `test-session-secret-b-${T}`;
 const APP = `test-login-app-${T}`;
-const original = { password: config.adminPassword, unions: config.adminUnionIds, emails: config.adminEmails, dev: config.devAdmin, environment: config.environmentName };
+const original = { password: config.adminPassword, unions: config.adminUnionIds, emails: config.adminEmails, dev: config.devAdmin, environment: config.environmentName, siteUrl: config.siteUrl };
 const envKeys = ["SESSION_SECRET", "FEISHU_LOGIN_APP_ID", "FEISHU_LOGIN_APP_SECRET"];
 const oldEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
 let profile: { union_id?: string; email?: string; enterprise_email?: string; name?: string } = {};
@@ -29,7 +29,8 @@ const oauth = await stub(async (_hit, req) => {
   assert.ok(req.url.endsWith("/userinfo"));
   return profile;
 });
-const app = Fastify({ logger: false });
+// Production trusts its proxy, so req.protocol reads X-Forwarded-Proto.
+const app = Fastify({ logger: false, trustProxy: true });
 registerAdminAuth(app);
 let writes = 0;
 app.post("/api/admin/session-test", adminHandler(async () => ({ writes: ++writes })));
@@ -92,7 +93,7 @@ after(async () => {
   globalThis.fetch = realFetch;
   await app.close(); await oauth.close();
   config.adminPassword = original.password; config.adminUnionIds = original.unions; config.adminEmails = original.emails;
-  config.devAdmin = original.dev; config.environmentName = original.environment;
+  config.devAdmin = original.dev; config.environmentName = original.environment; config.siteUrl = original.siteUrl;
   for (const [key, value] of oldEnv) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   await closeDb();
 });
@@ -245,4 +246,19 @@ test("expiry, unknown token, logout isolation and explicit development mode reta
   assert.equal((await request("/api/auth/check", "unknown")).status, 401);
   config.environmentName = "production";
   assert.equal(await sessionPrincipal(undefined), null);
+});
+
+test("the session cookie is Secure only when the request itself is HTTPS, whatever SITE_URL says", async () => {
+  config.siteUrl = "https://example.test";
+  const sessionCookie = async (path: string, headers: Record<string, string>) => {
+    const res = await realFetch(`${base}${path}`, { method: "POST", redirect: "manual", body: `password=${encodeURIComponent(PASSWORD_A)}`,
+      headers: { "content-type": "application/x-www-form-urlencoded", ...headers } });
+    assert.equal(res.status, 303);
+    return res.headers.getSetCookie().find((line) => line.startsWith(`${SESSION_COOKIE}=`))!;
+  };
+  // A browser drops a Secure cookie on a plain-HTTP page (a LAN address, a published container port).
+  assert.doesNotMatch(await sessionCookie("/api/auth/password", {}), /;\s*Secure\b/);
+  assert.match(await sessionCookie("/api/auth/password", { "x-forwarded-proto": "https" }), /;\s*Secure\b/);
+  assert.doesNotMatch(await sessionCookie("/api/auth/logout", {}), /;\s*Secure\b/);
+  assert.match(await sessionCookie("/api/auth/logout", { "x-forwarded-proto": "https" }), /;\s*Secure\b/);
 });

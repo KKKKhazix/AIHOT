@@ -80,15 +80,15 @@ function pinnedCurveAgent(): Agent | undefined {
 }
 
 /**
- * The handshake error codes a curve change can fix, read off the cause chain undici wraps them in.
- * EPROTO is the same symptom reported under another name by some undici versions and by servers
- * that answer the key share with an alert rather than a bad point.
+ * The refused key share, read off the cause chain undici wraps it in. It can only come from the key
+ * exchange, before any request byte is sent, so the retry never replays a request a server has seen
+ * (a paid API would bill it twice). EPROTO is not matched: it also follows a request already sent.
  */
 function brokenHandshake(error: unknown): boolean {
   let cause: unknown = error;
   for (let depth = 0; depth < 4 && cause; depth++) {
     const code = (cause as { code?: string }).code;
-    if (code === "ERR_SSL_BAD_ECPOINT" || code === "EPROTO") return true;
+    if (code === "ERR_SSL_BAD_ECPOINT") return true;
     cause = (cause as { cause?: unknown }).cause;
   }
   return false;
@@ -180,10 +180,8 @@ export async function guardedFetch(input: string, opts: GuardedFetchOptions = {}
     });
     const res = await send(dispatcherFor(viaProxy, privateHost)).catch(async (error: unknown) => {
       // Only a direct connection has a curve of its own to change, and only while the budget lasts:
-      // a retry on an aborted signal fails the same way and hides the original error. EPROTO can also
-      // come after the request went out, so only GET and HEAD are replayed: a paid POST would be billed twice.
-      const replayable = method === "GET" || method === "HEAD";
-      const pinned = viaProxy || privateHost || !replayable || signal.aborted || !brokenHandshake(error) ? undefined : pinnedCurveAgent();
+      // a retry on an aborted signal fails the same way and hides the original error.
+      const pinned = viaProxy || privateHost || signal.aborted || !brokenHandshake(error) ? undefined : pinnedCurveAgent();
       if (!pinned) throw error;
       return send(pinned);
     });

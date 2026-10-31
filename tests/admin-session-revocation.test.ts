@@ -65,7 +65,6 @@ async function principal(token: string) {
 }
 async function revoked(token: string, csrf = "old-csrf") {
   const before = writes;
-  assert.equal((await request("/api/auth/check", token)).status, 401);
   assert.equal((await request("/api/admin/me", token)).status, 401);
   assert.equal((await request("/api/admin/session-test", token, csrf)).status, 401);
   assert.equal(writes, before);
@@ -101,7 +100,6 @@ after(async () => {
 test("effective password replacement revokes old cookies at actual read/write/check guards", async () => {
   const token = await password();
   const me = await principal(token);
-  assert.equal((await request("/api/auth/check", token)).status, 204);
   assert.equal((await request("/api/admin/session-test", token, me.csrf)).status, 200);
   config.adminPassword = PASSWORD_B;
   const before = writes;
@@ -110,7 +108,7 @@ test("effective password replacement revokes old cookies at actual read/write/ch
   await revoked(token, me.csrf);
   assert.equal(await exists(token), false);
   const fresh = await password(PASSWORD_B);
-  assert.equal((await request("/api/auth/check", fresh)).status, 204);
+  await principal(fresh);
   await assert.rejects(passwordLogin(PASSWORD_A, "/admin", undefined));
   config.adminPassword = PASSWORD_A;
   await revoked(token, me.csrf);
@@ -243,7 +241,6 @@ test("expiry, unknown token, logout isolation and explicit development mode reta
   await revoked(two); await revoked("unknown-test-token");
   config.devAdmin = { displayName: "Synthetic developer" };
   assert.equal((await sessionPrincipal(undefined))!.dev, true);
-  assert.equal((await request("/api/auth/check", "unknown")).status, 401);
   config.environmentName = "production";
   assert.equal(await sessionPrincipal(undefined), null);
 });

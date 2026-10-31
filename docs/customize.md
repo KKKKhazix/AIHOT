@@ -117,6 +117,7 @@
 - `logo.svg`、`icon.png`（512）、`icon-192.png`、`apple-icon.png`（180）、`favicon.ico`：站点图标。
 - `Logo.tsx`：网页左上角的站名标志，默认用站名文字排出来；有自己的 Logo，把 `Wordmark` 换成你的 SVG，参数保持不变。
 - `wordmark.svg`、`wordmark-dark.svg`（可选）：分享图和海报上的字标，深色版用在深色的分享图上；没有就用站名文字。
+- 分享图的字体（可选，放在 `assets/og-fonts/`）：分享图用 Noto Sans SC 子集（GB2312 + 基本拉丁），繁体、日文汉字、假名、韩文和带变音符的拉丁字母会画不出来。信源有这些文字时，放进 `<名字>-400.ttf` 和 `<名字>-700.ttf`，缺的字依次从这些字体里取（按文件名排序）；换了字体要重启服务，分享图缓存随之换新。不放就和原来一样。
 - `nameplates/`：日报、周报、月报页顶部的报头字（比如“AI日报”）。换了行业词以后重新生成：
   ```bash
   npm pack @fontsource/noto-sans-sc@5.3.0 && tar xzf fontsource-noto-sans-sc-5.3.0.tgz

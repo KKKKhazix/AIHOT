@@ -1,6 +1,6 @@
 // The hub owns event dedupe, serial execution and retry; AIHOT retries the same persisted ID until
 // acceptance, and never buys a Grok claim/retry workflow again. What the owner hears goes to the same hub's
-// /tell (it tells him through 小卡), apart from the events that wake the agent.
+// /tell (the hub passes it on), apart from the events that wake the agent.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -86,8 +86,7 @@ test('the 09:00 digest dispatches follow-ups once per Beijing day, including age
  await sendDigest(now+86400_000);assert.equal(hits.length,2);
 });
 
-// The owner's choice on 10-28: the list the agent is already working through is not his to read; what is still his
-// reaches him from it.
+// The list the agent is already working through is not the owner's to read; the agent passes on what is still theirs.
 test('the 09:00 follow-ups go to the agent alone while it takes them, and to the owner when it cannot',async()=>{
  const now=Date.parse('2026-10-19T01:00:00Z');found=[quiet];
  assert.equal((await sendDigest(now)).toldOwner,false);
@@ -131,7 +130,7 @@ test('with the agent taking alerts, the owner hears only what needs them; the ag
  const now=Date.now();found=[stuck,ownerOnly,siteDown];
  assert.deepEqual((await checkAlerts(now)).sent.sort(),['balance.deepseek','probe.public']);
  assert.deepEqual(hits.map(h=>h.body.subject).sort(),['content.process','probe.public'],'only the owner can top up: the agent is not woken for it');
- assert.equal(told.length,2,'what the owner hears goes to the hub, which tells him through 小卡');
+ assert.equal(told.length,2,'what the owner hears goes to the hub, which passes it on');
  assert.ok(told.every(t=>t.auth===`Bearer ${KEY}`&&Object.keys(t.body).sort().join()==='key,text'));
  assert.ok(told.some(t=>t.body.text.includes('余额不足'))&&told.some(t=>t.body.text.includes('网站打不开')));
  found=[];assert.deepEqual((await checkAlerts(now+10*60_000)).sent.sort(),['balance.deepseek:recovered','probe.public:recovered']);

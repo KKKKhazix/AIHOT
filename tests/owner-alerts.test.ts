@@ -1,9 +1,8 @@
-// What the owner is told (alerts, recoveries, reports) goes to the Webhook hub, which tells him through 小卡 (owner
-// 2026-10-31: “也改走小卡”); the alert group gets it only when the hub doesn't take it. Failure cases: with the hub set
-// up an alert also goes to the group; a long one reaches him cut differently or out of order, or two pieces share a
-// key; a hub that refuses or can't be reached loses the alert; one that takes the first pieces of a long one and then
-// refuses has the group sent the pieces he already has; the source key goes anywhere but the hub; with sending off
-// anything goes out.
+// What the owner is told (alerts, recoveries, reports) goes to the Webhook hub, which passes it on; the alert group
+// gets it only when the hub doesn't take it. Failure cases: with the hub set up an alert also goes to the group; a
+// long one reaches the owner cut differently or out of order, or two pieces share a key; a hub that refuses or can't
+// be reached loses the alert; one that takes the first pieces of a long one and then refuses has the group sent the
+// pieces the owner already has; the source key goes anywhere but the hub; with sending off anything goes out.
 import { Reply, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, beforeEach, test } from "node:test";

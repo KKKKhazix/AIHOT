@@ -653,8 +653,8 @@ export async function sendDigest(now = Date.now()) {
   if (lapsed.length) await sql`UPDATE settings SET value = value - ${sql.array(lapsed)}::text[], updated_at = now() WHERE key = 'alerts.dismissed'`;
   const items = found.filter((f) => !dismissed[f.key] && !f.agentOnly);
   const lines = items.map((f, i) => `${i + 1}. ${f.title}${f.detail ? `\n   ${f.detail}` : ""}`);
-  // Once the hub has the list, the agent works through it alone and what is still the owner's reaches him from it
-  // (his choice, 2026-10-28). Without an agent, or when the list did not get through, he gets it as before.
+  // Once the hub has the list, the agent works through it alone and passes on what is still the owner's. Without
+  // an agent, or when the list did not get through, the owner gets it as before.
   const taken = found.some(f => !dismissed[f.key]) && await wakeDigest(beijingDate(now), lines.length || found.length);
   const toldOwner = lines.length > 0 && !taken;
   if (toldOwner) await sendAlert(`📋 系统日报 · ${beijingDay(now)}`, ["以下事项需要跟进，具体影响见各条说明；可把整条转给 AI 处理。", ...lines]);

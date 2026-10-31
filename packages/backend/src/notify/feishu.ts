@@ -2,7 +2,7 @@
 // feedback chat, operations alert chat, image upload). Content groups use custom bot webhooks, and so do
 // alerts when FEISHU_ALERT_WEBHOOK_URL is set (they are plain text; feedback screenshots need the app).
 // Alerts and feedback never go to content groups, and content never goes to internal chats. What the owner is
-// told (sendAlert) goes first to the Webhook hub, which tells him through 小卡 (owner 2026-10-31: “也改走小卡”).
+// told (sendAlert) goes first to the Webhook hub, which passes it on.
 // Everything outward is off unless explicitly enabled (development and tests stay silent).
 import { createHash } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
@@ -89,7 +89,7 @@ export interface Finding {
   /**
    * The owner hears of it at once even while an agent takes the alerts (operations/alerts.ts): only the owner
    * can act (paying, renewing, a device beside them), or what would act has stopped (the whole site, the
-   * Mac mini the agent runs on, the channel to the agent). "only": nothing in it is the agent's to do (a
+   * machine the agent runs on, the channel to the agent). "only": nothing in it is the agent's to do (a
    * top-up), so the agent is not woken for it.
    */
   owner?: true | "only";
@@ -132,7 +132,7 @@ export function formatRecovery(title: string, since: Date, now: number): { title
 }
 
 /**
- * What the owner is told: through the Webhook hub's 小卡 when the hub is set up; when it isn't, or doesn't take
+ * What the owner is told: through the Webhook hub when the hub is set up; when it isn't, or doesn't take
  * it (it restarts on every release), the alert group's bot webhook, else the alert chat, falling back to the
  * internal feedback chat — never a content group.
  */

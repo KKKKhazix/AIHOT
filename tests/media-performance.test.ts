@@ -14,7 +14,7 @@ process.env.AIHOT_DATA_DIR = dir;
 process.env.ALLOW_PRIVATE_NETWORK_FETCH = "true";
 process.env.MODEL_CALLS_ENABLED = "false";
 const { produceImage } = await import("@aihot/backend/media/images");
-const { renderOg } = await import("@aihot/backend/media/og");
+const { renderOg, ogEtag, fallbackFontFiles, OG_TEMPLATE_VERSION } = await import("@aihot/backend/media/og");
 const { renderPoster } = await import("@aihot/backend/media/poster");
 const { xView } = await import("@aihot/backend/publication/items");
 
@@ -178,6 +178,15 @@ test("concurrent cold OG and poster requests all succeed with identical cached b
   const posters = await Promise.all(Array.from({ length: 2 }, () => renderPoster(poster)));
   for (const result of posters) assert.deepEqual(result, posters[0]);
   assert.equal((await sharp(posters[0]!.png).metadata()).width, 1080);
+});
+
+test("share images take added fonts only from <name>-400/-700.ttf beside Noto Sans SC; with none, the cache key is as before", () => {
+  const files = ["LICENSE", "noto-sans-sc-700.ttf", "noto-sans-kr-700.ttf", "noto-sans-sc-400.ttf", "noto-sans-kr-400.ttf", "extra.otf", "extra-500.ttf", "-400.ttf"];
+  assert.deepEqual(fallbackFontFiles(files), ["noto-sans-kr-400.ttf", "noto-sans-kr-700.ttf"]);
+  assert.deepEqual(fallbackFontFiles(["LICENSE", "noto-sans-sc-400.ttf", "noto-sans-sc-700.ttf"]), []);
+  // The repository ships no added font, so every cached share image keeps its key.
+  const card = { kicker: SITE.name, title: "缓存键不变", subtitle: null };
+  assert.equal(ogEtag(card), createHash("sha256").update(OG_TEMPLATE_VERSION).update(JSON.stringify(card)).digest("hex").slice(0, 24));
 });
 
 test("successive responsive candidates reuse the completed original download", async () => {

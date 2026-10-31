@@ -256,11 +256,6 @@ async function moduleAlerts(now: number): Promise<Finding[]> {
   return out;
 }
 
-/** A module declared this alert agent-only. `name` also covers each `name:<item>`. */
-function moduleAgentOnly(key: string): boolean {
-  return serverModules().some((m) => m.agentOnly?.some((name) => key === name || key.startsWith(`${name}:`)));
-}
-
 /**
  * One follow-up per source and problem, so fixing a source removes its own line. A quiet source is left to
  * the weekly report: being slow, or too new to have a rhythm, is nothing anyone can fix, and may never end.
@@ -517,7 +512,7 @@ export async function checkAlerts(now = Date.now()) {
       if (f.key.startsWith(REFUSED_PREFIX) && !open) state[f.key] = { title: f.title, since: new Date(now).toISOString() };
       continue;
     }
-    if (f.agentOnly || moduleAgentOnly(f.key)) {
+    if (f.agentOnly) {
       const since = open?.since ?? (f.since ?? new Date(now)).toISOString();
       state[f.key] = { title: f.title, since, agentOnly: true };
       continue;
@@ -553,9 +548,8 @@ export async function checkAlerts(now = Date.now()) {
   sent.push(...dailies.sent);
   for (const [key, open] of Object.entries(state)) {
     if (found.has(key) || dailies.missing.has(key)) continue;
-    // An agent-only incident was never told to the owner, so clearing it stays quiet too. A module's
-    // declaration covers a row saved before the flag existed, when this round no longer returns it.
-    if (open.agentOnly || moduleAgentOnly(key) || !open.sentAt) {
+    // An agent-only incident was never told to the owner, so clearing it stays quiet too.
+    if (open.agentOnly || !open.sentAt) {
       delete state[key];
       continue;
     }
@@ -575,8 +569,7 @@ export async function checkAlerts(now = Date.now()) {
   // Revisit every open incident: a crash between saving the owner's alert and dispatching cannot lose it.
   // Transport receipts retain IDs across uncertain responses, independently from owner reminders.
   for (const f of all) if (f.level !== "later" && f.key !== "webhook.transport" && f.owner !== "only" && state[f.key]) {
-    const agentOnly = f.agentOnly || moduleAgentOnly(f.key) ? { agentOnly: true as const } : {};
-    await wakeAgent({ ...f, ...agentOnly, since: new Date(state[f.key]!.since) }, now);
+    await wakeAgent({ ...f, since: new Date(state[f.key]!.since) }, now);
   }
   await flushAgentEvents();
   return { open: Object.keys(state), sent };

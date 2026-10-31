@@ -2,7 +2,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 import { safeReturn, SIGN_IN_HOME, type AdminMe } from "@aihot/contracts/admin";
-import { DEPLOYMENT, SITE } from "@aihot/site";
+import { SITE } from "@aihot/site";
 import { config } from "@aihot/backend/config";
 import {
   completeLogin,
@@ -84,15 +84,11 @@ function feishuRedirect(req: FastifyRequest, reply: FastifyReply, returnTo: stri
 }
 
 export function registerAdminAuth(app: FastifyInstance) {
-  // The web admin sends a signed-out visitor here with ?return=, a reverse proxy with the site's header.
+  // The web admin sends a signed-out visitor here with ?return=.
   // With Feishu as the only way in, sign-in starts there at once; otherwise the sign-in page (in the web
   // app) offers the ways in.
   app.get("/api/auth/login", async (req, reply) => {
-    const returnTo = String(
-      (req.query as Record<string, string>).return
-      ?? (DEPLOYMENT.loginReturnHeader ? req.headers[DEPLOYMENT.loginReturnHeader.toLowerCase()] : undefined)
-      ?? SIGN_IN_HOME,
-    );
+    const returnTo = String((req.query as Record<string, string>).return ?? SIGN_IN_HOME);
     // A live session does not need signing in again: go straight to where the visitor was headed.
     if (await sessionPrincipal(req.headers.cookie)) return reply.header("Cache-Control", "no-store").redirect(safeReturn(returnTo), 302);
     if (feishuLoginConfigured() && !config.adminPassword) return feishuRedirect(req, reply, returnTo);
@@ -148,14 +144,6 @@ export function registerAdminAuth(app: FastifyInstance) {
       if (!(error instanceof LoginRejected)) req.log.error({ err: error }, "admin login failed");
       return reply.code(403).type("text/html; charset=utf-8").send(`<!doctype html><meta charset="utf-8"><title>登录失败 · ${SITE.name}</title><p style="font:16px system-ui;padding:40px">${message}。<a href="/api/auth/login">重新登录</a></p>`);
     }
-  });
-
-  // For a reverse proxy that guards /admin itself (auth_request): 204 with a live session, else 401.
-  // Only the session cookie counts here, never the development stand-in.
-  app.get("/api/auth/check", async (req, reply) => {
-    reply.header("Cache-Control", "no-store");
-    const admin = await sessionPrincipal(req.headers.cookie);
-    return reply.code(admin && !admin.dev ? 204 : 401).send();
   });
 
   app.get("/api/admin/me", adminHandler(async (_req, _reply, admin): Promise<AdminMe> => ({ name: admin.name, csrf: admin.csrf, dev: admin.dev })));

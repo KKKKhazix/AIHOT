@@ -31,14 +31,12 @@ test("an unrelated malformed cookie leaves a real admin session usable without a
             VALUES (${sha256(token)}, ${user!.id}, 'cookie-test-csrf', now() + interval '1 hour', 'feishu', ${binding}, ${sql.json(claims)})`;
 
   for (const cookie of ["unrelated=%", "aihot_admin=%; unrelated=%E0%A4", "aihot_admin=forged; unrelated=%"]) {
-    const denied = await app.inject({ url: "/api/auth/check", headers: { cookie } });
+    const denied = await app.inject({ url: "/api/admin/me", headers: { cookie } });
     assert.equal(denied.statusCode, 401);
     assert.equal(denied.headers["cache-control"], "no-store");
   }
 
   const headers = { cookie: `unrelated=%; aihot_admin=${token}; another=%E0%A4` };
-  const check = await app.inject({ url: "/api/auth/check", headers });
-  assert.equal(check.statusCode, 204);
   const me = await app.inject({ url: "/api/admin/me", headers });
   assert.equal(me.statusCode, 200);
   assert.equal(me.json().name, "Cookie test");
@@ -64,11 +62,11 @@ test("an unrelated malformed cookie leaves a real admin session usable without a
   // The form parser now in front of sign-out keeps its size limit, and refuses before the session is touched.
   const oversized = await app.inject({ method: "POST", url: "/api/auth/logout", headers: { ...headers, "content-type": "application/x-www-form-urlencoded" }, payload: `x=${"a".repeat(20_000)}` });
   assert.equal(oversized.statusCode, 413);
-  assert.equal((await app.inject({ url: "/api/auth/check", headers })).statusCode, 204);
+  assert.equal((await app.inject({ url: "/api/admin/me", headers })).statusCode, 200);
   // The sign-out button is a plain HTML form: the browser sends this content type even with an empty body.
   const logout = await app.inject({ method: "POST", url: "/api/auth/logout", headers: { ...headers, "content-type": "application/x-www-form-urlencoded" }, payload: "" });
   assert.equal(logout.statusCode, 303);
-  const ended = await app.inject({ url: "/api/auth/check", headers });
+  const ended = await app.inject({ url: "/api/admin/me", headers });
   assert.equal(ended.statusCode, 401);
 });
 

@@ -68,7 +68,7 @@ export const REPLACEABLE_SOURCE_KINDS = ["rss", "web_list", "json_list"] as cons
 export type ReplaceableSourceKind = typeof REPLACEABLE_SOURCE_KINDS[number];
 
 export interface AdminSourceUpdate {
-  patch: Partial<Pick<AdminSource, "name" | "enabled" | "interval_minutes" | "tier" | "selection_class" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext" | "tags">> & (
+  patch: Partial<Pick<AdminSource, "name" | "enabled" | "interval_minutes" | "tier" | "selection_class" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext" | "tags" | "uses">> & (
     { kind?: never; config?: Record<string, unknown> } | { kind: ReplaceableSourceKind; config: Record<string, unknown> }
   );
   version: string;
@@ -82,6 +82,7 @@ export interface AdminSourceRow {
   tier: string;
   selection_class: string | null;
   participation_mode: string;
+  uses: string[];
   enabled: boolean;
   health: string;
   fail_count: number;
@@ -99,6 +100,8 @@ export interface AdminSources {
   page: number;
   rows: AdminSourceRow[];
   totals: { total: number; enabled: number; failing: number; degraded: number };
+  /** The uses the installed modules declare, by name: what the admin calls each. */
+  useLabels: Record<string, string>;
 }
 
 export interface AdminSource {
@@ -113,6 +116,8 @@ export interface AdminSource {
   /** A class of the industry pack's selection rules (industry/selection.ts): raises the tier's threshold. */
   selection_class: string | null;
   participation_mode: string;
+  /** Uses besides the news pipeline, each declared by an installed module. */
+  uses: string[];
   signal_group_id: string | null;
   interval_minutes: number;
   site_fulltext: boolean;
@@ -140,6 +145,8 @@ export interface AdminSourceDetail {
   history: AdminAuditEntry[];
   /** Progress of the re-derivation queued after the last change of licences, tier or participation. */
   republish: Record<string, unknown> | null;
+  /** The uses the installed modules declare, by name: what the admin calls each. */
+  useLabels: Record<string, string>;
 }
 
 /** Creating a source: refused as a duplicate of an existing one, or created. */

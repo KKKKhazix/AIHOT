@@ -129,6 +129,14 @@ export interface EngineHooks {
   exitServed: (exit: string, req: FastifyRequest) => void;
 }
 
+/** A use of sources a module declares (ServerModule.sourceUses). */
+export interface SourceUse {
+  /** Its name in the admin's source list. */
+  label: string;
+  /** The longest it lets its sources wait between reads, in minutes; a faster pace of their own stays. */
+  minutes?: number;
+}
+
 /** What a topic page asks a module's part of it (publication/topics.ts loadTopicPage). */
 export interface TopicPageAsk {
   topic: Topic;
@@ -248,6 +256,11 @@ export interface ServerModule {
     resumed?: (sourceId: string, tx: Db) => Promise<void>;
     fetchNow?: (source: { id: string; config: Record<string, unknown> }) => Promise<Record<string, unknown>>;
   }>;
+  /**
+   * Uses of sources besides the news pipeline, by name (sources.uses, sources/uses.ts): the module reads the
+   * articles of the sources that name one itself, so nothing is collected twice.
+   */
+  sourceUses?: Record<string, SourceUse>;
   /** Lines of the Monday source-health report (operations/reports.ts), after the source counts. */
   sourceHealth?: (now: number) => Promise<string[]>;
   /** Job queues of its own (jobs/queue.ts). */

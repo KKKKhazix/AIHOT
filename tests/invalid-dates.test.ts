@@ -19,7 +19,7 @@ function source(id: string, unit: DateUnit, values: unknown[], initialized = tru
   const path = `/${id}`;
   listings.set(path, values.map((published, i) => ({ title: `Article ${i}`, url: `https://example.org/${id}/${i}`, published, body: `Article body ${i}` })));
   return {
-    id, name: id, kind: "json_list", tier: "T1", participation_mode: "editorial", first_party: false,
+    id, name: id, kind: "json_list", tier: "T1", participation_mode: "editorial", uses: [], first_party: false,
     interval_minutes: 60, enabled: true, cursor: initialized ? { initializedAt: new Date().toISOString() } : null, fail_count: 0,
     config: { url: provider.url + path, titlePaths: ["title"], urlTemplate: "{raw:url}", publishedAtPath: "published",
       publishedAtUnit: unit, summaryPaths: ["body"], summaryIsBody: true },

@@ -38,7 +38,7 @@ export function registerAdmin(app: FastifyInstance) {
   // Sources
   app.get("/api/admin/sources", adminHandler(async (req) => {
     const f = q(req);
-    return listSources({ q: f.q, kind: f.kind, health: f.health, mode: f.mode, enabled: f.enabled as "true" | "false" | undefined, page: page(req) });
+    return listSources({ q: f.q, kind: f.kind, health: f.health, mode: f.mode, use: f.use, enabled: f.enabled as "true" | "false" | undefined, page: page(req) });
   }));
   app.post("/api/admin/sources", adminHandler(async (req, _reply, admin) => createSource(body(req), actorOf(admin))));
   app.post("/api/admin/sources/preview", adminHandler(async (req) => previewSource(body(req) as never)));

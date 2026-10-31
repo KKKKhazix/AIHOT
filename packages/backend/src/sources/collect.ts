@@ -16,6 +16,7 @@ import { admitListing, filterPublicationWindow } from "./filters.ts";
 import { fetchJsonList } from "./json-list.ts";
 import { fetchXSearch, planXShards, readXSearch, shardHandle, shardQuery, selfThreadHandle, SHARDABLE_SQL, tweetToCandidate, type XBacklog } from "./x.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
+import { usePace } from "./uses.ts";
 
 export interface CollectResult {
   sourceId: string;
@@ -28,7 +29,7 @@ export interface CollectResult {
 
 export async function loadSource(id: string): Promise<SourceRow | null> {
   const [s] = await sql<SourceRow[]>`
-    SELECT id, name, kind, config, tier, participation_mode, first_party, interval_minutes, enabled, cursor, fail_count
+    SELECT id, name, kind, config, tier, participation_mode, uses, first_party, interval_minutes, enabled, cursor, fail_count
     FROM sources WHERE id = ${id}`;
   return s ?? null;
 }
@@ -438,7 +439,7 @@ function coveredTo(m: SourceRow): bigint {
 export async function collectXShard(key: string, sourceIds: string[]): Promise<{ key: string; status: "ok" | "failed" | "skipped"; accounts: number; found: number; created: number; error?: string }> {
   const members = (
     await sql<SourceRow[]>`
-      SELECT id, name, kind, config, tier, participation_mode, first_party, interval_minutes, enabled, cursor, fail_count
+      SELECT id, name, kind, config, tier, participation_mode, uses, first_party, interval_minutes, enabled, cursor, fail_count
       FROM sources WHERE id IN ${sql(sourceIds)} ORDER BY id`
   ).filter((m) => m.enabled && shardHandle(m));
   if (members.length === 0) return { key, status: "skipped", accounts: 0, found: 0, created: 0 };
@@ -529,13 +530,18 @@ export async function scheduleDueSources(): Promise<{ enqueued: number; shards: 
 const X_SHARD_MINUTES: Record<string, number> = { editorial: 30, hot_signal: 60 };
 const shardMinutes = (mode: string) => X_SHARD_MINUTES[mode] ?? 60;
 
+/** Listings read through Jina, paid per read. */
+const paidListing = sql`coalesce(config->>'url', '') LIKE 'https://r.jina.ai/%'`;
+/** They are not looked at more than hourly: busy ones would outrun Jina's daily budget. */
+const PAID_LISTING_FLOOR = 60;
+
 /**
  * Daily: adapt each source's interval to its recent output (active 15 min … quiet 120 min).
- * hot_signal sources are allowed to be slower.
+ * hot_signal sources are allowed to be slower; the source's other uses may ask for it sooner.
  */
 export async function adaptIntervals(): Promise<{ updated: number }> {
-  const rows = await sql<Array<Pick<SourceRow, "id" | "participation_mode" | "kind" | "config" | "cursor"> & { paid_listing: boolean; per_day: number }>>`
-    SELECT s.id, s.participation_mode, s.kind, s.config, s.cursor, coalesce(s.config->>'url', '') LIKE 'https://r.jina.ai/%' AS paid_listing,
+  const rows = await sql<Array<Pick<SourceRow, "id" | "participation_mode" | "uses" | "kind" | "config" | "cursor"> & { paid_listing: boolean; per_day: number }>>`
+    SELECT s.id, s.participation_mode, s.uses, s.kind, s.config, s.cursor, ${paidListing} AS paid_listing,
       (SELECT count(*) FROM articles a WHERE a.source_id = s.id AND a.discovered_at > now() - interval '7 days' AND NOT a.backfill) / 7.0 AS per_day
     FROM sources s WHERE s.enabled AND s.kind IN ('rss', 'web_list', 'json_list', 'x_search')`;
   let updated = 0;
@@ -545,12 +551,28 @@ export async function adaptIntervals(): Promise<{ updated: number }> {
     // editorial X and listings read through Jina stop at two hours (paid per call, within their budgets);
     // hot signals may wait longer.
     const max = r.participation_mode === "hot_signal" ? 180 : r.kind === "x_search" || r.paid_listing ? 120 : 60;
-    // Listings read through Jina are not looked at more than hourly: busy ones would outrun its daily budget.
-    const min = r.paid_listing ? 60 : 15;
+    const min = r.paid_listing ? PAID_LISTING_FLOOR : 15;
     // X accounts read by shard follow the shard's pace, whatever their own volume.
-    const target = shardHandle(r) ? shardMinutes(r.participation_mode) : perDay <= 0.15 ? max : Math.round(Math.min(max, Math.max(min, (24 * 60) / (perDay * 3))));
+    const own = shardHandle(r) ? shardMinutes(r.participation_mode) : perDay <= 0.15 ? max : Math.round(Math.min(max, Math.max(min, (24 * 60) / (perDay * 3))));
+    // Another use may want the source sooner, never later, and a paid listing still waits its hour.
+    const target = Math.max(min, Math.min(own, usePace(r.uses)));
     const res = await sql`UPDATE sources SET interval_minutes = ${target} WHERE id = ${r.id} AND interval_minutes <> ${target}`;
     updated += res.count;
   }
   return { updated };
+}
+
+/**
+ * A source's uses just changed: from now it waits no longer than they allow, and no longer than that for its next
+ * read. A faster pace it already has stays, and a paid listing still waits its hour; the next daily adaptation
+ * weighs its output as usual.
+ */
+export async function applyUsePace(id: string): Promise<void> {
+  const [s] = await sql<{ uses: string[]; interval_minutes: number; paid_listing: boolean }[]>`
+    SELECT uses, interval_minutes, ${paidListing} AS paid_listing FROM sources WHERE id = ${id}`;
+  if (!s) return;
+  const capped = Math.min(s.interval_minutes, usePace(s.uses));
+  const target = s.paid_listing ? Math.max(PAID_LISTING_FLOOR, capped) : capped;
+  await sql`UPDATE sources SET interval_minutes = ${target}, next_fetch_at = LEAST(coalesce(next_fetch_at, now()), now() + make_interval(mins => ${target}))
+    WHERE id = ${id}`;
 }

@@ -18,9 +18,16 @@ export async function loader({ request }: Route.LoaderArgs) {
 export const meta: Route.MetaFunction = () => [{ title: `信源 · ${SITE.name} 后台` }];
 
 export default function Sources({ loaderData }: Route.ComponentProps) {
-  const { rows, totals, page } = loaderData;
+  const { rows, totals, page, useLabels } = loaderData;
   const [sp] = useSearchParams();
   const navigate = useNavigate();
+  const pick = (param: string, value: string) => {
+    const next = new URLSearchParams(sp);
+    if (value) next.set(param, value);
+    else next.delete(param);
+    next.delete("page");
+    navigate(`?${next}`, { preventScrollReset: true });
+  };
   return (
     <AdminPage
       title="信源"
@@ -36,28 +43,25 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
       <Card pad={false}>
         <div className="flex flex-col gap-3 border-b border-line p-3 lg:flex-row lg:items-center lg:justify-between">
           <Form method="get" className="flex w-full max-w-md gap-2" preventScrollReset>
-            {["kind", "health", "mode"].map((k) => sp.get(k) && <input key={k} type="hidden" name={k} value={sp.get(k)!} />)}
+            {["kind", "health", "mode", "use"].map((k) => sp.get(k) && <input key={k} type="hidden" name={k} value={sp.get(k)!} />)}
             <Input name="q" defaultValue={sp.get("q") ?? ""} placeholder="名称、ID 或地址" aria-label="搜索信源" />
           </Form>
           <div className="flex flex-wrap items-center gap-3">
             <FilterChips param="health" options={[{ value: "", label: "全部" }, { value: "failing", label: "失败" }, { value: "degraded", label: "不稳定" }, { value: "paused", label: "暂停" }]} />
-            <Select
-              aria-label="类型"
-              className="!w-auto"
-              value={sp.get("kind") ?? ""}
-              onChange={(e) => {
-                const next = new URLSearchParams(sp);
-                if (e.target.value) next.set("kind", e.target.value);
-                else next.delete("kind");
-                next.delete("page");
-                navigate(`?${next}`, { preventScrollReset: true });
-              }}
-            >
+            <Select aria-label="类型" className="!w-auto" value={sp.get("kind") ?? ""} onChange={(e) => pick("kind", e.target.value)}>
               <option value="">全部类型</option>
               {Object.entries(KIND_LABEL).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
             </Select>
+            {Object.keys(useLabels).length > 0 && (
+              <Select aria-label="用途" className="!w-auto" value={sp.get("use") ?? ""} onChange={(e) => pick("use", e.target.value)}>
+                <option value="">全部用途</option>
+                {Object.entries(useLabels).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </Select>
+            )}
           </div>
         </div>
         <DataTable
@@ -85,6 +89,7 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
               render: (r) => (
                 <div className="flex gap-1">
                   <Badge tone={r.participation_mode === "editorial" ? "accent" : "muted"}>{MODE_LABEL[r.participation_mode] ?? r.participation_mode}</Badge>
+                  {r.uses.map((u) => <Badge key={u} tone="info">{useLabels[u] ?? u}</Badge>)}
                   <Badge tone="info">{r.tier.replace("_", ".")}</Badge>
                   {r.selection_class && <Badge tone="muted">{SELECTION.classes[r.selection_class]?.label ?? r.selection_class}</Badge>}
                   {r.first_party && <Badge tone="ok">一手</Badge>}

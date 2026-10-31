@@ -16,6 +16,9 @@ import { getBoss, stopBoss } from "@aihot/backend/jobs/queue";
 import { collectFindings, dismissedFollowUps, dismissFollowUp, restoreFollowUp, sendDigest } from "@aihot/backend/operations/alerts";
 import { sourceHealthWeekly } from "@aihot/backend/operations/reports";
 import { sourceHealth, rhythmText, RHYTHM_WINDOW_DAYS } from "@aihot/backend/sources/health";
+import { defineServerModule, installModules } from "@aihot/backend/modules";
+
+installModules([defineServerModule({ name: "watcher", sourceUses: { watch: { label: "盯梢" } } })]);
 
 const T = tag();
 const now = Date.now();
@@ -402,4 +405,27 @@ test("the weekly report names sources paused or partly excluded this week, with 
   assert.match(text, new RegExp(`本周排除了部分入口的信源 1 个：\\n· ${fenced}（后台，[^，]+，排除 https://example\\.test/dead）：这一篇原文 404，只排除这一篇\\n· ${fenced}（AI，[^，]+，排除 https://example\\.test/gone）：又一篇原文 404`));
   assert.doesNotMatch(text, new RegExp(`· ${resumed}`), "a source enabled again is not listed as paused");
   assert.doesNotMatch(text, new RegExp(`· ${earlier}`), "a source paused before this week is not listed as paused this week");
+});
+
+test("sources only a module uses are counted and named on their own, apart from the news sources", async () => {
+  const counts = async () => Number(/在用信源 (\d+) 个/.exec(await weekly())![1]);
+  const before = await counts();
+  const watched = await source("module-only", "isolated");
+  const failing = await source("module-only-failing", "isolated");
+  await sql`UPDATE sources SET uses = ${["watch"]} WHERE id IN ${sql([watched, failing])}`;
+  await sql`UPDATE sources SET health = 'failing' WHERE id = ${failing}`;
+  const paused = await source("module-only-paused", "isolated");
+  await sql`UPDATE sources SET uses = ${["watch"]}, enabled = false, health = 'paused' WHERE id = ${paused}`;
+  await sql`INSERT INTO audit_log(actor,action,subject,reason,before,after,created_at) VALUES('ops-script','source.update',${`source:${paused}`},'账号设为私密',${sql.json({ enabled: true })},${sql.json({ enabled: false })},${new Date(now - 86400_000)})`;
+  const text = await weekly();
+  assert.equal(await counts(), before, "the news sources in use are counted without them");
+  assert.match(text, /另有只给模块用的信源 2 个（盯梢 2），抓取失败 1 个/);
+  assert.match(text, new RegExp(`· ${paused}（AI，[^，）]+，只给盯梢用）：账号设为私密`));
+  // With every news source fine, a module's failing source still needs handling.
+  const news = await sql<{ id: string }[]>`UPDATE sources SET enabled = false WHERE enabled AND uses = '{}' RETURNING id`;
+  try {
+    assert.match(await weekly(), /需要处理的话，把这条转给 AI/);
+  } finally {
+    if (news.length) await sql`UPDATE sources SET enabled = true WHERE id IN ${sql(news.map((r) => r.id))}`;
+  }
 });

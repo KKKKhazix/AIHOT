@@ -15,12 +15,13 @@ import { serverModules } from "../modules.ts";
 import { fetchJsonList } from "../sources/json-list.ts";
 import { fetchRss } from "../sources/rss.ts";
 import { assertSupportedConfig, UnsupportedConfig } from "../sources/config-keys.ts";
-import { enrichDetails, listingEntries, storedDetails } from "../sources/collect.ts";
+import { applyUsePace, enrichDetails, listingEntries, storedDetails } from "../sources/collect.ts";
 import { filterPublicationWindow } from "../sources/filters.ts";
 import { FetchError, type Candidate, type SourceRow } from "../sources/types.ts";
 import { fetchWebList } from "../sources/web-list.ts";
 import { fetchXSearch } from "../sources/x.ts";
 import { xHandle } from "../sources/account.ts";
+import { SourceUses, useLabels } from "../sources/uses.ts";
 
 
 export interface SourceListFilters {
@@ -29,6 +30,8 @@ export interface SourceListFilters {
   health?: string;
   enabled?: "true" | "false";
   mode?: string;
+  /** A use of sources a module declares (sources/uses.ts). */
+  use?: string;
   page?: number;
 }
 
@@ -37,7 +40,7 @@ export async function listSources(f: SourceListFilters): Promise<BeforeJson<Admi
   const q = f.q?.trim() ? `%${f.q.trim()}%` : null;
   const [rows, [totals]] = await Promise.all([
     sql<BeforeJson<AdminSourceRow>[]>`
-    SELECT s.id, s.name, s.kind, s.tier, s.selection_class, s.participation_mode, s.enabled, s.health, s.fail_count, s.interval_minutes,
+    SELECT s.id, s.name, s.kind, s.tier, s.selection_class, s.participation_mode, s.uses, s.enabled, s.health, s.fail_count, s.interval_minutes,
            s.last_ok_at, s.last_fetch_at, s.last_error, (s.tier = 'T1') AS first_party, s.next_fetch_at,
            (SELECT count(*)::int FROM articles a WHERE a.source_id = s.id AND a.discovered_at > now() - interval '7 days') AS items_7d,
            (SELECT count(*)::int FROM publications p WHERE p.source_id = s.id AND p.selected AND p.discovered_at > now() - interval '30 days') AS selected_30d
@@ -47,6 +50,7 @@ export async function listSources(f: SourceListFilters): Promise<BeforeJson<Admi
         AND (${f.kind ?? null}::text IS NULL OR kind = ${f.kind ?? null})
         AND (${f.health ?? null}::text IS NULL OR health = ${f.health ?? null})
         AND (${f.mode ?? null}::text IS NULL OR participation_mode = ${f.mode ?? null})
+        AND (${f.use ?? null}::text IS NULL OR ${f.use ?? null} = ANY(uses))
         AND (${f.enabled ?? null}::text IS NULL OR enabled = (${f.enabled ?? null} = 'true'))
       ORDER BY enabled DESC, CASE health WHEN 'failing' THEN 0 WHEN 'degraded' THEN 1 ELSE 2 END, name, id
       LIMIT 100 OFFSET ${(page - 1) * 100}
@@ -57,7 +61,7 @@ export async function listSources(f: SourceListFilters): Promise<BeforeJson<Admi
            count(*) FILTER (WHERE health = 'failing')::int AS failing, count(*) FILTER (WHERE health = 'degraded')::int AS degraded
     FROM sources`,
   ]);
-  return { page, rows, totals };
+  return { page, rows, totals, useLabels: useLabels() };
 }
 
 export async function sourceDetail(id: string): Promise<BeforeJson<AdminSourceDetail> | null> {
@@ -75,7 +79,7 @@ export async function sourceDetail(id: string): Promise<BeforeJson<AdminSourceDe
     auditHistory(`source:${id}`),
     sql<{ value: Record<string, unknown> }[]>`SELECT value FROM settings WHERE key = ${republishKey(id)}`,
   ]);
-  return { source, runs, items, stats: stats!, history, republish: republish?.value ?? null };
+  return { source, runs, items, stats: stats!, history, republish: republish?.value ?? null, useLabels: useLabels() };
 }
 
 /** A stored source fetched now without storing anything; null when there is no such source. */
@@ -130,6 +134,7 @@ const EDITABLE = z
     site_fulltext: z.boolean(),
     syndicate_fulltext: z.boolean(),
     tags: z.array(z.string().max(60)).max(30),
+    uses: SourceUses,
     config: z.record(z.string(), z.unknown()),
   })
   .partial()
@@ -140,6 +145,14 @@ const kindHooks = (kind: string) => serverModules().flatMap((m) => m.sourceKinds
 
 export async function updateSource(id: string, input: { patch: unknown; version: string; reason?: string }, actor: string) {
   const patch = EDITABLE.parse(input.patch);
+  const after = await saveSource(id, patch, input, actor);
+  if (!after || !patch.uses) return after;
+  // New uses may ask for a faster pace: from now, not from the next daily adaptation.
+  await applyUsePace(id);
+  return (await sql`SELECT * FROM sources WHERE id = ${id}`)[0];
+}
+
+async function saveSource(id: string, patch: z.infer<typeof EDITABLE>, input: { version: string; reason?: string }, actor: string) {
   return sql.begin(async (tx) => {
     // Creation and address edits share the lock: checking then inserting must not race.
     if (patch.config) await tx`SELECT pg_advisory_xact_lock(hashtext('admin-source-identity'))`;
@@ -229,6 +242,7 @@ const CreateSchema = z
     interval_minutes: z.number().int().min(1).max(1440).default(30),
     first_party: z.boolean().default(false),
     tags: z.array(z.string()).default([]),
+    uses: SourceUses.default([]),
     site_fulltext: z.boolean().default(SOURCE_DEFAULTS.siteFulltext),
     syndicate_fulltext: z.boolean().default(false),
   })
@@ -261,19 +275,24 @@ export async function createSource(input: unknown, actor: string): Promise<Befor
   const s = CreateSchema.parse(input);
   s.first_party = s.tier === "T1";
   assertSupportedConfig(s.kind, s.config);
-  return sql.begin(async (tx) => {
+  const result = await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('admin-source-identity'))`;
     const dup = await findDuplicateSource(s.kind, s.config, undefined, tx);
     if (dup) return { created: false as const, duplicate: dup };
     const [row] = await tx<BeforeJson<AdminSource>[]>`
-    INSERT INTO sources (id, name, kind, config, tier, selection_class, participation_mode, interval_minutes, first_party, tags, site_fulltext, syndicate_fulltext, next_fetch_at)
-    VALUES (${s.id}, ${s.name}, ${s.kind}, ${tx.json(s.config as never)}, ${s.tier}, ${s.selection_class}, ${s.participation_mode}, ${s.interval_minutes}, ${s.first_party}, ${s.tags},
+    INSERT INTO sources (id, name, kind, config, tier, selection_class, participation_mode, uses, interval_minutes, first_party, tags, site_fulltext, syndicate_fulltext, next_fetch_at)
+    VALUES (${s.id}, ${s.name}, ${s.kind}, ${tx.json(s.config as never)}, ${s.tier}, ${s.selection_class}, ${s.participation_mode}, ${s.uses}, ${s.interval_minutes}, ${s.first_party}, ${s.tags},
             ${s.site_fulltext}, ${s.syndicate_fulltext}, now())
     ON CONFLICT (id) DO NOTHING RETURNING *`;
     if (!row) throw new Conflict(`信源 ID ${s.id} 已存在`);
     await audit(actor, "source.create", `source:${s.id}`, null, null, s, { db: tx });
     return { created: true as const, source: row };
   });
+  if (!result.created || !s.uses.length) return result;
+  // Its uses may ask for a faster pace than the one it was created with.
+  await applyUsePace(s.id);
+  const [source] = await sql<BeforeJson<AdminSource>[]>`SELECT * FROM sources WHERE id = ${s.id}`;
+  return { created: true as const, source: source! };
 }
 
 export async function fetchNow(id: string, actor: string) {

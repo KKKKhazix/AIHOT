@@ -7,6 +7,8 @@ export interface SourceRow {
   config: Record<string, any>;
   tier: string;
   participation_mode: "editorial" | "hot_signal" | "isolated";
+  /** Uses besides the news pipeline, each declared by an installed module (sources/uses.ts). */
+  uses: string[];
   first_party: boolean;
   interval_minutes: number;
   enabled: boolean;

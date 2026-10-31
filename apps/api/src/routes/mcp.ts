@@ -4,9 +4,9 @@
 // the v1 endpoints.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createMcpHandler, McpServer, type McpHttpHandler } from "@modelcontextprotocol/server";
+import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { POLICY, SITE } from "@aihot/site";
+import { DEPLOYMENT, POLICY, SITE } from "@aihot/site";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { MCP_TOOL_NAMES as T, mcpToolName } from "@aihot/contracts/mcp";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
@@ -20,7 +20,7 @@ import { v1Items } from "@aihot/backend/publication/v1";
 import { SearchBusyError } from "@aihot/backend/publication/pool";
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
 import { dailyWithNotes, isPeriodKey, v1Period } from "@aihot/backend/publication/reports";
-import { requestNotice, serverModules, type McpNotice } from "@aihot/backend/modules";
+import { serverModules } from "@aihot/backend/modules";
 
 /** What each tool is for, in the order the instructions name them; the modules' come last. */
 const USES = [
@@ -113,21 +113,21 @@ const answers = cachedByKey(
 );
 const recent = <T>(key: string, load: () => Promise<T>) => answers({ key, load }) as Promise<T>;
 
-/** The server: every tool, and with a module's reminder for the person behind the request at connect and after every answer. */
-export function buildMcpServer(notice: McpNotice | null = null): McpServer {
+/** The server and every tool, with the site's usage instructions. */
+export function buildMcpServer(): McpServer {
   // A session's tools never change and the server never pushes. Advertising listChanged (the SDK's
   // default when it is left out) makes some clients hold a subscriptions/listen stream open for the
   // whole session.
   const server = new McpServer(
     { name: SITE.mcpPrefix, version: PUBLIC_INTERFACE_VERSION },
-    { capabilities: { tools: { listChanged: false } }, instructions: instructions() + (notice?.instructions ?? "") },
+    { capabilities: { tools: { listChanged: false } }, instructions: instructions() },
   );
-  registerTools(server, notice ? (text, structured) => ok(text + notice.text, { ...structured, notice: notice.notice }) : ok);
+  registerTools(server);
   return server;
 }
 
-/** Every tool on a server; `say` turns a tool's answer text and data into its result. */
-function registerTools(server: McpServer, say: typeof ok) {
+/** Every tool on a server, returning its answer text and data. */
+function registerTools(server: McpServer) {
   server.registerTool(
     T.latest,
     {
@@ -138,7 +138,7 @@ function registerTools(server: McpServer, say: typeof ok) {
     safe(T.latest, async (args) => {
       const query = { mode: args.mode, window: args.window, by: "timeline", category: args.category ?? null, q: null, limit: args.limit, cursor: null } as const;
       const res = await recent(`items:${JSON.stringify(query)}`, () => v1Items(query));
-      return say(latestAnswer(res, { window: args.window, mode: args.mode, category: args.category ?? null, limit: args.limit }), { schemaVersion: 1, query: res.query, items: res.items });
+      return ok(latestAnswer(res, { window: args.window, mode: args.mode, category: args.category ?? null, limit: args.limit }), { schemaVersion: 1, query: res.query, items: res.items });
     }),
   );
 
@@ -154,7 +154,7 @@ function registerTools(server: McpServer, say: typeof ok) {
       if (q.includes("\0")) return fail("invalid_request", "搜索词不能包含 NUL 字符。");
       if ([...q].length < 2) return fail("invalid_request", "搜索词需要 2 到 200 个字符。");
       const found = await searchItems(q, args.window, args.category ?? null, args.limit, (query) => recent(`items:${JSON.stringify(query)}`, () => v1Items(query)));
-      return say(searchAnswer(found, { q, window: args.window, category: args.category ?? null }), { schemaVersion: 1, query: found.res.query, items: found.res.items });
+      return ok(searchAnswer(found, { q, window: args.window, category: args.category ?? null }), { schemaVersion: 1, query: found.res.query, items: found.res.items });
     }),
   );
 
@@ -168,7 +168,7 @@ function registerTools(server: McpServer, say: typeof ok) {
     safe(T.hot, async (args) => {
       const all = await recent("hot", () => v1HotTopics());
       const items = all.items.slice(0, args.limit);
-      return say(hotAnswer(all, args.limit, "mcp"), { schemaVersion: 1, count: items.length, items });
+      return ok(hotAnswer(all, args.limit, "mcp"), { schemaVersion: 1, count: items.length, items });
     }),
   );
 
@@ -185,7 +185,7 @@ function registerTools(server: McpServer, say: typeof ok) {
       const body = found.kind === "found" ? await v1Story(found.storyId) : null;
       if (!body) return fail("not_found", `没有这个公开事件；只使用 ${T.hot} 返回的 public_id。`);
       const story = { ...body.story, reports: body.story.reports.slice(0, args.report_limit) };
-      return say(storyAnswer(body.story, args.report_limit, "mcp"), { schemaVersion: 1, story });
+      return ok(storyAnswer(body.story, args.report_limit, "mcp"), { schemaVersion: 1, story });
     }),
   );
 
@@ -200,7 +200,7 @@ function registerTools(server: McpServer, say: typeof ok) {
       if (args.date && !isValidDate(args.date)) return fail("invalid_request", `${args.date} 不是有效日期。`);
       const res = await recent(`daily:${args.date ?? "latest"}`, () => dailyWithNotes(args.date ?? "latest"));
       if (!res) return fail("not_found", args.date ? `没有 ${args.date} 的公开日报。` : "还没有公开日报。");
-      return say(dailyAnswer(res.body.report, "mcp", res.notes), res.body);
+      return ok(dailyAnswer(res.body.report, "mcp", res.notes), res.body);
     }),
   );
 
@@ -218,7 +218,7 @@ function registerTools(server: McpServer, say: typeof ok) {
         if (key && !isPeriodKey(p.kind, key)) return fail("invalid_request", `${key} 不是${p.form}。`);
         const body = await recent(`${p.kind}:${key ?? "latest"}`, () => v1Period(p.kind, key ?? "latest"));
         if (!body) return fail("not_found", key ? `没有 ${key} 的${p.name}；不要换一期冒充。` : `还没有发布过${p.name}。`);
-        return say(periodAnswer(body.report, p.kind, "mcp"), body);
+        return ok(periodAnswer(body.report, p.kind, "mcp"), body);
       }),
     );
   }
@@ -230,7 +230,7 @@ function registerTools(server: McpServer, say: typeof ok) {
       { description: ability.mcp.description, inputSchema: ability.mcp.input, annotations: ANNOTATIONS },
       safe(name, async (args: Record<string, unknown>) => {
         const { text, structured } = await recent(`${name}:${JSON.stringify(args)}`, () => ability.mcp.run(args));
-        return say(text, structured);
+        return ok(text, structured);
       }),
     );
   }
@@ -254,11 +254,11 @@ function hostnameFromAuthority(authority: string | string[] | undefined): string
 
 const SITE_ADDRESS = new URL(config.siteUrl);
 
-/** The site's own host (SITE_URL), the modules' hosts, local addresses, and any extra hosts in MCP_ALLOWED_HOSTS. */
-function allowedHosts(hosts: string[]): Set<string> {
+/** The site, deployment origin, local addresses, and extra hosts in MCP_ALLOWED_HOSTS. */
+function allowedHosts(): Set<string> {
   return new Set([
     SITE_ADDRESS.hostname,
-    ...hosts,
+    ...(DEPLOYMENT.originHost ? [DEPLOYMENT.originHost] : []),
     "localhost",
     "127.0.0.1",
     "[::1]",
@@ -266,13 +266,12 @@ function allowedHosts(hosts: string[]): Set<string> {
   ].map(hostnameFromAuthority).filter((host): host is string => host !== null));
 }
 
-/** Browsers on the site (or on one of the modules' hosts, over https) and on local development addresses. */
-function allowedOrigin(origin: string | undefined, hosts: string[]): boolean {
+/** Browsers on the site and local development addresses. */
+function allowedOrigin(origin: string | undefined): boolean {
   if (!origin) return true;
   try {
     const u = new URL(origin);
     if (u.protocol === SITE_ADDRESS.protocol && u.hostname === SITE_ADDRESS.hostname) return true;
-    if (u.protocol === "https:" && hosts.includes(u.hostname)) return true;
     return (u.hostname === "localhost" || u.hostname === "127.0.0.1") && (u.protocol === "http:" || u.protocol === "https:");
   } catch {
     return false;
@@ -307,17 +306,8 @@ function respond(reply: FastifyReply, res: Response) {
 }
 
 export function registerMcp(app: FastifyInstance) {
-  const hosts = serverModules().flatMap((m) => m.hosts ?? []);
-  const allowed = allowedHosts(hosts);
-  const options = { legacy: "stateless", maxRequestBodySize: MAX_REQUEST_BODY_SIZE } as const;
-  // One handler per reminder (none, or each distinct one a module gives), made when first needed.
-  const handlers = new Map<string, McpHttpHandler>();
-  const handlerFor = (notice: McpNotice | null) => {
-    const key = notice ? JSON.stringify(notice) : "";
-    let handler = handlers.get(key);
-    if (!handler) handlers.set(key, (handler = createMcpHandler(() => buildMcpServer(notice), options)));
-    return handler;
-  };
+  const allowed = allowedHosts();
+  const handler = createMcpHandler(buildMcpServer, { legacy: "stateless", maxRequestBodySize: MAX_REQUEST_BODY_SIZE });
 
   const serve = async (req: FastifyRequest, reply: FastifyReply) => {
     reply.header("Cache-Control", "no-store");
@@ -327,7 +317,7 @@ export function registerMcp(app: FastifyInstance) {
     const authorityCount = req.raw.rawHeaders.filter((name, index) => index % 2 === 0 && name.toLowerCase() === authorityHeader).length;
     const host = authorityCount === 1 ? hostnameFromAuthority(req.headers[authorityHeader]) : null;
     if (host === null || !allowed.has(host)) return reply.code(421).type("application/json").send({ error: "misdirected_request" });
-    if (!allowedOrigin(req.headers.origin, hosts)) return reply.code(403).type("application/json").send({ error: "origin_not_allowed" });
+    if (!allowedOrigin(req.headers.origin)) return reply.code(403).type("application/json").send({ error: "origin_not_allowed" });
     corsHeaders(reply, req.headers.origin);
     // One JSON-RPC message per request (batches were dropped from the protocol).
     if (req.method === "POST" && Array.isArray(req.body)) {
@@ -354,7 +344,7 @@ export function registerMcp(app: FastifyInstance) {
     const request = new Request(`${config.siteUrl}${(req.raw.url ?? "/api/mcp")}`, { method: req.method, headers, body, signal: gone.signal });
     const parsed = req.method === "POST" && typeof req.body === "object" ? { parsedBody: req.body } : undefined;
     try {
-      return respond(reply, await requestLog.run(req.log, () => handlerFor(requestNotice("mcp", req)).fetch(request, parsed)));
+      return respond(reply, await requestLog.run(req.log, () => handler.fetch(request, parsed)));
     } catch (error) {
       req.log.error({ err: error }, "mcp error");
       return reply.code(500).type("application/json").send({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null });
@@ -366,14 +356,14 @@ export function registerMcp(app: FastifyInstance) {
     method: ["GET", "POST", "DELETE"], url: "/api/mcp", bodyLimit: MAX_REQUEST_BODY_SIZE, handler: serve,
     errorHandler: (error, req, reply) => {
       if ((error as { code?: string }).code !== "FST_ERR_CTP_BODY_TOO_LARGE") throw error;
-      if (allowedOrigin(req.headers.origin, hosts)) corsHeaders(reply, req.headers.origin);
+      if (allowedOrigin(req.headers.origin)) corsHeaders(reply, req.headers.origin);
       return reply.code(413).header("Cache-Control", "no-store").type("application/json")
         .send({ jsonrpc: "2.0", error: { code: -32000, message: "MCP request body is too large." }, id: null });
     },
   });
   app.options("/api/mcp", async (req, reply) => {
     reply.header("Cache-Control", "no-store");
-    if (!allowedOrigin(req.headers.origin, hosts)) return reply.code(403).type("application/json").send({ error: "origin_not_allowed" });
+    if (!allowedOrigin(req.headers.origin)) return reply.code(403).type("application/json").send({ error: "origin_not_allowed" });
     corsHeaders(reply, req.headers.origin);
     return reply.code(204).header("Access-Control-Allow-Methods", CORS_METHODS).header("Access-Control-Allow-Headers", CORS_HEADERS).header("Access-Control-Max-Age", "600").header("Allow", CORS_METHODS).send();
   });

@@ -61,10 +61,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const healthy = await apiGet("/api/health", { signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]) }).then(() => true, () => false);
   return cachedPage(300, {
     healthy,
-    // The examples show the configured public address, the same on the server and in the browser; what
-    // depends on the time reads the server's.
+    // The examples show the configured public address, the same on the server and in the browser.
     base: siteUrl(),
-    now: Date.now(),
   });
 }
 
@@ -87,7 +85,7 @@ export function meta({ location }: Route.MetaArgs) {
 }
 
 export default function AgentPage() {
-  const { healthy, base, now } = useLoaderData<typeof loader>();
+  const { healthy, base } = useLoaderData<typeof loader>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const tag = useTag();
@@ -187,7 +185,7 @@ export default function AgentPage() {
         </div>
       </header>
 
-      {BANNERS.map((Banner, i) => <Banner key={i} base={base} tag={tag} now={now} href={anchorHref} open={open} />)}
+      {BANNERS.map((Banner, i) => <Banner key={i} base={base} tag={tag} href={anchorHref} open={open} />)}
 
       <div role="tablist" aria-label="接入方式" className="mt-8 grid grid-cols-2 gap-2.5 sm:gap-3 2xl:grid-cols-4">
         {TRACKS.map((t) => {
@@ -222,8 +220,8 @@ export default function AgentPage() {
       {TAG && <TAG.Note />}
 
       <section id="agent-panel" role="tabpanel" aria-labelledby={`agent-tab-${tab}`} className="mt-9">
-        {track && <track.Panel key={track.key} base={base} tag={tag} now={now} />}
-        {BLOCKS.filter((b) => b.track === tab).map((b) => <b.Block key={b.anchor} base={base} tag={tag} now={now} />)}
+        {track && <track.Panel key={track.key} base={base} tag={tag} />}
+        {BLOCKS.filter((b) => b.track === tab).map((b) => <b.Block key={b.anchor} base={base} tag={tag} />)}
       </section>
     </ReadingLayout>
     </>

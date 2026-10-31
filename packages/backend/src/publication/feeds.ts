@@ -10,7 +10,6 @@ import { escapeXml } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { feedIssues, type FeedIssue, type ReportKind } from "./reports.ts";
 import { textToHtml } from "../content/sanitize.ts";
-import type { FeedNotice } from "../modules.ts";
 import { publicCategoryCondition, exportTranslation, xView, type ItemRow } from "./items.ts";
 import { publicSourceName } from "./rules.ts";
 import { SELECTION } from "@aihot/industry/selection";
@@ -60,18 +59,6 @@ function cdata(s: string): string {
 
 function rfc822(d: Date): string {
   return d.toUTCString();
-}
-
-/** A module's reminder ahead of a feed's items (RequestNotices.feed). */
-function noticeXml(n: FeedNotice): string {
-  return `    <item>
-      <title>${cdata(n.title)}</title>
-      <link>${escapeXml(n.link)}</link>
-      <description>${cdata(n.description)}</description>
-      <pubDate>${rfc822(n.at)}</pubDate>
-      <guid isPermaLink="false">${escapeXml(n.guid)}</guid>
-      <author>${escapeXml(AUTHOR)} (${escapeXml(SITE.name)})</author>
-    </item>`;
 }
 
 function channel(meta: { title: string; description: string; homePath: string; selfPath: string; ttl: number }, items: string[]): string {
@@ -152,10 +139,7 @@ export type ItemFeedKind = "selected" | "selected-full" | "all";
 // Items are the newest by their original publish time (the pubDate shown): 50 per feed; a category
 // feed holds only its last 7 days (by original publish time).
 
-/** A reminder for the feed at a path, or none (routes/feeds.ts asks the modules). */
-type NoticeFor = (feedPath: string) => FeedNotice | null;
-
-export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKey | null, { now = new Date(), notice }: { now?: Date; notice?: NoticeFor } = {}): Promise<string> {
+export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKey | null, { now = new Date() }: { now?: Date } = {}): Promise<string> {
   const includeContent = kind === "selected-full";
   const scope = kind === "all"
     ? sql`${browsedCondition(now)} AND coalesce(p.published_at, p.discovered_at) > ${now}::timestamptz - interval '7 days'
@@ -191,8 +175,6 @@ export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKe
     };
   }
   const items = rows.map((r) => itemXml(r, includeContent));
-  const first = notice?.(meta.selfPath);
-  if (first) items.unshift(noticeXml(first));
   return channel(meta, items);
 }
 
@@ -218,12 +200,10 @@ function issueXml(kind: ReportKind, r: FeedIssue): string {
 }
 
 /** The daily, weekly or monthly feed: one item per issue, newest first. */
-export async function reportFeed(kind: ReportKind, notice?: NoticeFor): Promise<string> {
+export async function reportFeed(kind: ReportKind): Promise<string> {
   const m = feedMeta(kind);
   const meta = { title: m.title, description: m.description, homePath: m.homePath, selfPath: m.path, ttl: m.pollHintMinutes };
   const items = (await feedIssues(kind, ISSUES_KEPT[kind])).map((r) => issueXml(kind, r));
-  const first = notice?.(meta.selfPath);
-  if (first) items.unshift(noticeXml(first));
   return channel(meta, items);
 }
 

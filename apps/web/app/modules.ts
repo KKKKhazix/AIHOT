@@ -17,8 +17,6 @@ export interface AgentPanelProps {
   base: string;
   /** The value of the tag on what visitors copy (AgentPart.tag) as it is now; null on a site without one. */
   tag: string | null;
-  /** The page's time (ms), read on the server like `base`: what depends on it reads the same in the browser. */
-  now: number;
 }
 
 /** A way in on the agent page: a card in its chooser and a tab (`?tab=<key>`) with its panel. */

@@ -156,35 +156,9 @@ export interface JsonNotice {
   private?: boolean;
 }
 
-/** A reminder over MCP: after the server's instructions, after every tool's text and as `notice` in its structured content. */
-export interface McpNotice {
-  instructions: string;
-  text: string;
-  notice: object;
-}
-
-/** A reminder in a feed: an item ahead of the feed's own. `description` is HTML. */
-export interface FeedNotice {
-  guid: string;
-  title: string;
-  link: string;
-  description: string;
-  at: Date;
-}
-
-/**
- * A reminder for the person behind a request, which their Agent or reader passes on (it is not content),
- * asked at each exit; the first module with one gives it (requestNotice).
- */
+/** A reminder for the person behind a JSON request; the first module with one gives it. */
 export interface RequestNotices {
-  /** v1 JSON (routes/v1.ts). */
   json: (req: FastifyRequest) => JsonNotice | null;
-  /** The Agent's Markdown answers (routes/agent.ts): Markdown after the answer. */
-  agent: (req: FastifyRequest) => string | null;
-  /** MCP (routes/mcp.ts). Each distinct reminder gets a server of its own. */
-  mcp: (req: FastifyRequest) => McpNotice | null;
-  /** RSS (routes/feeds.ts), for the feed at `feedPath`. */
-  feed: (req: FastifyRequest, feedPath: string) => FeedNotice | null;
 }
 
 export interface ServerModule {
@@ -259,12 +233,8 @@ export interface ServerModule {
   queues?: ModuleQueue[];
   /** Follow-ups (level later), after the engine's (operations/alerts.ts). */
   followUps?: (now: number) => Promise<Finding[]>;
-  /** Further hosts the site answers on, over https: MCP accepts them as Host and as a browser's Origin (routes/mcp.ts). */
-  hosts?: string[];
-  /** Reminders for the person behind a request, by exit (RequestNotices). */
+  /** Reminders for the person behind a JSON request (RequestNotices). */
   notices?: Partial<RequestNotices>;
-  /** The origin v1 links stories at while it returns one, instead of the site's (publication/links.ts: hot topics' links.story, related stories' links.api). */
-  storyOrigin?: () => string | null;
   /** More keys a feedback sender is known by; a ban under any of them holds (operations/feedback.ts). */
   feedbackKeys?: (ip: string) => string[];
 }

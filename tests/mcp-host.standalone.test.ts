@@ -10,6 +10,7 @@ import { request } from "node:http";
 import { after, test } from "node:test";
 import { promisify } from "node:util";
 import Fastify from "fastify";
+import { DEPLOYMENT } from "@aihot/site";
 import { config } from "@aihot/backend/config";
 import { registerMcp } from "../apps/api/src/routes/mcp.ts";
 
@@ -40,6 +41,7 @@ function assertDenied(response: Awaited<ReturnType<typeof post>>, status = 421) 
 test("MCP initializes through each of its hosts, with or without a port", async () => {
   const requests: Array<Record<string, string>> = [
     { host: SITE },
+    ...(DEPLOYMENT.originHost ? [{ host: DEPLOYMENT.originHost }] : []),
     { host: `${SITE.toUpperCase()}:443` },
     { host: "localhost" },
     { host: "LOCALHOST:65535" },
@@ -204,4 +206,29 @@ test("MCP normalizes only explicitly configured site and extra host authorities,
     { headers: { host: "[0:0:0:0:0:0:0:1]:3001", origin: "http://[0:0:0:0:0:0:0:1]:3000" }, status: 200 },
     { headers: { host: "[::1]:3001", origin: "http://[::2]:3000" }, status: 403 },
   ])]);
+});
+
+// The CDN's origin authority is a transport address, never an extra browser origin. A deployment without
+// a CDN (originHost null) has none, so the rule is checked on an instance registered with one.
+test("MCP accepts the deployment's CDN origin Host but refuses it as a browser Origin", async () => {
+  const configured = DEPLOYMENT.originHost;
+  DEPLOYMENT.originHost = "cdn-origin.invalid";
+  const cdn = Fastify();
+  try {
+    registerMcp(cdn);
+  } finally {
+    DEPLOYMENT.originHost = configured;
+  }
+  const send = (headers: Record<string, string>) => cdn.inject({
+    method: "POST", url: "/api/mcp", payload: initialize,
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+  });
+  try {
+    const accepted = await send({ host: "cdn-origin.invalid" });
+    assert.equal(accepted.statusCode, 200, accepted.body);
+    assertDenied(await send({ host: "cdn-origin.invalid", origin: "https://cdn-origin.invalid" }), 403);
+    assertDenied(await cdn.inject({ method: "OPTIONS", url: "/api/mcp", headers: { origin: "https://cdn-origin.invalid" } }), 403);
+  } finally {
+    await cdn.close();
+  }
 });

@@ -167,9 +167,12 @@ test("feed text that only teases the article is a summary: the page is fetched b
   assert.equal(teaser!.excerpt, "AMD announced today that it's acquiring World Labs.");
   assert.equal(whole!.bodyStatus, "ok");
   assert.ok(whole!.bodyText!.length > 1200);
-  // Discussion sources only need what the feed says.
-  const signal = await fetchRss({ id: "test-feed", config: { feedUrl: `${site}/teaser.xml` }, participation_mode: "hot_signal", cursor: null } as never, { force: true });
+  // Discussion sources only need what the feed says; one a module reads (sources.uses) is read whole.
+  const signal = await fetchRss({ id: "test-feed", config: { feedUrl: `${site}/teaser.xml` }, participation_mode: "hot_signal", uses: [], cursor: null } as never, { force: true });
   assert.equal(signal.candidates[0]!.bodyStatus, "ok");
+  const used = await fetchRss({ id: "test-feed", config: { feedUrl: `${site}/teaser.xml` }, participation_mode: "isolated", uses: ["free-tokens"], cursor: null } as never, { force: true });
+  assert.equal(used.candidates[0]!.bodyStatus, "pending");
+  assert.equal(used.candidates[0]!.bodyText, null);
 });
 
 test("a source that declares its feed summary the body keeps a short one, in RSS and Atom; a teaser is still a summary", async () => {

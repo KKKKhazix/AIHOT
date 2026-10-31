@@ -88,6 +88,12 @@ test("a source given a use, or created with one, keeps the use's pace from then 
   }, "test");
   assert.ok(paid.created);
   assert.equal(paid.source.interval_minutes, 60);
+  // A WeChat account is read when the phone shows it updated, not by interval: a use leaves it as it is.
+  await sql`INSERT INTO sources (id, name, kind, config, tier, participation_mode, interval_minutes)
+    VALUES (${`uses-mp-${T}`}, 'mp', 'mp_account', ${sql.json({ ghid: `gh_${T}` })}, 'T1_5', 'editorial', 120)`;
+  const [mp] = await sql<{ updated_at: Date }[]>`SELECT updated_at FROM sources WHERE id = ${`uses-mp-${T}`}`;
+  const watched = await updateSource(`uses-mp-${T}`, { patch: { uses: ["watch"] }, version: mp!.updated_at.toISOString() }, "test");
+  assert.equal(watched!.interval_minutes, 120);
 });
 
 test("a use's pace speeds its sources up, never slows the news pipeline's pace and keeps a paid listing's floor", async () => {

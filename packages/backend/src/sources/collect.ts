@@ -16,7 +16,7 @@ import { admitListing, filterPublicationWindow } from "./filters.ts";
 import { fetchJsonList } from "./json-list.ts";
 import { fetchXSearch, planXShards, readXSearch, shardHandle, shardQuery, selfThreadHandle, SHARDABLE_SQL, tweetToCandidate, type XBacklog } from "./x.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
-import { usePace } from "./uses.ts";
+import { readsWhole, usePace } from "./uses.ts";
 
 export interface CollectResult {
   sourceId: string;
@@ -153,7 +153,7 @@ function detailNeed(c: CollectionCandidate, stored: StoredDetail | undefined, so
     date: d.publishedAtAuthoritative === true || !(stored?.published_at || c.publishedAt) || d.upgradeDatePrecision === true,
     title: !!(d.titleSelector || d.titleRegex) && (d.titleAuthoritative === true || (!storedHeadline && needsTitle(c.title))),
     summary: !!d.summarySelector && !(stored?.excerpt || c.excerpt),
-    body: source.participation_mode === "editorial" && stored?.body_status !== "ok" && !c.bodyText && (!c.bodyStatus || c.bodyStatus === "pending"),
+    body: readsWhole(source) && stored?.body_status !== "ok" && !c.bodyText && (!c.bodyStatus || c.bodyStatus === "pending"),
   };
   return need.date || need.title || need.summary ? need : null;
 }
@@ -565,11 +565,11 @@ export async function adaptIntervals(): Promise<{ updated: number }> {
 /**
  * A source's uses just changed: from now it waits no longer than they allow, and no longer than that for its next
  * read. A faster pace it already has stays, and a paid listing still waits its hour; the next daily adaptation
- * weighs its output as usual.
+ * weighs its output as usual. Kinds read on another trigger (WeChat accounts, outside reports) keep theirs.
  */
 export async function applyUsePace(id: string): Promise<void> {
   const [s] = await sql<{ uses: string[]; interval_minutes: number; paid_listing: boolean }[]>`
-    SELECT uses, interval_minutes, ${paidListing} AS paid_listing FROM sources WHERE id = ${id}`;
+    SELECT uses, interval_minutes, ${paidListing} AS paid_listing FROM sources WHERE id = ${id} AND kind IN ('rss', 'web_list', 'json_list', 'x_search')`;
   if (!s) return;
   const capped = Math.min(s.interval_minutes, usePace(s.uses));
   const target = s.paid_listing ? Math.max(PAID_LISTING_FLOOR, capped) : capped;

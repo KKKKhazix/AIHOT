@@ -159,6 +159,9 @@ export function isHistorical(a: { backfill: boolean; published_at: Date | null; 
 /** Not isHistorical, as a condition on the material row `a` of a query. */
 export const newsCondition = sql`(NOT a.backfill OR a.discovered_at - a.published_at <= make_interval(secs => ${STALE_ON_DISCOVERY_MS / 1000}))`;
 
+/** No more of the material's text is coming: its body is in, or processing went past fetching one (row `a`). */
+export const textSettled = sql`(a.body_status <> 'pending' OR a.processing_state <> 'new')`;
+
 /** Identity of semantic input; presentation changes preserve this revision and its paid decisions. */
 export function contentHash(c: { title: string; bodyText?: string | null; excerpt?: string | null }): string {
   return sha256([collapseWhitespace(c.title), collapseWhitespace(c.bodyText ?? ""), collapseWhitespace(c.excerpt ?? "")].join("\u0001"));

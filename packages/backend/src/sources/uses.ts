@@ -16,6 +16,9 @@ export function useLabels(): Record<string, string> {
   return Object.fromEntries(Object.entries(sourceUses()).map(([name, use]) => [name, use.label]));
 }
 
+/** Whether a source's posts are wanted whole, not only as the feed gives them: the news judges an editorial source's, a module reads a used one's. */
+export const readsWhole = (s: { participation_mode: string; uses: readonly string[] }) => s.participation_mode === "editorial" || s.uses.length > 0;
+
 /** The longest a source may wait between reads for its uses' sake; Infinity when none asks. */
 export function usePace(uses: readonly string[]): number {
   const declared = sourceUses();

@@ -10,6 +10,7 @@ import { sha256, stableJson } from "../lib/ids.ts";
 import { normalizeUrl } from "../lib/url.ts";
 import { isVideoPageUrl } from "../lib/video-url.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
+import { readsWhole } from "./uses.ts";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -94,7 +95,7 @@ function imagesFrom(html: string, base: string): Array<{ kind: "image"; url: str
 }
 
 /**
- * Feed text of an editorial source that only teases the article: short and ending in a "read more"
+ * Feed text of a source read whole (uses.ts readsWhole) that only teases the article: short and ending in a "read more"
  * mark (a news site's "Read the full story at <its name>."). Treated as a summary, so extraction fetches
  * the page before the article is judged.
  */
@@ -121,7 +122,7 @@ export function isTeaser(text: string): boolean {
  */
 function feedText(bodyHtml: string | null, summaryText: string | null, source: SourceRow, hasPage = true, plainBody: string | null = null): Pick<Candidate, "excerpt" | "bodyHtml" | "bodyText" | "bodyStatus"> {
   const bodyText = bodyHtml ? collapseWhitespace(plainBody ?? stripTags(bodyHtml)) : null;
-  const teaser = !!bodyText && source.participation_mode === "editorial" && isTeaser(bodyText);
+  const teaser = !!bodyText && readsWhole(source) && isTeaser(bodyText);
   const excerpt = summaryText !== null ? collapseWhitespace(summaryText).slice(0, 2000) : teaser ? collapseWhitespace(bodyText!) : null;
   return bodyText && (bodyText.length > 280 || source.config.summaryIsBody === true) && !teaser
     ? { excerpt, bodyHtml, bodyText, bodyStatus: "ok" }

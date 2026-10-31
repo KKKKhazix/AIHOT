@@ -1,7 +1,8 @@
 // An X post that only links an X Article is judged on the article: collection
 // marks it for extraction, extraction fetches the article by the post's own id and stores it as a new
 // revision, and the judging steps read the article. A post whose article cannot be fetched is flagged
-// to the model instead of passing for a complete body. Reading the post again is no new revision.
+// to the model instead of passing for a complete body. Reading the post again is no new revision. A source
+// a module reads has its posts' articles fetched too while they are news.
 import { stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -11,7 +12,8 @@ import { extractArticleBody } from "@aihot/backend/content/extract";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { loadAnalyzeInput } from "@aihot/backend/editorial/input";
 import { renderContext } from "@aihot/backend/editorial/writing";
-import { stopBoss } from "@aihot/backend/jobs/queue";
+import { queueProcessing } from "@aihot/backend/jobs/content";
+import { QUEUES, stopBoss } from "@aihot/backend/jobs/queue";
 import { collectXShard } from "@aihot/backend/sources/collect";
 import { tweetToCandidate } from "@aihot/backend/sources/x";
 import type { SdTweet } from "@aihot/backend/providers/socialdata";
@@ -106,4 +108,19 @@ test("an article that cannot be fetched is flagged to the model, not passed off 
   const input = (await loadAnalyzeInput(id))!;
   assert.equal(input.bodyStatus, "unconfirmed");
   assert.match(renderContext(input), /【媒体】含 X 长文链接（正文未抓到）/);
+});
+
+test("a post a module reads (sources.uses) has its X Article fetched while it is news; one nobody reads whole is grouped as it is", async () => {
+  const used = `test-xa-used-${T}`;
+  const unused = `test-xa-unused-${T}`;
+  await sql`INSERT INTO sources (id, name, kind, config, tier, participation_mode, uses, next_fetch_at) VALUES
+    (${used}, ${`used${T}`}, 'x_search', ${sql.json({})}, 'T2', 'isolated', ${["free-tokens"]}, '2100-01-01'),
+    (${unused}, ${`unused${T}`}, 'x_search', ${sql.json({})}, 'T2', 'isolated', ${[]}, '2100-01-01')`;
+  const queuedFor = async (sourceId: string, tweetId: string) => {
+    const { articleId } = await upsertMaterial({ ...tweetToCandidate(post(tweetId, "999")), sourceId, via: "fetch" });
+    await queueProcessing(articleId);
+    return (await sql<{ name: string }[]>`SELECT name FROM pgboss.job WHERE singleton_key = ${articleId} ORDER BY created_on DESC LIMIT 1`)[0]?.name;
+  };
+  assert.equal(await queuedFor(used, String(BASE + 10n)), QUEUES.extractBody);
+  assert.equal(await queuedFor(unused, String(BASE + 11n)), QUEUES.group);
 });

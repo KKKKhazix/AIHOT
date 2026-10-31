@@ -56,7 +56,7 @@ export interface TranslateResult {
 }
 
 /** Leaf text blocks of a sanitised body, in document order, skipping code. */
-function segmentsOf($: cheerio.CheerioAPI): Element[] {
+export function segmentsOf($: cheerio.CheerioAPI): Element[] {
   const out: Element[] = [];
   const visit = (nodes: AnyNode[]) => {
     for (const node of nodes) {
@@ -240,12 +240,13 @@ export async function translateArticle(articleId: string): Promise<TranslateResu
   return result({ status: complete ? "translated" : "partial", segments: done });
 }
 
-async function store(articleId: string, revision: number, title: string, html: string, text: string, complete: boolean, receiptIds: number[], sourceHtml?: string) {
+async function store(articleId: string, revision: number, title: string, html: string, text: string, complete: boolean, receiptIds: number[], sourceHtml?: string, exactSource = false) {
   // Never over a translation of a later revision (a slow run finishing after a newer one).
   await sql.begin(async (tx) => {
     // A layout refresh can finish while the model is answering the same semantic revision.
     // Serialize with material writes and attach the answer to the current presentation.
     const [current] = await tx<{ revision: number; body_html: string | null }[]>`SELECT revision,body_html FROM articles WHERE id=${articleId} FOR UPDATE`;
+    if (exactSource && (!current || current.revision !== revision || current.body_html !== sourceHtml)) throw new Error("Translation source changed; import rejected");
     if (sourceHtml !== undefined && current?.revision === revision && current.body_html !== sourceHtml) {
       html = rebaseTranslation(sourceHtml, current.body_html ?? "", html);
     }
@@ -261,6 +262,19 @@ async function store(articleId: string, revision: number, title: string, html: s
     if (changed.length) await emit("articleChanged", { id: articleId, kind: "body", reason: "body translation" }, tx);
     for (const receiptId of new Set(receiptIds)) await completeReceipt(tx, receiptId);
   });
+}
+
+/** Restore an externally generated model translation only against its exact source body.
+ * Importers keep model credentials and execution outside reader requests; publisher translations
+ * retain priority, and the original revision checks and module notifications still apply.
+ */
+export async function importBodyTranslation(input: { articleId: string; sourceHtml: string; title: string; html: string; complete: boolean }) {
+  const [row] = await sql<{ revision: number }[]>`SELECT revision FROM articles WHERE id=${input.articleId}`;
+  if (!row) throw new Error("Translation article missing");
+  const clean = sanitizeBody(input.html);
+  const text = cheerio.load(clean, null, false).root().text().trim();
+  if (!clean || !text) throw new Error("Empty translation");
+  await store(input.articleId, row.revision, input.title, clean, text, input.complete, [], input.sourceHtml, true);
 }
 
 /** A quoted post worth translating: at least a few letters beyond its links, and not already Chinese. */

@@ -79,7 +79,7 @@ export function SearchOverlay() {
     setMore(null);
     void loadSuggestions().then(value => { if (active) setMore(value); }).catch(() => {});
     // At the desktop breakpoint this layer is hidden by CSS; it must stop holding the page still too.
-    const desktop = window.matchMedia("(min-width: 941px)");
+    const desktop = window.matchMedia("(min-width: 700px)");
     const onResize = () => { if (desktop.matches) close(); };
     onResize();
     desktop.addEventListener("change", onResize);

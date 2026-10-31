@@ -76,7 +76,7 @@ export function sidebar(): Array<{ title: string; items: NavItem[] }> {
 }
 
 /** A sidebar entry is lit on its pages; 日报 also covers weekly and monthly reports. */
-export function sidebarIsActive(item: NavItem, pathname: string): boolean {
+export function sidebarIsActive(item: Pick<NavItem, "to" | "end">, pathname: string): boolean {
   if (item.end) return pathname === item.to;
   if (item.to === "/daily") return /^\/(daily|weekly|monthly)(\/|$)/.test(pathname);
   return pathname === item.to || pathname.startsWith(`${item.to}/`);
@@ -113,4 +113,21 @@ const ENGINE_TABS: Tab[] = [
 /** The tab bar: the engine's, the modules' before 我的. */
 export function tabs(): Tab[] {
   return [...ENGINE_TABS.slice(0, -1).filter((t) => inNav(t.to)), ...webModules().flatMap((m) => m.tabs ?? []), ENGINE_TABS.at(-1)!];
+}
+
+/**
+ * The rail that stands in for the sidebar on narrow desktops (unfolded foldables, tablets upright): the
+ * tabs, with 全部 after 精选 since desktop pages have no 精选 | 全部 switch.
+ */
+export function rail(): Tab[] {
+  const all = tabs();
+  if (!inNav("/all")) return all;
+  const at = all.findIndex((t) => t.key === "featured") + 1;
+  return [...all.slice(0, at), { key: "all", to: "/all", label: "全部", icon: IconList }, ...all.slice(at)];
+}
+
+/** A rail entry is lit on its pages; 我的 also on the pages that sit under it on phones. */
+export function railIsActive(tab: Tab, pathname: string, screenTab: TabKey | undefined): boolean {
+  if (tab.key === "me") return pathname === tab.to || screenTab === "me";
+  return sidebarIsActive({ to: tab.to, end: tab.to === "/" }, pathname);
 }

@@ -246,7 +246,7 @@ function LeadPicture({ cover, onError, priority = false, className = "" }: { cov
     <figure className={className}>
       <div className="overflow-hidden well rounded-panel" style={{ aspectRatio: shown }}>
         <Picture src={cover.url} srcSet={cover.srcSet}
-          sizes={priority ? "(min-width: 1700px) 780px, (min-width: 1580px) calc(100vw - 920px), (min-width: 1420px) calc(100vw - 880px), (min-width: 1176px) calc(100vw - 540px), (min-width: 1140px) calc(100vw - 600px), (min-width: 941px) calc(100vw - 260px), (min-width: 640px) 608px, calc(100vw - 32px)" :"auto, (min-width: 1180px) 300px, (min-width: 640px) 608px, calc(100vw - 32px)"}
+          sizes={priority ? "(min-width: 1700px) 780px, (min-width: 1580px) calc(100vw - 920px), (min-width: 1420px) calc(100vw - 880px), (min-width: 1176px) calc(100vw - 540px), (min-width: 1140px) calc(100vw - 600px), (min-width: 941px) calc(100vw - 260px), (min-width: 700px) calc(100vw - 144px), (min-width: 640px) 608px, calc(100vw - 32px)" :"auto, (min-width: 1180px) 300px, (min-width: 640px) 608px, calc(100vw - 32px)"}
           width={cover.width ?? undefined} height={cover.height ?? undefined}
           alt="" loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" onError={onError} className="size-full object-cover" />
       </div>

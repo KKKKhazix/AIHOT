@@ -172,7 +172,7 @@ function Runner({ e }: { e: HotEntryView }) {
         <StoryLink e={e} className="group-hover:text-accent" />
       </h2>
       {e.summary && <p className="mt-1.5 line-clamp-2 text-[13px] leading-[1.7] text-ink-3 lg:line-clamp-1">{e.summary}</p>}
-      <div className="mt-auto flex items-end justify-between gap-4 pt-3">
+      <div className="mt-auto flex flex-wrap items-end justify-between gap-x-4 gap-y-2 pt-3">
         <div className="flex min-w-0 flex-col gap-1.5">
           <Faces participants={e.participants} total={e.participantCount} size={20} />
           <span className="text-[12px] text-ink-4">
@@ -180,7 +180,7 @@ function Runner({ e }: { e: HotEntryView }) {
             <span className="whitespace-nowrap"><span className="num">{e.participantCount}</span> 位参与者</span>
           </span>
         </div>
-        <div className="flex items-end gap-3">
+        <div className="ml-auto flex items-end gap-3">
           <Sparkline values={e.spark} className="h-7 w-[92px]" />
           <span className="mono text-[24px] font-semibold leading-none tracking-[-0.02em] text-ink">{Math.round(e.heat)}</span>
         </div>
@@ -192,8 +192,8 @@ function Runner({ e }: { e: HotEntryView }) {
 /** No. 4–10: a row each, with a line of the digest, faces, the day of heat and the index. */
 function Row({ e }: { e: HotEntryView }) {
   return (
-    <li className="group relative grid grid-cols-[30px_minmax(0,1fr)] items-start gap-x-3 px-4 py-3 transition-colors hover:bg-bg-sunk/70 sm:px-5 lg:grid-cols-[44px_minmax(0,1fr)_auto_104px_76px] lg:items-center lg:gap-x-6 lg:px-6 lg:py-3.5 dark:hover:bg-bg-muted/40">
-      <span className={`mono text-[16px] font-semibold leading-[24px] lg:text-[17px] ${rankColor(e.rank)}`} aria-label={`热度排名第 ${e.rank} 位`}>
+    <li className="group relative grid grid-cols-[30px_minmax(0,1fr)] items-start gap-x-3 px-4 py-3 transition-colors hover:bg-bg-sunk/70 sm:px-5 wide:grid-cols-[44px_minmax(0,1fr)_auto_104px_76px] wide:items-center wide:gap-x-6 wide:px-6 wide:py-3.5 dark:hover:bg-bg-muted/40">
+      <span className={`mono text-[16px] font-semibold leading-[24px] wide:text-[17px] ${rankColor(e.rank)}`} aria-label={`热度排名第 ${e.rank} 位`}>
         {pad(e.rank)}
       </span>
       <div className="min-w-0">
@@ -205,8 +205,8 @@ function Row({ e }: { e: HotEntryView }) {
             </span>
           )}
         </h3>
-        {e.summary && <p className="mt-0.5 line-clamp-2 text-[13px] leading-[1.65] text-ink-4 lg:line-clamp-1">{e.summary}</p>}
-        <div className="mt-2 flex items-center gap-2.5 lg:hidden">
+        {e.summary && <p className="mt-0.5 line-clamp-2 text-[13px] leading-[1.65] text-ink-4 wide:line-clamp-1">{e.summary}</p>}
+        <div className="mt-2 flex items-center gap-2.5 wide:hidden">
           <Faces participants={e.participants} total={e.participantCount} size={20} />
           <span className="text-[12px] text-ink-4">
             <span className="num">{e.sourceCount}</span> 个来源
@@ -217,11 +217,11 @@ function Row({ e }: { e: HotEntryView }) {
           </span>
         </div>
       </div>
-      <div className="hidden items-center gap-2.5 lg:flex">
+      <div className="hidden items-center gap-2.5 wide:flex">
         <Faces participants={e.participants} total={e.participantCount} size={20} />
       </div>
-      <Sparkline values={e.spark} className="hidden h-7 w-[104px] lg:block" />
-      <div className="hidden flex-col items-end gap-1 lg:flex">
+      <Sparkline values={e.spark} className="hidden h-7 w-[104px] wide:block" />
+      <div className="hidden flex-col items-end gap-1 wide:flex">
         <span className="mono text-[20px] font-semibold leading-none tracking-[-0.02em] text-ink">{Math.round(e.heat)}</span>
         <Delta trend={e.trend} pct={e.trendPct} />
       </div>
@@ -306,7 +306,7 @@ export default function HotPage() {
                 <h2 className="text-[15px] font-semibold text-ink">
                   继续看 <span className="num font-normal text-ink-4">No.{pad(others[0]!.rank)}–{pad(others[others.length - 1]!.rank)}</span>
                 </h2>
-                <span className="hidden text-[12px] text-ink-4 lg:block">参与者 · 24 小时走势 · 热度指数</span>
+                <span className="hidden text-[12px] text-ink-4 wide:block">参与者 · 24 小时走势 · 热度指数</span>
               </div>
               <ol className="card divide-y divide-line-soft overflow-hidden">
                 {others.map((e) => (

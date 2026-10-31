@@ -93,9 +93,9 @@ function SiteShell({ changelogVersion, children }: { changelogVersion: string | 
         跳到正文
       </a>
       <Sidebar changelogVersion={changelogVersion} />
-      {/* Phone shell (≤ 940px): each page's top bar (PhoneBar), one centred column, the tab bar below.
+      {/* Phone shell (≤ 699px): each page's top bar (PhoneBar), one centred column, the tab bar below.
           Desktop: the page fills the main area up to the list width (--page-max-wide), centred beyond it. */}
-      <main id="main" className="min-w-0 flex-1 pb-[calc(72px+env(safe-area-inset-bottom))] lg:px-7 lg:pb-[72px] lg:pt-6">
+      <main id="main" className="min-w-0 flex-1 pb-[calc(72px+env(safe-area-inset-bottom))] lg:px-5 lg:pb-[72px] lg:pt-6 wide:px-7">
         <div className="mx-auto w-full max-w-[640px] pl-[var(--gutter-l)] pr-[var(--gutter-r)] lg:max-w-[var(--page-max-wide)] lg:px-0">
           {webModules().map((m) => m.root?.Top && <m.root.Top key={m.name} />)}
           {children}

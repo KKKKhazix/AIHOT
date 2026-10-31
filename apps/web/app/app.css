@@ -74,13 +74,16 @@
 
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 
-  /* Breakpoints: phones ≤ 640, the mobile shell up to 940, desktop above (an unfolded iPhone Duo held
-     sideways is 951px wide, the larger phones on their side reach 956). From `side` a desktop page sets
-     its side column (an article's rail, a reading page's aside, the report archive) beside the text, which
-     keeps about 600px next to the site sidebar; narrower desktops read in one column, as phones do. */
+  /* Breakpoints: phones ≤ 640, the mobile shell up to 699, desktop pages above (an unfolded Android
+     foldable upright is about 711px wide, an iPad mini 744, an iPhone Duo held sideways 951). Up to
+     `wide` the site navigation is a rail of the phone's tabs, from there the full sidebar. From `side` a
+     desktop page sets its side column (an article's rail, a reading page's aside, the report archive)
+     beside the text, which keeps about 600px next to the site sidebar; narrower desktops read in one
+     column, as phones do. */
   --breakpoint-sm: 641px;
+  --breakpoint-lg: 700px;
   --breakpoint-md: 768px;
-  --breakpoint-lg: 941px;
+  --breakpoint-wide: 941px;
   --breakpoint-side: 1176px;
   --breakpoint-xl: 1280px;
   --breakpoint-2xl: 1536px;
@@ -150,7 +153,7 @@
   --selection: rgba(23, 107, 117, 0.16);
 }
 
-@media (min-width: 941px) {
+@media (min-width: 700px) {
   :root {
     --bar-h: 0px;
   }
@@ -404,7 +407,7 @@
 :root[data-vt]::view-transition-new(root) {
   animation: none;
 }
-@media (max-width: 940px) {
+@media (max-width: 699px) {
   :root[data-vt="push"]::view-transition-old(root) {
     animation: aihot-page-out-left 400ms cubic-bezier(0.32, 0.72, 0, 1) both;
   }

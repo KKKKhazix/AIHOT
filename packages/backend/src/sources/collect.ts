@@ -528,7 +528,8 @@ export async function scheduleDueSources(): Promise<{ enqueued: number; shards: 
 
 /** Minutes between reads of a shard: editorial accounts every half hour, hot-signal accounts hourly. */
 const X_SHARD_MINUTES: Record<string, number> = { editorial: 30, hot_signal: 60 };
-const shardMinutes = (mode: string) => X_SHARD_MINUTES[mode] ?? 60;
+/** An account outside the news is read as often as its uses ask, hourly when none says. */
+const shardMinutes = (mode: string, uses: readonly string[]) => X_SHARD_MINUTES[mode] ?? (Number.isFinite(usePace(uses)) ? usePace(uses) : 60);
 
 /** Listings read through Jina, paid per read. */
 const paidListing = sql`coalesce(config->>'url', '') LIKE 'https://r.jina.ai/%'`;
@@ -553,7 +554,7 @@ export async function adaptIntervals(): Promise<{ updated: number }> {
     const max = r.participation_mode === "hot_signal" ? 180 : r.kind === "x_search" || r.paid_listing ? 120 : 60;
     const min = r.paid_listing ? PAID_LISTING_FLOOR : 15;
     // X accounts read by shard follow the shard's pace, whatever their own volume.
-    const own = shardHandle(r) ? shardMinutes(r.participation_mode) : perDay <= 0.15 ? max : Math.round(Math.min(max, Math.max(min, (24 * 60) / (perDay * 3))));
+    const own = shardHandle(r) ? shardMinutes(r.participation_mode, r.uses) : perDay <= 0.15 ? max : Math.round(Math.min(max, Math.max(min, (24 * 60) / (perDay * 3))));
     // Another use may want the source sooner, never later, and a paid listing still waits its hour.
     const target = Math.max(min, Math.min(own, usePace(r.uses)));
     const res = await sql`UPDATE sources SET interval_minutes = ${target} WHERE id = ${r.id} AND interval_minutes <> ${target}`;

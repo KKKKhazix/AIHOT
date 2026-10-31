@@ -1,7 +1,7 @@
 // A source can serve uses besides the news pipeline: a module declares each one (its admin label and the
 // slowest pace it accepts), a source names the uses it serves, and the admin lists, filters and edits them.
 // A use no installed module declares is refused, and a use's pace speeds its sources up without ever
-// slowing the news pipeline's own pace or a paid listing's floor.
+// slowing the news pipeline's own pace or a paid listing's floor; an X account outside the news is read at its uses' pace.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
@@ -102,6 +102,7 @@ test("a use's pace speeds its sources up, never slows the news pipeline's pace a
     INSERT INTO sources (id, name, kind, config, participation_mode, uses, interval_minutes, cursor)
     VALUES (${`uses-${id}-${T}`}, ${id}, 'x_search', ${sql.json({ query: `from:${id.split("-").map((w) => w[0]).join("")}${T.slice(-8)} -filter:replies` })}, ${mode}, ${uses}, 45, ${sql.json({ lastTweetId: "1" })})`;
   await x("isolated-watch", "isolated", ["watch"]);
+  await x("isolated-slow", "isolated", ["slow"]);
   await x("isolated-alone", "isolated", []);
   await x("editorial-watch", "editorial", ["watch"]);
   await x("editorial-slow", "editorial", ["slow"]);
@@ -112,6 +113,7 @@ test("a use's pace speeds its sources up, never slows the news pipeline's pace a
   const minutes = Object.fromEntries((await sql<{ id: string; interval_minutes: number }[]>`
     SELECT id, interval_minutes FROM sources WHERE id LIKE ${`uses-%-${T}`}`).map((r) => [r.id.slice(5, -T.length - 1), r.interval_minutes]));
   assert.equal(minutes["isolated-watch"], 20, "the use asks for twenty minutes");
+  assert.equal(minutes["isolated-slow"], 90, "outside the news only its use reads it, at the use's pace however slow");
   assert.equal(minutes["isolated-alone"], 60, "nothing asks: the shard's own pace");
   assert.equal(minutes["editorial-watch"], 20, "faster than the news pipeline's half hour");
   assert.equal(minutes["editorial-slow"], 30, "a slower use leaves the news pipeline's pace alone");

@@ -71,7 +71,7 @@ export async function wakeAgent(f: Finding, now = Date.now()): Promise<void> {
   const identity = f.agentOnly ? f.key : `${f.key}:${f.since!.toISOString()}`;
   await publish({
     id: identity.length <= 200 ? identity : `alert:${hash(identity)}`,
-    type: f.agentOnly ? "alert.review" : f.level === "today" ? "alert.today" : "alert.now",
+    type: f.agentOnly ? f.agentType ?? "alert.review" : f.level === "today" ? "alert.today" : "alert.now",
     subject: subject(f.key), summary: clip(f.title,200), detail: clip([f.impact,f.detail].filter(Boolean).join("\n"),4000),
     link: new URL("/admin/runs",config.siteUrl).href,
   }, now);

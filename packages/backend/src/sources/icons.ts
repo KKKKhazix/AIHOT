@@ -104,9 +104,13 @@ async function findIcon(kind: string, articleUrls: string[], config: Record<stri
     return null;
   }
   const home = homeOf(articleUrls, config);
-  if (!home) return null;
+  return home ? siteIcon(home) : null;
+}
+
+/** The best icon a site's home page declares that the image proxy can show (warming its cache), else null. */
+export async function siteIcon(home: string): Promise<string | null> {
   const p = await page(home);
-  return firstUsable(p ? iconCandidates(p.html, p.url) : [`${home}/favicon.ico`]);
+  return firstUsable(p ? iconCandidates(p.html, p.url) : [new URL("/favicon.ico", home).toString()]);
 }
 
 /** Sites and 公众号 without an icon: a batch per run, looking again after RETRY_DAYS (公众号: MP_RETRY_DAYS). */

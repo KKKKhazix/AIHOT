@@ -193,6 +193,9 @@ export function reportText(title: string, summary: string | null | undefined): s
   return `${title}。${(summary ?? "").slice(0, 300)}`;
 }
 
+/** The text a discussion post is embedded with: its title and the start of its body. */
+export const signalText = (a: { title: string; body_text: string | null }) => reportText(a.title, a.body_text?.slice(0, 300) ?? null);
+
 /** Lexical stand-in for cosine when embeddings are off (no embedding key): shared character bigrams. */
 export function lexicalSimilarity(a: string, b: string): number {
   const grams = (s: string) => {

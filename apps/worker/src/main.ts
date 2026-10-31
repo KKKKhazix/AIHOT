@@ -18,7 +18,7 @@ installModules(SERVER_MODULES);
 assertProductionSecrets([["auth", "IMG_PROXY_SIGN_SECRET"]]);
 
 await ensureContentTargets();
-const boss = await getBoss();
+const boss = await getBoss({ supervise: true });
 await registerContentJobs(boss);
 if (process.env.COLLECT_ENABLED === "true") await registerSourceJobs(boss);
 await registerEventJobs(boss);

@@ -1,13 +1,13 @@
 // Backups restore: a real database dump and file archive (uploads and feedback screenshots) are
 // unpacked and read back; the object store is a stand-in inside this process. A missing uploads directory
-// is a valid empty backup, an unreadable one is not; a file archive that fails still ships the database and
+// needs no file archive, an unreadable one is not; a file archive that fails still ships the database and
 // reports tar's own words, not the command line in front of them.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
@@ -65,7 +65,7 @@ after(async () => {
 async function extractSavedFiles() {
   const destination = await mkdtemp(path.join(tmpdir(), "aihot-backup-restored-"));
   roots.push(destination);
-  const archive = objects.get(`daily/${stem}-files-202611010400.tar.gz`);
+  const archive = objects.get(`monthly/${stem}-files-202611010400.tar.gz`);
   assert.ok(archive, "backup must supply the real file archive");
   const archivePath = path.join(destination, "files.tar.gz");
   await writeFile(archivePath, archive);
@@ -86,7 +86,7 @@ test("a real paired restore opens a feedback screenshot when forwarding is disab
   const summary = await runBackup(NOW);
   assert.equal(summary.uploaded, true);
   const { destination, data } = await extractSavedFiles();
-  const dump = objects.get(`daily/${stem}-202611010400.dump`);
+  const dump = objects.get(`monthly/${stem}-202611010400.dump`);
   assert.ok(dump, "backup must supply the real database dump");
   const dumpPath = path.join(destination, "database.dump");
   await writeFile(dumpPath, dump);
@@ -137,32 +137,46 @@ test("both attachment roots restore nested paths and bytes, without caches or pr
   assert.deepEqual((await readdir(data)).sort(), ["feedback-screenshots", "uploads"]);
   assert.deepEqual(await readFile(path.join(data, "uploads/nested/user-file.bin")), upload);
   assert.deepEqual(await readFile(path.join(data, "feedback-screenshots/local.png")), PNG);
-  assert.deepEqual([...objects.keys()].sort(), ["daily", "weekly", "monthly"].flatMap(prefix => [`${prefix}/${stem}-202611010400.dump`, `${prefix}/${stem}-files-202611010400.tar.gz`]).sort());
+  assert.deepEqual([...objects.keys()].sort(), ["monthly"].flatMap(prefix => [`${prefix}/${stem}-202611010400.dump`, `${prefix}/${stem}-files-202611010400.tar.gz`]).sort());
   for (const object of summary.objects) assert.equal(object.sha256, createHash("sha256").update(objects.get(object.key)!).digest("hex"));
 });
 
 
 // One root present and the other absent is the first test (screenshots kept, uploads absent).
-for (const dirs of [[], ["uploads", "feedback-screenshots"]]) {
-  test(`missing/empty roots produce an extractable archive: ${dirs.join("+") || "neither"}`, async () => {
-    for (const dir of dirs) await mkdir(path.join(config.dataDir, dir));
+for (const dirs of [[], ["uploads", "feedback-screenshots"], ["uploads/empty/nested"]]) {
+  test(`missing/empty roots produce only the database backup: ${dirs.join("+") || "neither"}`, async () => {
+    for (const dir of dirs) await mkdir(path.join(config.dataDir, dir), { recursive: true });
     const summary = await runBackup(NOW);
     assert.equal(summary.uploaded, true);
-    const { data } = await extractSavedFiles();
-    assert.deepEqual((await readdir(data)).sort(), [...dirs].sort());
-    for (const dir of dirs) assert.deepEqual(await readdir(path.join(data, dir)), []);
+    assert.equal(summary.objects.length, 1);
+    assert.ok(summary.objects[0]!.key.endsWith(".dump"));
+    assert.equal((await readdir(path.join(config.dataDir, "backups"))).length, 1);
   });
 }
 
 test("an unreadable upload directory cannot become a successful empty backup", async () => {
   assert.equal((await runBackup(NOW)).uploaded, true);
   const shipped = objects.size;
-  const [last] = await sql`SELECT value FROM settings WHERE key = 'backup.last'`;
   await symlink("uploads", path.join(config.dataDir, "uploads")); // ELOOP, without depending on root/permission behavior
   await assert.rejects(runBackup(new Date("2026-11-01T04:01:00Z")), /ELOOP/);
-  assert.equal(objects.size, shipped, "do not send an empty archive as a replacement for unreadable files");
+  assert.equal(objects.size, shipped + 1, "ship the new database without an empty replacement for unreadable files");
   const [after] = await sql`SELECT value FROM settings WHERE key = 'backup.last'`;
-  assert.deepEqual(after, last, "last successful backup remains accurate");
+  assert.equal(after!.value.uploaded, false, "unreadable attachments cannot count as a successful backup");
+  assert.match(after!.value.filesError, /ELOOP/);
+});
+
+test("unreadable nested directories still ship the database and fail the attachment backup", { skip: process.getuid?.() === 0 }, async () => {
+  await save("uploads/restricted/file.txt", Buffer.from("fixture"));
+  const directory = path.join(config.dataDir, "uploads/restricted");
+  await chmod(directory, 0);
+  try {
+    await assert.rejects(runBackup(NOW), /database backed up, but the file archive failed:.*EACCES/);
+    assert.equal(objects.size, 1);
+    assert.ok([...objects.keys()][0]!.endsWith(".dump"));
+    const [row] = await sql`SELECT value FROM settings WHERE key = 'backup.last'`;
+    assert.equal(row!.value.uploaded, false);
+    assert.match(row!.value.filesError, /EACCES/);
+  } finally { await chmod(directory, 0o700); }
 });
 
 async function withPackingFailures(failures: number, action: (count: () => Promise<number>) => Promise<void>) {
@@ -205,13 +219,13 @@ test("persistent packing failure still sends the database and reports incomplete
     await assert.rejects(runBackup(NOW), /database backed up, but the file archive failed: fictional packing failure/);
     assert.equal(await count(), 2);
   });
-  assert.equal(objects.size, 3);
+  assert.equal(objects.size, 1);
   assert.ok([...objects.keys()].every(key => key.endsWith(".dump")));
   const [row] = await sql`SELECT value FROM settings WHERE key = 'backup.last'`;
   assert.equal(row!.value.uploaded, false);
   assert.match(row!.value.filesError, /^fictional packing failure/);
   assert.doesNotMatch(row!.value.filesError, /Command failed|-czf/, "the command line would crowd out the reason");
-  assert.equal(row!.value.objects.length, 3);
+  assert.equal(row!.value.objects.length, 1);
   assert.deepEqual(await readFile(path.join(config.dataDir, "feedback-screenshots/failure.png")), PNG);
 });
 

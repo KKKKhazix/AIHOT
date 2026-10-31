@@ -6,7 +6,7 @@ import { REPLACEABLE_SOURCE_KINDS, type AdminSource, type AdminSourceDetail, typ
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { bj, duration, num } from "../../features/admin/format";
-import { HEALTH_LABEL, KIND_LABEL, MODE_LABEL, TIER_LABEL, VISIBILITY_LABEL } from "../../features/admin/labels";
+import { HEALTH_LABEL, KIND_LABEL, MODE_LABEL, SELECTION_CLASS_LABEL, TIER_LABEL, VISIBILITY_LABEL } from "../../features/admin/labels";
 import { AdminPage, Badge, Button, Card, DataTable, Dot, Empty, Field, healthTone, Input, Json, KV, ReasonDialog, Select, Stat, Textarea, Time } from "../../features/admin/ui";
 
 
@@ -20,7 +20,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: `${loaderData?.source.name ?? "信源"} · ${SITE.name} 后台` }];
 
-type Draft = Pick<AdminSource, "name" | "kind" | "interval_minutes" | "tier" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext"> & { tags: string; config: string };
+type Draft = Pick<AdminSource, "name" | "kind" | "interval_minutes" | "tier" | "selection_class" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext"> & { tags: string; config: string };
 
 function draftOf(s: AdminSource): Draft {
   return {
@@ -28,6 +28,7 @@ function draftOf(s: AdminSource): Draft {
     kind: s.kind,
     interval_minutes: s.interval_minutes,
     tier: s.tier,
+    selection_class: s.selection_class,
     participation_mode: s.participation_mode,
     signal_group_id: s.signal_group_id,
     first_party: s.first_party,
@@ -182,6 +183,12 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
               <Field label="等级" hint="仅 T1 为一手信源">
                 <Select value={draft.tier} onChange={(e) => setDraft({ ...draft, tier: e.target.value })}>
                   {Object.entries(TIER_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </Select>
+              </Field>
+              <Field label="类别" hint="抬高精选门槛，一手身份不变">
+                <Select value={draft.selection_class ?? ""} onChange={(e) => setDraft({ ...draft, selection_class: e.target.value || null })}>
+                  <option value="">无（按等级）</option>
+                  {Object.entries(SELECTION_CLASS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Select>
               </Field>
               <Field label="讨论分组 ID" hint="同一机构的多个账号共用，热度只算一次">

@@ -4,11 +4,14 @@
 // post it replies to or quotes. A membership counts as evidence only when its report is not a
 // composite or explicitly withdrawn (groupingEvidenceCondition). Selected reports are reading context
 // for READING_DAYS: a reader who saw a launch in 精选 still knows it when its maker introduces it again.
+// A discussion post is also compared with the posts already attached to a fact that still count for
+// its heat (recallFactsByPosts): posts about one happening paraphrase each other more closely than
+// they paraphrase its reports.
 import { sql } from "../db.ts";
 import { beijingDate } from "@aihot/contracts/time";
 import { sha256 } from "../lib/ids.ts";
 import { embeddingsAvailable, ensureEmbeddings } from "../providers/embeddings.ts";
-import { GROUP_BODY_CHARS, lexicalSimilarity, reportText, type CandidateView, type ReportView, type ReadingContext } from "./relate.ts";
+import { GROUP_BODY_CHARS, lexicalSimilarity, reportText, signalText, type CandidateView, type ReportView, type ReadingContext } from "./relate.ts";
 import { groupingEvidenceCondition, ownFactEvidenceCondition, selectedCondition } from "../publication/scope.ts";
 import { pickRepresentative, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity, type RepresentativeRow } from "../publication/representative.ts";
 
@@ -58,6 +61,25 @@ async function recallPool(): Promise<PoolRow[]> {
     WHERE fa.role IN ('primary', 'report') AND ${groupingEvidenceCondition(sql`a.id`)} AND a.discovered_at > now() - make_interval(days => ${RECALL_DAYS})`;
 }
 
+/**
+ * Discussion posts attached to a live fact (the one their attaching decision named) whose source time
+ * is within the last `hours`, from sources that are discussion evidence now. A post an editor placed
+ * is a report of the fact they chose (recallPool), never evidence of the one the model picked.
+ */
+async function attachedPostsPool(hours: number): Promise<PoolRow[]> {
+  return sql<PoolRow[]>`
+    SELECT ss.article_id, f.id AS fact_id, f.story_id, f.title AS fact_title, a.revision
+    FROM story_signals ss
+    JOIN articles a ON a.id = ss.article_id
+    JOIN sources s ON s.id = a.source_id AND s.participation_mode = 'hot_signal'
+    JOIN LATERAL (SELECT d.fact_id FROM grouping_decisions d
+                  WHERE d.article_id = ss.article_id AND d.verdict IN ('signal', 'signal-native') ORDER BY d.id DESC LIMIT 1) d ON true
+    JOIN facts f ON f.id = d.fact_id AND f.story_id = ss.story_id
+    JOIN stories st ON st.id = f.story_id AND st.merged_into IS NULL
+    WHERE ss.observed_at > now() - make_interval(hours => ${hours}) AND ${groupingEvidenceCondition(sql`ss.article_id`)}
+      AND NOT EXISTS (SELECT 1 FROM fact_articles m WHERE m.article_id = ss.article_id AND m.manual)`;
+}
+
 type ReadingRow = ReportView & { article_id: string; revision: number; fact_id: number | null };
 
 /**
@@ -83,6 +105,14 @@ async function reportTexts(ids: string[]): Promise<Map<string, string>> {
     LEFT JOIN LATERAL (SELECT title_zh, summary_zh FROM analyses x WHERE x.article_id = a.id ORDER BY input_revision DESC, id DESC LIMIT 1) an ON true
     WHERE a.id = ANY(${ids})`;
   return new Map(rows.map((r) => [r.id, reportText(r.title, r.summary)]));
+}
+
+/** The texts of discussion posts (signalText). */
+async function postTexts(ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await sql<{ id: string; title: string; body_text: string | null }[]>`
+    SELECT id, title, left(body_text, 300) AS body_text FROM articles WHERE id = ANY(${ids})`;
+  return new Map(rows.map((r) => [r.id, signalText(r)]));
 }
 
 // Vectors of the recall window stay in the worker process; only new or changed texts are embedded
@@ -132,10 +162,11 @@ export function cosine32(a: Float32Array, b: Float32Array): number {
 const LEXICAL_MIN = 0.25;
 
 /** Both identity candidates and reading context use the same stored vectors (or the lexical fallback). */
-async function similarReports(queryId: string, queryText: string, pool: Array<{ article_id: string; revision?: number }>, minScore: number): Promise<Map<string, number>> {
+async function similarReports(queryId: string, queryText: string, pool: Array<{ article_id: string; revision?: number }>, minScore: number,
+  texts: (ids: string[]) => Promise<Map<string, string>> = reportTexts): Promise<Map<string, number>> {
   const scores = new Map<string, number>();
   if (pool.length && !embeddingsAvailable()) {
-    for (const [id, text] of await reportTexts([...new Set(pool.map((r) => r.article_id))])) {
+    for (const [id, text] of await texts([...new Set(pool.map((r) => r.article_id))])) {
       const s = lexicalSimilarity(queryText, text);
       if (s >= LEXICAL_MIN) scores.set(id, s);
     }
@@ -154,8 +185,8 @@ async function similarReports(queryId: string, queryText: string, pool: Array<{ 
       cached.set(id, hit.vector);
       return false;
     });
-    const texts = await reportTexts(uncached);
-    const fresh = await vectorsFor([{ id: queryId, text: queryText }, ...uncached.map((id) => ({ id, text: texts.get(id) ?? "", revision: revisions.get(id) })).filter((x) => x.text)]);
+    const uncachedTexts = await texts(uncached);
+    const fresh = await vectorsFor([{ id: queryId, text: queryText }, ...uncached.map((id) => ({ id, text: uncachedTexts.get(id) ?? "", revision: revisions.get(id) })).filter((x) => x.text)]);
     const mine = fresh.get(queryId);
     if (mine) {
       for (const r of pool) {
@@ -173,17 +204,31 @@ async function similarReports(queryId: string, queryText: string, pool: Array<{ 
 export async function recallFacts(queryId: string, queryText: string, minScore: number, top: number, boost: PoolRow[] = []): Promise<Recalled[]> {
   const pool = (await recallPool()).filter((r) => r.article_id !== queryId);
   const scores = await similarReports(queryId, queryText, pool, minScore);
+  return bestPerFact([...scoredRows(pool, scores), ...boost.map((r) => toRecalled(r, 1))], top);
+}
+
+/** The facts the discussion posts attached within the last `hours` point to; the closest post of each fact counts. */
+export async function recallFactsByPosts(queryId: string, queryText: string, minScore: number, hours: number): Promise<Recalled[]> {
+  const pool = (await attachedPostsPool(hours)).filter((r) => r.article_id !== queryId);
+  return bestPerFact(scoredRows(pool, await similarReports(queryId, queryText, pool, minScore, postTexts)));
+}
+
+/** Each fact once, at its best score, most similar first. */
+export function bestPerFact(items: Recalled[], top = Infinity): Recalled[] {
   const best = new Map<number, Recalled>();
-  const consider = (r: PoolRow, score: number) => {
-    const prev = best.get(r.fact_id);
-    if (!prev || score > prev.score) best.set(r.fact_id, { factId: r.fact_id, storyId: r.story_id, factTitle: r.fact_title, score });
-  };
-  for (const r of pool) {
-    const score = scores.get(r.article_id);
-    if (score !== undefined) consider(r, score);
+  for (const it of items) {
+    const prev = best.get(it.factId);
+    if (!prev || it.score > prev.score) best.set(it.factId, it);
   }
-  for (const r of boost) consider(r, 1);
   return [...best.values()].sort((a, b) => b.score - a.score).slice(0, top);
+}
+
+function toRecalled(r: PoolRow, score: number): Recalled {
+  return { factId: r.fact_id, storyId: r.story_id, factTitle: r.fact_title, score };
+}
+
+function scoredRows(pool: PoolRow[], scores: Map<string, number>): Recalled[] {
+  return pool.flatMap((r) => (scores.has(r.article_id) ? [toRecalled(r, scores.get(r.article_id)!)] : []));
 }
 
 /** A small separate context lets a single report compare with earlier selected coverage, one report per fact. */

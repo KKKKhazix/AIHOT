@@ -1,81 +1,84 @@
-// Webhook acceptance and the agent taking ownership are separate facts. Persist the event before sending:
-// without a documented receiver idempotency contract, a timeout or a crashed sender cannot be retried safely.
-import { credential } from "../config.ts";
-import { audit } from "../audit.ts";
+// Publish durable, source-owned events to the shared hub. Its documented idempotency contract makes
+// uncertain HTTP results safe to retry with the same ID. Execution/claim/retry state belongs to the hub.
+import { createHash } from "node:crypto";
+import { credential, config } from "../config.ts";
 import { sql } from "../db.ts";
 import { feishuInternalEnabled, type Finding } from "./feishu.ts";
 
-type Handoff = { eventId: string; title: string; since: string; status: "unknown" | "received" | "refused" | "claimed" | "pending";
-  attemptedAt?: string; response?: number; run?: string };
-const stateKey = (key: string) => `agent.wake.${key}`;
+interface Event { id: string; type: string; subject: string; summary: string; detail: string; link: string }
+interface Receipt { event: Event; accepted: boolean; queuedAt: string; lastError?: string }
+const hash = (text: string) => createHash("sha256").update(text).digest("hex");
+const subject = (key: string) => /^[A-Za-z0-9#._:/@-]{1,100}$/.test(key) ? key : `finding:${hash(key)}`;
+const clip = (text: string, n: number) => text.slice(0, n);
+/** Whether an agent takes the alerts: events go to the hub, which wakes it. */
+export const agentConfigured = () => feishuInternalEnabled() && !!credential("integrations", "WEBHOOK_HUB_URL") && !!credential("integrations", "WEBHOOK_HUB_KEY");
 
-export async function wakeAgent(f: Finding, now = Date.now(), knownUnsent = true): Promise<void> {
-  const url = credential("integrations", "AGENT_WEBHOOK_URL");
-  const token = credential("integrations", "AGENT_WEBHOOK_KEY");
-  if (!url || !token || !feishuInternalEnabled()) return;
-  const since = f.since!.toISOString();
-  const eventId = `${f.key}:${since}`;
-  const key = stateKey(f.key);
-  const attempt = await sql.begin(async tx => {
-    await tx`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
-    const [prior] = await tx<{ value: Handoff }[]>`SELECT value FROM settings WHERE key=${key}`;
-    if (prior?.value.eventId === eventId && prior.value.status !== "pending"
-      && !(prior.value.status === "refused" && now-Date.parse(prior.value.attemptedAt!) >= 10*60_000)) return false;
-    const value: Handoff = { eventId, title: f.title, since, status: "unknown", attemptedAt: new Date(now).toISOString() };
-    await tx`INSERT INTO settings(key,value,updated_by) VALUES(${key},${tx.json(value)},'alerts')
-      ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`;
-    return knownUnsent || prior?.value.eventId === eventId;
-  });
-  if (!attempt) return;
-  let status: Handoff["status"] = "unknown";
-  let response: number | undefined;
+/** Whether the hub has the event. */
+async function deliver(key: string, receipt: Receipt): Promise<boolean> {
+  if (receipt.accepted) return true;
+  if (!agentConfigured()) return false;
+  let failure = "网络连接失败或超时";
   try {
-    const res = await fetch(url, {
-      method: "POST", redirect: "error",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ key: f.key, eventId, level: f.level, title: f.title, impact: f.impact, detail: f.detail, since }),
-      signal: AbortSignal.timeout(15_000),
+    const res = await fetch(credential("integrations", "WEBHOOK_HUB_URL")!, {
+      method: "POST", redirect: "error", headers: { authorization: `Bearer ${credential("integrations", "WEBHOOK_HUB_KEY")!}`, "content-type": "application/json" },
+      body: JSON.stringify(receipt.event), signal: AbortSignal.timeout(15_000),
     });
-    response = res.status;
-    status = res.ok ? "received" : res.status >= 400 && res.status < 500 ? "refused" : "unknown";
+    if (res.status === 200) {
+      await sql`UPDATE settings SET value=value || '{"accepted":true}'::jsonb,updated_at=now() WHERE key=${key}`;
+      return true;
+    }
+    failure = `HTTP ${res.status}`;
   } catch {
-    // No response can mean that the paid run already started. Keep it visible for reconciliation.
+    // Timeout may mean accepted: keep the exact persisted ID for the next attempt. Never block owner alerts.
   }
-  await sql`UPDATE settings SET value=value || ${sql.json({ status, ...(response === undefined ? {} : { response }) })},updated_at=now()
-    WHERE key=${key} AND value->>'eventId'=${eventId} AND value->>'status'='unknown'`;
+  await sql`UPDATE settings SET value=value || ${sql.json({lastError:failure})},updated_at=now() WHERE key=${key}`;
+  return false;
 }
 
-/** The agent calls this on entry with its actual run/task reference, including after an unknown response. */
-export async function claimAgentWake(eventId: string, run: string, actor: string) {
-  if (!eventId || !run.trim()) throw new Error("eventId and run are required");
-  await sql.begin(async tx => {
-    const changed = await tx`UPDATE settings SET value=value || ${tx.json({ status: "claimed", run })},updated_by=${actor},updated_at=now()
-      WHERE key LIKE 'agent.wake.%' AND value->>'eventId'=${eventId} RETURNING key`;
-    if (!changed.count) throw new Error("handoff event is no longer current");
-    await audit(actor,"agent.claim",eventId,`接手运行 ${run}`,null,{ status: "claimed", run },{ db: tx });
-  });
+/** Transport diagnosis only; execution and claims still belong exclusively to the hub. */
+export async function agentTransportFindings(now: number): Promise<Finding[]> {
+  const rows = await sql<{value:Receipt}[]>`SELECT value FROM settings WHERE key LIKE 'webhook.event.%' AND value->>'accepted'='false'`;
+  const stuck = rows.filter(r => now-Date.parse(r.value.queuedAt) >= 30*60_000);
+  return stuck.length ? [{key:'webhook.transport',level:'today',owner:true,title:'自动处理暂时接不到任务',
+    impact:'交给 AI 处理的告警送不到它那里；恢复之前，这些告警直接发给你',heals:'尚未确认恢复',action:'核对中台连接和来源配置',
+    detail:`${stuck.length} 项未送达；${[...new Set(stuck.map(r=>r.value.lastError ?? '尚未投递'))].join('、')}`}]:[];
 }
 
-/** Only after checking the remote task list: a missing/failed task can be dispatched again on the next check. */
-export async function retryAgentWake(eventId: string, reason: string, actor: string) {
-  if (!reason.trim()) throw new Error("reason is required");
-  await sql.begin(async tx => {
-    const changed = await tx`UPDATE settings SET value=value || '{"status":"pending"}'::jsonb,updated_by=${actor},updated_at=now()
-      WHERE key LIKE 'agent.wake.%' AND value->>'eventId'=${eventId} RETURNING key`;
-    if (!changed.count) throw new Error("handoff event is no longer current");
-    await audit(actor,"agent.retry",eventId,reason,null,{ status: "pending" },{ db: tx });
-  });
+/** How many problems under this key were handed to the agent since then: each incident is one event. */
+export async function handoffs(key: string, since: Date): Promise<number> {
+  const [row] = await sql<{n:number}[]>`SELECT count(*)::int AS n FROM settings WHERE key LIKE 'webhook.event.%'
+    AND value->'event'->>'subject'=${subject(key)} AND value->'event'->>'type' IN ('alert.now','alert.today')
+    AND (value->>'queuedAt')::timestamptz>=${since}`;
+  return row!.n;
 }
 
-export async function closeAgentWake(key: string) {
-  await sql`DELETE FROM settings WHERE key=${stateKey(key)}`;
+async function publish(event: Event, now = Date.now()): Promise<boolean> {
+  if (!agentConfigured()) return false;
+  const key = `webhook.event.${hash(event.id)}`;
+  await sql`INSERT INTO settings(key,value,updated_by) VALUES(${key},${sql.json({event:{...event},accepted:false,queuedAt:new Date(now).toISOString()})},'alerts') ON CONFLICT(key) DO NOTHING`;
+  const [row] = await sql<{value:Receipt}[]>`SELECT value FROM settings WHERE key=${key}`;
+  return deliver(key, row!.value);
 }
 
-/** Missing ownership stays on the existing follow-up list; do not wake another agent about this wake. */
-export async function agentHandoffs(now: number): Promise<Finding[]> {
-  const rows = await sql<{ value: Handoff }[]>`SELECT value FROM settings WHERE key LIKE 'agent.wake.%' AND value->>'status'<>'claimed'`;
-  return rows.filter(({value: v}) => v.status === "refused" || now-Date.parse(v.attemptedAt ?? v.since) > 30*60_000).map(({value: v}) => ({
-    key: `agent.handoff.${v.eventId}`, level: "later", title: `运维尚未确认接手：${v.title}`,
-    detail: `${v.eventId}；${v.status === "received" ? "Webhook 已接收，尚无接手回执" : v.status === "refused" ? `Webhook 拒绝（HTTP ${v.response}）` : "Webhook 结果未知或等待核对重投"}；核对任务记录后接手，确认没有运行才重投`,
-  }));
+/** Retry only pending transport receipts, never re-dispatch an accepted event. */
+export async function flushAgentEvents(): Promise<void> {
+  if (!agentConfigured()) return;
+  const rows = await sql<{key:string;value:Receipt}[]>`SELECT key,value FROM settings WHERE key LIKE 'webhook.event.%' AND value->>'accepted'='false' ORDER BY updated_at LIMIT 20`;
+  for (const row of rows) await deliver(row.key,row.value);
+}
+
+export async function wakeAgent(f: Finding, now = Date.now()): Promise<void> {
+  const identity = f.agentOnly ? f.key : `${f.key}:${f.since!.toISOString()}`;
+  await publish({
+    id: identity.length <= 200 ? identity : `alert:${hash(identity)}`,
+    type: f.agentOnly ? "alert.review" : f.level === "today" ? "alert.today" : "alert.now",
+    subject: subject(f.key), summary: clip(f.title,200), detail: clip([f.impact,f.detail].filter(Boolean).join("\n"),4000),
+    link: new URL("/admin/runs",config.siteUrl).href,
+  }, now);
+}
+
+/** Called after the daily follow-up message was generated. No model or separate scheduler here. */
+/** Whether the hub took the day's list. */
+export async function wakeDigest(date: string, count: number): Promise<boolean> {
+  return publish({id:`digest:${date}`,type:"alert.digest",subject:`digest:${date}`,summary:`系统日报 ${date}`,detail:`${count} 项待跟进`,link:new URL("/admin/runs",config.siteUrl).href});
 }

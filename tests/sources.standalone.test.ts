@@ -54,6 +54,9 @@ const pages: Record<string, () => string> = {
   "/en/post": () => article("Improved token efficiency", "Agents now finish longer runs with fewer tokens. ".repeat(8)),
   "/zh/post": () => article("提升 token 效率", "智能体现在能用更少的 token 完成更长的运行。".repeat(12)),
   "/en/feed.xml": () => `<rss version="2.0"><channel><item><title>Improved token efficiency</title><link>${site}/en/post</link><pubDate>Wed, 23 Sep 2026 12:00:00 GMT</pubDate></item></channel></rss>`,
+  // liquid.ai/blog/lfm3 was 8.7 MB: the framework inlines the whole page payload again as script.
+  "/large/post": () => article("LFM3", `Benchmarks for the new models. ${"Each row compares the same task. ".repeat(12)}</p><table><tr><th>Benchmark</th><th>LFM3</th></tr><tr><td><p>LiveClaw</p></td><td><p>45.60</p></td></tr></table><p>`)
+    .replace("</body>", `<script>${"x".repeat(9 * 1024 * 1024)}</script></body>`),
   "/en/items.json": () => JSON.stringify([{ title: "Improved token efficiency", url: `${site}/en/post` }]),
 };
 function article(title: string, text: string) {
@@ -271,6 +274,12 @@ test("a source's language reaches its listing, detail page and article body, whi
   await fetchWebList(source(listing));
   assert.match(sent("/en/blog") ?? "", /^zh-CN/);
   assert.match((await extractFromUrl(item!.url, "article:fixture", pageRules({})))?.text ?? "", /^智能体/);
+});
+
+test("a page of several megabytes is read directly, keeping its tables", async () => {
+  const body = await extractFromUrl(`${site}/large/post`, "article:fixture", {}, { paidFallback: false });
+  assert.equal(body?.via, "readability");
+  assert.match(body?.html ?? "", /<table>.*LiveClaw.*45\.60.*<\/table>/s);
 });
 
 test("a source's language is an Accept-Language value, refused by kinds that read no pages", () => {

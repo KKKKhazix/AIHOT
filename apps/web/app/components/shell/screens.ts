@@ -24,9 +24,9 @@ export function useScreen(): Screen {
   return out;
 }
 
-/** Below the lg breakpoint (961px): the phone shell. */
+/** Below the lg breakpoint (941px): the phone shell. */
 export function isPhone(): boolean {
-  return typeof window !== "undefined" && window.matchMedia("(max-width: 960px)").matches;
+  return typeof window !== "undefined" && window.matchMedia("(max-width: 940px)").matches;
 }
 
 /** Position of this page in the tab's history (React Router keeps it in history.state). */

@@ -6,7 +6,7 @@ import type { AdminFeedback, AdminFeedbackRow } from "@aihot/contracts/admin";
 import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { bj } from "../../features/admin/format";
-import { FEEDBACK_STATUS } from "../../features/admin/labels";
+import { FEEDBACK_KIND, FEEDBACK_STATUS } from "../../features/admin/labels";
 import { AdminPage, Badge, Button, Card, Empty, FilterChips, Input, Pager, ReasonDialog, Select, Textarea, Time } from "../../features/admin/ui";
 
 
@@ -18,18 +18,24 @@ export async function loader({ request }: Route.LoaderArgs) {
 export const meta: Route.MetaFunction = () => [{ title: `反馈 · ${SITE.name} 后台` }];
 
 const TONE: Record<string, "accent" | "warn" | "ok" | "muted"> = { new: "accent", triaged: "warn", replied: "ok", resolved: "ok", spam: "muted" };
+/** The pool's names, offered while naming a suggestion so the same idea keeps one name. */
+const IDEAS_LIST = "feedback-ideas";
 
 function FeedbackCard({ f }: { f: AdminFeedbackRow }) {
   const { run, pending } = useAdminAction();
   const [note, setNote] = useState(f.note ?? "");
+  const [idea, setIdea] = useState(f.idea ?? "");
   const [dialog, setDialog] = useState<null | "ban" | "email-ban" | "erase">(null);
   const base = `/api/admin/feedback/${f.id}`;
   const version = new Date(f.updated_at).toISOString();
+  const edited = note !== (f.note ?? "") || idea !== (f.idea ?? "");
   return (
     <article className="rounded-panel bg-surface p-4 ring-1 ring-line">
       <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-3">
         <span className="num font-medium text-ink-2">#{f.id}</span>
         <Badge tone={TONE[f.status] ?? "muted"}>{FEEDBACK_STATUS[f.status] ?? f.status}</Badge>
+        {f.kind && <Badge tone="info">{FEEDBACK_KIND[f.kind] ?? f.kind}</Badge>}
+        {f.idea && <Badge tone="muted" title="归入建议池的这一条">{f.idea}</Badge>}
         <Time at={f.created_at} />
         {f.email && <a className="text-accent" href={`mailto:${f.email}`}>{f.email}</a>}
         {f.page_url && <a className="max-w-[320px] truncate hover:text-accent" href={f.page_url} target="_blank" rel="noreferrer">{f.page_url}</a>}
@@ -49,18 +55,34 @@ function FeedbackCard({ f }: { f: AdminFeedbackRow }) {
       {f.screenshot === "feishu" && <p className="mt-2 text-[12.5px] text-ink-4">截图已随反馈转到内部飞书群。</p>}
       {f.screenshot === "gone" && <p className="mt-2 text-[12.5px] text-ink-4">截图未能转到飞书，已删除。</p>}
       <div className="mt-3 grid gap-2 sm:grid-cols-[180px_1fr_auto] sm:items-start">
-        <Select
-          aria-label="处理状态"
-          value={f.status}
-          disabled={!!pending}
-          onChange={(e) => run("PATCH", base, { status: e.target.value, version }, { label: "status", success: "状态已更新" })}
-        >
-          {Object.entries(FEEDBACK_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </Select>
-        <Textarea rows={1} className="!min-h-[38px]" placeholder="处理备注（仅内部可见）" value={note} onChange={(e) => setNote(e.target.value)} />
+        <div className="grid gap-2">
+          <Select
+            aria-label="处理状态"
+            value={f.status}
+            disabled={!!pending}
+            onChange={(e) => run("PATCH", base, { status: e.target.value, version }, { label: "status", success: "状态已更新" })}
+          >
+            {Object.entries(FEEDBACK_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </Select>
+          <Select
+            aria-label="类型"
+            value={f.kind ?? ""}
+            disabled={!!pending}
+            onChange={(e) => run("PATCH", base, { kind: e.target.value || null, version }, { label: "kind", success: "类型已更新" })}
+          >
+            <option value="">未分类</option>
+            {Object.entries(FEEDBACK_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </Select>
+        </div>
+        <div className="grid gap-2">
+          <Textarea rows={1} className="!min-h-[38px]" placeholder="处理备注（仅内部可见）" value={note} onChange={(e) => setNote(e.target.value)} />
+          {f.kind === "suggestion" && (
+            <Input list={IDEAS_LIST} aria-label="归入的建议" placeholder="归入的建议（同一需求用同一个名字）" value={idea} onChange={(e) => setIdea(e.target.value)} />
+          )}
+        </div>
         <div className="flex flex-wrap gap-1.5">
-          <Button size="md" disabled={note === (f.note ?? "")} busy={pending === "note"} onClick={() => run("PATCH", base, { note: note || null, version }, { label: "note", success: "备注已保存" })}>
-            保存备注
+          <Button size="md" disabled={!edited} busy={pending === "note"} onClick={() => run("PATCH", base, { note: note || null, ...(f.kind === "suggestion" ? { idea: idea || null } : {}), version }, { label: "note", success: "已保存" })}>
+            保存
           </Button>
           <Button tone="ghost" onClick={() => setDialog(f.banned ? null : "ban")} disabled={f.banned} title="拒绝这个来源的后续反馈">封禁来源</Button>
           {f.email && <Button tone="ghost" onClick={() => setDialog("email-ban")} disabled={f.email_banned} title="拒绝填写这个邮箱的反馈，48 小时后自动解除">临时封禁邮箱</Button>}
@@ -99,22 +121,35 @@ function FeedbackCard({ f }: { f: AdminFeedbackRow }) {
 }
 
 export default function FeedbackAdmin({ loaderData }: Route.ComponentProps) {
-  const { rows, counts, bans, page } = loaderData;
+  const { rows, counts, kinds, ideas, bans, page } = loaderData;
   const [sp] = useSearchParams();
   const { run } = useAdminAction();
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   return (
     <AdminPage title="反馈" subtitle={ADMIN.feedbackNote}>
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <FilterChips
-          param="status"
-          options={[{ value: "", label: "全部", count: total }, ...Object.entries(FEEDBACK_STATUS).map(([k, v]) => ({ value: k, label: v, count: counts[k] ?? 0 }))]}
-        />
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-2">
+          <FilterChips
+            param="status"
+            options={[{ value: "", label: "全部", count: total }, ...Object.entries(FEEDBACK_STATUS).map(([k, v]) => ({ value: k, label: v, count: counts[k] ?? 0 }))]}
+          />
+          <FilterChips
+            param="kind"
+            resets={["idea"]}
+            options={[{ value: "", label: "全部类型" }, ...Object.entries(FEEDBACK_KIND).map(([k, v]) => ({ value: k, label: v, count: kinds[k] ?? 0 }))]}
+          />
+        </div>
         <Form method="get" className="w-full max-w-xs">
-          {sp.get("status") && <input type="hidden" name="status" value={sp.get("status")!} />}
+          {["status", "kind", "idea"].map((k) => sp.get(k) && <input key={k} type="hidden" name={k} value={sp.get(k)!} />)}
           <Input name="q" defaultValue={sp.get("q") ?? ""} placeholder="搜索内容、邮箱、页面" aria-label="搜索反馈" />
         </Form>
       </div>
+      {sp.get("kind") === "suggestion" && ideas.length > 0 && (
+        <Card className="mb-4" title="建议池" right="按提出人数排序">
+          <FilterChips param="idea" options={[{ value: "", label: "全部建议" }, ...ideas.map((i) => ({ value: i.idea, label: i.idea, count: i.people }))]} />
+        </Card>
+      )}
+      <datalist id={IDEAS_LIST}>{ideas.map((i) => <option key={i.idea} value={i.idea} />)}</datalist>
       <div className="space-y-3">
         {rows.length ? rows.map((f) => <FeedbackCard key={`${f.id}-${f.updated_at}`} f={f} />) : <Card><Empty>没有符合条件的反馈</Empty></Card>}
       </div>

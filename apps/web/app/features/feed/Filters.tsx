@@ -178,7 +178,7 @@ export function SearchField({ defaultValue = "", keep = {} }: { defaultValue?: s
     <Form method="get" action="/all" role="search" className="group relative w-full shrink-0 lg:w-60">
       {hidden}
       <label htmlFor="site-search" className="sr-only">
-        搜索标题、摘要与正文
+        搜索标题和摘要
       </label>
       <IconSearch size={16} className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${searching ? "text-accent" : "text-ink-4 group-focus-within:text-ink-3"}`} />
       <input

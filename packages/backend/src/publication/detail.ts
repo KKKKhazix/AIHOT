@@ -116,7 +116,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
   let reading: Pick<SiteItemDetail, "body" | "outline" | "hasTranslation" | "bodyLanguage"> = { body: null, outline: [], hasTranslation: false, bodyLanguage: "original" };
   if (showsPost(row)) {
     const post = xView(row, false, true);
-    const text = String(row.x_post?.text ?? row.body_text ?? "");
+    const text = post?.text ?? String(row.x_post?.text ?? row.body_text ?? "");
     // A post's text is sent as written: its headings make the outline, without anchors.
     if (post?.translation || text.trim()) reading = readingBody(language, post?.translation ? { html: textToHtml(post.translation), kind: "translation" } : null, text.trim() ? textToHtml(text) : null, true,
       (html) => ({ html, outline: withOutline(html).outline }));

@@ -16,8 +16,11 @@
 /* The initial family is the reader's standard browser font, unlike system-ui or sans-serif. */
 :root[data-font="browser"] { font-family: initial; }
 [data-font="browser"] body, [data-font="browser"] .font-sans { font-family: inherit; }
-/* Touch screens (no hover): pressed states for rows and cards. */
+/* Touch screens (no hover): pressed states for rows and cards, and the desktop shell's 44px targets on
+   tablets, unfolded foldables and large phones held sideways. */
 @custom-variant touch (@media (hover: none));
+/* Short windows (an unfolded foldable held sideways): the desktop sidebar scrolls as one column. */
+@custom-variant short (@media (max-height: 700px));
 
 @theme {
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
@@ -71,10 +74,14 @@
 
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 
-  /* Breakpoints: phones ≤ 640, the mobile shell up to 960, desktop above. */
+  /* Breakpoints: phones ≤ 640, the mobile shell up to 940, desktop above (an unfolded iPhone Duo held
+     sideways is 951px wide, the larger phones on their side reach 956). From `side` a desktop page sets
+     its side column (an article's rail, a reading page's aside, the report archive) beside the text, which
+     keeps about 600px next to the site sidebar; narrower desktops read in one column, as phones do. */
   --breakpoint-sm: 641px;
   --breakpoint-md: 768px;
-  --breakpoint-lg: 961px;
+  --breakpoint-lg: 941px;
+  --breakpoint-side: 1176px;
   --breakpoint-xl: 1280px;
   --breakpoint-2xl: 1536px;
 }
@@ -143,7 +150,7 @@
   --selection: rgba(23, 107, 117, 0.16);
 }
 
-@media (min-width: 961px) {
+@media (min-width: 941px) {
   :root {
     --bar-h: 0px;
   }
@@ -397,7 +404,7 @@
 :root[data-vt]::view-transition-new(root) {
   animation: none;
 }
-@media (max-width: 960px) {
+@media (max-width: 940px) {
   :root[data-vt="push"]::view-transition-old(root) {
     animation: aihot-page-out-left 400ms cubic-bezier(0.32, 0.72, 0, 1) both;
   }

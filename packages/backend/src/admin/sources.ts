@@ -2,6 +2,7 @@
 // duplicate checks, pause/resume and manual collection. Every change is audited.
 import { z } from "zod";
 import { SOURCE_DEFAULTS } from "@aihot/site";
+import { SELECTION } from "@aihot/industry/selection";
 import type { AdminSource, AdminSourceCreated, AdminSourceDetail, AdminSourcePreview, AdminSourceRow, AdminSources, BeforeJson } from "@aihot/contracts/admin";
 import { REPLACEABLE_SOURCE_KINDS } from "@aihot/contracts/admin";
 import { audit, auditHistory, Conflict } from "../audit.ts";
@@ -36,7 +37,7 @@ export async function listSources(f: SourceListFilters): Promise<BeforeJson<Admi
   const q = f.q?.trim() ? `%${f.q.trim()}%` : null;
   const [rows, [totals]] = await Promise.all([
     sql<BeforeJson<AdminSourceRow>[]>`
-    SELECT s.id, s.name, s.kind, s.tier, s.participation_mode, s.enabled, s.health, s.fail_count, s.interval_minutes,
+    SELECT s.id, s.name, s.kind, s.tier, s.selection_class, s.participation_mode, s.enabled, s.health, s.fail_count, s.interval_minutes,
            s.last_ok_at, s.last_fetch_at, s.last_error, (s.tier = 'T1') AS first_party, s.next_fetch_at,
            (SELECT count(*)::int FROM articles a WHERE a.source_id = s.id AND a.discovered_at > now() - interval '7 days') AS items_7d,
            (SELECT count(*)::int FROM publications p WHERE p.source_id = s.id AND p.selected AND p.discovered_at > now() - interval '30 days') AS selected_30d
@@ -98,7 +99,7 @@ export async function previewSource(draft: Pick<SourceRow, "id" | "kind" | "conf
   let candidates = await listingEntries(source, found);
   const known = await storedDetails(candidates.map((c) => c.identityKey!));
   const admits = (c: Candidate) => filterPublicationWindow([c], source.config.publishedAfter).length > 0;
-  const reads = await enrichDetails(candidates, source, known, { budget: Number(source.config.detail?.maxFetches ?? 0), datedOut: {}, admits });
+  const reads = await enrichDetails(candidates, source, known, { budget: Number(source.config.detail?.maxFetches ?? 0), datedOut: {}, retries: {}, admits });
   // A page that fails keeps its listing data, as in collection; when none can be read, the rules are what fails.
   if (reads.failures.length && reads.failures.length === reads.attempts) {
     throw new FetchError(`原文页全部读取失败（${reads.failures.length} 页）：${reads.failures.map((f) => `${f.url}（${f.error}）`).join("；")}`);
@@ -111,6 +112,9 @@ export async function previewSource(draft: Pick<SourceRow, "id" | "kind" | "conf
   };
 }
 
+/** A class of the industry pack (industry/selection.ts), or none. */
+const SelectionClass = z.string().refine((c) => Object.hasOwn(SELECTION.classes, c), { message: "不是行业包里的信源类别" }).nullable();
+
 const EDITABLE = z
   .object({
     name: z.string().min(1).max(200),
@@ -118,6 +122,7 @@ const EDITABLE = z
     enabled: z.boolean(),
     interval_minutes: z.number().int().min(1).max(1440),
     tier: z.enum(["T1", "T1_5", "T2", "EXCLUDE_MP"]),
+    selection_class: SelectionClass,
     participation_mode: z.enum(["editorial", "hot_signal", "isolated"]),
     signal_group_id: z.string().max(120).nullable(),
     first_party: z.boolean(),
@@ -219,6 +224,7 @@ const CreateSchema = z
     kind: z.enum(["rss", "web_list", "json_list", "x_search", "mp_account", "external"]),
     config: z.record(z.string(), z.unknown()),
     tier: z.enum(["T1", "T1_5", "T2", "EXCLUDE_MP"]).default("T2"),
+    selection_class: SelectionClass.default(null),
     participation_mode: z.enum(["editorial", "hot_signal", "isolated"]).default("editorial"),
     interval_minutes: z.number().int().min(1).max(1440).default(30),
     first_party: z.boolean().default(false),
@@ -260,8 +266,8 @@ export async function createSource(input: unknown, actor: string): Promise<Befor
     const dup = await findDuplicateSource(s.kind, s.config, undefined, tx);
     if (dup) return { created: false as const, duplicate: dup };
     const [row] = await tx<BeforeJson<AdminSource>[]>`
-    INSERT INTO sources (id, name, kind, config, tier, participation_mode, interval_minutes, first_party, tags, site_fulltext, syndicate_fulltext, next_fetch_at)
-    VALUES (${s.id}, ${s.name}, ${s.kind}, ${tx.json(s.config as never)}, ${s.tier}, ${s.participation_mode}, ${s.interval_minutes}, ${s.first_party}, ${s.tags},
+    INSERT INTO sources (id, name, kind, config, tier, selection_class, participation_mode, interval_minutes, first_party, tags, site_fulltext, syndicate_fulltext, next_fetch_at)
+    VALUES (${s.id}, ${s.name}, ${s.kind}, ${tx.json(s.config as never)}, ${s.tier}, ${s.selection_class}, ${s.participation_mode}, ${s.interval_minutes}, ${s.first_party}, ${s.tags},
             ${s.site_fulltext}, ${s.syndicate_fulltext}, now())
     ON CONFLICT (id) DO NOTHING RETURNING *`;
     if (!row) throw new Conflict(`信源 ID ${s.id} 已存在`);

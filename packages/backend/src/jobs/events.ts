@@ -10,10 +10,10 @@ import { isHistorical, newsCondition } from "../content/materials.ts";
 export async function registerEventJobs(boss: PgBoss) {
   // Serial on purpose: two reports of the same new fact must not both create it.
   await work(boss, QUEUES.group, { localConcurrency: 1, pollingIntervalSeconds: 0.5 }, async (data) => {
-    const { articleId, signalOnly } = data;
+    const { articleId, signalOnly, regroup } = data;
     // A discussion post comes here straight from collection: record it first (settleNonEditorial).
     if (signalOnly && !(await settleNonEditorial(articleId)).group) return { verdict: "skipped" };
-    const result = await groupArticle(articleId, { signalOnly });
+    const result = await groupArticle(articleId, { signalOnly, regroup });
     if (result.storyId && !result.verdict.startsWith("signal")) {
       await enqueue(QUEUES.digest, { storyId: result.storyId }, { singletonKey: `story:${result.storyId}`, startAfter: 60 });
     }

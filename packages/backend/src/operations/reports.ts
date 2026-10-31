@@ -1,5 +1,6 @@
 // The Monday source-health report for the ops chat. It goes through the same gated channel as the
 // alerts (off unless FEISHU_INTERNAL_ENABLED).
+import { beijingDay } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
 import { sendAlert } from "../notify/feishu.ts";
 import { serverModules } from "../modules.ts";
@@ -10,6 +11,42 @@ import { dismissedFollowUps } from "./alerts.ts";
 export const pct = (a: number, b: number) => (b ? `${a >= b ? "+" : ""}${(((a - b) / b) * 100).toFixed(0)}%` : "—");
 /** A count with thousands separators. */
 export const n = (v: number) => v.toLocaleString("en-US");
+
+/** Who changed a source, as the owner reads it: the admin pages, or the AI's scripts. */
+const by = (actor: string) => actor.startsWith("admin:") ? "后台" : /^(ops-script|codex)/.test(actor) ? "AI" : actor;
+const brief = (reason: string | null) => !reason ? "没写原因" : [...reason].length > 60 ? `${[...reason].slice(0, 60).join("")}…` : reason;
+const excluded = (config: unknown) => {
+  const c = (config ?? {}) as { denyUrlPrefixes?: string[]; denyCategories?: string[] };
+  return [...(c.denyUrlPrefixes ?? []), ...(c.denyCategories ?? [])];
+};
+
+/**
+ * This week's pauses still in force and the exclusions added, with who and why. Agents pause and exclude on
+ * their own, and nothing else shows a wrong one (10-21 a flaky feed paused at noon, noticed only that evening).
+ */
+async function sourceChanges(since: Date): Promise<string[]> {
+  const rows = await sql<{ id: string; name: string; enabled: boolean; actor: string; reason: string | null; at: Date; before: { enabled?: boolean; config?: unknown } | null; after: { enabled?: boolean; config?: unknown } | null }[]>`
+    SELECT s.id, s.name, s.enabled, a.actor, a.reason, a.created_at AS at, a.before, a.after
+    FROM audit_log a JOIN sources s ON a.subject = 'source:' || s.id
+    WHERE a.action = 'source.update' AND a.created_at >= ${since} ORDER BY a.created_at, a.id`;
+  const paused = new Map<string, string>();
+  const fenced: string[] = [];
+  const fencedIds = new Set<string>();
+  for (const r of rows) {
+    const who = `${by(r.actor)}，${beijingDay(r.at)}`;
+    // The audit keeps the fields a save sent; a form saved again on a paused source repeats enabled=false.
+    if (r.after?.enabled === false && r.before?.enabled !== false && !r.enabled) paused.set(r.id, `· ${r.name}（${who}）：${brief(r.reason)}`);
+    const added = excluded(r.after?.config).filter((rule) => !excluded(r.before?.config).includes(rule));
+    if (added.length) {
+      fenced.push(`· ${r.name}（${who}，排除 ${added.join("、")}）：${brief(r.reason)}`);
+      fencedIds.add(r.id);
+    }
+  }
+  return [
+    ...(paused.size ? [`本周停用、现在仍停着的信源 ${paused.size} 个：`, ...paused.values()] : []),
+    ...(fenced.length ? [`本周排除了部分入口的信源 ${fencedIds.size} 个：`, ...fenced] : []),
+  ];
+}
 
 /** Monday 09:00: how the sources did over the last seven days, quiet ones included (the daily follow-ups leave them out). */
 export async function sourceHealthWeekly(now = Date.now()) {
@@ -48,11 +85,13 @@ export async function sourceHealthWeekly(now = Date.now()) {
     if (group.overdue.length) lines.push(`超出自身更新节奏（先对照原站，区分采集失效与它自己变慢）：${sourceHealthList(group.overdue, rhythmText)}`);
     if (group.unknown.length) lines.push(`7 天没有新内容（窗口内产出历史不足以判断节奏，或从未收到内容）：${sourceHealthList(group.unknown, rhythmText)}`);
   }
+  const changes = await sourceChanges(since);
+  if (changes.length) lines.push("", ...changes);
   const failing = counts!.failing;
   const overdue = groups.reduce((sum, g) => sum + g.overdue.length, 0);
   // Quiet sources still worth a look: past their own rhythm, or not judgeable.
   const silent = overdue + groups.reduce((sum, g) => sum + g.unknown.length, 0);
-  const followUp = counts!.failing > 0 || silent > 0 || groups.some(g => g.failing.length || g.unstable.length || g.quality.length || g.details.length);
+  const followUp = counts!.failing > 0 || silent > 0 || groups.some(g => g.failing.length || g.unstable.length || g.undated.length || g.revisions.length || g.details.length);
   lines.push("", followUp ? "需要处理的话，把这条转给 AI；详情在后台“信源”与“运行”页。" : "没有需要处理的信源。");
   await sendAlert("📊 信源周报", lines);
   return { failing, silent, overdue };

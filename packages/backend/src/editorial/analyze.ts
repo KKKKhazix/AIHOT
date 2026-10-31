@@ -5,7 +5,7 @@ import { describePublicationTime } from "../sources/dates.ts";
 // revision before any step.
 //   1. prefilter: does the material belong to this industry at all (wide recall). Only BLOCK stops an
 //      item; a BLOCK on an original post without text counts as UNKNOWN;
-//   2. score: two independent scores against the source tier's threshold (industry/selection.ts) decide 精选;
+//   2. score: two independent scores against the source's threshold (tier and class, industry/selection.ts) decide 精选;
 //   3. structure: category, tags, subjects and the current news fact, beside scoring;
 //   4. writing, once the structure is in: the Chinese title, summary and reason by the content
 //      understanding for selected and near-selected items, by the cheaper title/summary prompts for the rest;
@@ -54,11 +54,14 @@ export const ANALYZE_PROMPT_VERSION = Object.values(PROMPT_VERSIONS).join("+");
 export const SCORE_CALLS = 2;
 
 /**
- * The thresholds on the mean score, per source tier (industry/selection.ts): selected when
- * score1 + score2 >= 2 × threshold. Tiers without a threshold are not scored for 精选.
+ * The threshold on the mean score for a source (industry/selection.ts): its tier's, raised to its
+ * class's floor; a class never lowers it. Selected when score1 + score2 >= 2 × threshold. Tiers
+ * without a threshold are not scored for 精选.
  */
-export function tierThreshold(tier: string): number | null {
-  return SELECTION.thresholds[tier] ?? null;
+export function selectionThreshold(source: { tier: string; selectionClass?: string | null }): number | null {
+  const tier = SELECTION.thresholds[source.tier];
+  if (tier === undefined) return null;
+  return Math.max(tier, (source.selectionClass && SELECTION.classes[source.selectionClass]?.threshold) || 0);
 }
 
 /** Unselected items above this mean are written like selected ones. */
@@ -192,7 +195,7 @@ export interface AnalysisRun {
   /** Absent when there is nothing to judge yet: only a title, and no displayable original post. */
   prefilter: { label: "PASS" | "BLOCK" | "UNKNOWN"; reason: string; model: string; receiptId: number; reused: boolean } | null;
   /**
-   * The independent score calls and the tier threshold they are held against; absent when the material
+   * The independent score calls and the source's threshold they are held against; absent when the material
    * is not scored. `refused`: the model's content filter declined it, so it is not selected.
    */
   scores: { model: string; threshold: number; values: number[]; receiptIds: number[]; reused: boolean; refused?: boolean } | null;
@@ -308,7 +311,7 @@ export async function runSelectionScores(
   opts: StepOpts = {},
   onReceipt?: ReceiptObserver,
 ): Promise<AnalysisRun["scores"]> {
-  const threshold = tierThreshold(a.source.tier);
+  const threshold = selectionThreshold(a.source);
   return threshold === null ? null : runScores(a, threshold, opts, onReceipt);
 }
 
@@ -465,7 +468,7 @@ export function shownScore(scores: AnalysisRun["scores"]): number | null {
 }
 
 /**
- * The selection rule on the scores: they add up to twice the source tier's threshold (or `threshold`,
+ * The selection rule on the scores: they add up to twice the source's threshold (or `threshold`,
  * when an evaluation sweeps it). The item must also pass relevance (normalizeAnalysis).
  */
 export function scoresSelect(scores: AnalysisRun["scores"], threshold = scores?.threshold ?? null): boolean {

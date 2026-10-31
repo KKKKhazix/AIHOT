@@ -10,6 +10,7 @@ import { upsertMaterial } from "@aihot/backend/content/materials";
 import { analyzeArticle } from "@aihot/backend/editorial/analyze";
 import { publishArticle } from "@aihot/backend/publication/publish";
 import { stopBoss } from "@aihot/backend/jobs/queue";
+import { POLICY } from "@aihot/site";
 import { buildApp } from "../apps/api/src/app.ts";
 
 const source = `original-post-${tag()}`;
@@ -33,10 +34,10 @@ before(async () => {
 after(async () => { await app.close(); await provider.close(); await stopBoss(); await closeDb(); });
 
 /** A post found and published a minute ago (released by `released`): a rolling window that ends at the reader's clock holds it. */
-async function post(name: string, text: string) {
+async function post(name: string, text: string, sourceId = source) {
   const url = `https://x.com/fixture/status/${name}-${source}`;
   const minuteAgo = new Date(Date.now() - 60_000);
-  const material = await upsertMaterial({ sourceId: source, url, title: text, bodyText: text, bodyStatus: "ok", via: "fetch", publishedAt: minuteAgo, discoveredAt: minuteAgo,
+  const material = await upsertMaterial({ sourceId, url, title: text, bodyText: text, bodyStatus: "ok", via: "fetch", publishedAt: minuteAgo, discoveredAt: minuteAgo,
     xPost: { tweetId: name, authorName: "Fixture", handle: "fixture", text,
       media: [{ kind: "image", url: "https://example.org/screenshot.png", width: 757, height: 549 }] } });
   return { id: material.articleId, url };
@@ -116,4 +117,54 @@ test("real text containing links and a fetched X Article keep their normal writi
     const [p] = await sql`SELECT summary FROM publications WHERE article_id=${id}`;
     assert.equal(p!.summary, "这是实际正文的中文摘要。");
   }
+});
+
+test("a saved X Article reaches public readers and full-text exports without buying it again", async () => {
+  const { id } = await post("saved-article", "An introduction to the measured research results. https://x.com/i/article/987654");
+  const text = "SAVED_ARTICLE_EVIDENCE: measured results and limitations from the published long article.";
+  await sql`UPDATE articles SET x_article=${sql.json({ title: "Saved research article", text })},
+    body_text=${`https://x.com/i/article/987654\n\n# Saved research article\n\n${text}`} WHERE id=${id}`;
+  await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,title_zh,summary_zh,score,selected)
+    VALUES(${id},1,'model','pass','已保存的研究长文','已保存正文的摘要',${SELECTING_SCORE},true)`;
+  await publishArticle(id, released());
+  // Existing X translations cover only x_post.text, not the saved long article.
+  await sql`INSERT INTO translations(article_id,revision,body_text,body_html,complete,origin)
+    VALUES(${id},1,'旧的帖子介绍译文','<p>旧的帖子介绍译文</p>',true,'model')`;
+  const before = provider.hits();
+  for (const suffix of ["", "/original"]) {
+    const detail = (await app.inject({ method: "GET", url: `/api/site/items/${id}${suffix}` })).json();
+    assert.ok(detail.body?.original?.includes(text), "a translated introduction cannot replace the saved long article");
+    assert.equal(detail.hasTranslation, false, "the introduction is not a complete article translation");
+  }
+  for (const path of [`/items/${id}/markdown`, "/feed/full.xml"]) {
+    const res = await app.inject({ method: "GET", url: path });
+    assert.equal(res.statusCode, 200, path);
+    assert.ok(res.body.includes(text), path);
+  }
+  assert.equal(provider.hits(), before, "reading already stored content cannot buy another response");
+});
+
+
+test("saved long articles remain private when only the X post itself may be shown", async () => {
+  const restricted = `${source}-restricted`;
+  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,site_fulltext,syndicate_fulltext,next_fetch_at)
+    VALUES (${restricted},'Restricted article test','x_search','T1','editorial',false,true,'2100-01-01')`;
+  const { id } = await post("restricted-article", "https://x.com/i/article/987655", restricted);
+  const text = "RESTRICTED_ARTICLE_EVIDENCE: saved for analysis, not licensed for full-text display.";
+  await sql`UPDATE articles SET x_article=${sql.json({ title: "Restricted long article", text })}, body_text=${text} WHERE id=${id}`;
+  await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,title_zh,summary_zh,score,selected)
+    VALUES(${id},1,'model','pass','受限长文标题','许可内的简短摘要',${SELECTING_SCORE},true)`;
+  await publishArticle(id, released());
+  const before = provider.hits();
+  for (const path of [`/api/site/items/${id}`, `/api/site/items/${id}/original`, `/items/${id}/markdown`, "/feed/full.xml"]) {
+    const res = await app.inject({ method: "GET", url: path });
+    assert.equal(res.statusCode, 200, path);
+    assert.ok(!res.body.includes(text), `${path}: a saved article is not a grant of full-text permission`);
+  }
+  // A site that counts an X post as full text (POLICY.xPostIsFullText) shows none of it here, its link included.
+  if (!POLICY.xPostIsFullText) {
+    const detail = (await app.inject({ method: "GET", url: `/api/site/items/${id}/original` })).json();
+    assert.ok(detail.body?.original?.includes("https://x.com/i/article/987655"), "the original post keeps its link");
+  }
+  assert.equal(provider.hits(), before);
 });

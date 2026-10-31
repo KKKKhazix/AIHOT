@@ -27,14 +27,14 @@ export function Menu({ trigger, label, children }: { trigger: ReactNode; label: 
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className={`inline-flex size-8 items-center justify-center rounded-control transition-colors ${open ? "bg-bg-sunk text-ink" : "text-ink-3 hover:bg-bg-sunk hover:text-ink"}`}
+        className={`inline-flex size-8 items-center justify-center rounded-control transition-colors touch:size-11 ${open ? "bg-bg-sunk text-ink" : "text-ink-3 hover:bg-bg-sunk hover:text-ink"}`}
       >
         {trigger}
       </button>
       <Presence show={open} enter="anim-drop-in" exit="anim-drop-out" duration={140}>
         <div
           role="menu"
-          className="absolute top-10 z-50 min-w-[168px] overflow-hidden rounded-tile border border-line bg-raised py-1 shadow-[var(--shadow-pop)] right-0 origin-top-right"
+          className="absolute top-[calc(100%+8px)] z-50 min-w-[168px] overflow-hidden rounded-tile border border-line bg-raised py-1 shadow-[var(--shadow-pop)] right-0 origin-top-right"
         >
           {children(() => setOpen(false))}
         </div>

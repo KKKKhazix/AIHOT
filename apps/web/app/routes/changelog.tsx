@@ -141,7 +141,7 @@ export default function ChangelogPage() {
 
   const aside = (
     <>
-      <AsideCard title="按类型看" className="hidden lg:block">
+      <AsideCard title="按类型看" className="hidden side:block">
         <div className="-mx-2 -mb-1">
           {[null, ...KINDS].map((k) => (
             <button
@@ -158,7 +158,7 @@ export default function ChangelogPage() {
           ))}
         </div>
       </AsideCard>
-      <AsideCard title="按月份" className="hidden lg:block">
+      <AsideCard title="按月份" className="hidden side:block">
         <nav aria-label="按月份" className="-mx-2 -mb-1">
           {[...months.entries()].map(([month, m]) => {
             const [y, mo] = month.split("-").map(Number) as [number, number];

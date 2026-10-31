@@ -1,6 +1,6 @@
 // Checks the selection against your own labelled samples (a "gold set"): each case runs the site's
 // selection steps (editorial/analyze.ts) — the prefilter, then the score prompt twice with every model in
-// --models, the two scores deciding against the source tier's threshold — and is compared with your
+// --models, the two scores deciding against the case's tier threshold (gold cases carry no source class) — and is compared with your
 // decision. A threshold sweep shows what another threshold would have done. The gold file has one case
 // per line as eval-selection-core.ts describes; lines starting with // are skipped.
 // Usage: node --env-file=.env scripts/eval-selection.ts [--gold .data/gold.jsonl] [--models default,deepseek-flash] [--n 200] [--split all] [--label "..."]
@@ -19,8 +19,8 @@ import {
   runSelectionPrefilter,
   runSelectionScores,
   scoresSelect,
+  selectionThreshold,
   shownScore,
-  tierThreshold,
   type AnalysisRun,
   type AnalyzeInputArticle,
 } from "@aihot/backend/editorial/analyze";
@@ -107,7 +107,7 @@ for (const model of models) {
     try {
       const prefilter = await runSelectionPrefilter(input, {}, (id) => receiptIds.push(id));
       if (prefilter.label === "BLOCK") return outcome("block");
-      const threshold = tierThreshold(input.source.tier);
+      const threshold = selectionThreshold(input.source);
       if (threshold === null) return outcome("pass");
 
       const key = buildScoreInput(input);

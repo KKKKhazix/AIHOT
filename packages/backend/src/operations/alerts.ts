@@ -2,15 +2,24 @@
 // message says what readers see, whether it heals by itself and what, if anything, the owner must do.
 //   now   — readers are affected and it has not healed: sent at once, repeated hourly, recovery reported.
 //   today — money at risk or only the owner can act: sent at once, repeated at most daily, recovery reported.
-//   later — other follow-ups: one 09:00 message a day, meant to be handed to the AI. A source's follow-up is
+//   later — other follow-ups: one 09:00 list a day for the agent (the owner's only without one). A source's follow-up is
 //           closed on its own: a fix removes it, and one judged not worth fixing is closed with a reason.
+// A finding with agentOnly is still now or today, but it only wakes the agent: nothing is sent when it
+// opens, nothing is sent when it clears, and it stays off the 09:00 digest.
+// A module can name those alerts as well, including `name:<item>`, so a row saved before the flag still closes quietly.
+// With an agent taking the alerts (notify/agent.ts), a now or today problem that is not the owner's own
+// (Finding.owner) is handed to the agent instead. The owner hears of it when the same problem is handed over
+// a third time in a day, or when it is still open HANDED_MS after the handoff, and from then on as above;
+// an incident the agent judged not a fault (holdAlert) is not told before its hold ends. The agent is not
+// woken for what is the owner's alone (owner "only"). While the channel to the agent fails, the owner hears everything again.
+// The shared hub owns serial execution and retry; accepted events are never dispatched again here.
 // Delivery goes through sendAlert (alert webhook or ops chat, internal-chat fallback; off unless FEISHU_INTERNAL_ENABLED).
 import { addDays, beijingAt, beijingDate, beijingDay, beijingStamp, isValidDate } from "@aihot/contracts/time";
 import { ALERTS, EDITION_TIMES } from "@aihot/site";
 import { audit } from "../audit.ts";
 import { sql } from "../db.ts";
-import { agentHandoffs, closeAgentWake, wakeAgent } from "../notify/agent.ts";
-import { duration, formatAlert, formatRecovery, sendAlert, type Finding, type Level } from "../notify/feishu.ts";
+import { agentConfigured, agentTransportFindings, flushAgentEvents, handoffs, wakeAgent, wakeDigest } from "../notify/agent.ts";
+import { duration, formatAlert, formatRecovery, formatReturn, sendAlert, type Finding, type Level } from "../notify/feishu.ts";
 import { stepsOnService } from "../editorial/models.ts";
 import { backupConfigured } from "./backup.ts";
 import { GROUPING_WARN_AFTER_MS, waitingSelectedNews } from "./grouping.ts";
@@ -20,6 +29,14 @@ import { awaitingRelease, providerAccessRefused } from "../providers/receipts.ts
 import { SOURCE_PROBLEMS, sourceHealth } from "../sources/health.ts";
 
 const REPEAT_MS: Record<Exclude<Level, "later">, number> = { now: 3600_000, today: 24 * 3600_000 };
+/**
+ * How long the agent has a problem before the owner hears of it too: readers affected now, the first hourly
+ * reminder; otherwise time to ship a fix and retry it once (10-19..10-21 the agent closed its alerts within 25 minutes).
+ */
+const HANDED_MS: Record<Exclude<Level, "later">, number> = { now: 3600_000, today: 3 * 3600_000 };
+/** The handoff that tells the owner a problem keeps coming back, counted over a day; told at most once a day. */
+const RETURNS = 3;
+const DAY_MS = 86_400_000;
 
 // Valves default off: read at call time, only an explicit "true" turns them on.
 const collecting = () => process.env.COLLECT_ENABLED === "true";
@@ -37,6 +54,7 @@ type Check = (now: number, open: AlertState) => Promise<Finding[]>;
 const CHECKS: Check[] = [
   // Readers affected now
   contentCollection,
+  sourcesFailing,
   selectedGrouping,
   contentProcessing,
   dailyReportFindings,
@@ -49,7 +67,7 @@ const CHECKS: Check[] = [
   // Follow-ups
   sourceFollowUps,
   unknownOutcomes,
-  agentHandoffs,
+  agentTransportFindings,
   waitingQueues,
   moduleFollowUps,
 ];
@@ -81,6 +99,42 @@ async function contentCollection(now: number, open: AlertState): Promise<Finding
     action: "尽快发起一次维护处理",
     detail: `editorial articles.discovered_at 超过 ${QUIET_MINUTES} 分钟没有新值（热度信号单独评估）；查 sources.schedule、出网代理与采集失败`,
     since: last?.at ?? undefined,
+  }];
+}
+
+/**
+ * Many sources failing at once points at the site's way out, not at the sources: the site keeps changing
+ * with what still works, so the stall above stays quiet. Each enabled source counts by its latest fetch,
+ * however long ago: a failing one waits hours before it is fetched again, and collection may be paused or the
+ * worker down meanwhile, so only a fetch that works again is recovery. Production, 30 days to 2026-10-28:
+ * the egress proxy dropped on 10-05, 10-17 and 10-26 and 23–37% of the sources were failing at the worst;
+ * at no other time more than 11.5%. Fewer than 50 failing sources are each one's own follow-up.
+ */
+const FAILING_SHARE = 0.15;
+const FAILING_SOURCES = 50;
+
+async function sourcesFailing(now: number, open: AlertState): Promise<Finding[]> {
+  if (!collecting() && !open["content.fetch"]) return [];
+  const latest = sql`SELECT r.status, r.error, r.started_at FROM sources s CROSS JOIN LATERAL (
+      SELECT status, error, started_at FROM fetch_runs f
+      WHERE f.source_id = s.id AND f.status IN ('ok', 'failed') AND f.started_at <= ${new Date(now)}
+      ORDER BY started_at DESC LIMIT 1) r
+    WHERE s.enabled`;
+  const [r] = await sql<{ fetched: number; failing: number }[]>`
+    SELECT count(*)::int AS fetched, count(*) FILTER (WHERE status = 'failed')::int AS failing FROM (${latest}) l`;
+  if (!r || r.failing < FAILING_SOURCES || r.failing < r.fetched * FAILING_SHARE) return [];
+  const errors = await sql<{ error: string; n: number; first: Date }[]>`
+    SELECT left(coalesce(error, ''), 120) AS error, count(*)::int AS n, min(started_at) AS first FROM (${latest}) l
+    WHERE status = 'failed' GROUP BY 1 ORDER BY 2 DESC`;
+  return [{
+    key: "content.fetch",
+    level: "now",
+    title: "大量信源抓取失败，这些信源的新文章进不来",
+    impact: `最近抓取过的 ${r.fetched} 个信源里，${r.failing} 个最近一次抓取失败，读者暂时看不到它们的新文章`,
+    heals: "服务器连外网的线路恢复后会按排程重新抓取，这段时间的新文章会晚到；线路不恢复就一直进不来",
+    action: "转给 AI 检查出网代理和抓取错误",
+    detail: `失败信源占 ${Math.round((r.failing / r.fetched) * 100)}%（门槛 ${FAILING_SHARE * 100}% 且至少 ${FAILING_SOURCES} 个）；常见错误：${errors.slice(0, 3).map((e) => `${e.error || "（无）"} ×${e.n}`).join("；")}`,
+    since: new Date(Math.min(...errors.map((e) => e.first.getTime()))),
   }];
 }
 
@@ -202,6 +256,11 @@ async function moduleAlerts(now: number): Promise<Finding[]> {
   return out;
 }
 
+/** A module declared this alert agent-only. `name` also covers each `name:<item>`. */
+function moduleAgentOnly(key: string): boolean {
+  return serverModules().some((m) => m.agentOnly?.some((name) => key === name || key.startsWith(`${name}:`)));
+}
+
 /**
  * One follow-up per source and problem, so fixing a source removes its own line. A quiet source is left to
  * the weekly report: being slow, or too new to have a rhythm, is nothing anyone can fix, and may never end.
@@ -312,6 +371,7 @@ async function providerFindings(now: number, open: AlertState): Promise<Finding[
     out.push({
       key,
       level: unused ? "later" : "today",
+      ...(unused ? {} : { owner: true as const }),
       title: unused ? `${providerName(service)} 的旧模型限制尚未验证` : `${providerName(service)} 拒绝调用，需要核对账号或额度`,
       impact: unused ? "当前处理步骤未使用这些受限模型；旧限制仍未验证" : await providerStops(service, p.models),
       heals: "需先恢复访问，再确认失败任务已接续",
@@ -338,7 +398,7 @@ async function providerFindings(now: number, open: AlertState): Promise<Finding[
 }
 
 interface AlertState {
-  [key: string]: { title: string; since: string; sentAt?: string; handoff?: true; refusedModels?: (string | null)[] };
+  [key: string]: { title: string; since: string; sentAt?: string; agentOnly?: true; handedAt?: string; refusedModels?: (string | null)[] };
 }
 
 const DAILY_PREFIX = "report.daily:";
@@ -350,6 +410,43 @@ const dailyScanFrom = (now: number) => addDays(beijingDate(now), -6);
 async function alertState(): Promise<AlertState> {
   const [row] = await sql<{ value: AlertState }[]>`SELECT value FROM settings WHERE key = 'alerts.state'`;
   return { ...(row?.value ?? {}) };
+}
+
+/** When the owner was last told that a problem keeps coming back, by key, for the last day. */
+async function returnsTold(now: number): Promise<Record<string, string>> {
+  const [row] = await sql<{ value: Record<string, string> }[]>`SELECT value FROM settings WHERE key = 'alerts.returns'`;
+  return Object.fromEntries(Object.entries(row?.value ?? {}).filter(([, at]) => now - Date.parse(at) < DAY_MS));
+}
+
+/** A handed-over incident the agent judged not a fault: until when and why. `since` ties it to that incident. */
+export interface HeldAlert { since: string; until: string; reason: string; by: string; at: string }
+
+async function savedHolds(): Promise<Record<string, HeldAlert>> {
+  const [row] = await sql<{ value: Record<string, HeldAlert> }[]>`SELECT value FROM settings WHERE key = 'alerts.held'`;
+  return row?.value ?? {};
+}
+
+/**
+ * The agent looked at an incident it was handed and judged it not a fault (10-25: a quiet Saturday morning
+ * escalated as "停止收录"): the owner is not told of that incident before `until`, a day at most. Past it, or
+ * for a later incident, the handoff runs as before. Audited.
+ */
+export async function holdAlert(key: string, reason: string, until: Date, actor: string, now = Date.now()): Promise<HeldAlert> {
+  if (!reason?.trim()) throw new Error("reason is required");
+  if (!(until.getTime() > now && until.getTime() <= now + DAY_MS)) throw new Error("hold until a time within the next day");
+  const open = (await alertState())[key];
+  if (!open?.handedAt || open.sentAt) throw new Error(`not an open incident the agent has and the owner was not told of: ${key}`);
+  const before = (await savedHolds())[key] ?? null;
+  const held: HeldAlert = { since: open.since, until: until.toISOString(), reason: reason.trim(), by: actor, at: new Date(now).toISOString() };
+  await sql.begin(async (tx) => {
+    // Merged by key in the row itself, so holds written at the same time all stand; ended ones are dropped here.
+    await tx`INSERT INTO settings (key, value, updated_by) VALUES ('alerts.held', ${tx.json({ [key]: held } as never)}, ${actor})
+             ON CONFLICT (key) DO UPDATE SET value = coalesce((SELECT jsonb_object_agg(k, v) FROM jsonb_each(settings.value) AS e(k, v)
+               WHERE (v->>'until')::timestamptz > ${new Date(now)}), '{}'::jsonb) || EXCLUDED.value,
+               updated_by = EXCLUDED.updated_by, updated_at = now()`;
+    await audit(actor, "alert.hold", `alert:${key}`, held.reason, before, held, { db: tx });
+  });
+  return held;
 }
 
 async function dailyReportFindings(now: number, open: AlertState): Promise<Finding[]> {
@@ -398,7 +495,6 @@ async function settleDailies(open: AlertState, found: Set<string>, now: number):
     }
     await sendAlert(`${date} 的日报没能补出，停止提醒`, [`读者看不到 ${date} 的日报；缺期从 ${beijingStamp(new Date(open[key]!.since))} 起，已超出七天的检查范围`]);
     sent.push(`${key}:expired`);
-    await closeAgentWake(key);
     delete open[key];
   }
   return { missing, sent };
@@ -410,19 +506,46 @@ async function settleDailies(open: AlertState, found: Set<string>, now: number):
 export async function checkAlerts(now = Date.now()) {
   const state = await alertState();
   const all = await collectFindings(now, state);
+  const handing = agentConfigured() && !all.some((f) => f.key === "webhook.transport");
+  const returns = await returnsTold(now);
+  const holds = await savedHolds();
   const sent: string[] = [];
   for (const f of all) {
     const open = state[f.key];
     if (f.level === "later") {
       // Switching before the first check changes the impact, not whether access has recovered.
-      if (f.key.startsWith(REFUSED_PREFIX) && !open) state[f.key] = { title: f.title, since: new Date(now).toISOString(), handoff: true };
+      if (f.key.startsWith(REFUSED_PREFIX) && !open) state[f.key] = { title: f.title, since: new Date(now).toISOString() };
       continue;
+    }
+    if (f.agentOnly || moduleAgentOnly(f.key)) {
+      const since = open?.since ?? (f.since ?? new Date(now)).toISOString();
+      state[f.key] = { title: f.title, since, agentOnly: true };
+      continue;
+    }
+    if (handing && !f.owner && !open?.sentAt) {
+      const handedAt = open?.handedAt ?? new Date(now).toISOString();
+      const hold = holds[f.key];
+      const held = !!hold && hold.since === open?.since && now < Date.parse(hold.until);
+      if (held || now - Date.parse(handedAt) < HANDED_MS[f.level]) {
+        // Before this round's handoff is published, the earlier ones of the day are counted.
+        const earlier = open || returns[f.key] ? 0 : await handoffs(f.key, new Date(now - DAY_MS));
+        if (earlier >= RETURNS - 1) {
+          const msg = formatReturn(f, earlier + 1);
+          await sendAlert(msg.title, msg.lines);
+          returns[f.key] = new Date(now).toISOString();
+          sent.push(`${f.key}:repeated`);
+        }
+        state[f.key] = { title: f.title, since: open?.since ?? (f.since ?? new Date(now)).toISOString(), handedAt };
+        continue;
+      }
     }
     if (open?.sentAt && now - Date.parse(open.sentAt) <= REPEAT_MS[f.level]) continue;
     const since = open ? new Date(open.since) : (f.since ?? new Date(now));
-    const msg = formatAlert(f, since, now, !!open?.sentAt);
+    // A problem the agent has had and not closed: the owner learns it is the agent's, and for how long.
+    const shown = handing && !f.owner && open?.handedAt ? { ...f, heals: `AI 接手 ${duration(now - Date.parse(open.handedAt))} 还没解决`, action: "问问 AI 卡在哪了；需要你动手的它会说明" } : f;
+    const msg = formatAlert(shown, since, now, !!open?.sentAt);
     await sendAlert(msg.title, msg.lines);
-    state[f.key] = { ...open, title: f.title, since: since.toISOString(), sentAt: new Date(now).toISOString(), ...(!open || open.handoff ? { handoff: true as const } : {}) };
+    state[f.key] = { ...open, title: f.title, since: since.toISOString(), sentAt: new Date(now).toISOString() };
     sent.push(f.key);
   }
   const found = new Set(all.map((f) => f.key));
@@ -430,8 +553,9 @@ export async function checkAlerts(now = Date.now()) {
   sent.push(...dailies.sent);
   for (const [key, open] of Object.entries(state)) {
     if (found.has(key) || dailies.missing.has(key)) continue;
-    if (!open.sentAt) {
-      await closeAgentWake(key);
+    // An agent-only incident was never told to the owner, so clearing it stays quiet too. A module's
+    // declaration covers a row saved before the flag existed, when this round no longer returns it.
+    if (open.agentOnly || moduleAgentOnly(key) || !open.sentAt) {
       delete state[key];
       continue;
     }
@@ -442,19 +566,34 @@ export async function checkAlerts(now = Date.now()) {
     if (dropped?.n) await sendAlert(`已结束跟进：${open.title}`, [`${dropped.n} 条旧通知已决定不再补发，未确认送达`]);
     else await sendAlert(msg.title, msg.lines);
     sent.push(`${key}:${dropped?.n ? "closed" : "recovered"}`);
-    await closeAgentWake(key);
     delete state[key];
   }
   await sql`INSERT INTO settings (key, value, updated_by) VALUES ('alerts.state', ${sql.json(state as never)}, 'alerts')
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`;
+  await sql`INSERT INTO settings (key, value, updated_by) VALUES ('alerts.returns', ${sql.json(returns)}, 'alerts')
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`;
   // Revisit every open incident: a crash between saving the owner's alert and dispatching cannot lose it.
-  // The durable handoff deduplicates by occurrence, independently from hourly owner reminders.
-  for (const f of all) if (f.level !== "later" && state[f.key]) await wakeAgent({ ...f, since: new Date(state[f.key]!.since) }, now, !!state[f.key]!.handoff);
+  // Transport receipts retain IDs across uncertain responses, independently from owner reminders.
+  for (const f of all) if (f.level !== "later" && f.key !== "webhook.transport" && f.owner !== "only" && state[f.key]) {
+    const agentOnly = f.agentOnly || moduleAgentOnly(f.key) ? { agentOnly: true as const } : {};
+    await wakeAgent({ ...f, ...agentOnly, since: new Date(state[f.key]!.since) }, now);
+  }
+  await flushAgentEvents();
   return { open: Object.keys(state), sent };
 }
 
-/** A follow-up someone judged not worth fixing: who, when and why. */
-export interface DismissedFollowUp { title: string; reason: string; by: string; at: string }
+/**
+ * What a closure covers. "observed": the failures seen by its time (a fix whose old failures still sit in
+ * the window): any new one reopens it, as on 10-17 when HN detail failures went on after "fixed". "ongoing":
+ * the condition itself, judged acceptable (an upstream that fails a few times a day and recovers, dates
+ * missing by rule): it holds through new failures for a week, then the condition is listed and judged again.
+ * A source that stops working is another follow-up (`sources.failing.*`), never covered by either.
+ */
+export type ClosureScope = "observed" | "ongoing";
+const ONGOING_CLOSURE_MS = 7 * 86_400_000;
+
+/** A follow-up someone judged not worth fixing: who, when and why; `until` ends an ongoing closure. */
+export interface DismissedFollowUp { title: string; reason: string; by: string; at: string; until?: string }
 
 /** The follow-ups closed as not to be fixed, by key. */
 async function savedDismissals(): Promise<Record<string, DismissedFollowUp>> {
@@ -462,27 +601,29 @@ async function savedDismissals(): Promise<Record<string, DismissedFollowUp>> {
   return row?.value ?? {};
 }
 
-/** Only observations covered by the closure stay quiet; a new failure reopens the same key. */
-export async function dismissedFollowUps(findings?: Finding[]): Promise<Record<string, DismissedFollowUp>> {
-  const current = findings ?? await sourceFollowUps(Date.now());
+/** The closures still covering a current follow-up (ClosureScope). */
+export async function dismissedFollowUps(findings?: Finding[], now = Date.now()): Promise<Record<string, DismissedFollowUp>> {
+  const current = findings ?? await sourceFollowUps(now);
   return Object.fromEntries(Object.entries(await savedDismissals()).filter(([key, closed]) => {
     const finding = current.find(f => f.key === key);
-    return finding && (!finding.observedAt || finding.observedAt.getTime() <= Date.parse(closed.at));
+    if (!finding) return false;
+    if (closed.until) return now < Date.parse(closed.until);
+    return !finding.observedAt || finding.observedAt.getTime() <= Date.parse(closed.at);
   }));
 }
 
 /**
  * Closes a current source follow-up as not to be fixed, with the reason (audited): the digest stops listing
  * it. Only these name one source and one problem; a follow-up that counts many records would hide records
- * that arrive later. The closure covers evidence observed by its timestamp only. New failures reopen it even while the old
- * history is still in the seven-day window; disappearance also lapses the closure.
+ * that arrive later. `scope` says what it covers (ClosureScope); disappearance also lapses the closure.
  */
-export async function dismissFollowUp(key: string, reason: string, actor: string, now = Date.now()): Promise<DismissedFollowUp> {
+export async function dismissFollowUp(key: string, reason: string, actor: string, now = Date.now(), scope: ClosureScope = "observed"): Promise<DismissedFollowUp> {
   if (!reason?.trim()) throw new Error("reason is required");
   const finding = (await sourceFollowUps(now)).find((f) => f.key === key);
   if (!finding) throw new Error(`not a current source follow-up: ${key}`);
   const before = (await savedDismissals())[key] ?? null;
-  const dismissed: DismissedFollowUp = { title: finding.title, reason: reason.trim(), by: actor, at: new Date(now).toISOString() };
+  const dismissed: DismissedFollowUp = { title: finding.title, reason: reason.trim(), by: actor, at: new Date(now).toISOString(),
+    ...(scope === "ongoing" ? { until: new Date(now + ONGOING_CLOSURE_MS).toISOString() } : {}) };
   await sql.begin(async (tx) => {
     await tx`INSERT INTO settings (key, value, updated_by) VALUES ('alerts.dismissed', ${tx.json({ [key]: dismissed } as never)}, ${actor})
              ON CONFLICT (key) DO UPDATE SET value = settings.value || EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`;
@@ -503,15 +644,20 @@ export async function restoreFollowUp(key: string, reason: string, actor: string
   return before;
 }
 
-/** 09:00: one message with the open follow-ups; nothing when there are none. Closures whose problem is gone lapse here. */
+/** 09:00: the open follow-ups, one list; nothing when there are none. Closures whose problem is gone lapse here.
+ *  Agent-only handoffs stay on the ops list and are not part of the owner's message. */
 export async function sendDigest(now = Date.now()) {
   const found = (await collectFindings(now)).filter((f) => f.level === "later");
-  const dismissed = await dismissedFollowUps(found);
+  const dismissed = await dismissedFollowUps(found, now);
   const lapsed = Object.keys(await savedDismissals()).filter((key) => !dismissed[key]);
   if (lapsed.length) await sql`UPDATE settings SET value = value - ${sql.array(lapsed)}::text[], updated_at = now() WHERE key = 'alerts.dismissed'`;
-  const items = found.filter((f) => !dismissed[f.key]);
+  const items = found.filter((f) => !dismissed[f.key] && !f.agentOnly);
   const lines = items.map((f, i) => `${i + 1}. ${f.title}${f.detail ? `\n   ${f.detail}` : ""}`);
-  if (!lines.length) return { items: 0 };
-  await sendAlert(`📋 系统日报 · ${beijingDay(now)}`, ["以下事项需要跟进，具体影响见各条说明；可把整条转给 AI 处理。", ...lines]);
-  return { items: lines.length };
+  // Once the hub has the list, the agent works through it alone and what is still the owner's reaches him from it
+  // (his choice, 2026-10-28). Without an agent, or when the list did not get through, he gets it as before.
+  const taken = found.some(f => !dismissed[f.key]) && await wakeDigest(beijingDate(now), lines.length || found.length);
+  const toldOwner = lines.length > 0 && !taken;
+  if (toldOwner) await sendAlert(`📋 系统日报 · ${beijingDay(now)}`, ["以下事项需要跟进，具体影响见各条说明；可把整条转给 AI 处理。", ...lines]);
+  await flushAgentEvents();
+  return { items: lines.length, toldOwner };
 }

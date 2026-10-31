@@ -1,7 +1,7 @@
 // Public scope and sync through the real api routes: a licence revocation or a withdrawal reaches
 // every exit, reports stop quoting withdrawn items, the hot board drops a withdrawn item at once, item
-// pages follow one rule, a withdrawal next to an unresolved selection leaves new snapshots at once, and
-// snapshots answer conditional requests.
+// pages follow one rule, a withdrawal next to an unresolved selection leaves new snapshots at once,
+// snapshots answer conditional requests, and browsing 全部动态 leaves out low scores that a search still finds.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -17,6 +17,10 @@ import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle, republishSource } from "@aihot/backend/publication/publish";
 import { computeHotRanking } from "@aihot/backend/events/hot";
 import { latestHotRanking } from "@aihot/backend/publication/hot";
+import { itemFeed } from "@aihot/backend/publication/feeds";
+import { loadPool } from "@aihot/backend/publication/pool";
+import { v1Items } from "@aihot/backend/publication/v1";
+import { SELECTION } from "@aihot/industry/selection";
 import { loadItemShare } from "@aihot/backend/publication/og";
 import { buildApp } from "../apps/api/src/app.ts";
 
@@ -592,4 +596,43 @@ test("a correction between snapshot pages arrives through changes after the fixe
   assert.deepEqual(JSON.parse(changes.body).changes.map((change: { op: string; item: { id: string; title: string } }) =>
     ({ op: change.op, id: change.item.id, title: change.item.title })), [{ op: 'upsert', id, title }],
   'the client applies the correction once after finishing the original snapshot');
+});
+
+// Failure modes: a low-score item still shows on the web list or its page count, v1 (which MCP reads), the
+// Agent list or the all RSS; an unscored item disappears; a search no longer reaches a low-score item.
+test("browsing 全部动态 on every exit leaves out items below the floor, which a search still finds", async () => {
+  const source = `${SOURCE}-floor`;
+  const at = new Date(Date.now() - 3600_000);
+  const floor = SELECTION.browseFloor;
+  const scores: Array<[string, number | null]> = [["low", floor - 1], ["edge", floor], ["unscored", null]];
+  const id = (name: string) => `${T}-floor-${name}`;
+  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at) VALUES (${source}, 'Floor fixture', 'rss', 'T2', 'editorial', '2100-01-01')`;
+  for (const [name, score] of scores) {
+    await sql`INSERT INTO articles (id, source_id, identity_key, url, title, discovered_at, timeline_at, published_at)
+      VALUES (${id(name)}, ${source}, ${id(name)}, ${`https://example.org/${id(name)}`}, ${id(name)}, ${at}, ${at}, ${at})`;
+    await sql`INSERT INTO publications (article_id, title, summary, source_id, channel, url, discovered_at, timeline_at, published_at, sort_at,
+        eligible, selected, visibility, tags, score, search_text)
+      VALUES (${id(name)}, ${id(name)}, 'fixture summary', ${source}, 'news', ${`https://example.org/${id(name)}`}, ${at}, ${at}, ${at}, ${at},
+        true, false, 'public', ${[`${T}-floor`]}, ${score}, ${id(name)})`;
+    await sql`INSERT INTO pool_search (article_id, direct, body) VALUES (${id(name)}, ${id(name)}, '')`;
+  }
+  const shown = [id("edge"), id("unscored")];
+  const ours = (ids: string[]) => ids.filter((i) => i.startsWith(`${T}-floor-`)).sort();
+  const now = new Date();
+
+  const pool = await loadPool({ channel: "all", category: null, tag: `${T}-floor`, now });
+  assert.deepEqual(ours(pool.items.map((i) => i.id)), shown, "web list");
+  assert.equal(pool.total, shown.length, "web page count");
+  const v1 = await v1Items({ mode: "all", window: "24h", by: "timeline", category: null, q: null, limit: 100, cursor: null }, now);
+  assert.deepEqual(ours(v1.items.map((i) => i.id)), shown, "v1 and MCP");
+  const agent = await get("/api/v1/agent/latest?mode=all&limit=30");
+  assert.equal(agent.status, 200);
+  assert.ok(agent.body.includes(id("edge")) && !agent.body.includes(id("low")), "Agent latest");
+  const rss = await itemFeed("all", null, { now });
+  assert.ok(rss.includes(id("edge")) && rss.includes(id("unscored")) && !rss.includes(id("low")), "all RSS");
+
+  const found = await loadPool({ channel: "all", category: null, tag: `${T}-floor`, q: id("low"), now });
+  assert.deepEqual(ours(found.items.map((i) => i.id)), [id("low")], "web search");
+  const searched = await v1Items({ mode: "all", window: "24h", by: "timeline", category: null, q: id("low"), limit: 100, cursor: null }, now);
+  assert.deepEqual(ours(searched.items.map((i) => i.id)), [id("low")], "v1 search");
 });

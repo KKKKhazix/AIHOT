@@ -3,6 +3,7 @@
 // evidence, `fact_articles fa`); no other module spells visibility, the release time or the composite
 // rule in SQL, and grouping takes the composite rule from here too. What a publication holds is
 // derived once, at publish time, by publish.ts and rules.ts.
+import { SELECTION } from "@aihot/industry/selection";
 import { sql } from "../db.ts";
 import { independentSelectedSources } from './rules.ts';
 
@@ -22,6 +23,14 @@ export function releasedCondition(now: Date) {
 /** Listed on public surfaces at `now`: public, pool eligible, and released by then. */
 export function listedCondition(now: Date) {
   return sql`p.visibility = 'public' AND p.eligible AND ${releasedCondition(now)}`;
+}
+
+/**
+ * Browsing 全部动态 on every exit (web list, v1 / MCP / Agent, the all RSS): listed and scoring at least
+ * the industry's browse floor; searches reach every listed item. An unscored item (the model declined to score it) stays, as it does in the pool.
+ */
+export function browsedCondition(now: Date) {
+  return sql`${listedCondition(now)} AND (p.score IS NULL OR p.score >= ${SELECTION.browseFloor})`;
 }
 
 /** Story reports include older editorial material outside the pool, but never withdrawn or not yet released content. */

@@ -1,4 +1,4 @@
-这两个 ttf 是 Noto Sans CJK SC（Noto Sans SC）的子集化产物，仅用于 AI HOT 的 OG
+这两个 ttf 是 Noto Sans CJK SC（Noto Sans SC）的子集化产物，仅用于 AIHOT 的 OG
 分享图渲染（GB2312 + 拉丁 + 标点子集，见 scripts/og/build-og-font.mjs）。
 
 原字体：Noto Sans CJK / Noto Sans SC

@@ -68,7 +68,7 @@ export const REPLACEABLE_SOURCE_KINDS = ["rss", "web_list", "json_list"] as cons
 export type ReplaceableSourceKind = typeof REPLACEABLE_SOURCE_KINDS[number];
 
 export interface AdminSourceUpdate {
-  patch: Partial<Pick<AdminSource, "name" | "enabled" | "interval_minutes" | "tier" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext" | "tags">> & (
+  patch: Partial<Pick<AdminSource, "name" | "enabled" | "interval_minutes" | "tier" | "selection_class" | "participation_mode" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext" | "tags">> & (
     { kind?: never; config?: Record<string, unknown> } | { kind: ReplaceableSourceKind; config: Record<string, unknown> }
   );
   version: string;
@@ -80,6 +80,7 @@ export interface AdminSourceRow {
   name: string;
   kind: string;
   tier: string;
+  selection_class: string | null;
   participation_mode: string;
   enabled: boolean;
   health: string;
@@ -109,6 +110,8 @@ export interface AdminSource {
   first_party: boolean;
   owner_entity_id: string | null;
   tier: string;
+  /** A class of the industry pack's selection rules (industry/selection.ts): raises the tier's threshold. */
+  selection_class: string | null;
   participation_mode: string;
   signal_group_id: string | null;
   interval_minutes: number;
@@ -241,6 +244,10 @@ export interface AdminFeedbackRow {
   screenshot: "local" | "feishu" | "gone" | null;
   source_hash: string;
   status: string;
+  /** bug, suggestion, question or other; null until handled. */
+  kind: string | null;
+  /** For a suggestion, the idea it asks for (the name its pool entry goes by). */
+  idea: string | null;
   note: string | null;
   forwarded_at: Timestamp | null;
   forward_error: string | null;
@@ -254,7 +261,11 @@ export interface AdminFeedbackRow {
 export interface AdminFeedback {
   page: number;
   rows: AdminFeedbackRow[];
+  /** All feedback by status, and the handled ones by kind. */
   counts: Record<string, number>;
+  kinds: Record<string, number>;
+  /** The suggestion pool, most asked first: how many senders asked for each idea, spam left out. */
+  ideas: Array<{ idea: string; people: number }>;
   bans: Array<{ source_hash: string; reason: string | null; created_by: string | null; created_at: Timestamp; expires_at: Timestamp | null }>;
 }
 

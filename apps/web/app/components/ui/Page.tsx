@@ -7,13 +7,13 @@ import { IconChevronRight } from "../icons";
  * boards): a main column and an aside (300px, 340px on wide screens) in a container that fills a 16:9
  * screen and centres on wider ones (--page-max-reading); long text keeps its own reading measure
  * inside the main column.
- * On phones the aside follows the main column.
+ * Below `side` (phones and narrow desktops) the aside follows the main column.
  */
 export function ReadingLayout({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
-    <div className="mx-auto grid max-w-[var(--page-max-reading)] gap-8 pb-14 pt-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-10 lg:pt-0 2xl:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="mx-auto grid max-w-[var(--page-max-reading)] gap-8 pb-14 pt-5 lg:pt-0 side:grid-cols-[minmax(0,1fr)_300px] side:gap-10 2xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="min-w-0">{children}</div>
-      {aside && <aside className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">{aside}</aside>}
+      {aside && <aside className="min-w-0 space-y-4 side:sticky side:top-6 side:self-start">{aside}</aside>}
     </div>
   );
 }
@@ -22,21 +22,21 @@ export function ReadingLayout({ children, aside }: { children: ReactNode; aside?
  * Long reads (articles, terms, privacy): no sheet, the text sits on the page in a column of at most
  * 760px, the width Chinese magazines and news sites use (680–730px at 16–17px, about 42 characters a
  * line). From 2xl a rail on each side (the piece's facts left, notes right) keeps the page filling a
- * 16:9 screen with the column in the middle; from lg only the right rail shows, beside the centred
- * column; phones read one column.
+ * 16:9 screen with the column in the middle; from `side` only the right rail shows, beside the centred
+ * column; phones and narrow desktops read one column.
  */
 export function ArticleLayout({ children, left, right }: { children: ReactNode; left?: ReactNode; right?: ReactNode }) {
   const [leftRail, leftOverscroll] = useContainedScroll<HTMLDivElement>();
   const [rightRail, rightOverscroll] = useContainedScroll<HTMLDivElement>();
   return (
-    <div className="mx-auto grid max-w-[var(--page-max-reading)] grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-x-12 2xl:grid-cols-[minmax(200px,1fr)_minmax(0,760px)_minmax(200px,1fr)] 2xl:gap-x-12">
+    <div className="mx-auto grid max-w-[var(--page-max-reading)] grid-cols-[minmax(0,1fr)] side:grid-cols-[minmax(0,1fr)_240px] side:gap-x-12 2xl:grid-cols-[minmax(200px,1fr)_minmax(0,760px)_minmax(200px,1fr)] 2xl:gap-x-12">
       <aside className="hidden 2xl:block">
         <div ref={leftRail} className={`scrollbar-thin sticky top-6 flex max-h-[calc(100vh-3rem)] max-w-[260px] flex-col space-y-8 overflow-y-auto ${leftOverscroll}`}>{left}</div>
       </aside>
       <div className="min-w-0">
         <div className="mx-auto max-w-[760px]">{children}</div>
       </div>
-      <aside className="hidden lg:block">
+      <aside className="hidden side:block">
         <div ref={rightRail} className={`scrollbar-thin sticky top-6 ml-auto flex max-h-[calc(100vh-3rem)] max-w-[260px] flex-col space-y-8 overflow-y-auto ${rightOverscroll}`}>{right}</div>
       </aside>
     </div>

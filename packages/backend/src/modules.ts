@@ -211,6 +211,11 @@ export interface ServerModule {
   schedules?: Scheduled[];
   /** What is wrong now, for the owner's alerts (operations/alerts.ts), after the engine's problems. */
   alerts?: (now: number) => Promise<Finding[]>;
+  /**
+   * Alerts that only wake the agent. A declared name covers that key and `name:<item>`.
+   * A row saved before the flag still closes without a message when the finding is already gone.
+   */
+  agentOnly?: readonly string[];
   /** Its share of the daily retention run (operations/retention.ts): what it deleted or aggregated. */
   retention?: (now: Date) => Promise<Record<string, unknown>>;
   on?: Partial<EngineHooks>;

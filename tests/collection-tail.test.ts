@@ -69,6 +69,25 @@ const cursor = async (id: string) => (await sql`SELECT cursor FROM sources WHERE
 const jobs = async (id: string) => (await sql`SELECT count(*)::int AS n FROM pgboss.job j JOIN articles a ON a.id=j.data->>'articleId' WHERE a.source_id=${id}`)[0]!.n as number;
 const revisions = async (id: string) => (await sql`SELECT count(*)::int AS n FROM article_revisions r JOIN articles a ON a.id=r.article_id WHERE a.source_id=${id}`)[0]!.n as number;
 
+test("a future entry behind a publication boundary is collected when due without a feed change", async (t) => {
+  const now = Date.now();
+  t.mock.timers.enable({ apis: ["Date"], now: now - 2 * 3600000 });
+  const rows = items("future-boundary", 1);
+  rows[0]!.date = new Date(Math.floor(now / 1000) * 1000 - 60000).toISOString();
+  const { id, listing } = await source("future-boundary", "rss", rows, {
+    publishedAfter: new Date(Date.now() - 86400000).toISOString(),
+  });
+  assert.equal((await collectSource(id)).created, 0, "an early listing must wait for its publication time");
+  t.mock.timers.tick(2 * 3600000);
+  assert.equal((await collectSource(id)).created, 1, "an unchanged feed must not freeze the deferred entry out");
+  assert.equal((await collectSource(id)).found, 0, "conditional requests resume after the entry is admitted");
+  assert.deepEqual(listing.requests.map(r => r.status), [200, 200, 304]);
+  assert.equal(await count(id), 1);
+  const [article] = await sql`SELECT published_at,backfill FROM articles WHERE source_id=${id}`;
+  assert.equal(article!.published_at.toISOString(), rows[0]!.date);
+  assert.equal(article!.backfill, false);
+});
+
 test("the 61st entry of a known feed is stored before its validator answers 304", async () => {
   const { id, listing } = await source("rss", "rss", items("rss", 61));
   const first = await collectSource(id);

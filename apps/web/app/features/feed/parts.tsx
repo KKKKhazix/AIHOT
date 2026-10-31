@@ -4,6 +4,7 @@ import type { FeedItemSummary, MediaView } from "@aihot/contracts/site";
 import { IconBookmark } from "../../components/icons";
 import { SourceAvatar } from "../../components/ui/SourceAvatar";
 import { Lightbox } from "../../components/ui/Lightbox";
+import { Picture } from "../../components/ui/Picture";
 import { toggleStar, useIsStarred } from "../../lib/local-state";
 
 /** The source's name, or, for X, avatar + display name + @handle. */
@@ -36,7 +37,7 @@ export function MediaThumbs({ media, className = "" }: { media: MediaView[]; cla
         const Wrapper = m.kind === "image" ? "button" : "span";
         return (
         <Wrapper key={m.url} {...(m.kind === "image" ? { type: "button" as const, "aria-label": `查看图片${m.alt ? `：${m.alt}` : ""}`, onClick: (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setIndex(images.findIndex((image) => image.src === (m.fullUrl ?? m.url))); } } : {})} className={`relative ${m.kind === "image" ? "z-10 cursor-zoom-in" : ""} shrink-0 overflow-hidden rounded-control border border-line-soft bg-bg-sunk ${shown.length === 1 ? "max-w-[240px]" : "w-[112px]"}`}>
-          <img src={m.poster ?? m.url} srcSet={m.srcSet} sizes={shown.length === 1 ? `${m.width && m.height ? Math.min(240, Math.ceil(112 * m.width / m.height)) : 240}px` : "112px"} width={m.width ?? undefined} height={m.height ?? undefined} alt={m.alt ?? ""} loading="lazy" decoding="async" className={`h-[112px] object-cover ${shown.length === 1 ? "w-auto max-w-[240px]" : "w-[112px]"}`} />
+          <Picture src={m.poster ?? m.url} srcSet={m.srcSet} sizes={shown.length === 1 ? `${m.width && m.height ? Math.min(240, Math.ceil(112 * m.width / m.height)) : 240}px` : "112px"} width={m.width ?? undefined} height={m.height ?? undefined} alt={m.alt ?? ""} loading="lazy" decoding="async" className={`h-[112px] object-cover ${shown.length === 1 ? "w-auto max-w-[240px]" : "w-[112px]"}`} />
           {m.kind === "video" && (
             <span className="absolute inset-0 grid place-items-center" aria-hidden="true">
               <span className="grid size-8 place-items-center rounded-full bg-black/55 text-white">
@@ -70,8 +71,8 @@ export function useStar(item: Starrable) {
   return { on, toggle, pulse };
 }
 
-/** Bookmark toggle kept in this browser (收藏): 26px, or sized by `size` or by `className`. */
-export function StarButton({ item, size, className = "size-[26px]" }: { item: Starrable; size?: number; className?: string }) {
+/** Bookmark toggle kept in this browser (收藏): 26px, or sized by `className`. */
+export function StarButton({ item, className = "size-[26px]" }: { item: Starrable; className?: string }) {
   const { on, toggle, pulse } = useStar(item);
   return (
     <button
@@ -84,11 +85,10 @@ export function StarButton({ item, size, className = "size-[26px]" }: { item: St
         e.stopPropagation();
         toggle();
       }}
-      style={size ? { width: size, height: size } : undefined}
       className={`relative z-10 inline-flex shrink-0 items-center justify-center rounded-control transition-colors duration-150 ${on ? "text-accent" : "text-ink-4 hover:bg-bg-sunk hover:text-ink-2"} ${className}`}
     >
       <span key={pulse} className={`flex ${pulse ? "anim-bump" : ""}`}>
-        <IconBookmark size={size ? Math.round(size * 0.6) : 16} filled={on} />
+        <IconBookmark size={16} filled={on} />
       </span>
     </button>
   );

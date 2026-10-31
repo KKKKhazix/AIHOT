@@ -4,10 +4,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 import { config } from "../config.ts";
 import { guardedFetch, type GuardedResponse } from "../lib/http-fetch.ts";
+import { AVIF_MODE_SUFFIX } from "@aihot/contracts/site";
 import { IMAGE_WIDTHS } from "./renditions.ts";
+import { luma, ssim } from "./similarity.ts";
 import { recordUpstream, upstreamAllowed } from "./upstream.ts";
 
 const CACHE_DIR = path.join(config.dataDir, "imgcache");
@@ -22,10 +24,29 @@ export interface PreparedImage {
   type: string;
   /** A GIF awaiting background conversion must not hide its replacement behind a multi-day cache. */
   pendingAnimation?: boolean;
+  /** The rendition standing in for an AVIF variant not prepared yet, under the same rule. */
+  pendingAvif?: boolean;
 }
 const inflight = new Map<string, Promise<PreparedImage>>();
 const originals = new Map<string, Promise<GuardedResponse>>();
 const failures = new Map<string, { until: number; error: unknown }>();
+
+/** The image's server answered, but not with the image. */
+class UpstreamStatus extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`upstream ${status}`);
+    this.status = status;
+  }
+}
+/**
+ * How long a failed image is kept failed, in seconds (here and at the CDN). A server that refuses it or no
+ * longer has it keeps doing so: production 10-20..10-28, the same images were refused for days and fetched
+ * ~1,400 times each at a minute apiece. A timeout, a 5xx or a dropped connection may be gone a minute later.
+ */
+export function failureSeconds(error: unknown): number {
+  return error instanceof UpstreamStatus && [401, 403, 404, 410].includes(error.status) ? 6 * 3600 : 60;
+}
 
 // Responsive candidates and a later lightbox can request the same source in successive turns.
 // Keep at most 32 MiB / 32 originals for one minute as well as sharing in-flight downloads.
@@ -67,10 +88,10 @@ function original(url: string): Promise<GuardedResponse> {
       rememberOriginal(url, res);
       return res;
     }).catch((error: unknown) => {
-      // A failed original is not refetched for a minute; this also coalesces failures across signed modes.
-      // Budget failures must be rechecked against the current minute instead of being cached.
+      // A failed original is not refetched while its failure is kept; this also coalesces failures across signed
+      // modes. Budget failures must be rechecked against the current minute instead of being cached.
       if (error instanceof ImageBudgetExceeded) throw error;
-      failures.set(url, { until: Date.now() + 60_000, error });
+      failures.set(url, { until: Date.now() + failureSeconds(error) * 1000, error });
       if (failures.size > 512) failures.delete(failures.keys().next().value!);
       throw error;
     }).finally(() => originals.delete(url));
@@ -86,7 +107,7 @@ async function fetchOriginal(url: string): Promise<GuardedResponse> {
     timeoutMs: 20_000, maxBytes: 15 * 1024 * 1024, headers: { accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
   });
   recordUpstream(res.body.length);
-  if (res.status !== 200) throw new Error(`upstream ${res.status}`);
+  if (res.status !== 200) throw new UpstreamStatus(res.status);
   return res;
 }
 
@@ -226,6 +247,63 @@ export async function convertAnimated(url: string, mode: string): Promise<number
   return body.length - webp.length;
 }
 
+/** Qualities tried for an AVIF variant, lowest first; above the last one it is rarely smaller than the rendition. */
+const AVIF_QUALITIES = [50, 60, 70];
+
+/**
+ * A rendition's AVIF variant once background preparation made one. Until then the rendition stands in
+ * (marked pending, so caches keep it a minute), and it stays for good when no AVIF was clearly smaller at
+ * the same sharpness, or for animations and vectors: a browser that chose the AVIF source always gets a
+ * picture, never an error.
+ */
+export async function produceAvif(url: string, mode: string): Promise<PreparedImage> {
+  const file = cacheFile(url, `${mode}${AVIF_MODE_SUFFIX}`);
+  const avif = await readFile(file).catch(() => null);
+  if (avif) return { body: avif, type: "image/avif" };
+  const image = await produceImage(url, mode);
+  if (image.pendingAnimation || (image.type !== "image/jpeg" && image.type !== "image/webp")) return image;
+  if (await readFile(`${file}.prepared`).then(() => true, () => false)) return image;
+  return { ...image, pendingAvif: true };
+}
+
+/**
+ * Prepares a rendition's AVIF variant (media.prepare; several encodes are too heavy for a request): from
+ * the original, at the lowest quality whose SSIM against the lossless resize reaches the rendition's own,
+ * kept only when at least a tenth smaller. Pictures with transparency keep their rendition. Returns the
+ * bytes saved; 0 when the rendition stays, which is recorded so the variant is not tried again.
+ */
+export async function convertAvif(url: string, mode: string): Promise<number> {
+  const file = cacheFile(url, `${mode}${AVIF_MODE_SUFFIX}`);
+  if (await readFile(file).then(() => true, () => false) || await readFile(`${file}.prepared`).then(() => true, () => false)) return 0;
+  const rendition = await produceImage(url, mode);
+  let avif: Buffer | null = null;
+  if (!rendition.pendingAnimation && (rendition.type === "image/jpeg" || rendition.type === "image/webp")) {
+    const res = await original(url);
+    const still = await stillRendition(res.body, res.headers.get("content-type") ?? "", mode, true);
+    if (!("kept" in still) && (await still.image.clone().stats()).isOpaque) avif = await sharpAvif(still.image, rendition.body);
+  }
+  await mkdir(path.dirname(file), { recursive: true });
+  if (!avif) {
+    await writeFile(`${file}.prepared`, "original");
+    return 0;
+  }
+  await saveImage(file, { body: avif, type: "image/avif" });
+  return rendition.body.length - avif.length;
+}
+
+async function sharpAvif(image: Sharp, rendition: Buffer): Promise<Buffer | null> {
+  const reference = await luma(image);
+  const target = ssim(reference, await luma(rendition));
+  if (target === null) return null;
+  for (const quality of AVIF_QUALITIES) {
+    const avif = await image.clone().avif({ quality, effort: 4 }).toBuffer();
+    // A higher quality only adds bytes.
+    if (avif.length > rendition.length * 0.9) return null;
+    if ((ssim(reference, await luma(avif)) ?? 0) >= target) return avif;
+  }
+  return null;
+}
+
 /** Deterministic output for a signed rendition: the request's Accept header never changes the bytes. */
 export function resizeImage(body: Buffer, upstreamType: string, mode: string): Promise<{ body: Buffer; type: string }> {
   return encodeImage(body, upstreamType, mode, true);
@@ -236,7 +314,10 @@ export function rasterImage(body: Buffer, upstreamType: string, mode: string): P
   return encodeImage(body, upstreamType, mode, false);
 }
 
-async function encodeImage(body: Buffer, upstreamType: string, mode: string, vectors: boolean): Promise<{ body: Buffer; type: string }> {
+/** A picture resized for its rendition and not yet encoded, or bytes that stay as they are (animations, compact vectors). */
+type Still = { kept: { body: Buffer; type: string } } | { image: Sharp; type: string; ico: boolean; avatar: boolean };
+
+async function stillRendition(body: Buffer, upstreamType: string, mode: string, vectors: boolean): Promise<Still> {
   const ico = decodeIco(body);
   const suppliedType = upstreamType.split(";")[0]!.trim().toLowerCase();
   // Google Storage serves some real WebP images as generic binary. Decode their metadata before
@@ -259,13 +340,20 @@ async function encodeImage(body: Buffer, upstreamType: string, mode: string, vec
   }
   // A large animation can be hundreds of frames: do not silently replace it with a still or decode
   // all its frames on an HTTP request. Keep frame timing, loop count and transparency unchanged.
-  if ((meta.pages ?? 1) > 1 || type === "image/gif") return { body, type };
+  if ((meta.pages ?? 1) > 1 || type === "image/gif") return { kept: { body, type } };
   // Small vectors are already compact and remain sharp at every zoom level. Rasterize oversized
   // SVGs (often screenshots embedded as base64) and avatars at their actual display rendition.
-  if (vectors && type === "image/svg+xml" && !avatar && (body.length <= SVG_PASSTHROUGH_MAX_BYTES || (meta.width !== undefined && meta.width < width))) return { body, type };
+  if (vectors && type === "image/svg+xml" && !avatar && (body.length <= SVG_PASSTHROUGH_MAX_BYTES || (meta.width !== undefined && meta.width < width))) return { kept: { body, type } };
   const density = type === "image/svg+xml" && meta.width ? Math.max(72, Math.min(300, Math.ceil(width / meta.width * 72))) : 72;
   let image = sharp(input, { ...raw, failOn: "none", density }).rotate();
   image = avatar ? image.resize(width, width, { fit: "cover" }) : image.resize({ width, withoutEnlargement: true });
+  return { image, type, ico: Boolean(ico), avatar };
+}
+
+async function encodeImage(body: Buffer, upstreamType: string, mode: string, vectors: boolean): Promise<{ body: Buffer; type: string }> {
+  const still = await stillRendition(body, upstreamType, mode, vectors);
+  if ("kept" in still) return still.kept;
+  const { image, type, ico, avatar } = still;
   // Screenshots and transparent PNGs benefit most from modern encoding. Already lossy JPEGs
   // measured larger at WebP 88, so retain their established encoder/quality instead of growing them.
   if (ico || type === "image/png" || type === "image/svg+xml") {

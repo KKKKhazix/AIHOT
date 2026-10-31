@@ -1,4 +1,4 @@
-// One report in a feed. Desktop (≥ 961px): a white card beside the time rail. Phones: a compact row with
+// One report in a feed. Desktop (≥ 941px): a white card beside the time rail. Phones: a compact row with
 // the time in the source line, the bookmark at hand, the reason in one line and duplicate reports
 // behind one button that opens a sheet. One markup, two presentations.
 import { memo } from "react";

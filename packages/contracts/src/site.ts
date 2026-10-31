@@ -20,6 +20,14 @@ export interface MediaView {
   srcSet?: string;
 }
 
+/** The image proxy's AVIF variant of a rendition: its mode with this suffix, under the rendition's own signature. */
+export const AVIF_MODE_SUFFIX = "-avif";
+
+/** A proxied srcset's candidates as their AVIF variants, for a <picture> source ahead of the img's own. */
+export function avifCandidates(srcSet: string): string {
+  return srcSet.replace(/([?&]mode=[a-z0-9-]+)(?=&)/g, `$1${AVIF_MODE_SUFFIX}`);
+}
+
 export interface XPostView {
   authorName: string;
   handle: string;
@@ -441,6 +449,8 @@ export interface Brand {
   monogram: string;
   /** Raster marks get a light backing plate in dark mode. */
   raster: boolean;
+  /** An app icon: its own tile, drawn edge to edge. */
+  fill?: boolean;
 }
 
 export interface TopicSummary extends TopicLink {

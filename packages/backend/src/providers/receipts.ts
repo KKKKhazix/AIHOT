@@ -207,19 +207,17 @@ async function stopUntil(tx: Db, key: string): Promise<number | null> {
   return Number.isFinite(until) && until > Date.now() ? until : null;
 }
 
-/** Record the stop an access refusal implies, and drop the ones that expired a day ago while here. */
+/** Record the stop an access refusal implies; refusedAt is on the database's clock, like the attempts' started_at. */
 async function stopForRefusal(tx: Db, key: string): Promise<void> {
-  const now = Date.now();
-  const until = new Date(now + PROVIDER_STOP_SECONDS * 1000).toISOString();
-  await tx`INSERT INTO settings (key, value, updated_by) VALUES (${key}, ${tx.json({ until, refusedAt: new Date(now).toISOString() })}, 'receipts')
+  const until = new Date(Date.now() + PROVIDER_STOP_SECONDS * 1000).toISOString();
+  await tx`INSERT INTO settings (key, value, updated_by) VALUES (${key}, jsonb_build_object('until', ${until}::text, 'refusedAt', now()), 'receipts')
            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`;
-  await tx`DELETE FROM settings WHERE key LIKE 'provider.stop.%'
-           AND coalesce((value->>'until')::timestamptz, 'epoch') < now() - interval '1 day'`;
 }
 
-/** A received answer proves access is back: the stop can go. */
-async function clearStop(tx: Db, key: string): Promise<void> {
-  await tx`DELETE FROM settings WHERE key = ${key}`;
+/** An answer to a call sent after the refusal proves access is back; one already in flight may have had the last of the quota. */
+async function clearStop(tx: Db, key: string, attemptId: number): Promise<void> {
+  await tx`DELETE FROM settings WHERE key = ${key}
+           AND coalesce((value->>'refusedAt')::timestamptz, 'epoch') < (SELECT started_at FROM receipt_attempts WHERE id = ${attemptId})`;
 }
 
 async function checkBudget(tx: Db, service: string, model?: string | null): Promise<void> {
@@ -341,7 +339,7 @@ export async function paidRequest(req: ReceiptRequest, call: () => Promise<CallO
         latency_ms = ${Math.round(performance.now() - started)}, finished_at = now()
       WHERE id = ${attemptId}`;
     // A real answer is the only proof that access is back; it releases a stop without waiting for it.
-    await clearStop(tx, providerStopKey(req.service, req.model));
+    await clearStop(tx, providerStopKey(req.service, req.model), attemptId);
   });
   return { receiptId, response: outcome.response, reused: false };
 }

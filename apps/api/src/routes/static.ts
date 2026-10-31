@@ -128,7 +128,8 @@ export function registerStatic(app: FastifyInstance) {
   // The site's public files (site/public/), placeholders filled in; one the site does not have is a 404.
   app.get("/robots.txt", (req, reply) => sendFile(req, reply, path.join(PUBLIC, "robots.txt"), { cacheControl: "public, max-age=3600", fill: true }));
   app.get("/.well-known/security.txt", (req, reply) => sendFile(req, reply, path.join(PUBLIC, ".well-known/security.txt"), { cacheControl: "public, max-age=86400", fill: true }));
-  app.get("/manifest.webmanifest", (req, reply) => sendFile(req, reply, path.join(PUBLIC, "manifest.webmanifest"), { cacheControl: "public, max-age=86400, stale-while-revalidate=604800", fill: true }));
+  // Cached as long as the icons it names: every page links it, so a day's lifetime was a request per reader a day.
+  app.get("/manifest.webmanifest", (req, reply) => sendFile(req, reply, path.join(PUBLIC, "manifest.webmanifest"), { cacheControl: ICON_CACHE, fill: true }));
   app.get("/openapi-v1.json", (req, reply) => sendFile(req, reply, path.join(PUBLIC, "openapi-v1.json"), { cacheControl: "public, max-age=300, must-revalidate", publicApi: true, fill: true }));
 
   // IndexNow proves the key by a file at the site root named after it (INDEXNOW_KEY).

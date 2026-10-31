@@ -104,7 +104,7 @@
 
 ## 5. 门槛与校准：`industry/selection.ts`
 
-两次评分之和 ≥ 2 × 门槛才够分（够分的还要过归组时的去重，见 [精选与校准](selection.md)）。默认门槛（T1 60、T1_5 65、T2 76）是 AIHOT 在 AI 领域校准出来的，换了行业和提示词，需要重新校准：
+两次评分之和 ≥ 2 × 门槛才够分（够分的还要过归组时的去重，见 [精选与校准](selection.md)）。默认门槛（T1 60、T1_5 65、T2 76）是 AIHOT 在 AI 领域校准出来的。`classes` 是抬高门槛的信源类别（示例是 AI 行业的“生态与基础设施”“评测榜单”，换行业时换成你的类别或删空），`browseFloor` 是浏览“全部动态”的最低分（默认 40）。换了行业和提示词，需要重新校准：
 
 1. 从你的信源里挑 100–200 条资料，自己标“该选 / 不该选”，存成 `.data/gold.jsonl`（格式见 [精选与校准](selection.md)，`industry/gold.example.jsonl` 有两条示例）。
 2. 运行 `node --env-file=.env scripts/eval-selection.ts --gold .data/gold.jsonl`，看准确率、查准率、查全率，和不同门槛下的结果。

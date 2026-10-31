@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { stopBoss } from "@aihot/backend/jobs/queue";
-import { collectSource } from "@aihot/backend/sources/collect";
+import { collectSource, enrichDetails, loadSource } from "@aihot/backend/sources/collect";
 import { previewSource, previewStoredSource } from "@aihot/backend/admin/sources";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 
@@ -241,20 +241,82 @@ test("an entry the detail page dated out of admission is read once, and the budg
   assert.equal(reads().length, Object.keys(dates).length + 2);
 });
 
-test("an RSS listing keeps its dated-out entries across a 304", async () => {
+test("an RSS listing keeps its dated-out entries across a 304 before their next date check", async () => {
   const id = `test-detail-dated-out-rss-${T}`;
   const mode = `rss-out-${T}`;
-  const sourceConfig = { feedUrl: `${base}/feed/${mode}`, publishedAfter: boundary, detail: { maxFetches: 10, publishedAtSelector: 'meta[name="original-publication"]' } };
+  // Future entries need another listing when due; older exclusions permit a 304 before their next check.
+  const sourceConfig = { feedUrl: `${base}/feed/${mode}`, publishedAfter: boundary, denyUrlPrefixes: [`${base}/${mode}/future`], detail: { maxFetches: 10, publishedAtSelector: 'meta[name="original-publication"]' } };
   await sql`INSERT INTO sources (id, name, kind, config, tier, participation_mode, cursor, next_fetch_at)
     VALUES (${id}, ${id}, 'rss', ${sql.json(sourceConfig)}, 'T1', 'editorial', ${sql.json({ initializedAt: new Date(now).toISOString() })}, '2100-01-01')`;
   const reads = () => articleReads.filter(path => path.startsWith(`/${mode}/`));
   feedWithFresh = false;
   assert.equal((await collectSource(id)).created, 0);
-  assert.equal(reads().length, Object.keys(dates).length - 1);
+  assert.equal(reads().length, Object.keys(dates).length - 2);
   assert.equal((await collectSource(id)).found, 0, "the unchanged feed answers 304");
   feedWithFresh = true;
   assert.equal((await collectSource(id)).created, 1);
-  assert.deepEqual(reads().slice(Object.keys(dates).length - 1), [`/${mode}/fresh`], "only the new entry is read");
+  assert.deepEqual(reads().slice(Object.keys(dates).length - 2), [`/${mode}/fresh`], "only the new entry is read");
+});
+
+// An undated listing cannot reveal a corrected date on the original page. A past exclusion must
+// expire, including when an RSS validator would otherwise keep answering 304 forever.
+for (const kind of ["web_list", "rss"] as const) test(`${kind} rechecks an excluded original date after a day`, async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now });
+  const id = `test-date-recheck-${kind}-${T}`;
+  const mode = `date-recheck-${kind}-${T}`;
+  const key = `corrected-${kind}`;
+  dates[key] = dates.ancient!;
+  const sourceConfig = {
+    ...(kind === "rss" ? { feedUrl: `${base}/feed/${mode}` } : {
+      url: `${base}/list/${mode}?keys=${key}`, itemSelector: "li", titleSelector: "a", linkSelector: "a",
+    }),
+    allowUrlPrefixes: [`${base}/${mode}/${key}`], publishedAfter: boundary,
+    detail: { maxFetches: 1, publishedAtSelector: 'meta[name="original-publication"]' },
+  };
+  await sql`INSERT INTO sources (id,name,kind,config,tier,cursor,next_fetch_at)
+    VALUES (${id},${id},${kind},${sql.json(sourceConfig)},'T1',${sql.json({ initializedAt: new Date(now).toISOString() })},'2100-01-01')`;
+  const reads = () => articleReads.filter(path => path === `/${mode}/${key}`).length;
+  try {
+    assert.equal((await collectSource(id)).created, 0);
+    dates[key] = dates.fresh!;
+    t.mock.timers.tick(12 * 3600_000);
+    assert.equal((await collectSource(id)).created, 0);
+    assert.equal(reads(), 1, "an unchanged listing reuses the recent date check");
+    t.mock.timers.tick(12 * 3600_000);
+    assert.equal((await collectSource(id)).created, 1, "the corrected original date becomes admissible");
+    assert.equal(reads(), 2);
+    const [row] = await sql`SELECT published_at FROM articles WHERE source_id=${id}`;
+    assert.equal(row!.published_at.toISOString(), dates.fresh);
+  } finally { delete dates[key]; }
+});
+
+test("an expired original date stays excluded while its detail read waits for the existing budget", async () => {
+  const id = `test-date-recheck-budget-${T}`;
+  const sourceConfig = { url: `${base}/list/recheck-budget`, itemSelector: "li", linkSelector: "a",
+    detail: { maxFetches: 1, publishedAtSelector: 'meta[name="original-publication"]' } };
+  await sql`INSERT INTO sources (id,name,kind,config,tier) VALUES (${id},${id},'web_list',${sql.json(sourceConfig)},'T1')`;
+  const source = (await loadSource(id))!;
+  const candidates = ["fresh", "old"].map(key => ({ title: key, url: `${base}/recheck-budget/${key}`,
+    identityKey: `url:${base}/recheck-budget/${key}`, publishedAt: null }));
+  const admits = (c: { publishedAt?: Date | null }) => !c.publishedAt || c.publishedAt >= cutoff;
+  const read = await enrichDetails(candidates, source, new Map(), { budget: 1, retries: {}, admits,
+    datedOut: Object.fromEntries(candidates.map(c => [c.identityKey, [null, dates.ancient!, now - 2 * 86400_000]])) });
+  assert.equal(read.pending, 1);
+  assert.deepEqual(candidates.filter(admits).map(c => c.title), ["fresh"], "waiting to recheck must not turn an excluded archive into undated new material");
+});
+
+test("a date recheck without a replacement date keeps the known archive excluded", async () => {
+  const id = `test-date-recheck-missing-${T}`;
+  const sourceConfig = { url: `${base}/list/recheck-missing`, itemSelector: "li", linkSelector: "a",
+    detail: { maxFetches: 1, publishedAtSelector: 'meta[name="original-publication"]' } };
+  await sql`INSERT INTO sources (id,name,kind,config,tier) VALUES (${id},${id},'web_list',${sql.json(sourceConfig)},'T1')`;
+  const source = (await loadSource(id))!;
+  const candidate = { title: "missing", url: `${base}/recheck-missing/missing`, identityKey: `url:${base}/recheck-missing/missing`, publishedAt: null };
+  const read = await enrichDetails([candidate], source, new Map(), { budget: 1, retries: {},
+    admits: c => !c.publishedAt || c.publishedAt >= cutoff,
+    datedOut: { [candidate.identityKey]: [null, dates.ancient!, now - 2 * 86400_000] } });
+  assert.equal(read.attempts, 1);
+  assert.equal(read.listed.get(candidate.identityKey)![1], dates.ancient, "a successful page without a date is not evidence to admit an excluded archive");
 });
 
 // Material another source collected takes nothing from this listing (only its own source revises it), so its

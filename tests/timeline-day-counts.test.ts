@@ -2,8 +2,9 @@ import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
-import { beijingDate, beijingMidnight } from "@aihot/contracts/time";
+import { beijingDate, beijingMidnight, monthDay } from "@aihot/contracts/time";
 import { countTimelineDays, loadTimeline } from "@aihot/backend/publication/timeline";
+import { monthDay as pageMonthDay, monthDayTime } from "../apps/web/app/lib/format.ts";
 
 after(closeDb);
 const reference = (grouped: readonly { anchor: number }[], days: ReadonlySet<string>) => {
@@ -28,6 +29,27 @@ test("day counts retain exact Beijing midnight, leap-day and year boundaries", (
   assert.deepEqual(countTimelineDays(grouped, new Set(Object.keys(expected))), expected);
   assert.deepEqual(countTimelineDays(grouped, new Set()), {});
   assert.deepEqual(countTimelineDays(grouped, new Set(["1900-01-01"])), {});
+});
+
+test("day headers name the year only for a day outside today's year", () => {
+  assert.equal(monthDay("2026-10-05", "2026-10-19"), "10月5日");
+  assert.equal(monthDay("2019-02-19", "2026-10-19"), "2019年2月19日");
+  assert.equal(monthDay("2025-12-31", "2026-01-01"), "2025年12月31日");
+  assert.equal(monthDay("2019-02-19"), "2月19日");
+  // The pages' dates (a story's report days, a topic's "更新" line, "月日 时:分") do the same, by Beijing's year.
+  const october = Date.parse("2026-10-05T09:00:00+08:00");
+  assert.equal(pageMonthDay("2026-10-05", october), "10月5日");
+  assert.equal(pageMonthDay("2026-01-01", october), "1月1日");
+  assert.equal(pageMonthDay("2019-02-19", october), "2019年2月19日");
+  // The year turns at Beijing midnight: not yet at 23:30 on 31 December, and 00:30 on 1 January is still 31 December in UTC.
+  const lastHalfHour = Date.parse("2026-12-31T23:30:00+08:00");
+  assert.equal(pageMonthDay("2026-12-31", lastHalfHour), "12月31日");
+  assert.equal(pageMonthDay("2027-01-01", lastHalfHour), "2027年1月1日");
+  const firstHalfHour = Date.parse("2027-01-01T00:30:00+08:00");
+  assert.equal(new Date(firstHalfHour).getUTCFullYear(), 2026);
+  assert.equal(pageMonthDay("2026-12-31", firstHalfHour), "2026年12月31日");
+  assert.equal(pageMonthDay("2027-01-01", firstHalfHour), "1月1日");
+  assert.equal(monthDayTime("2019-02-19T04:00:00.000Z"), "2019年2月19日 12:00");
 });
 
 test("deterministic varied timelines match the full-scan reference", () => {

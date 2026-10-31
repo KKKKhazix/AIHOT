@@ -2,14 +2,15 @@
 // already cached in full RSS and readers keep working: /api/img-proxy?u=&mode=&exp=&sig=
 // sig = hex(HMAC-SHA256(IMG_PROXY_SIGN_SECRET, `${u}|${mode}|${exp}`)), sent as its first 16 hex
 // digits (64 bits): the random digits cannot be compressed, and the full 64 made up about a tenth
-// of a compressed list page. A full-length signature from an older URL is still accepted.
+// of a compressed list page. A full-length signature from an older URL is still accepted. A mode with
+// the AVIF suffix (card-avif) is that rendition's AVIF variant and carries the rendition's signature.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import * as cheerio from "cheerio";
 import { config, credential } from "../config.ts";
 import { normalizeVideos } from "../content/video.ts";
 import { isNonArticleImage } from "../lib/image-url.ts";
-
-import { IMAGE_WIDTHS, RESPONSIVE_MODES, type ProxyMode, type ResponsiveImageKind } from "./renditions.ts";
+import { AVIF_MODE_SUFFIX, avifCandidates } from "@aihot/contracts/site";
+import { AVIF_MODES, IMAGE_WIDTHS, RESPONSIVE_MODES, type ProxyMode, type ResponsiveImageKind } from "./renditions.ts";
 export type { ProxyMode } from "./renditions.ts";
 
 // A URL keeps its expiry for a whole day, so the edge and browsers can reuse one copy of an image all
@@ -54,7 +55,7 @@ export function proxiedImageSet(url: string | null | undefined, kind: Responsive
   return RESPONSIVE_MODES[kind].map((mode) => `${proxiedImage(url, mode, absolute, nowMs, lifetimeSeconds)} ${IMAGE_WIDTHS[mode]}w`).join(", ");
 }
 
-export type VerifyResult = { ok: true; url: string; mode: string } | { ok: false; reason: "missing" | "expired" | "bad-signature" | "bad-url" };
+export type VerifyResult = { ok: true; url: string; mode: string; avif: boolean } | { ok: false; reason: "missing" | "expired" | "bad-signature" | "bad-url" };
 
 export function verifyProxyRequest(params: { u?: string; mode?: string; exp?: string; sig?: string }, nowMs = Date.now()): VerifyResult {
   const { u, mode, exp, sig } = params;
@@ -64,10 +65,13 @@ export function verifyProxyRequest(params: { u?: string; mode?: string; exp?: st
   if (!/^https?:\/\//i.test(u)) return { ok: false, reason: "bad-url" };
   // Older article pages signed body images without a mode (as "default"); those still in open tabs and
   // caches keep loading, as full images, until their signature expires.
+  const avif = mode?.endsWith(AVIF_MODE_SUFFIX) ?? false;
+  const rendition = avif ? mode!.slice(0, -AVIF_MODE_SUFFIX.length) : mode;
+  if (avif && !(AVIF_MODES as readonly string[]).includes(rendition!)) return { ok: false, reason: "bad-signature" };
   const given = Buffer.from(new RegExp(`^(?:[0-9a-f]{${SIG_HEX}}|[0-9a-f]{64})$`, "i").test(sig) ? sig : "", "hex");
-  const expected = Buffer.from(signature(u, mode ?? "default", exp), "hex").subarray(0, given.length);
+  const expected = Buffer.from(signature(u, rendition ?? "default", exp), "hex").subarray(0, given.length);
   if (given.length === 0 || !timingSafeEqual(given, expected)) return { ok: false, reason: "bad-signature" };
-  return { ok: true, url: u, mode: mode ?? "full" };
+  return { ok: true, url: u, mode: rendition ?? "full", avif };
 }
 
 /**
@@ -77,7 +81,7 @@ export function verifyProxyRequest(params: { u?: string; mode?: string; exp?: st
 export function proxyBodyImages(html: string, absolute = false, lifetimeSeconds = LIFETIME_SECONDS): string {
   const now = Date.now();
   const rewritten = html
-    .replace(/<img\b([^>]*)>/gi, (tag: string, attrs: string) => {
+    .replace(/<img\b([^>]*)>/gi, (tag: string, attrs: string, at: number, whole: string) => {
       const src = attrs.match(/\ssrc="([^"]+)"/i);
       if (!src) return tag;
       if (isNonArticleImage(src[1]!, attrs.match(/\bwidth="([^"]+)"/i)?.[1], attrs.match(/\bheight="([^"]+)"/i)?.[1])) return "";
@@ -90,9 +94,15 @@ export function proxyBodyImages(html: string, absolute = false, lifetimeSeconds 
       const candidates = !absolute && width >= IMAGE_WIDTHS.thumb ? proxiedImageSet(decoded, "body", false, now, lifetimeSeconds) : null;
       // `sizes=auto` adds size containment in Chrome: stale publisher width/height metadata then
       // overrides the loaded image's real ratio. Let intrinsic dimensions win after loading.
-      const responsive = candidates ? ` srcset="${candidates.replace(/&/g, "&amp;")}" sizes="(min-width: 1536px) 760px, (min-width: 1024px) calc(100vw - 524px), (min-width: 640px) 608px, calc(100vw - 32px)"` : "";
+      const sizes = ' sizes="(min-width: 1536px) 760px, (min-width: 1024px) calc(100vw - 524px), (min-width: 640px) 608px, calc(100vw - 32px)"';
+      const responsive = candidates ? ` srcset="${candidates.replace(/&/g, "&amp;")}"${sizes}` : "";
       const source = proxied ? ` src="${proxied.replace(/&/g, "&amp;")}"${responsive} loading="lazy" decoding="async"` : "";
-      return `<img${attrs.replace(src[0], source)}>`;
+      const img = `<img${attrs.replace(src[0], source)}>`;
+      if (!candidates || !proxied) return img;
+      // Browsers without AVIF skip the source and load the img's own candidates. A publisher's own
+      // picture (cleaning keeps it and drops its sources) takes the source: pictures do not nest.
+      const avif = `<source type="image/avif" srcset="${avifCandidates(candidates).replace(/&/g, "&amp;")}"${sizes}>`;
+      return /<picture\b[^>]*>\s*$/i.test(whole.slice(Math.max(0, at - 200), at)) ? `${avif}${img}` : `<picture class="contents">${avif}${img}</picture>`;
     })
     .replace(/<video\b([^>]*?)\sposter="([^"]+)"/gi, (_m, pre: string, src: string) => {
       const proxied = proxiedImage(src.replace(/&amp;/g, "&"), "thumb", absolute, now, lifetimeSeconds);

@@ -215,6 +215,7 @@ http.createServer((req, res) => {
 ## 分级、参与方式与全文
 
 - **分级** `tier`：`T1` 官方一手（官网、官方博客、机构）、`T1_5` 官方账号与准官方创作者、`T2` 媒体与个人、`EXCLUDE_MP` 不参与精选。入选门槛按分级不同（`industry/selection.ts`）。
+- **信源类别**（可选）：日常内容主要写给开发者或业内的官方信源，可以在后台“信源”页选一个类别（`industry/selection.ts` 的 `classes`），入选门槛抬到不低于类别的数，见 [精选与校准](selection.md#门槛industryselectionts)。`industry/sources.json` 不带这一项，导入后在后台设。
 - **参与方式** `participation_mode`：`editorial` 进精选和全部动态；`hot_signal` 不单独展示，只作为“大家在讨论什么”的热度证据；`isolated` 不进任何公开页面。
 - **一手**：只有 `T1` 算一手，不单独设置。同一条新闻有几篇报道时，代表报道优先选一手的，事件页也优先展示一手报道。
 - **发布方**（可选，写在 `config` 里）：

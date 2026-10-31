@@ -24,7 +24,7 @@ import { ActionsSheet, ReaderToolbar, type ActionRow } from "../features/item/Re
 import { OutlineSheet } from "../components/ui/OutlineSheet";
 import { scrollToAnchor } from "../lib/motion";
 import { takePreview } from "../features/item/preview";
-import { IconArrowLeft, IconCopy, IconDownload, IconExternal, IconImage, IconMenu, IconMore, IconShare } from "../components/icons";
+import { IconArrowLeft, IconCopy, IconDownload, IconExternal, IconImage, IconList, IconMenu, IconMore, IconShare } from "../components/icons";
 import { BarButton, PhoneBar } from "../components/shell/PhoneBar";
 import { isPhone, type Screen } from "../components/shell/screens";
 
@@ -330,7 +330,7 @@ function ItemView({ item }: { item: SiteItemDetail }) {
   };
   // In the left rail (a flex column) it keeps its own height and width.
   const backButton = (
-    <button type="button" onClick={back} className="-ml-1.5 inline-flex h-8 shrink-0 items-center gap-1.5 self-start rounded-full px-1.5 text-[13px] text-ink-3 transition-colors hover:text-ink">
+    <button type="button" onClick={back} className="-ml-1.5 inline-flex h-8 shrink-0 items-center gap-1.5 self-start rounded-full px-1.5 text-[13px] text-ink-3 transition-colors hover:text-ink touch:h-11">
       <IconArrowLeft size={16} /> 返回
     </button>
   );
@@ -363,18 +363,21 @@ function ItemView({ item }: { item: SiteItemDetail }) {
         : { key: "markdown", label: "导出 Markdown", icon: <IconDownload size={20} />, href: `/items/${item.id}/markdown`, download: true }]
       : []),
   ];
+  const originalLink = (className: string) => (
+    <a
+      href={item.links.original}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full border border-line-strong bg-surface px-3.5 text-[12.5px] font-medium text-ink-2 transition-colors hover:border-ink-4 hover:text-ink ${className}`}
+    >
+      {originalLabel} <IconExternal size={13} />
+    </a>
+  );
   // Desktop actions head the right rail, one row as tall as 返回 at the head of the left one.
   const actions = (
     <div className="flex items-center gap-1">
-      <a
-        href={item.links.original}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full border border-line-strong bg-surface px-3.5 text-[12.5px] font-medium text-ink-2 transition-colors hover:border-ink-4 hover:text-ink"
-      >
-        {originalLabel} <IconExternal size={13} />
-      </a>
-      <StarButton item={item} size={32} />
+      {originalLink("flex-1 touch:h-11")}
+      <StarButton item={item} className="size-8 touch:size-11" />
       {moreMenu}
     </div>
   );
@@ -470,8 +473,21 @@ function ItemView({ item }: { item: SiteItemDetail }) {
           </>
         }
       >
-        {/* Between lg and 2xl the left rail is hidden: 返回 stays at the top while reading, as on the original site. */}
-        <div className="sticky top-0 z-20 -mx-2 hidden bg-bg/95 px-2 py-1.5 backdrop-blur lg:block 2xl:hidden">{backButton}</div>
+        {/* Between lg and 2xl the left rail is hidden: 返回 stays at the top while reading, as on the original site.
+            Below side the right rail is hidden too, and its actions and the outline join 返回. */}
+        <div className="sticky top-0 z-20 -mx-2 hidden items-center justify-between gap-3 bg-bg/95 px-2 py-1.5 backdrop-blur lg:flex 2xl:hidden">
+          {backButton}
+          <div className="flex items-center gap-1 side:hidden">
+            {showOutline && (
+              <button type="button" onClick={() => setOutlineOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-medium text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink touch:h-11">
+                <IconList size={15} /> 目录
+              </button>
+            )}
+            {originalLink("touch:h-11")}
+            <StarButton item={item} className="size-8 touch:size-11" />
+            {moreMenu}
+          </div>
+        </div>
         <article className="pb-6 pt-3 lg:pt-2 2xl:pt-1">
           <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-ink-3 2xl:hidden ${isX ? "" : "mb-3"}`}>
             <span className="font-semibold text-ink-2">{isX ? item.x!.authorName : item.source.name}</span>
@@ -482,12 +498,12 @@ function ItemView({ item }: { item: SiteItemDetail }) {
             <time dateTime={shownAt} className="mono">{fullDateTime(shownAt)}</time>
             <span suppressHydrationWarning>· {relativeTime(shownAt)}</span>
             {item.selected && (
-              <span className="ml-1 lg:hidden">
+              <span className="ml-1 side:hidden">
                 {item.sameEvent ? <SameEventBadge /> : <SelectedBadge />}
               </span>
             )}
             {shownScore(item.score) !== null && (
-              <span className="ml-1 lg:hidden">
+              <span className="ml-1 side:hidden">
                 <ScoreLabel score={item.score} />
               </span>
             )}
@@ -503,7 +519,7 @@ function ItemView({ item }: { item: SiteItemDetail }) {
           )}
 
           {item.reason && !summaryOnly && (
-            <section className="mt-6 border-t border-line pt-4 lg:hidden">
+            <section className="mt-6 border-t border-line pt-4 side:hidden">
               <div className="mb-1 text-[12px] font-semibold text-ink-3">{ITEM_COPY.reasonLabel}</div>
               <p className="text-[15px] leading-[1.75] text-ink-2">{item.reason}</p>
             </section>
@@ -563,7 +579,7 @@ function ItemView({ item }: { item: SiteItemDetail }) {
           </p>
 
           {(item.topics.length > 0 || item.tags.length > 0) && (
-            <div className="mt-4 flex flex-wrap gap-1.5 lg:hidden">
+            <div className="mt-4 flex flex-wrap gap-1.5 side:hidden">
               {item.topics.map((t) => (
                 <Link viewTransition key={t.slug} to={`/topics/${t.slug}`} className="chip">
                   {t.name}

@@ -20,8 +20,11 @@ const { xView } = await import("@aihot/backend/publication/items");
 
 let imageHits = 0;
 let failureHits = 0;
+let refusalHits = 0;
 let animationHits = 0;
 const png = await sharp({ create: { width: 800, height: 400, channels: 3, background: "#176b75" } }).png().toBuffer();
+// A photo-like JPEG (gradients and soft shapes) that AVIF encodes in far fewer bytes at the same sharpness.
+const photo = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d3557"/><stop offset="0.5" stop-color="#e9c46a"/><stop offset="1" stop-color="#e76f51"/></linearGradient><radialGradient id="r"><stop offset="0" stop-color="#fff" stop-opacity="0.9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><rect width="1600" height="900" fill="url(#g)"/><circle cx="480" cy="360" r="260" fill="url(#r)"/><circle cx="1180" cy="560" r="180" fill="#2a9d8f" opacity="0.7"/><rect x="760" y="140" width="320" height="200" rx="40" fill="#264653" opacity="0.6"/></svg>`)).jpeg({ quality: 95 }).toBuffer();
 // Ten noisy 160×120 frames: a GIF that animated WebP clearly beats.
 const frames = await sharp({ create: { width: 160, height: 1200, channels: 3, background: "#808080", noise: { type: "gaussian", mean: 128, sigma: 40 } } }).raw().toBuffer();
 const animatedGif = await sharp(frames, { raw: { width: 160, height: 1200, channels: 3, pageHeight: 120 } }).gif({ loop: 0, delay: Array(10).fill(90) }).toBuffer();
@@ -37,12 +40,15 @@ for (let at = overBudgetGif.indexOf(descriptor); at !== -1; at = overBudgetGif.i
 const server = createServer(async (req, res) => {
   if (req.url === "/anim.gif") { animationHits++; res.writeHead(200, { "content-type": "image/gif" }); return res.end(animatedGif); }
   if (req.url === "/tiny.gif") { res.writeHead(200, { "content-type": "image/gif" }); return res.end(tinyGif); }
+  if (req.url === "/photo.jpg") { res.writeHead(200, { "content-type": "image/jpeg" }); return res.end(photo); }
   if (req.url === "/over-budget.gif") { res.writeHead(200, { "content-type": "image/gif" }); return res.end(overBudgetGif); }
   if (req.url === "/binary-image") { res.writeHead(200, { "content-type": "application/octet-stream" }); return res.end(png); }
   if (req.url === "/binary-alias") { res.writeHead(200, { "content-type": "binary/octet-stream" }); return res.end(png); }
   if (req.url === "/binary-alias-error") { res.writeHead(200, { "content-type": "binary/octet-stream" }); return res.end("<html>Not an image</html>"); }
   if (req.url === "/binary-error") { res.writeHead(200, { "content-type": "application/octet-stream" }); return res.end("<html>Image not found</html>"); }
   if (req.url === "/fail") { failureHits++; res.writeHead(502); return res.end(); }
+  if (req.url === "/gone") { refusalHits++; res.writeHead(404); return res.end(); }
+  if (req.url === "/refused") { refusalHits++; res.writeHead(403); return res.end(); }
   imageHits++;
   await new Promise((resolve) => setTimeout(resolve, 60));
   res.writeHead(200, { "content-type": "image/png" });
@@ -295,7 +301,7 @@ test("image validators save unchanged bytes only after signature verification", 
   }
 });
 
-test("image failures are cached for at most a minute and never beyond the signature", async (t) => {
+test("an image server's own errors are cached for at most a minute and never beyond the signature", async (t) => {
   const { default: Fastify } = await import("fastify");
   const { registerMedia } = await import("../apps/api/src/routes/media.ts");
   const { signature } = await import("@aihot/backend/media/imgproxy");
@@ -320,6 +326,33 @@ test("image failures are cached for at most a minute and never beyond the signat
       assert.equal(failed.headers.etag, undefined);
     }
   } finally {
+    await app.close();
+  }
+});
+
+// 10-20..10-28 three images openai.com refused (403) were fetched about 1,400 times each and missing goodfire.com
+// ones 4,352 times: a minute's failure is asked for again by every edge node, every minute readers open the page.
+test("an image its server refuses or no longer has is not asked for again for hours", async (t) => {
+  const { default: Fastify } = await import("fastify");
+  const { registerMedia } = await import("../apps/api/src/routes/media.ts");
+  const { signature } = await import("@aihot/backend/media/imgproxy");
+  const app = Fastify();
+  registerMedia(app);
+  try {
+    for (const url of [`${base}/gone`, `${base}/refused`]) {
+      const exp = String(Math.floor(Date.now() / 1000) + 86400);
+      const request = `/api/img-proxy?${new URLSearchParams({ u: url, mode: "card", exp, sig: signature(url, "card", exp) })}`;
+      const hits = refusalHits;
+      const failed = await app.inject({ url: request });
+      assert.equal(failed.statusCode, 502);
+      assert.match(String(failed.headers["cache-control"]), /(?:^|[, ])max-age=21600, s-maxage=21600$/);
+      t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 2 * 3600_000 });
+      assert.equal((await app.inject({ url: request })).statusCode, 502);
+      t.mock.timers.reset();
+      assert.equal(refusalHits, hits + 1, `${url} is fetched once within the hours its failure is kept`);
+    }
+  } finally {
+    t.mock.timers.reset();
     await app.close();
   }
 });
@@ -451,4 +484,89 @@ test("video pages mislabeled as images are excluded across ingestion and public 
     assert.match(decodeURIComponent(html), /i\.ytimg\.com\/vi\/example\/hqdefault\.jpg/);
   }
   assert.doesNotMatch(proxyBodyImages(`<video src="https://example.org/video.mp4" poster="${pages[1]}"></video>`), /poster=/);
+});
+
+// Failure modes of the AVIF variant: a browser that picked the AVIF source getting a broken image (a
+// <picture> does not fall back to the img when its source fails), an AVIF less sharp than the image it
+// replaces or not worth the switch, a variant usable without its rendition's signature, animations
+// losing their own preparation, and AVIF reaching RSS readers or images without a responsive set.
+test("an AVIF variant is signed as its rendition and serves that rendition until a sharper-or-equal, smaller AVIF is prepared", async () => {
+  const { default: Fastify } = await import("fastify");
+  const { registerMedia } = await import("../apps/api/src/routes/media.ts");
+  const { signature } = await import("@aihot/backend/media/imgproxy");
+  const { convertAvif } = await import("@aihot/backend/media/images");
+  const { QUEUES } = await import("@aihot/backend/jobs/queue");
+  const { sql } = await import("@aihot/backend/db");
+  const app = Fastify();
+  registerMedia(app);
+  const url = `${base}/photo.jpg`;
+  const exp = String(Math.ceil(Date.now() / 1000) + 3600);
+  const sig = signature(url, "thumb", exp);
+  const variant = `/api/img-proxy?${new URLSearchParams({ u: url, mode: "thumb-avif", exp, sig })}`;
+  assert.equal((await app.inject({ url: `/api/img-proxy?${new URLSearchParams({ u: url, mode: "card-avif", exp, sig })}` })).statusCode, 403);
+  assert.equal((await app.inject({ url: `/api/img-proxy?${new URLSearchParams({ u: url, mode: "avatar-avif", exp, sig: signature(url, "avatar", exp) })}` })).statusCode, 403,
+    "only the renditions the pages offer as AVIF have a variant");
+  const rendition = await app.inject({ url: `/api/img-proxy?${new URLSearchParams({ u: url, mode: "thumb", exp, sig })}` });
+  assert.equal(rendition.headers["content-type"], "image/jpeg");
+  const waiting = await app.inject({ url: variant });
+  assert.equal(waiting.statusCode, 200);
+  assert.equal(waiting.headers["content-type"], "image/jpeg");
+  assert.deepEqual(waiting.rawPayload, rendition.rawPayload);
+  assert.match(String(waiting.headers["cache-control"]), /max-age=60, s-maxage=60/);
+  const queued = await sql<{ data: Record<string, string> }[]>`SELECT data FROM pgboss.job WHERE name = ${QUEUES.prepareMedia} AND state = 'created'`;
+  assert.deepEqual(queued.map((j) => j.data).filter((d) => d.url === url), [{ url, mode: "thumb", format: "avif" }]);
+
+  assert.ok(await convertAvif(url, "thumb") > 0);
+  const prepared = await app.inject({ url: variant });
+  assert.equal(prepared.headers["content-type"], "image/avif");
+  assert.ok(prepared.rawPayload.length < rendition.rawPayload.length * 0.9);
+  assert.doesNotMatch(String(prepared.headers["cache-control"]), /max-age=60,/);
+  assert.notEqual(prepared.headers.etag, waiting.headers.etag);
+  const [avif, jpeg] = await Promise.all([sharp(prepared.rawPayload).metadata(), sharp(rendition.rawPayload).metadata()]);
+  assert.deepEqual([avif.width, avif.height], [jpeg.width, jpeg.height]);
+  assert.equal(await convertAvif(url, "thumb"), 0, "a prepared variant is not encoded again");
+
+  // A flat image is already a few bytes as WebP: the variant keeps it, for good, without queueing again.
+  const flat = `${base}/flat-image`;
+  const flatVariant = `/api/img-proxy?${new URLSearchParams({ u: flat, mode: "card-avif", exp, sig: signature(flat, "card", exp) })}`;
+  assert.equal(await convertAvif(flat, "card"), 0);
+  const kept = await app.inject({ url: flatVariant });
+  assert.equal(kept.headers["content-type"], "image/webp");
+  assert.doesNotMatch(String(kept.headers["cache-control"]), /max-age=60,/);
+  const requeued = await sql`SELECT 1 FROM pgboss.job WHERE name = ${QUEUES.prepareMedia} AND state = 'created' AND data->>'url' = ${flat}`;
+  assert.equal(requeued.length, 0);
+
+  // An animation's variant is the animation, prepared the way animations are.
+  const gif = `${base}/tiny.gif`;
+  const gifVariant = await app.inject({ url: `/api/img-proxy?${new URLSearchParams({ u: gif, mode: "thumb-avif", exp, sig: signature(gif, "thumb", exp) })}` });
+  assert.deepEqual(gifVariant.rawPayload, tinyGif);
+  assert.equal(await convertAvif(gif, "thumb"), 0);
+  await app.close();
+});
+
+test("web body images offer their responsive set as AVIF variants first; RSS and images without a set are unchanged", async () => {
+  const { proxyBodyImages, verifyProxyRequest } = await import("@aihot/backend/media/imgproxy");
+  const { proxiedRenditions } = await import("@aihot/backend/media/prepare");
+  const { avifCandidates } = await import("@aihot/contracts/site");
+  const html = '<p><img src="https://example.org/wide.png" width="1200" height="600" alt="图"></p>';
+  const web = proxyBodyImages(html);
+  const picture = web.match(/<picture\b[^>]*><source type="image\/avif" ([^>]+)>(<img\b[^>]+>)<\/picture>/);
+  assert.ok(picture, web);
+  const attr = (tag: string, name: string) => tag.match(new RegExp(`\\b${name}="([^"]+)"`))?.[1]?.replaceAll("&amp;", "&");
+  const imgSet = attr(picture[2]!, "srcset")!;
+  assert.equal(attr(picture[1]!, "srcset"), avifCandidates(imgSet));
+  assert.equal(attr(picture[1]!, "sizes"), attr(picture[2]!, "sizes"));
+  for (const candidate of avifCandidates(imgSet).split(", ")) {
+    const query = Object.fromEntries(new URL(candidate.split(" ")[0]!, "http://localhost").searchParams);
+    assert.match(query.mode!, /-avif$/);
+    assert.equal(verifyProxyRequest(query).ok, true);
+  }
+  // Preparing a new item's images reads these bodies: the variants are made from their renditions, never
+  // encoded as renditions of their own (that wrote 1600 px JPEGs where the AVIF belongs).
+  assert.deepEqual(proxiedRenditions([{ html: web }]).map((r) => r.mode).sort(), ["full", "image-1200", "thumb"]);
+  assert.doesNotMatch(proxyBodyImages(html, true), /<picture|<source/);
+  assert.doesNotMatch(proxyBodyImages('<img src="https://example.org/small.png" width="160" height="80">'), /<picture|<source/);
+  // A publisher's own picture (cleaning keeps it and drops its sources) takes the source; pictures do not nest.
+  const publisher = proxyBodyImages('<picture><img src="https://example.org/wide.png" width="1200" height="600"></picture>');
+  assert.match(publisher, /^<picture><source type="image\/avif" [^>]+><img\b[^>]+><\/picture>$/);
 });

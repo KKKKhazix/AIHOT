@@ -1,5 +1,5 @@
-// Moving between reports: the archive column on desktop; on phones the kind switch in the bar
-// (ReportLayout) and recent-issue chips under it.
+// Moving between reports: the archive column on wide desktops; on phones the kind switch in the bar
+// (ReportLayout) and recent-issue chips under it, which narrower desktops show above the paper.
 import { IntentLink } from "../../components/ui/IntentLink";
 import { useEffect, useState } from "react";
 import { REPORT_NAMES, type ReportNavigationEntry, type ReportNavigationResponse, type ReportKind } from "@aihot/contracts/site";
@@ -7,13 +7,16 @@ import { PillTabs } from "../../components/ui/Tabs";
 import { IconChevronRight } from "../../components/icons";
 import { KINDS, KIND_PATH, archiveGroups, archiveMark, chipLabel, reportPath } from "./format";
 
-/** 日报 / 周报 / 月报 as the site's pill switch: spread across the archive column, or compact in the phone bar (opening at the top). */
-export function KindSwitch({ kind, phone = false }: { kind: ReportKind; phone?: boolean }) {
+/**
+ * 日报 / 周报 / 月报 as the site's pill switch: spread across the archive column, or compact in the phone bar
+ * (opening at the top). Every place keeps its own layoutId: all of them stay mounted, hidden by width.
+ */
+export function KindSwitch({ kind, phone = false, layoutId = phone ? "report-kind-phone" : "report-kind" }: { kind: ReportKind; phone?: boolean; layoutId?: string }) {
   return (
     <PillTabs
       fill={!phone}
       size={phone ? "sm" : "md"}
-      layoutId={phone ? "report-kind-phone" : "report-kind"}
+      layoutId={layoutId}
       label="切换日报、周报、月报"
       active={kind}
       items={KINDS.map((k) => ({ key: k, label: REPORT_NAMES[k], to: KIND_PATH[k], resetScroll: phone, prefetchOnPress: true }))}
@@ -21,12 +24,12 @@ export function KindSwitch({ kind, phone = false }: { kind: ReportKind; phone?: 
   );
 }
 
-/** Desktop archive column: every issue of this kind, grouped, the current one highlighted. */
+/** Wide desktop archive column: every issue of this kind, grouped, the current one highlighted. */
 export function ReportArchive({ kind, index, current }: { kind: ReportKind; index: ReportNavigationEntry[]; current: string | null }) {
   const groups = archiveGroups(kind, index);
   const openId = groups.find((g) => g.entries.some((e) => e.key === current))?.id ?? groups[0]?.id;
   return (
-    <aside className="sticky top-0 hidden h-dvh w-[280px] shrink-0 flex-col border-r border-line bg-[color-mix(in_srgb,var(--sidebar)_50%,var(--surface))] pl-5 pr-3 lg:flex dark:bg-[color-mix(in_srgb,var(--sidebar)_50%,var(--bg))]">
+    <aside className="sticky top-0 hidden h-dvh w-[280px] shrink-0 flex-col border-r border-line bg-[color-mix(in_srgb,var(--sidebar)_50%,var(--surface))] pl-5 pr-3 side:flex dark:bg-[color-mix(in_srgb,var(--sidebar)_50%,var(--bg))]">
       <div className="pb-4 pt-8">
         <KindSwitch kind={kind} />
       </div>
@@ -97,14 +100,14 @@ function ArchiveGroup({ g, kind, current, initiallyOpen }: {
   );
 }
 
-/** Phones, under the bar: the three latest issues and a way further back. */
+/** Phones under the bar, narrow desktops above the paper: the three latest issues and a way further back. */
 export function ReportPhoneNav({ kind, index, current, today }: { kind: ReportKind; index: ReportNavigationEntry[]; current: string | null; today: string }) {
   const recent = index.slice(0, 3);
   const earlier = kind === "daily" ? "/daily/archive" : "#report-history";
   const chip = "inline-flex h-11 shrink-0 items-center rounded-full border px-4 text-[13px] transition-colors";
   if (recent.length === 0) return null;
   return (
-    <nav aria-label={`最近的${REPORT_NAMES[kind]}`} className="scrollbar-none bleed flex gap-2 overflow-x-auto pb-1 pt-1.5 lg:hidden">
+    <nav aria-label={`最近的${REPORT_NAMES[kind]}`} className="scrollbar-none bleed flex gap-2 overflow-x-auto pb-1 pt-1.5 lg:mx-0 lg:w-full lg:max-w-[1160px] lg:px-0 lg:pb-4 lg:pt-3 side:hidden">
       {recent.map((e) => {
         const on = e.key === current;
         return (

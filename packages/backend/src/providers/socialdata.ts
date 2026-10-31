@@ -72,7 +72,7 @@ async function get<T>(path: string, request: Omit<ReceiptRequest, "service">,
       maxBytes: read.maxBytes,
       route: "direct",
     });
-    if (res.status === 404 && read.missing) return { response: null, usage: read.missing, cost: null };
+    if (res.status === 404 && read.missing) return { response: null, usage: read.missing, cost: objectsCost(0) };
     const text = res.text();
     assertAccepted("socialdata", res.status, text);
     return read.settle(JSON.parse(text) as T);

@@ -43,7 +43,8 @@ export interface SourceHealthRow {
   presentation_failed_at: Date | null;
   last_failed_at: Date | null;
   last_detail_failure_at: Date | null;
-  last_quality_at: Date | null;
+  last_undated_at: Date | null;
+  last_repeated_at: Date | null;
   /** Whether this source ever produced an article at all, in or out of the window. */
   ever_output: boolean;
 }
@@ -61,14 +62,15 @@ export interface QuietSource extends SourceHealthRow {
 export const SOURCE_USE_NAMES: Record<string, string> = { editorial: "编辑内容", hot_signal: "热度信号" };
 
 /** A fixable source problem. A blocked presentation needs proof that the same article was updated. */
-export type SourceProblem = "failing" | "unstable" | "quality" | "details" | "presentation";
+export type SourceProblem = "failing" | "unstable" | "undated" | "revisions" | "details" | "presentation";
 /** Each fixable problem as it is listed, per source: `action` is for the daily follow-up. */
 export const SOURCE_PROBLEMS: { problem: SourceProblem; title: string; describe: (s: SourceHealthRow) => string; observedAt: (s: SourceHealthRow) => Date | null; action: string }[] = [
   { problem: "failing", observedAt: s => s.last_failed_at, title: "连续抓取失败", describe: s => `连续失败 ${s.fail_count} 次${s.last_error ? `，${s.last_error}` : ""}`, action: "转给 AI 检查抓取错误" },
   { problem: "unstable", observedAt: s => s.last_failed_at, title: "反复抓取失败", describe: s => `近 7 天失败 ${s.failed}/${s.runs} 次`, action: "即使最近成功也需检查，避免继续漏收" },
-  { problem: "quality", observedAt: s => s.last_quality_at, title: "文章质量待核实",
-    describe: s => `近 7 天${[s.undated && `缺发布时间 ${s.undated} 篇`, s.repeated && `反复修订 ${s.repeated} 篇`].filter(Boolean).join("、")}`,
-    action: "缺时间可能让新闻按历史文章处理，反复修订需核对正文是否混入变化内容" },
+  { problem: "undated", observedAt: s => s.last_undated_at, title: "文章缺发布时间", describe: s => `近 7 天缺发布时间 ${s.undated} 篇`,
+    action: "缺时间可能让新闻按历史文章处理" },
+  { problem: "revisions", observedAt: s => s.last_repeated_at, title: "文章反复修订", describe: s => `近 7 天反复修订 ${s.repeated} 篇`,
+    action: "需核对正文是否混入变化内容" },
   { problem: "presentation", observedAt: s => s.presentation_failed_at, title: "正文展示待处理", describe: s => s.presentation_failures.map(f => `${f.url}：${f.error}`).join("；"), action: "保留了前版原文与译文，请预览正文展示刷新并核实需正常重翻的文章" },
   { problem: "details", observedAt: s => s.last_detail_failure_at, title: "详情补全失败", describe: s => `近 7 天失败 ${s.detail_failures}/${s.detail_attempts} 页`, action: "查看抓取记录中的详情地址与错误" },
 ];
@@ -151,7 +153,7 @@ export async function sourceHealth(now = Date.now()) {
       coalesce(r.runs,0) AS runs, coalesce(r.failed,0) AS failed, coalesce(r.detail_attempts,0) AS detail_attempts, coalesce(r.detail_failures,0) AS detail_failures,
       coalesce(d.n,0) AS discoveries, coalesce(a.n,0) AS items, coalesce(a.undated,0) AS undated, coalesce(e.n,0) AS repeated,
       coalesce(presentation.failures, '[]'::jsonb) AS presentation_failures,presentation.failed_at AS presentation_failed_at,
-      r.last_failed_at, r.last_detail_failure_at, greatest(a.last_undated_at,e.last_repeated_at) AS last_quality_at,
+      r.last_failed_at, r.last_detail_failure_at, a.last_undated_at, e.last_repeated_at,
       (EXISTS (SELECT 1 FROM articles history WHERE history.source_id = s.id)
         OR EXISTS (SELECT 1 FROM article_discoveries history WHERE history.source_id = s.id)) AS ever_output
     FROM sources s LEFT JOIN runs r ON r.source_id = s.id LEFT JOIN discoveries d ON d.source_id = s.id
@@ -177,7 +179,8 @@ export async function sourceHealth(now = Date.now()) {
       overdue,
       /** The quiet ones without enough history to judge, including sources that never produced anything. */
       unknown: own.filter(s => rhythmMultiple(s) === null),
-      quality: mode === "editorial" ? sources.filter(s => s.undated > 0 || s.repeated > 0) : [],
+      undated: mode === "editorial" ? sources.filter(s => s.undated > 0) : [],
+      revisions: mode === "editorial" ? sources.filter(s => s.repeated > 0) : [],
       presentation: sources.filter(s => s.presentation_failures.length > 0),
       details: sources.filter(s => failsOften(s.detail_failures, s.detail_attempts)),
     };

@@ -132,5 +132,5 @@ export async function requestRegroup(articleId: string, requestId: string, db: D
   if (published?.changed || previous.length) await emit("articleChanged", {
     id: articleId, kind: "content", reduced: published?.reduced, reason: "regroup requested", previousStoryIds: previous.map((r) => r.story_id),
   }, db);
-  return enqueue(QUEUES.group, { articleId }, { singletonKey: `manual:group:${articleId}:${requestId}` }, db);
+  return enqueue(QUEUES.group, { articleId, regroup: true }, { singletonKey: `manual:group:${articleId}:${requestId}` }, db);
 }

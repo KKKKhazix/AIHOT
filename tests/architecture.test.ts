@@ -180,6 +180,7 @@ const CONVERTS_BEIJING_TIME: Record<string, string> = {
   "site/changelog/FeatureRelease.tsx": "a changelog entry's Beijing date and time with its zone, to the minute, in dateTime",
   "clients/decisions/decisions.mjs": "installed as one file away from the repository, so it cannot import time.ts",
   "clients/watchdog/watchdog.mjs": "installed as one file away from the repository, so it cannot import time.ts",
+  "clients/mp-watch/articles.ts": "installed away from the repository with only its module's contracts, so it cannot import time.ts",
 };
 
 test("Beijing time is converted only in contracts/time.ts", () => {

@@ -13,6 +13,7 @@ import { Sparkline } from "../features/hot/Sparkline";
 import { Faces } from "../features/hot/Faces";
 import { Delta } from "../features/hot/Delta";
 import { PhoneBar } from "../components/shell/PhoneBar";
+import { Picture } from "../components/ui/Picture";
 import { navUp } from "../components/shell/nav";
 import { scrollBehavior } from "../lib/motion";
 import type { Screen } from "../components/shell/screens";
@@ -124,7 +125,7 @@ function Lead({ e }: { e: HotEntryView }) {
         </div>
         {e.cover ? (
           <div className="order-first overflow-hidden well rounded-panel xl:order-none">
-            <img src={e.cover.url} srcSet={e.cover.srcSet} sizes="(min-width: 1280px) calc(28vw - 96px), (min-width: 1024px) calc(58vw - 180px), (min-width: 640px) 568px, calc(100vw - 74px)" width={e.cover.width ?? undefined} height={e.cover.height ?? undefined} alt="" loading="eager" fetchPriority="high" decoding="async" className="aspect-[16/9] size-full object-cover transition-transform duration-500 group-hover:scale-[1.02] xl:aspect-[16/10]" />
+            <Picture src={e.cover.url} srcSet={e.cover.srcSet} sizes="(min-width: 1280px) calc(28vw - 96px), (min-width: 1024px) calc(58vw - 180px), (min-width: 640px) 568px, calc(100vw - 74px)" width={e.cover.width ?? undefined} height={e.cover.height ?? undefined} alt="" loading="eager" fetchPriority="high" decoding="async" className="aspect-[16/9] size-full object-cover transition-transform duration-500 group-hover:scale-[1.02] xl:aspect-[16/10]" />
           </div>
         ) : (
           panel && <HeatPanel e={e} />

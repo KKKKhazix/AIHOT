@@ -123,7 +123,7 @@ export default function AgentPage() {
   const chip = "inline-flex h-7 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 text-[12px] text-ink-3";
   const aside = (
     <>
-      <AsideCard title="接入方式" className="hidden lg:block">
+      <AsideCard title="接入方式" className="hidden side:block">
         <nav aria-label="接入方式" className="-mx-2 -mb-1 space-y-0.5">
           {TRACKS.map((t) => {
             const on = t.key === tab;

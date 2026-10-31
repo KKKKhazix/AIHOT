@@ -124,6 +124,15 @@ test("a company topic takes the articles about it, not the ones that only mentio
   assert.deepEqual(await topicsOf(agent), ["agent", "model-releases"]);
 });
 
+test("renaming a company topic keeps its old full name usable for search", async () => {
+  const id = await report({at: hoursAgo(2), title: `Kimi 新模型上线 ${T}`, subjects: ['kimi'], selected: false});
+  for (const query of ['Kimi / 月之暗面', '月之暗面 / Kimi']) {
+    const res = await app.inject({method: 'GET', url: `/api/site/pool?q=${encodeURIComponent(query)}`});
+    assert.equal(res.statusCode, 200);
+    assert.ok(ids(JSON.parse(res.body).items).includes(id), 'full company names must still find subject-tagged reports');
+  }
+});
+
 test("a story page names the topics of its reports", async () => {
   const launch = await story(`智能体框架 V2 发布 ${T}`);
   await report({ source: OFFICIAL, at: hoursAgo(26), title: `智能体框架 V2 发布 ${T}`, tags: ["Agent"], fact: await fact(launch.id, "发布 V2") });

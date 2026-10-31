@@ -1,11 +1,11 @@
 // Web list pages: HTML with selectors, Markdown through Jina Reader, and dated changelog sections.
 import * as cheerio from "cheerio";
 import { guardedFetch, languageHeaders, requireOk } from "../lib/http-fetch.ts";
-import { contentDocument } from "../lib/page-content.ts";
+import { contentDocument, UnavailablePageError } from "../lib/page-content.ts";
 import { fetchListing } from "./listing-fetch.ts";
 import { identityKeyForUrl, normalizeUrl } from "../lib/url.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
-import { isSignInUrl, pagePublicationDate, pageRules, readableDocument, type ExtractedBody } from "../content/extract.ts";
+import { isSignInRedirect, isSignInUrl, pagePublicationDate, pageRules, readableDocument, type ExtractedBody } from "../content/extract.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
 import { JINA_PREFIX, jinaRead } from "../providers/jina.ts";
 import { articleUtcOffset, readPublicationDate, readRelativeDate, type PublicationDate } from "./dates.ts";
@@ -369,6 +369,8 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
     // The rules read a page's head and byline. A page past the size limit (a long paper with inline
     // figures) is read up to it rather than failing on every run; a body cut there is not kept.
     const res = requireOk(await guardedFetch(url, { headers: languageHeaders(source.config.acceptLanguage), timeoutMs: 20_000, truncate: true }), "detail");
+    // A sign-in form is no detail page: its title, date and text are not the post's.
+    if (isSignInRedirect(url, res.url)) throw new UnavailablePageError("redirected to a sign-in form");
     html = res.text();
     page = { document: contentDocument(html), url: res.url, whole: !res.truncated && /html/.test(res.headers.get("content-type") ?? "") };
   }

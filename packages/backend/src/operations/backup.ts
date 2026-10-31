@@ -1,6 +1,6 @@
 // Database and file backups: a verified custom-format dump plus the uploaded files, sent
 // to the existing object store (Tencent COS through its S3-compatible API, AWS Signature V4) under
-// daily/ (Sundays also weekly/, the 1st also monthly/). A few local copies are kept.
+// one retention prefix: monthly/ on the 1st, otherwise weekly/ on Sundays or daily/.
 import { execFile } from "node:child_process";
 import { createHash, createHmac } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -103,45 +103,41 @@ export async function runBackup(now = new Date()) {
   // Verify before shipping: the archive must list cleanly.
   await run("pg_restore", ["--list", dump], { maxBuffer: 64 * 1024 * 1024 });
   const files = path.join(dir, `${name}-files-${stamp}.tar.gz`);
-  // An empty archive only when there is nothing to keep. A failure to read or pack existing files is
+  // No archive when there are no attachments. A failure to read or pack existing files is
   // tried once more and otherwise reported: the database dump still ships, but the run fails.
   const kept: string[] = [];
   // Feedback screenshots only waiting to be forwarded are not kept (once forwarded, only the Feishu image
   // key remains). Without the internal chat they stay here for good, referred to as local: files.
-  for (const d of screenshotsForwarded() ? ["uploads"] : ["uploads", "feedback-screenshots"]) {
-    const info = await stat(path.join(config.dataDir, d)).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    });
-    if (!info) continue;
-    if (!info.isDirectory()) throw new Error(`backup ${d} path is not a directory`);
-    kept.push(d);
-  }
   let filesError: string | null = null;
-  if (!kept.length) await run("tar", ["-czf", files, "-T", "/dev/null"]);
-  else {
-    const pack = () => run("tar", ["-czf", files, "-C", config.dataDir, ...kept]);
-    await pack().catch(() => pack()).catch((error: unknown) => {
-      // tar's own words: the message starts with the whole command line, which can fill the excerpt.
-      const stderr = (error as { stderr?: unknown })?.stderr;
-      filesError = String(typeof stderr === "string" && stderr.trim() ? stderr.trim() : error instanceof Error ? error.message : error).slice(0, 300);
-    });
+  try {
+    for (const d of screenshotsForwarded() ? ["uploads"] : ["uploads", "feedback-screenshots"]) {
+      const info = await stat(path.join(config.dataDir, d)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (!info) continue;
+      if (!info.isDirectory()) throw new Error(`backup ${d} path is not a directory`);
+      if ((await readdir(path.join(config.dataDir, d), { recursive: true, withFileTypes: true })).some(entry => !entry.isDirectory())) kept.push(d);
+    }
+    if (kept.length) {
+      const pack = () => run("tar", ["-czf", files, "-C", config.dataDir, ...kept]);
+      await pack().catch(() => pack());
+    }
+  } catch (error: unknown) {
+    // tar's own words: the message starts with the whole command line, which can fill the excerpt.
+    const stderr = (error as { stderr?: unknown })?.stderr;
+    filesError = String(typeof stderr === "string" && stderr.trim() ? stderr.trim() : error instanceof Error ? error.message : error).slice(0, 300);
   }
   const out: Array<{ key: string; bytes: number; sha256: string }> = [];
   const today = beijingDate(now);
-  const prefixes = ["daily"];
-  if (beijingWeekday(today) === "星期日") prefixes.push("weekly");
-  if (today.endsWith("-01")) prefixes.push("monthly");
-  for (const file of filesError ? [dump] : [dump, files]) {
+  const prefix = today.endsWith("-01") ? "monthly" : beijingWeekday(today) === "星期日" ? "weekly" : "daily";
+  for (const file of kept.length && !filesError ? [dump, files] : [dump]) {
     const size = (await stat(file)).size;
     const sha = await fileSha256(file);
-    for (const p of prefixes) {
-      // One prefix per retention class (daily/, weekly/, monthly/): a store's lifecycle rules can expire
-      // each on its own schedule.
-      const key = `${p}/${path.basename(file)}`;
-      if (s) await upload(s, key, file, sha, size);
-      out.push({ key: s ? key : `local-only:${path.basename(file)}`, bytes: size, sha256: sha });
-    }
+    // One upload per file; the chosen prefix carries its retention class.
+    const key = `${prefix}/${path.basename(file)}`;
+    if (s) await upload(s, key, file, sha, size);
+    out.push({ key: s ? key : `local-only:${path.basename(file)}`, bytes: size, sha256: sha });
   }
   // Local copies: keep the newest few of each kind.
   for (const kind of [`${name}-2`, `${name}-files-`]) {

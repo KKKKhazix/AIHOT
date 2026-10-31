@@ -79,7 +79,7 @@ export function SearchOverlay() {
     setMore(null);
     void loadSuggestions().then(value => { if (active) setMore(value); }).catch(() => {});
     // At the desktop breakpoint this layer is hidden by CSS; it must stop holding the page still too.
-    const desktop = window.matchMedia("(min-width: 961px)");
+    const desktop = window.matchMedia("(min-width: 941px)");
     const onResize = () => { if (desktop.matches) close(); };
     onResize();
     desktop.addEventListener("change", onResize);
@@ -129,7 +129,7 @@ export function SearchOverlay() {
         className="flex h-14 shrink-0 items-center gap-1 pl-4 pr-1 pt-[env(safe-area-inset-top)]"
       >
         <label className="relative flex-1">
-          <span className="sr-only">搜索标题、摘要和正文</span>
+          <span className="sr-only">搜索标题和摘要</span>
           <IconSearch size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-4" />
           <input
             ref={input}
@@ -137,7 +137,7 @@ export function SearchOverlay() {
             type="search"
             onInput={(e) => setHasText(!!e.currentTarget.value)}
             tabIndex={shown ? 0 : -1}
-            placeholder="搜索标题、摘要和正文"
+            placeholder="搜索标题、摘要…"
             maxLength={200}
             autoComplete="off"
             enterKeyHint="search"

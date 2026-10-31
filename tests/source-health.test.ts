@@ -142,17 +142,23 @@ test("weekly totals count every silent source and include successful attributed 
   assert.doesNotMatch(text, new RegExp(`· ${collector}`));
 });
 
-test("quality follow-ups count undated editorial articles and edits without judging signal bodies", async () => {
+// Undated articles and repeated revisions are different problems: one closed as accepted (dates missing by
+// rule) must not hide the other arriving later (10-19 review of the ongoing closure).
+test("undated editorial articles and repeated edits are follow-ups of their own, signal bodies are not judged", async () => {
   const editorial = await source("quality", "editorial", new Date(now));
   const signal = await source("quality-signal", "hot_signal", new Date(now));
   const article = await material(editorial, "undated-editorial", null);
   await material(signal, "undated-signal", null);
+  await dismissFollowUp(`sources.undated.${editorial}`, "原文页本身没有发布时间", "test", now, "ongoing");
   await sql`INSERT INTO article_revisions(article_id,revision,title,created_at)
     SELECT ${article.articleId},i,'changed',${new Date(now)} FROM generate_series(2,6) i`;
-  const [quality] = await followUps(editorial);
-  assert.equal(quality?.key, `sources.quality.${editorial}`);
-  assert.match(quality!.detail!, /缺发布时间 1/);
-  assert.match(quality!.detail!, /反复修订 1/);
+  const found = await followUps(editorial);
+  assert.deepEqual(found.map(f => f.key).sort(), [`sources.revisions.${editorial}`, `sources.undated.${editorial}`]);
+  assert.match(found.find(f => f.key.startsWith("sources.undated"))!.detail!, /缺发布时间 1/);
+  assert.match(found.find(f => f.key.startsWith("sources.revisions"))!.detail!, /反复修订 1/);
+  const closed = await dismissedFollowUps(found, now);
+  assert.ok(closed[`sources.undated.${editorial}`]);
+  assert.equal(closed[`sources.revisions.${editorial}`], undefined, "repeated edits are not hidden by the closure of missing dates");
   assert.deepEqual(await followUps(signal), []);
 });
 
@@ -343,4 +349,57 @@ test("a source closure covers its observed history, not new failures under the s
     VALUES(${id},${new Date(now+60_000)},${new Date(now+61_000)},'ok',${sql.json({detailAttempts:10,detailFailures:2})})`;
   assert.ok((await collectFindings(now+120_000)).some(f=>f.key===key));
   assert.equal((await dismissedFollowUps())[key],undefined,"new detail failures reopen the same source/problem without waiting seven days");
+});
+
+// 10-19: closures judging a condition acceptable (YouTube RSS 404s a few times a day, one MIT article's
+// presentation mismatch recorded on every run, by-rule undated HN posts) reopened within hours, so the
+// digest listed and woke Codex for the same judged condition every day. Ways an accepted closure goes
+// wrong: the next failure of that same condition reopens it; it hides the condition forever, never judged
+// again; it hides a source that stops working altogether (a different problem).
+test("a closure accepting an ongoing condition holds through its new failures for a week, then it is judged again", async () => {
+  const id = await source("accepted-ongoing");
+  const key = `sources.details.${id}`;
+  await detailRun(id, 20, 10);
+  await dismissFollowUp(key, "原站偶发超时，下一轮即恢复", "test", now, "ongoing");
+  const failAt = async (at: number) => sql`INSERT INTO fetch_runs(source_id,started_at,finished_at,status,detail)
+    VALUES(${id},${new Date(at)},${new Date(at + 1000)},'ok',${sql.json({ detailAttempts: 10, detailFailures: 2 })})`;
+  const closed = async (at: number) => !!(await dismissedFollowUps(await collectFindings(at), at))[key];
+  await failAt(now + 60_000);
+  assert.ok(await closed(now + 120_000), "a new failure of the accepted condition does not reopen it");
+  await failAt(now + 6 * 86400_000);
+  assert.ok(await closed(now + 6 * 86400_000 + 60_000));
+  assert.equal(await closed(now + 7 * 86400_000 + 60_000), false, "after a week the condition is listed and judged again");
+
+  await sql`UPDATE sources SET health = 'failing', fail_count = 9, last_error = 'HTTP 403' WHERE id = ${id}`;
+  try {
+    const failing = (await collectFindings(now + 120_000)).map(f => f.key);
+    assert.ok(failing.includes(`sources.failing.${id}`), "a source that stops working is a separate follow-up");
+    assert.equal((await dismissedFollowUps(await collectFindings(now + 120_000), now + 120_000))[`sources.failing.${id}`], undefined);
+  } finally { await sql`UPDATE sources SET health = 'ok', fail_count = 0, last_error = NULL WHERE id = ${id}`; }
+});
+
+// 10-21 the noon patrol paused Claude's official YouTube over a flaky feed; the owner learned of it only at the
+// end of an unrelated message. The weekly report names what is still paused or was partly excluded this week.
+test("the weekly report names sources paused or partly excluded this week, with who and why", async () => {
+  const paused = await source("paused-by-agent");
+  const fenced = await source("fenced-in-admin");
+  const resumed = await source("paused-then-resumed");
+  await sql`UPDATE sources SET enabled = false, health = 'paused' WHERE id = ${paused}`;
+  const at = new Date(now - 2 * 86400_000);
+  const update = (id: string, actor: string, reason: string, before: object, after: object) =>
+    sql`INSERT INTO audit_log(actor,action,subject,reason,before,after,created_at) VALUES(${actor},'source.update',${`source:${id}`},${reason},${sql.json(before as never)},${sql.json(after as never)},${at})`;
+  await update(paused, "ops-script", "订阅源反复 404，按授权暂停", { enabled: true }, { enabled: false });
+  await update(fenced, "admin:ou_test", "这一篇原文 404，只排除这一篇", { config: { feedUrl: "x" } }, { config: { feedUrl: "x", denyUrlPrefixes: ["https://example.test/dead"] } });
+  // A second exclusion on the same source later that week is another line, not another source.
+  await update(fenced, "ops-script", "又一篇原文 404", { config: { feedUrl: "x", denyUrlPrefixes: ["https://example.test/dead"] } }, { config: { feedUrl: "x", denyUrlPrefixes: ["https://example.test/dead", "https://example.test/gone"] } });
+  await update(resumed, "ops-script", "误停", { enabled: true }, { enabled: false });
+  // A form saved again on a source paused before this week repeats enabled=false; it was not paused this week.
+  const earlier = await source("paused-before-this-week");
+  await sql`UPDATE sources SET enabled = false, health = 'paused' WHERE id = ${earlier}`;
+  await update(earlier, "admin:ou_test", "改一下名字", { enabled: false, name: "旧名" }, { enabled: false, name: earlier });
+  const text = await weekly();
+  assert.match(text, new RegExp(`本周停用、现在仍停着的信源 1 个：\\n· ${paused}（AI，[^）]+）：订阅源反复 404，按授权暂停`));
+  assert.match(text, new RegExp(`本周排除了部分入口的信源 1 个：\\n· ${fenced}（后台，[^，]+，排除 https://example\\.test/dead）：这一篇原文 404，只排除这一篇\\n· ${fenced}（AI，[^，]+，排除 https://example\\.test/gone）：又一篇原文 404`));
+  assert.doesNotMatch(text, new RegExp(`· ${resumed}`), "a source enabled again is not listed as paused");
+  assert.doesNotMatch(text, new RegExp(`· ${earlier}`), "a source paused before this week is not listed as paused this week");
 });

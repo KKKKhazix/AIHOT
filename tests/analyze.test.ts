@@ -1,5 +1,5 @@
 // The judging and writing steps (editorial/analyze.ts): the prefilter decides relevance, two scores
-// against the tier threshold decide 精选, selected and near-selected items are written by the content
+// against the source's threshold (its tier's, raised by its class) decide 精选, selected and near-selected items are written by the content
 // understanding and the rest by the title/summary translation, a structure step gives the category,
 // subjects and fact. Material with only a feed summary has its page fetched first.
 import { pointModels, Reply, stub, tag } from "./setup.ts";
@@ -8,28 +8,35 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
-import { analyzeArticle, buildMaterial, loadAnalyzeInput, normalizeStructure, StructureSchema, tierThreshold, UNDERSTAND_FLOOR } from "@aihot/backend/editorial/analyze";
+import { analyzeArticle, buildMaterial, loadAnalyzeInput, normalizeStructure, selectionThreshold, StructureSchema, UNDERSTAND_FLOOR } from "@aihot/backend/editorial/analyze";
+import { createSource, updateSource } from "@aihot/backend/admin/sources";
 import { queueProcessing } from "@aihot/backend/jobs/content";
 import { QUEUES, stopBoss } from "@aihot/backend/jobs/queue";
 import { compactAnswerFirstSummary, enforceIdentity, MAX_BODY_CHARS, parseTranslateOutput } from "@aihot/backend/editorial/writing";
 import { READER_WORDING } from "@aihot/industry/wording";
+import { SELECTION } from "@aihot/industry/selection";
 import { ITEM_TYPES } from "@aihot/industry/taxonomy";
 
 const T = tag();
 const SOURCE = `test-analyze-${T}`;
 const X_SOURCE = `test-analyze-x-${T}`;
+const CLASSED_SOURCE = `test-analyze-classed-${T}`;
 
 interface Req { step: AnalysisStep; marker: string; user: string }
 const requests: Req[] = [];
-const MARKERS = ["CLEAR", "RESCUE", "LOW", "OFFTOPIC", "BARE", "VAGUE", "THIN", "SENSITIVE", "推文", "WORDY", "REFUSAL", "RENUMBER", "UNMENDED"];
+const MARKERS = ["CLEAR", "RESCUE", "LOW", "OFFTOPIC", "BARE", "VAGUE", "THIN", "SENSITIVE", "推文", "WORDY", "REFUSAL", "RENUMBER", "UNMENDED", "ECOSYS"];
 // The scores sit a few points around the pack's T1 threshold and understand floor, so each case means
 // the same after a site recalibrates them: selected when the two add up to 2 × T1, written like a
 // selected item when they add up to more than 2 × FLOOR, translated otherwise.
-const T1 = tierThreshold("T1")!;
+const T1 = selectionThreshold({ tier: "T1" })!;
+const T2 = selectionThreshold({ tier: "T2" })!;
 const FLOOR = UNDERSTAND_FLOOR;
+// A pack class whose floor lies between the official and the media threshold: it raises the first, not the second.
+const [CLASS, CLASS_FLOOR] = Object.entries(SELECTION.classes).map(([key, c]) => [key, c.threshold] as const).find(([, t]) => t > T1 && t < T2) ?? [undefined, NaN];
 const scoreAnswers: Record<string, number[]> = {
   CLEAR: [T1 + 3, T1 - 1], RESCUE: [FLOOR + 1, FLOOR], LOW: [FLOOR, FLOOR - 1], THIN: [T1, T1], SENSITIVE: [T1, T1], 推文: [FLOOR, FLOOR],
   BARE: [FLOOR - 2, FLOOR - 4], VAGUE: [T1, T1 + 2], WORDY: [T1, T1], REFUSAL: [T1, T1], RENUMBER: [T1, T1], UNMENDED: [T1, T1],
+  ECOSYS: [CLASS_FLOOR, CLASS_FLOOR - 1],
 };
 
 const WORDY = ["WORDY", "REFUSAL", "RENUMBER", "UNMENDED"];
@@ -66,7 +73,8 @@ pointModels(provider.url);
 before(async () => {
   await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at) VALUES
     (${SOURCE}, 'Test analyze source', 'rss', 'T1', 'editorial', '2100-01-01'),
-    (${X_SOURCE}, 'Test X account', 'x_search', 'T1', 'editorial', '2100-01-01')`;
+    (${X_SOURCE}, 'Test X account', 'x_search', 'T1', 'editorial', '2100-01-01'),
+    (${CLASSED_SOURCE}, 'Test official source that gets a class', 'rss', 'T1', 'editorial', '2100-01-01')`;
 });
 after(async () => {
   await provider.close();
@@ -247,6 +255,30 @@ test("guards: a company the input does not name is not written in; long summarie
   assert.ok(runOn.startsWith(head) && "，；".includes(runOn[head.length]!), head);
   assert.deepEqual(parseTranslateOutput("title_zh: 标题\nsummary_zh: 第一句。\n第二句。"), { titleZh: "标题", summaryZh: "第一句。\n第二句。", bodyZh: "" });
   assert.equal(parseTranslateOutput("title_zh: 标题\nbody_zh: 我们懂你。\n\n来源：X：PixVerse (@PixVerse)").bodyZh, "我们懂你。", "a repeated prompt line is dropped");
+});
+
+test("a source class raises its tier's threshold to the class floor and never lowers one", () => {
+  assert.ok(CLASS && CLASS_FLOOR - 1 >= T1, "the cases need a pack class whose floor lies above the official threshold and below the media one");
+  assert.equal(selectionThreshold({ tier: "T1", selectionClass: null }), T1);
+  assert.equal(selectionThreshold({ tier: "T1", selectionClass: CLASS }), CLASS_FLOOR);
+  assert.equal(selectionThreshold({ tier: "T2", selectionClass: CLASS }), T2, "a media source keeps its own, higher threshold");
+  assert.equal(selectionThreshold({ tier: "EXCLUDE_MP", selectionClass: CLASS }), null, "a tier without a threshold stays out of 精选");
+});
+
+test("after the admin gives a source a class, analysing again holds the paid scores against the class floor", async () => {
+  // Scores that select from an ordinary official source and stay under the class floor.
+  const id = await article("ECOSYS", { sourceId: CLASSED_SOURCE });
+  const first = await analyzeArticle(id);
+  assert.deepEqual([first!.output!.selected, (await row(id)).output.threshold], [true, T1]);
+  const version = async () => (await sql<{ updated_at: Date }[]>`SELECT updated_at FROM sources WHERE id = ${CLASSED_SOURCE}`)[0]!.updated_at.toISOString();
+  await assert.rejects(updateSource(CLASSED_SOURCE, { patch: { selection_class: "not-a-class" }, version: await version() }, "test"), "only the pack's classes");
+  await updateSource(CLASSED_SOURCE, { patch: { selection_class: CLASS }, version: await version(), reason: "test" }, "test");
+  const hits = provider.hits();
+  const again = await analyzeArticle(id);
+  assert.equal(provider.hits(), hits, "the same paid answers: the class is not part of any model input");
+  assert.deepEqual([again!.output!.selected, again!.output!.score, (await row(id)).output.threshold], [false, CLASS_FLOOR - 1, CLASS_FLOOR]);
+  const created = await createSource({ id: `test-classed-new-${T}`, name: "Created with a class", kind: "rss", config: { feedUrl: `https://example.com/feed-${T}.xml` }, tier: "T1", selection_class: CLASS }, "test");
+  assert.equal(created.created && created.source.selection_class, CLASS, "a new source can start with a class");
 });
 
 test("analysing the same revision again reuses every paid answer", async () => {

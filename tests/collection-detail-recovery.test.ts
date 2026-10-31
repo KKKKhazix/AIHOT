@@ -2,7 +2,9 @@
 // known complete articles consume the budget again; a successful page without a date starves later
 // articles forever; a page larger than the response limit fails on every run; hot signals
 // accidentally fetch article bodies; a page the site refuses (paywall, captcha, blocked address) is read
-// again on every run, taking the budget from the entries behind it.
+// again on every run, taking the budget from the entries behind it; a page that keeps failing with a
+// recoverable error is read on every run for days (a challenge page, HN buzzing 2026-10-18: one page
+// 47 times in two days), or is given up and never recovers (a Qoder post went online 25 hours late).
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -36,11 +38,11 @@ const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 config.allowPrivateNetworkFetch = true;
 after(async () => { await new Promise<void>(resolve => server.close(() => resolve())); await stopBoss(); await closeDb(); });
 
-async function source(name: string, mode = "editorial") {
+async function source(name: string, mode = "editorial", maxFetches = 1) {
   const id = `detail-${T}-${name}`;
   await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,config,cursor,next_fetch_at)
     VALUES (${id},${name},'web_list','T1',${mode},${sql.json({ url: `${base}/listing/${id}`, itemSelector: "article", linkSelector: "a",
-      detail: { maxFetches: 1, titleSelector: "h1", titleAuthoritative: true, publishedAtSelector: "time", publishedAtAuthoritative: true } })},
+      detail: { maxFetches, titleSelector: "h1", titleAuthoritative: true, publishedAtSelector: "time", publishedAtAuthoritative: true } })},
       ${sql.json({ initializedAt: new Date().toISOString() })},'2100-01-01')`;
   return id;
 }
@@ -108,6 +110,20 @@ test("successful detail pages without dates do not consume every later run's bud
   assert.equal([...reads.entries()].filter(([url]) => url.includes(id)).reduce((sum, [, n]) => sum + n, 0), 3);
 });
 
+test("a refused entry excluded by the publication boundary is not read again after a day", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const id = await source("refused-excluded", "hot_signal", 3);
+  await sql`UPDATE sources SET config = config || ${sql.json({ publishedAfter: new Date(Date.now() + 3600_000).toISOString() })} WHERE id=${id}`;
+  refuse = 403;
+  try {
+    await collectSource(id);
+    t.mock.timers.tick(24 * 3600_000);
+    await collectSource(id);
+    assert.equal(reads.get(`/detail/${id}-0`), 1, "expiry of a date check cannot revive an explicit access refusal");
+    assert.equal((await rows(id)).length, 0);
+  } finally { refuse = 0; }
+});
+
 test("a detail page larger than the response limit is read once up to the limit, without a cut-off body", async () => {
   const id = await source("oversized");
   for (let i = 0; i < 3; i++) await collectSource(id);
@@ -136,4 +152,40 @@ test('recoverable errors at the front cannot consume every later detail budget',
     await collectSource(id);
     assert.equal((await rows(id)).filter(r => r.published_at).length, 3, 'the failed entry still recovers');
   }
+});
+
+test("a page that keeps failing is read less and less often, never given up, and recovers", async (t) => {
+  const HOUR = 3_600_000;
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const id = await source("backoff", "hot_signal", 3);
+  const readsOf = () => reads.get(`/detail/${id}-0`) ?? 0;
+  refuse = 503;
+  try {
+    for (let run = 0; run < 4; run++) await collectSource(id);
+    assert.equal(readsOf(), 3, "three straight tries, then it waits");
+    const waiting = await detail(id);
+    assert.equal(waiting.detailFailures, 0, "a page waiting for its next try is not another failure");
+    assert.equal(waiting.detailPending, 1);
+    t.mock.timers.tick(HOUR);
+    await collectSource(id);
+    await collectSource(id);
+    assert.equal(readsOf(), 4, "an hour later it is tried once, then waits longer");
+    t.mock.timers.tick(HOUR);
+    await collectSource(id);
+    assert.equal(readsOf(), 4, "the second wait is two hours");
+    t.mock.timers.tick(HOUR);
+    await collectSource(id);
+    assert.equal(readsOf(), 5);
+    for (let day = 0; day < 4; day++) {
+      t.mock.timers.tick(24 * HOUR);
+      await collectSource(id);
+    }
+    assert.equal(readsOf(), 9, "the wait stops growing at a day: the page is never given up");
+  } finally { refuse = 0; }
+  t.mock.timers.tick(24 * HOUR);
+  await collectSource(id);
+  assert.equal(readsOf(), 10);
+  assert.equal((await rows(id)).filter(r => r.published_at).length, 3, "the page recovers");
+  await collectSource(id);
+  assert.equal(readsOf(), 10, "a recovered page is not read again");
 });

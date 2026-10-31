@@ -2,6 +2,7 @@ import { SITE } from "@aihot/site";
 import { Form, Link, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/sources";
 import type { AdminSources } from "@aihot/contracts/admin";
+import { SELECTION } from "@aihot/industry/selection";
 import { adminGet } from "../../lib/admin.server";
 import { num } from "../../features/admin/format";
 import { HEALTH_LABEL, KIND_LABEL, MODE_LABEL } from "../../features/admin/labels";
@@ -85,6 +86,7 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
                 <div className="flex gap-1">
                   <Badge tone={r.participation_mode === "editorial" ? "accent" : "muted"}>{MODE_LABEL[r.participation_mode] ?? r.participation_mode}</Badge>
                   <Badge tone="info">{r.tier.replace("_", ".")}</Badge>
+                  {r.selection_class && <Badge tone="muted">{SELECTION.classes[r.selection_class]?.label ?? r.selection_class}</Badge>}
                   {r.first_party && <Badge tone="ok">一手</Badge>}
                 </div>
               ),

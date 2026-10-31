@@ -8,7 +8,7 @@ import http from "node:http";
 import { after, before, test } from "node:test";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
-import { extractArticleBody, extractFromUrl, readable } from "@aihot/backend/content/extract";
+import { extractArticleBody, extractFromUrl, isSignInRedirect, isSignInUrl, readable } from "@aihot/backend/content/extract";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { jinaRead } from "@aihot/backend/providers/jina";
 import { fetchDetail, fetchWebList } from "@aihot/backend/sources/web-list";
@@ -110,6 +110,9 @@ test("a redirect to a sign-in form cannot become the body", async () => {
   // A page that is itself on such a path and only gains a trailing slash was not sent to sign in.
   const registry = await extractFromUrl(`${base}/brand/register`, `article:${T}:registry`, {}, { paidFallback: false });
   assert.ok(registry?.text.includes("real report"), "a redirect between two addresses of the same page is no sign-in redirect");
+  // A listing's detail read is the other way in: the sign-in form supplies no title, date, summary or body.
+  const source = { id: sourceId, config: { url: `${base}/listing`, parseMode: "html" } } as never;
+  await assert.rejects(fetchDetail(`${base}/redirect`, source, { title: true, date: true, summary: true, body: true }), /unavailable page/i);
 });
 
 // A listing's navigation links to the site's sign-in and registration pages; they are not posts.
@@ -117,4 +120,17 @@ test("a listing's sign-in links are not articles", async () => {
   const source = { id: sourceId, config: { url: `${base}/listing`, parseMode: "html", itemSelector: "a[href]", linkSelector: "a[href]" } } as never;
   const candidates = await fetchWebList(source);
   assert.deepEqual(candidates.map((c) => c.url).sort(), [`${base}/article`]);
+});
+
+// Devise answers /users/sign_in and WordPress /wp-login.php: real sign-in forms that were not on the path
+// list, so a redirect to one passed the length test and became the body (KKKKhazix/AIHOT#275).
+test("the sign-in paths common sites use are sign-in paths; pages that only carry an auth word are not", () => {
+  for (const path of ["/users/sign_in", "/users/sign_up", "/wp-login.php", "/member/login.php", "/en/register.html", "/login"]) {
+    assert.equal(isSignInUrl(`https://x.com${path}`), true, path);
+  }
+  assert.equal(isSignInRedirect("https://x.com/post/1", "https://x.com/users/sign_in"), true);
+  assert.equal(isSignInRedirect("https://x.com/post/1", "https://x.com/wp-login.php?redirect_to=https%3A%2F%2Fx.com%2Fpost%2F1"), true);
+  assert.equal(isSignInRedirect("https://x.com/post/1", "https://x.com/member/login.php"), true);
+  for (const path of ["/authorized-retailer", "/authors", "/sso-products", "/login.company"]) assert.equal(isSignInUrl(`https://x.com${path}`), false, path);
+  assert.equal(isSignInRedirect("https://x.com/users/sign_in", "https://x.com/users/sign_in/"), false);
 });

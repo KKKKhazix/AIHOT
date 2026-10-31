@@ -23,6 +23,19 @@ test("normal corrections and security reports retain code, changed contacts, pag
   }
 });
 
+test("the page a report came from is kept only as a web address or a site path; the report itself is kept either way", async () => {
+  const pages: Array<[string, string | null]> = [
+    ["https://news.example/items/abc", "https://news.example/items/abc"], ["/leaderboard?from=feedback", "/leaderboard?from=feedback"],
+    ["javascript:alert(document.domain)", null], [" JavaScript:alert(1)", null], ["data:text/html,<script>alert(1)</script>", null],
+    ["//evil.example/x", null], ["mailto:someone@example.com", null], ["not a page", null],
+  ];
+  for (const [i, [pageUrl, kept]] of pages.entries()) {
+    const { id } = await submitFeedback({ ip: `203.0.113.${150 + i}`, userAgent: "Firefox", content: `页面字段 ${i}`, pageUrl });
+    const [row] = await sql`SELECT page_url FROM feedback WHERE id=${id}`;
+    assert.equal(row!.page_url, kept, pageUrl);
+  }
+});
+
 test("persistent repeat abuse is paused once, survives a new process, and never extends its expiry", async () => {
   const { feedbackSourceHash, FeedbackRejected } = await import("@aihot/backend/operations/feedback");
   const { execFile } = await import("node:child_process");
@@ -95,4 +108,27 @@ test("daily cleanup removes expired temporary state and bans, preserves manual b
   assert.ok(result.expiredFeedbackBans >= 1);
   assert.ok(result.expiredFeedbackState >= 1);
   assert.equal((await sql`SELECT 1 FROM feedback_bans WHERE source_hash='manual-test'`).length, 1);
+});
+
+test("rotating UA families cannot multiply one network's hourly feedback allowance", async t => {
+  const { FeedbackRejected } = await import('@aihot/backend/operations/feedback');
+  t.mock.timers.enable({apis:['Date'],now:Date.now()});
+  const families=['Chrome','Safari','Firefox','Edg','MicroMessenger','Mobile','Android','iPhone','iPad','Windows'];
+  const ip='203.0.113.190';
+  const results=await Promise.allSettled(Array.from({length:47},(_,i)=>submitFeedback({ip,userAgent:`${families[i%10]} ${families[Math.floor(i/10)]}`,content:`轮换来源测试 ${i}`})));
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,20,'the proposed shared-network budget caps attempts independently of UA');
+  for(const r of results)if(r.status==='rejected')assert.ok(r.reason instanceof FeedbackRejected && r.reason.status===429);
+  assert.ok((await submitFeedback({ip:'203.0.113.191',userAgent:'Firefox',content:'其他网络仍可正常反馈'})).id);
+  t.mock.timers.tick(3600_001);
+  assert.ok((await submitFeedback({ip,userAgent:'Chrome',content:'滚动窗口到期后恢复'})).id);
+});
+
+test("retries consume the shared network budget without saving duplicate feedback", async () => {
+  const {FeedbackRejected}=await import('@aihot/backend/operations/feedback');
+  const ip='203.0.113.192';
+  const input={ip,userAgent:'Firefox',content:'相同请求重试不应重复保存'};
+  const first=await submitFeedback(input);
+  for(let i=1;i<20;i++) assert.equal((await submitFeedback(input)).id,first.id);
+  await assert.rejects(submitFeedback({...input,userAgent:'Chrome',content:'换浏览器仍共享已用完的额度'}),e => e instanceof FeedbackRejected && e.status===429 && e.retryAfter!>0 && e.retryAfter!<=3600);
+  assert.equal(Number((await sql`SELECT count(*) AS n FROM feedback WHERE content=${input.content}`)[0]!.n),1);
 });

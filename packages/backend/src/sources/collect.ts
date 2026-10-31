@@ -1,7 +1,7 @@
 // Collection run for one source: fetch listing → filter → store material → enqueue processing.
 // A failed fetch never advances the success cursor; the source's health reflects consecutive failures.
 import { sql, type Db } from "../db.ts";
-import { fillScheduledPublications, identityKeyFor, reuseExternalMaterialIdentities, STALE_ON_DISCOVERY_MS, upsertMaterial } from "../content/materials.ts";
+import { fillScheduledPublications, FUTURE_TOLERANCE_MS, identityKeyFor, reuseExternalMaterialIdentities, STALE_ON_DISCOVERY_MS, upsertMaterial } from "../content/materials.ts";
 import { PresentationMismatch } from "../content/presentation.ts";
 import { HttpStatusError } from "../lib/http-fetch.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
@@ -99,8 +99,21 @@ function admission(source: SourceRow, known: Map<string, StoredDetail>, firstImp
   return { byListing, admits: (c: Candidate) => byListing(c) && filterPublicationWindow([c], source.config.publishedAfter).length > 0 };
 }
 
-/** Entries detail pages dated out of admission, by identity: the listing date read with, and the page's date. */
-type DatedOut = Record<string, [listed: string | null, found: string | null]>;
+/** Excluded detail dates expire: an undated listing cannot reveal a corrected date on the page. */
+type DatedOut = Record<string, [listed: string | null, found: string | null, checkedAt: number | null]>;
+// No date, or an explicit access refusal (null checkedAt), keeps the existing read-once rule.
+const currentDateRead = (read: DatedOut[string]) => read[1] === null || read[2] === null || read[2] > Date.now() - DAY_MS;
+/** Entries whose page keeps failing with a recoverable error, by identity: straight failures and the last one's time. */
+type Retries = Record<string, [failures: number, at: string]>;
+
+const HOUR_MS = 3_600_000;
+/**
+ * How long a page waits after its latest straight failure. Production, 30 days to 2026-10-19: one-off
+ * timeouts and TLS drops were gone by the next run, but pages also came back after a day (a Qoder post
+ * online 25 hours late) while others failed on every run for days (a challenge page, HN buzzing 47
+ * times in two days). Two quick retries, then an hour doubling to a day: never given up.
+ */
+const retryWait = (failures: number) => failures < 3 ? 0 : Math.min(24 * HOUR_MS, HOUR_MS * 2 ** (failures - 3));
 
 export interface DetailReads {
   attempts: number;
@@ -110,7 +123,9 @@ export interface DetailReads {
   pending: number;
   failures: Array<{ url: string; error: string }>;
   /** The listing date of each entry a page dated under the rules in force, this run or remembered. */
-  listed: Map<string, string | null>;
+  listed: Map<string, DatedOut[string]>;
+  /** Listed entries whose page still fails with a recoverable error. */
+  retries: Retries;
 }
 
 /**
@@ -167,15 +182,16 @@ function applyDetail(c: CollectionCandidate, got: Awaited<ReturnType<typeof fetc
  * under the rules in force is not read again, and another source's material takes nothing from this
  * listing (materials.ts): its page is not worth a read. An entry its page dated out of admission is
  * remembered (`datedOut`): while listed with the same date and still not admitted, it keeps that date
- * unread, so the same page is not bought on every run and an archive does not use up the budget. A
+ * for a day, so an archive does not use up every run's budget and corrected dates can recover. A
  * spent provider budget defers the remaining pages; other failures are reported, not thrown, and a page
- * the site refuses is not read again under the same rules. Each run continues after the last attempted
- * identity, so a recoverable failure cannot keep taking the budget from all later entries.
+ * the site refuses is not read again under the same rules; one that keeps failing otherwise waits longer
+ * between tries (`retries`, retryWait). Each run continues after the last attempted identity, so a
+ * recoverable failure cannot keep taking the budget from all later entries.
  */
 export async function enrichDetails(candidates: CollectionCandidate[], source: SourceRow, known: Map<string, StoredDetail>,
-  opts: { budget: number; after?: string; datedOut: DatedOut; admits: (c: Candidate) => boolean }): Promise<DetailReads> {
+  opts: { budget: number; after?: string; datedOut: DatedOut; retries: Retries; admits: (c: Candidate) => boolean }): Promise<DetailReads> {
   const rules = detailRulesOf(source);
-  const reads: DetailReads = { attempts: 0, pending: 0, failures: [], listed: new Map() };
+  const reads: DetailReads = { attempts: 0, pending: 0, failures: [], listed: new Map(), retries: {} };
   let providerBudgetSpent = false;
   const start = candidates.findIndex(c => c.identityKey === opts.after) + 1;
   const ordered = [...candidates.slice(start), ...candidates.slice(0, start)];
@@ -189,29 +205,40 @@ export async function enrichDetails(candidates: CollectionCandidate[], source: S
     const listed = c.publishedAt?.toISOString() ?? null;
     const seen = opts.datedOut[c.identityKey!];
     const remembered = seen?.[1] ? new Date(seen[1]) : null;
+    const retry = opts.retries[c.identityKey!];
     if (seen && seen[0] === listed && !opts.admits({ ...c, publishedAt: remembered })) {
       c.publishedAt = remembered;
-      reads.listed.set(c.identityKey!, listed);
-    } else if (providerBudgetSpent || reads.attempts >= opts.budget) {
+      reads.listed.set(c.identityKey!, seen);
+      if (currentDateRead(seen)) continue;
+    }
+    if (providerBudgetSpent || reads.attempts >= opts.budget || retry && Date.now() < Date.parse(retry[1]) + retryWait(retry[0])) {
       reads.pending += 1;
+      if (retry) reads.retries[c.identityKey!] = retry;
     } else {
       reads.attempts += 1;
       reads.after = c.identityKey;
       try {
-        applyDetail(c, await fetchDetail(c.url, source, need), rules!);
-        reads.listed.set(c.identityKey!, listed);
+        const got = await fetchDetail(c.url, source, need);
+        if (got.publishedAt) c.publishedAt = listed ? new Date(listed) : null;
+        applyDetail(c, got, rules!);
+        reads.listed.set(c.identityKey!, [listed, c.publishedAt?.toISOString() ?? null, Date.now()]);
       } catch (error) {
         if (shutdownSignal.signal.aborted) throw error;
         // A spent provider budget is not the source's failure.
-        if (error instanceof BudgetExceededError) providerBudgetSpent = true;
+        const failed = !(error instanceof BudgetExceededError);
+        if (!failed) providerBudgetSpent = true;
         else reads.failures.push({ url: c.url, error: String(error instanceof Error ? error.message : error).slice(0, 300) });
         // A page the site refuses (paywall, captcha, blocked address) is read under these rules once, like
         // a page without the fields: read again on every run it took the budget from the entries behind
         // it. A missing page, a timeout, rate limiting and server errors have recovered, so they are retried.
         if (error instanceof HttpStatusError && error.status < 500 && ![404, 408, 425, 429].includes(error.status)) {
           c.detailRules = rules!;
-          reads.listed.set(c.identityKey!, listed);
-        } else reads.pending += 1;
+          reads.listed.set(c.identityKey!, [listed, c.publishedAt?.toISOString() ?? null, null]);
+        } else {
+          reads.pending += 1;
+          if (failed) reads.retries[c.identityKey!] = [(retry?.[0] ?? 0) + 1, new Date().toISOString()];
+          else if (retry) reads.retries[c.identityKey!] = retry;
+        }
       }
     }
   }
@@ -304,7 +331,8 @@ export async function collectSource(sourceId: string, opts: { force?: boolean; x
     const rules = detailRulesOf(source);
     if (source.kind === "rss") {
       // Changed detail rules require the listing again even when its bytes did not change.
-      const rss = await fetchRss(source, { force: opts.force || !!rules && source.cursor?.detailRules !== rules });
+      const expiredDates = Object.values(source.cursor?.detailDatedOut ?? {}).some(read => !currentDateRead(read as DatedOut[string]));
+      const rss = await fetchRss(source, { force: opts.force || expiredDates || !!rules && source.cursor?.detailRules !== rules });
       candidates = rss.candidates;
       // The first import keeps only part of the listing: the next run reads all of it once before
       // accepting 304s, for the recent entries the import left out. Persist validators only after store succeeds.
@@ -338,6 +366,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean; x
       budget: Number(d?.maxFetches ?? 0), admits,
       after: source.cursor?.detailRules === rules ? source.cursor?.detailAfter : undefined,
       datedOut: source.cursor?.detailRules === rules ? source.cursor?.detailDatedOut ?? {} : {},
+      retries: source.cursor?.detailRules === rules ? source.cursor?.detailRetries ?? {} : {},
     });
     if (d) {
       detail = { ...detail, detailAttempts: reads.attempts, detailFailures: reads.failures.length, detailPending: reads.pending, detailErrors: reads.failures };
@@ -352,13 +381,16 @@ export async function collectSource(sourceId: string, opts: { force?: boolean; x
     const datedOut: DatedOut = {};
     candidates = candidates.filter((c) => {
       if (admits(c)) return true;
+      // A future entry can become admissible without changing the feed's bytes or validator.
+      if (source.kind === "rss" && c.publishedAt && c.publishedAt.getTime() > Date.now() + FUTURE_TOLERANCE_MS) delete nextCursor.rss;
       const listed = reads.listed.get(c.identityKey!);
-      if (listed !== undefined) datedOut[c.identityKey!] = [listed, c.publishedAt?.toISOString() ?? null];
+      if (listed !== undefined) datedOut[c.identityKey!] = listed;
       return false;
     });
     // Kept while the listing offers them; a 304 offers no entries and keeps the last ones.
-    if (found) nextCursor.detailDatedOut = datedOut;
+    if (found) { nextCursor.detailDatedOut = datedOut; nextCursor.detailRetries = reads.retries; }
     if (!d || !Object.keys(nextCursor.detailDatedOut ?? {}).length) delete nextCursor.detailDatedOut;
+    if (!d || !Object.keys(nextCursor.detailRetries ?? {}).length) delete nextCursor.detailRetries;
     const stored = await store(sourceId, run!.id, candidates, firstImport ? "first-import" : null);
     ({ created, revised } = stored);
     for (const id of await fillScheduledPublications(sourceId)) await queueProcessing(id);

@@ -71,6 +71,50 @@ test("an outage is announced once, repeated hourly, and closed with one recovery
   }
 });
 
+// 10-26 16:00–19:00 the egress proxy dropped: a quarter of the sources fetched each hour failed while the others
+// kept bringing articles, so the stall alert stayed quiet and nobody heard. A handful failing is theirs to follow up.
+test("many sources failing within the hour is announced while the rest still collect", async () => {
+  process.env.COLLECT_ENABLED = "true";
+  const now = Date.now();
+  const ids = Array.from({ length: 300 }, (_, i) => `${SOURCE}-fetch-${i}`);
+  const run = (some: string[], status: "ok" | "failed", minutesAgo: number) => sql`
+    INSERT INTO fetch_runs (source_id, started_at, finished_at, status, error)
+    SELECT id, ${new Date(now - minutesAgo * 60_000)}, ${new Date(now - minutesAgo * 60_000)}, ${status},
+      ${status === "failed" ? "Client network socket disconnected before secure TLS connection was established" : null}
+    FROM unnest(${some}::text[]) id`;
+  const fetching = async (at = now, open?: Parameters<typeof collectFindings>[1]) =>
+    (await collectFindings(at, open)).find((f) => f.key === "content.fetch");
+  try {
+    await sql`INSERT INTO sources (id, name, kind, next_fetch_at) SELECT id, id, 'rss', '2100-01-01' FROM unnest(${ids}::text[]) id`;
+    await run(ids, "ok", 90);
+    await run(ids.slice(60), "ok", 20);
+    await run(ids.slice(0, 49), "failed", 20);
+    assert.equal(await fetching(), undefined, "49 failing sources are each one's own follow-up");
+    await run(ids.slice(49, 60), "failed", 15);
+    const finding = await fetching();
+    assert.equal(finding?.level, "now");
+    assert.match(finding!.impact!, /300 个信源.*60 个/);
+    assert.equal(finding!.since!.getTime(), now - 20 * 60_000, "dated by the first failure still standing");
+    // A failing source is not fetched again for hours (its backoff), while the others keep being fetched: neither
+    // time passing nor more successes elsewhere is recovery. Nor is pausing collection.
+    const open = { "content.fetch": { title: finding!.title, since: finding!.since!.toISOString() } };
+    const later = now + 2 * 3600_000;
+    await run(ids.slice(60), "ok", -100);
+    assert.equal((await fetching(later))?.key, "content.fetch", "still failing two hours on, with nothing refetched");
+    process.env.COLLECT_ENABLED = "false";
+    const resumed = now + 9 * 3600_000;
+    assert.equal((await fetching(resumed, open))?.key, "content.fetch", "paused nine hours: nothing proven");
+    process.env.COLLECT_ENABLED = "true";
+    await run(ids.slice(60), "ok", -535);
+    assert.equal((await fetching(resumed))?.key, "content.fetch", "resumed: the others fetched first prove nothing about these");
+    await run(ids.slice(0, 60), "ok", -538);
+    assert.equal(await fetching(resumed), undefined, "a source whose next fetch worked no longer counts");
+  } finally {
+    await sql`DELETE FROM sources WHERE id IN ${sql(ids)}`;
+    process.env.COLLECT_ENABLED = "false";
+  }
+});
+
 // A restart, a paused valve, or old failures leaving the initial detection window cannot
 // close an open incident. A partial repair must keep the remaining work visible.
 test("content incidents survive restarts, pauses, aging failures and partial recovery", async () => {
@@ -296,6 +340,7 @@ test("provider alerts use the same 429 spending classification as paid requests"
       }));
       const finding = (await collectFindings()).find(f => f.key === `provider.refused.${service}`);
       assert.equal(!!finding, expected, `${service}: ${JSON.stringify(body)}`);
+      if (finding) assert.equal(finding.owner, true, "only the owner can pay or fix the account");
     } finally {
       await sql`DELETE FROM receipts WHERE purpose=${purpose}`;
     }

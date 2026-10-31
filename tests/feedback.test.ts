@@ -3,6 +3,9 @@
 // uploaded for a day, or that Feishu refuses outright, is dropped (the text still goes), screenshots left
 // behind are removed after a week, and imported feedback is never forwarded again. Without the chat a
 // screenshot is the only copy: it stays.
+// Handling records what each feedback is (a bug, a suggestion, a question or other), and suggestions that
+// name the same idea add up by sender, so the admin sees what readers ask for most. The pool lists every
+// idea: handling names a suggestion after the names in it, and one missing would get a second name.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
@@ -10,6 +13,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import sharp from "sharp";
+import { listFeedback, updateFeedback } from "@aihot/backend/admin/feedback";
+import { Conflict } from "@aihot/backend/audit";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { forwardFeedbackToFeishu } from "@aihot/backend/notify/feishu";
@@ -151,4 +156,86 @@ test("a browser retry creates one feedback and forwards one notification", async
   assert.ok((await state(id)).forwarded);
   assert.equal(feishu.sent.filter(m => m.title === `反馈 #${id}`).length, 1);
   assert.ok(JSON.stringify(sentFor(id)?.content).includes(input.content));
+});
+
+/** Handles one feedback as the admin would: against the version it was read at. */
+async function handle(id: number, change: { status?: string; kind?: string | null; idea?: string | null; note?: string | null }) {
+  const [row] = (await listFeedback({ id })).rows;
+  return updateFeedback(id, { ...change, version: new Date(row!.updated_at).toISOString() }, "test");
+}
+const ask = (content: string, ip: string) => {
+  delete process.env.FEISHU_INTERNAL_ENABLED;
+  return submitFeedback({ content: `${content} ${T}`, ip, userAgent: "Firefox" });
+};
+
+test("handling records what each feedback is, and suggestions for the same idea add up by sender", async () => {
+  const idea = `GitHub 热点项目榜 ${T}`;
+  const first = await ask("想要一个 GitHub 热门项目榜", "198.51.100.11");
+  const second = await ask("能不能加 GitHub trending", "198.51.100.12");
+  const again = await ask("还是想要 GitHub 热点", "198.51.100.11");
+  const spam = await ask("GitHub 热点 GitHub 热点", "198.51.100.13");
+  const english = await ask("加一个英文版", "198.51.100.14");
+  await handle(first.id, { kind: "suggestion", idea, status: "triaged" });
+  await handle(second.id, { kind: "suggestion", idea: `  ${idea} `, status: "triaged" });
+  await handle(again.id, { kind: "suggestion", idea, status: "triaged" });
+  await handle(spam.id, { kind: "suggestion", idea, status: "spam" });
+  await handle(english.id, { kind: "suggestion", idea: `英文版 ${T}`, status: "triaged" });
+
+  const pool = (await listFeedback({ kind: "suggestion" })).ideas.filter((i) => i.idea.endsWith(T));
+  assert.deepEqual(pool.map((i) => [i.idea, i.people]), [[idea, 2], [`英文版 ${T}`, 1]],
+    "the sender who asked twice counts once, spam does not count, the most asked comes first");
+  const listed = await listFeedback({ kind: "suggestion", idea });
+  assert.deepEqual(listed.rows.map((r) => r.id).sort(), [first.id, second.id, again.id, spam.id].sort());
+  assert.ok(listed.rows.every((r) => r.kind === "suggestion" && r.idea === idea), "the name is kept without surrounding spaces");
+  assert.ok((listed.kinds.suggestion ?? 0) >= 5);
+  const [audit] = await sql<{ before: { kind: string | null }; after: { kind: string; idea: string } }[]>`
+    SELECT before, "after" FROM audit_log WHERE subject = ${`feedback:${first.id}`} ORDER BY id DESC LIMIT 1`;
+  assert.deepEqual([audit!.before.kind, audit!.after.kind, audit!.after.idea], [null, "suggestion", idea]);
+});
+
+test("the pool lists every idea, however many there are", async () => {
+  const named = Array.from({ length: 201 }, (_, i) => `建议池第 ${i + 1} 项 ${T}`);
+  await sql`INSERT INTO feedback ${sql(named.map((idea, i) => ({ content: `想要${idea}`, source_hash: `pool:${T}:${i}`, status: "triaged", kind: "suggestion", idea })))}`;
+  const pool = new Set((await listFeedback({ kind: "suggestion" })).ideas.map((i) => i.idea));
+  assert.deepEqual(named.filter((idea) => !pool.has(idea)), []);
+});
+
+test("an unknown kind, an idea outside a suggestion and a stale version are refused; reclassifying leaves the pool", async () => {
+  const { id } = await ask("为什么模型榜上没有千问了", "198.51.100.21");
+  await assert.rejects(handle(id, { kind: "praise" }), /unknown kind/);
+  await assert.rejects(handle(id, { kind: "question", idea: "千问上榜" }), /只有建议/);
+  await assert.rejects(handle(id, { kind: "suggestion", idea: "名".repeat(41) }), /40/);
+  const stale = new Date((await listFeedback({ id })).rows[0]!.updated_at).toISOString();
+  await handle(id, { kind: "suggestion", idea: `千问上榜 ${T}` });
+  await assert.rejects(updateFeedback(id, { kind: "question", version: stale }, "test"), (e) => e instanceof Conflict);
+  await handle(id, { kind: "question" });
+  const [row] = (await listFeedback({ id })).rows;
+  assert.deepEqual([row!.kind, row!.idea], ["question", null], "a feedback that is no longer a suggestion leaves the pool");
+  assert.ok(!(await listFeedback({ kind: "suggestion" })).ideas.some((i) => i.idea === `千问上榜 ${T}`));
+});
+
+test("the admin page filters by kind and idea and edits both through the API", async () => {
+  const { buildApp } = await import("../apps/api/src/app.ts");
+  const { passwordLogin, SESSION_COOKIE } = await import("@aihot/backend/admin/auth");
+  const app = await buildApp();
+  const originalPassword = config.adminPassword;
+  config.adminPassword = "feedback-handling-test-password";
+  try {
+    const { token } = await passwordLogin(config.adminPassword, "/admin", "test");
+    const cookie = `${SESSION_COOKIE}=${token}`;
+    const headers = { cookie, "x-csrf-token": (await app.inject({ method: "GET", url: "/api/admin/me", headers: { cookie } })).json().csrf };
+    const idea = `动态下面能评论 ${T}`;
+    const { id } = await ask("想在每条动态下面评论", "198.51.100.31");
+    const version = new Date((await listFeedback({ id })).rows[0]!.updated_at).toISOString();
+    const edited = await app.inject({ method: "PATCH", url: `/api/admin/feedback/${id}`, headers, payload: { kind: "suggestion", idea, version } });
+    assert.equal(edited.statusCode, 200, edited.body);
+    const listed = await app.inject({ method: "GET", url: `/api/admin/feedback?kind=suggestion&idea=${encodeURIComponent(idea)}`, headers: { cookie } });
+    assert.deepEqual(listed.json().rows.map((r: { id: number }) => r.id), [id]);
+    assert.deepEqual(listed.json().ideas.find((i: { idea: string }) => i.idea === idea)?.people, 1);
+    const bugs = await app.inject({ method: "GET", url: "/api/admin/feedback?kind=bug", headers: { cookie } });
+    assert.ok(!bugs.json().rows.some((r: { id: number }) => r.id === id));
+  } finally {
+    config.adminPassword = originalPassword;
+    await app.close();
+  }
 });

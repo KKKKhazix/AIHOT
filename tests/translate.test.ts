@@ -440,3 +440,30 @@ test("account 429 pauses translation without spending the article attempts", asy
     await denied.close();
   }
 });
+
+test("saved X long articles neither buy unused introduction translations nor occupy the translation batch", async () => {
+  const source = `${SOURCE}-long-article`;
+  await sql`INSERT INTO sources(id,name,kind,tier,participation_mode,site_fulltext,syndicate_fulltext,next_fetch_at)
+    VALUES(${source},'Saved long article','x_search','T1','editorial',true,true,'2100-01-01')`;
+  const intro = `This introduction is long enough to be translated, but its translation would omit the already saved complete article. ${T}`;
+  const { articleId: long } = await upsertMaterial({sourceId: source, url: `https://x.com/fixture/status/${T}`, title: intro,
+    language: 'en', bodyText: intro, bodyStatus: 'ok', via: 'fetch', publishedAt: new Date(), discoveredAt: new Date(Date.now()+30_000_000),
+    xPost: {tweetId: T, authorName: 'Fixture', handle: 'fixture', text: intro}});
+  await sql`UPDATE articles SET x_article=${sql.json({title:'Saved long article',text:'The complete article is already stored.'})} WHERE id=${long}`;
+  const { articleId: regular } = await upsertMaterial({sourceId: SOURCE, url: `${URL_}-behind-long-article`, title: `Regular article ${T}`,
+    language: 'en', bodyText: `The price is ten dollars ${T}.`, bodyHtml: `<p>The price is ten dollars ${T}.</p>`,
+    bodyStatus: 'ok', via: 'fetch', publishedAt: new Date(), discoveredAt: new Date(Date.now()+29_000_000)});
+  for (const id of [long, regular]) {
+    await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
+      VALUES(${id},1,'rule','pass','ai-models','保存正文','摘要','理由',90,true)`;
+    await publishArticle(id,{releasedAt:new Date(Date.now()-60_000)});
+  }
+  const calls = provider.hits();
+  assert.equal((await translateArticle(long)).status,'skipped');
+  assert.equal(provider.hits(),calls,'a direct request must not pay for a translation readers cannot see');
+  const run = await translatePending({limit:1});
+  assert.equal(run.done.find(r=>r.articleId===regular)?.status,'translated','skip the long article before applying the batch limit');
+  assert.ok(!run.done.some(r=>r.articleId===long));
+  assert.equal((await sql`SELECT 1 FROM receipts WHERE subject LIKE ${`article:${long}@%`}`).length,0);
+  assert.equal((await sql`SELECT 1 FROM translations WHERE article_id=${long}`).length,0);
+});

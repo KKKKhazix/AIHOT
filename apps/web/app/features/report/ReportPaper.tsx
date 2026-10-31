@@ -18,6 +18,7 @@ import { SourceAvatar } from "../../components/ui/SourceAvatar";
 import { Halftone } from "./Halftone";
 import { Nameplate } from "./Nameplate";
 import { IssueDots } from "./IssueDots";
+import { Picture } from "../../components/ui/Picture";
 import { monthDay } from "../../lib/format.ts";
 import { EDITION, MOTTO, dateLine, dateMark, headline, metricItems, neighbourLabel, reportPath, shortDay } from "./format";
 
@@ -244,8 +245,8 @@ function LeadPicture({ cover, onError, priority = false, className = "" }: { cov
   return (
     <figure className={className}>
       <div className="overflow-hidden well rounded-panel" style={{ aspectRatio: shown }}>
-        <img src={cover.url} srcSet={cover.srcSet}
-          sizes={priority ? "(min-width: 1700px) 780px, (min-width: 1580px) calc(100vw - 920px), (min-width: 1420px) calc(100vw - 880px), (min-width: 1024px) calc(100vw - 540px), (min-width: 640px) 608px, calc(100vw - 32px)" : "auto, (min-width: 1180px) 300px, (min-width: 640px) 608px, calc(100vw - 32px)"}
+        <Picture src={cover.url} srcSet={cover.srcSet}
+          sizes={priority ? "(min-width: 1700px) 780px, (min-width: 1580px) calc(100vw - 920px), (min-width: 1420px) calc(100vw - 880px), (min-width: 1176px) calc(100vw - 540px), (min-width: 1140px) calc(100vw - 600px), (min-width: 941px) calc(100vw - 260px), (min-width: 640px) 608px, calc(100vw - 32px)" :"auto, (min-width: 1180px) 300px, (min-width: 640px) 608px, calc(100vw - 32px)"}
           width={cover.width ?? undefined} height={cover.height ?? undefined}
           alt="" loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" onError={onError} className="size-full object-cover" />
       </div>
@@ -377,8 +378,7 @@ function FrontPage({ report, pages, leadStory, count }: { report: ReportDetail; 
 function QuietFront({ lead }: { lead: NonNullable<ReportDetail["lead"]> }) {
   return (
     <section aria-label="头版" className="pt-10 @[880px]:pt-16">
-      <Kicker>头版</Kicker>
-      <h2 className="mt-4 text-[32px] font-black leading-[1.28] tracking-[-0.03em] text-ink [text-wrap:balance] @[520px]:text-[40px] @[1040px]:text-[48px] @[1040px]:leading-[1.22]">
+      <h2 className="text-[32px] font-black leading-[1.28] tracking-[-0.03em] text-ink [text-wrap:balance] @[520px]:text-[40px] @[1040px]:text-[48px] @[1040px]:leading-[1.22]">
         {lead.title}
       </h2>
       {lead.leadParagraph && <p className="mt-6 max-w-[46em] text-[16.5px] leading-[1.9] text-ink-2 @[880px]:mt-7 @[880px]:text-[17.5px]">{lead.leadParagraph}</p>}

@@ -15,6 +15,7 @@ import { config } from "@aihot/backend/config";
 import { cachedByKey } from "@aihot/backend/lib/cache";
 import { logError } from "@aihot/backend/lib/log-error";
 import { dailyAnswer, hotAnswer, latestAnswer, periodAnswer, searchAnswer, searchItems, storyAnswer } from "@aihot/backend/publication/agent";
+import { SELECTION } from "@aihot/industry/selection";
 import { v1Items } from "@aihot/backend/publication/v1";
 import { SearchBusyError } from "@aihot/backend/publication/pool";
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
@@ -76,7 +77,7 @@ const category = z.enum(PUBLIC_API_CATEGORY_KEYS).optional().describe(`Optional 
 // Tool inputs are built once; each request's server instance registers the same schemas.
 const LATEST_INPUT = z.strictObject({
   window: z.enum(["24h", "7d"]).default("24h").describe("Time window. Use 24h for a current briefing and 7d for a weekly view."),
-  mode: z.enum(["selected", "all"]).default("selected").describe("selected returns editorial picks; all returns every public item."),
+  mode: z.enum(["selected", "all"]).default("selected").describe(`selected returns editorial picks; all returns every public item scoring ${SELECTION.browseFloor} or more.`),
   category,
   limit: z.number().int().min(1).max(30).default(10).describe("Maximum number of results, from 1 to 30."),
 });

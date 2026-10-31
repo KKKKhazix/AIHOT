@@ -3,7 +3,8 @@
 // Bodies are translated block by block (paragraphs, headings, list items, captions, table cells) so the
 // sanitised structure stays as it is. Inside a block, images and inline code never reach the model
 // (placeholders) and links keep only their text and an id; a block whose answer loses or repeats any of
-// them is asked once more, then kept in the original. Each batch is a receipt, so a re-run reuses
+// them is asked once more, closer to the original wording (rewording is what drops links), then kept in
+// the original. Each batch is a receipt, so a re-run reuses
 // answers already paid for. A translation missing any block is stored as incomplete, never as whole.
 // The post a selected X post quotes is translated too (once per quoted post, shared by every quote).
 import * as cheerio from "cheerio";
@@ -22,7 +23,7 @@ import { shutdownSignal } from "../jobs/queue.ts";
 import { promptText, promptVersion } from "./prompts.ts";
 import { emit } from "../modules.ts";
 
-export const TRANSLATE_PROMPT_VERSION = promptVersion("translate-body", "translate-post");
+export const TRANSLATE_PROMPT_VERSION = promptVersion("translate-body", "translate-body-retry", "translate-post");
 const BATCH_CHARS = 3500;
 /** Longer bodies get their first part translated and are marked incomplete. */
 const MAX_CHARS = 60_000;
@@ -43,6 +44,8 @@ const endsRun = (error: unknown) => ["off", "budget", "busy", "outage"].includes
   || (error instanceof ProviderRejectedError && error.accessRefused);
 
 const SYSTEM_BODY = promptText("translate-body");
+
+const SYSTEM_RETRY = promptText("translate-body-retry");
 
 const SYSTEM_POST = promptText("translate-post");
 
@@ -173,8 +176,8 @@ export function unshield(translated: string, s: Shielded): string | null {
 }
 
 export async function translateArticle(articleId: string): Promise<TranslateResult> {
-  const [row] = await sql<{ revision: number; channel: string; language: string | null; body_html: string | null; body_text: string | null; x_post: { text?: string } | null; title: string; selected: boolean; body_mode: string; visibility: string }[]>`
-    SELECT a.revision, p.channel, a.language, a.body_html, a.body_text, a.x_post, p.title, p.selected, p.body_mode, p.visibility
+  const [row] = await sql<{ revision: number; channel: string; language: string | null; body_html: string | null; body_text: string | null; x_post: { text?: string } | null; x_article: { text?: string } | null; title: string; selected: boolean; body_mode: string; visibility: string }[]>`
+    SELECT a.revision, p.channel, a.language, a.body_html, a.body_text, a.x_post, a.x_article, p.title, p.selected, p.body_mode, p.visibility
     FROM publications p JOIN articles a ON a.id = p.article_id WHERE p.article_id = ${articleId}`;
   if (!row) return { articleId, status: "skipped", reason: "not published" };
   const result = (r: Omit<TranslateResult, "articleId" | "revision">): TranslateResult => ({ articleId, revision: row.revision, ...r });
@@ -186,6 +189,8 @@ export async function translateArticle(articleId: string): Promise<TranslateResu
   if (!row.selected || row.visibility !== "public" || row.body_mode !== "full") return result({ status: "skipped", reason: "not a selected full-text item" });
 
   if (row.channel === "x") {
+    // Pages keep the complete long article in its original language; a post-only translation is unused.
+    if (row.x_article?.text) return result({ status: "skipped", reason: "saved long article shown in original" });
     const text = String(row.x_post?.text ?? row.body_text ?? "").trim();
     if (isEmptyOrLinkOnly(text)) return result({ status: "skipped", reason: "no text to translate" });
     const meaningful = collapseWhitespace(text.replace(/https?:\/\/\S+/g, ""));
@@ -218,10 +223,10 @@ export async function translateArticle(articleId: string): Promise<TranslateResu
   const first = await translateAll(articleId, row.revision, shielded.map((b) => b.html), SYSTEM_BODY);
   const receiptIds = [...first.receiptIds];
   const translations = restore(first.translations);
-  // Blocks whose answer dropped a link or an image are asked once more, on their own receipt.
+  // Blocks whose answer dropped a link or an image are asked once more, on their own receipt, with the retry prompt.
   const missing = translations.flatMap((t, i) => (t === null ? [i] : []));
   if (missing.length) {
-    const again = await translateAll(articleId, row.revision, missing.map((i) => shielded[i]!.html), SYSTEM_BODY, "retry");
+    const again = await translateAll(articleId, row.revision, missing.map((i) => shielded[i]!.html), SYSTEM_RETRY, "retry");
     receiptIds.push(...again.receiptIds);
     missing.forEach((i, k) => (translations[i] = again.translations[k] ? unshield(again.translations[k]!, shielded[i]!) : null));
   }
@@ -349,6 +354,7 @@ export async function translatePending(opts: { limit?: number; budgetMs?: number
     LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh'
     WHERE p.selected AND p.visibility = 'public' AND p.body_mode = 'full'
       AND (p.channel='x' OR a.body_html IS NOT NULL)
+      AND (p.channel <> 'x' OR coalesce(a.x_article->>'text', '') = '')
       AND (p.discovered_at > now() - interval '3 days'
            OR EXISTS (SELECT 1 FROM article_revisions r WHERE r.article_id = a.id AND r.revision = a.revision AND r.revision > 1
                       AND r.created_at > now() - interval '3 days'))

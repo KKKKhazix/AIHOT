@@ -211,8 +211,8 @@ export function Select({ children, ...props }: React.ComponentProps<"select">) {
   );
 }
 
-/** Link-based filter chips bound to one query parameter. */
-export function FilterChips({ param, options }: { param: string; options: Array<{ value: string; label: ReactNode; count?: number }> }) {
+/** Link-based filter chips bound to one query parameter; `resets` names the filters that depend on it. */
+export function FilterChips({ param, options, resets = [] }: { param: string; options: Array<{ value: string; label: ReactNode; count?: number }>; resets?: string[] }) {
   const [sp] = useSearchParams();
   const current = sp.get(param) ?? "";
   return (
@@ -221,7 +221,7 @@ export function FilterChips({ param, options }: { param: string; options: Array<
         const next = new URLSearchParams(sp);
         if (o.value) next.set(param, o.value);
         else next.delete(param);
-        next.delete("page");
+        for (const name of ["page", ...resets]) next.delete(name);
         const active = current === o.value;
         return (
           <Link
@@ -269,7 +269,8 @@ export function Json({ value, collapsed = true, label = "原始数据" }: { valu
 
 /**
  * A modal that collects a reason (and optional extra fields) before a manual change. The submit
- * handler receives the reason; returning true closes the dialog.
+ * handler receives the reason (or the `fieldLabel` field's value); returning true closes the dialog.
+ * Without `requireReason` there is no text field.
  */
 export function ReasonDialog({
   open,
@@ -278,6 +279,7 @@ export function ReasonDialog({
   confirmLabel = "确认",
   danger,
   requireReason = true,
+  fieldLabel,
   children,
   onClose,
   onSubmit,
@@ -289,6 +291,8 @@ export function ReasonDialog({
   confirmLabel?: string;
   danger?: boolean;
   requireReason?: boolean;
+  /** Names the required field when it is not an audit reason, e.g. a credential's name. */
+  fieldLabel?: string;
   children?: ReactNode;
   onClose: () => void;
   onSubmit: (reason: string) => Promise<boolean | void> | boolean | void;
@@ -331,11 +335,13 @@ export function ReasonDialog({
             <h2 className="text-[16px] font-semibold text-ink">{title}</h2>
             {description && <div className="mt-1.5 text-[13px] leading-relaxed text-ink-3">{description}</div>}
             {children && <div className="mt-4 space-y-3">{children}</div>}
-            <div className="mt-4">
-              <Field label={requireReason ? "原因（写进审计记录）" : "备注（可选）"}>
-                <Textarea ref={ref} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={requireReason ? "为什么做这个改动" : ""} rows={2} />
-              </Field>
-            </div>
+            {requireReason && (
+              <div className="mt-4">
+                <Field label={fieldLabel ?? "原因（写进审计记录）"}>
+                  <Textarea ref={ref} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={fieldLabel ? "" : "为什么做这个改动"} rows={2} />
+                </Field>
+              </div>
+            )}
             <div className="mt-5 flex justify-end gap-2">
               <Button tone="ghost" onClick={onClose}>取消</Button>
               <Button type="submit" tone={danger ? "danger" : "primary"} busy={busy} disabled={requireReason && !reason.trim()}>

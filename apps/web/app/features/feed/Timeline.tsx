@@ -14,7 +14,7 @@ import { EmptyState } from "../../components/ui/Page";
 import { beijingDate, beijingTime, beijingWeekday, monthDay } from "@aihot/contracts/time";
 import { byBeijingDay, weekdayShort } from "../../lib/format";
 import { isHydrated } from "../../lib/hydration";
-import { markRead, useReadSet } from "../../lib/local-state";
+import { markRead, setUnreadOnly, useReadSet, useUnreadOnly } from "../../lib/local-state";
 import { filterParams, listPath } from "../../lib/seo";
 import { isReload, readSnapshot, restoreAnchor, saveSnapshot, useSaveOnLeave } from "../../lib/restore";
 
@@ -27,12 +27,10 @@ interface ListState {
   dayCounts: Record<string, number>;
   collapsed: string[];
   batches: number;
-  /** The reader's unread-only filter: off by default, and kept when the same list is rebuilt. */
-  unreadOnly: boolean;
 }
 
-function fromResponse(r: TimelineResponse, unreadOnly = false): ListState {
-  return { version: 2, cards: r.cards, nextCursor: r.nextCursor, dayCounts: r.dayCounts, collapsed: [], batches: 1, unreadOnly };
+function fromResponse(r: TimelineResponse): ListState {
+  return { version: 2, cards: r.cards, nextCursor: r.nextCursor, dayCounts: r.dayCounts, collapsed: [], batches: 1 };
 }
 
 /**
@@ -135,6 +133,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
   const location = useLocation();
   const navigation = useNavigation();
   const readSet = useReadSet();
+  const unreadOnly = useUnreadOnly();
   const historyKey = location.key;
 
   // Back navigation (client side): restore synchronously from the snapshot. A full reload restores
@@ -172,7 +171,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
         setState(snap.data);
         restoreAnchor(snap.anchor, snap.scrollY);
       } else {
-        setState(fromResponse(initial, stateRef.current.unreadOnly));
+        setState(fromResponse(initial));
       }
     }
   }, [filterKey, initial, historyKey]);
@@ -188,7 +187,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
     pageRequest.current = null;
     setLoadingMore(false);
     setLoadError(false);
-    setState(fromResponse(initial, stateRef.current.unreadOnly));
+    setState(fromResponse(initial));
   }, [initial, filterKey]);
 
   useLayoutEffect(() => {
@@ -230,7 +229,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
         // Cursor no longer fits: start over from the head.
         const head = await fetch(key, { signal: controller.signal });
         if (!head.ok) throw new Error(String(head.status));
-        if (current()) setState(fromResponse((await head.json()) as TimelineResponse, stateRef.current.unreadOnly));
+        if (current()) setState(fromResponse((await head.json()) as TimelineResponse));
         return;
       }
       if (!res.ok) throw new Error(String(res.status));
@@ -271,7 +270,6 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
   }, [state.nextCursor, state.batches, loadMore]);
 
   const today = beijingDate(Date.now());
-  const unreadOnly = state.unreadOnly;
   // 只看未读 hides cards read in this browser: an ordinary card by its own id, a reading group by any
   // of its selected reports, so a read representative does not hide the unread reports behind it.
   // A group kept that way is not drawn as read; its expansion marks which reports are unread.
@@ -299,7 +297,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
 
   let order = 0;
   const unreadToggle = (
-    <ToggleChip on={unreadOnly} onToggle={() => setState((s) => ({ ...s, unreadOnly: !s.unreadOnly }))}>
+    <ToggleChip on={unreadOnly} onToggle={() => setUnreadOnly(!unreadOnly)}>
       只看未读
     </ToggleChip>
   );

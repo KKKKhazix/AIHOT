@@ -5,7 +5,7 @@ import type { Route } from "./+types/source-new";
 import type { AdminSourceCreated, AdminSourcePreview } from "@aihot/contracts/admin";
 import { useAdminAction } from "../../features/admin/action";
 import { bj } from "../../features/admin/format";
-import { KIND_LABEL, MODE_LABEL, TIER_LABEL } from "../../features/admin/labels";
+import { KIND_LABEL, MODE_LABEL, SELECTION_CLASS_LABEL, TIER_LABEL } from "../../features/admin/labels";
 import { AdminPage, Button, Card, Empty, Field, Input, Select, Textarea } from "../../features/admin/ui";
 
 export const meta: Route.MetaFunction = () => [{ title: `新建信源 · ${SITE.name} 后台` }];
@@ -23,7 +23,7 @@ const TEMPLATES: Record<string, Record<string, unknown>> = {
 export default function NewSource() {
   const navigate = useNavigate();
   const { run, pending } = useAdminAction();
-  const [form, setForm] = useState({ id: "", name: "", kind: "rss", tier: "T2", participation_mode: "editorial", interval_minutes: 30, first_party: false, site_fulltext: SOURCE_DEFAULTS.siteFulltext, syndicate_fulltext: false, tags: "" });
+  const [form, setForm] = useState({ id: "", name: "", kind: "rss", tier: "T2", selection_class: "", participation_mode: "editorial", interval_minutes: 30, first_party: false, site_fulltext: SOURCE_DEFAULTS.siteFulltext, syndicate_fulltext: false, tags: "" });
   const [config, setConfig] = useState(JSON.stringify(TEMPLATES.rss, null, 2));
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<AdminSourcePreview | null>(null);
@@ -75,6 +75,12 @@ export default function NewSource() {
                 {Object.entries(TIER_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </Select>
             </Field>
+            <Field label="类别" hint="抬高精选门槛，一手身份不变">
+              <Select value={form.selection_class} onChange={(e) => setForm({ ...form, selection_class: e.target.value })}>
+                <option value="">无（按等级）</option>
+                {Object.entries(SELECTION_CLASS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </Select>
+            </Field>
             <Field label="标签（逗号分隔）">
               <Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} />
             </Field>
@@ -123,7 +129,7 @@ export default function NewSource() {
                 const r = await run<AdminSourceCreated>(
                   "POST",
                   "/api/admin/sources",
-                  { ...form, tags: form.tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean), config: c },
+                  { ...form, selection_class: form.selection_class || null, tags: form.tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean), config: c },
                   { label: "create", revalidate: false },
                 );
                 if (!r) return;

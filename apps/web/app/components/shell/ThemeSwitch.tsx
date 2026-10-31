@@ -47,7 +47,7 @@ export function ThemeSwitch({ className = "" }: { className?: string }) {
           aria-checked={current === o.key}
           title={o.label}
           onClick={() => choose(o.key)}
-          className={`relative z-10 flex items-center justify-center rounded-full transition-colors duration-150 ${current === o.key ? "text-ink" : "text-ink-4 hover:text-ink-2"}`}
+          className={`relative z-10 flex items-center justify-center rounded-full transition-colors duration-150 touch:before:absolute touch:before:inset-x-0 touch:before:top-1/2 touch:before:h-11 touch:before:-translate-y-1/2 touch:before:content-[''] ${current === o.key ? "text-ink" : "text-ink-4 hover:text-ink-2"}`}
         >
           {o.icon}
           <span className="sr-only">{o.label}</span>

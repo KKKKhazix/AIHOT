@@ -15,3 +15,6 @@ export const RESPONSIVE_MODES = {
   body: ["thumb", "image-1200", "full"],
   hero: ["thumb", "image-1200", "full"],
 } as const satisfies Record<ResponsiveImageKind, readonly ProxyMode[]>;
+
+/** Renditions the pages also offer as AVIF (contracts' AVIF_MODE_SUFFIX): the responsive sets, not avatars. */
+export const AVIF_MODES: readonly ProxyMode[] = [...new Set([...RESPONSIVE_MODES.card, ...RESPONSIVE_MODES.body, ...RESPONSIVE_MODES.hero])];

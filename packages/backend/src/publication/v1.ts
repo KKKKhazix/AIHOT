@@ -4,7 +4,7 @@ import { sql, type Db } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
 import { newShortId } from "../lib/ids.ts";
 import { publicCategoryCondition, API_ITEM_COLUMNS, API_ITEM_FROM, type ApiItemRow } from "./items.ts";
-import { listedCondition, seatedCondition } from "./scope.ts";
+import { browsedCondition, listedCondition, seatedCondition } from "./scope.ts";
 import { publicMatchCondition, searchTerms, withSearchCapacity } from "./pool.ts";
 import { sharedSearch } from "../lib/cache.ts";
 import { v1Payload, type V1ItemPayload } from "./publish.ts";
@@ -55,7 +55,7 @@ async function queryItems(query: V1ItemsQuery, now: Date): Promise<V1ItemsResult
     if (c.a < windowStart.getTime()) throw new InvalidCursorError("the rolling window moved past this cursor");
     after = { a: c.a, i: c.i };
   }
-  const scope = query.mode === "selected" ? seatedCondition(now) : listedCondition(now);
+  const scope = query.mode === "selected" ? seatedCondition(now) : query.q ? listedCondition(now) : browsedCondition(now);
   const terms = query.q ? searchTerms(query.q) : [];
 
   const run = (db: Db) => db<(ApiItemRow & { sort_at: Date })[]>`

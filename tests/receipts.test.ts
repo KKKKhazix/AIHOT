@@ -417,3 +417,25 @@ test("one model's spent quota stops that model, not the service's other models",
     await sql`DELETE FROM settings WHERE key = ${providerStopKey("dashscope", vision)}`;
   }
 });
+
+test("an answer to a call sent before the refusal does not release the stop", async () => {
+  // Concurrent calls: one already in flight may have had the last of the quota and answer after another is refused.
+  const service = `invariant-inflight-${tag()}`;
+  const held = gate();
+  const sent = gate();
+  try {
+    const early = paidRequest({ service, purpose: "invariant_test", identity: "early" }, async () => { sent.open(); await held.promise; return { response: { ok: true } }; });
+    await sent.promise;
+    await assert.rejects(paidRequest({ service, purpose: "invariant_test", identity: "refused" }, async () => {
+      assertAccepted(service, 402, '{"error":{"message":"insufficient balance"}}');
+      return { response: null };
+    }), ProviderRejectedError);
+    held.open();
+    await early;
+    assert.equal((await sql`SELECT 1 FROM settings WHERE key = ${providerStopKey(service)}`).length, 1, "the stop holds");
+    await assert.rejects(paidRequest({ service, purpose: "invariant_test", identity: "next" }, async () => ({ response: null })), BudgetExceededError);
+  } finally {
+    await sql`DELETE FROM receipts WHERE service = ${service}`;
+    await sql`DELETE FROM settings WHERE key = ${providerStopKey(service)}`;
+  }
+});

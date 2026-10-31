@@ -57,9 +57,10 @@
     },
     {
       "slug": "kimi",
-      "name": "Kimi / 月之暗面",
+      "name": "月之暗面 / Kimi",
       "group": "company",
       "entityId": "kimi",
+      "aliases": ["Kimi / 月之暗面"],
       "definition": "月之暗面的 Kimi 产品更新、K 系列开源模型与长文本技术进展。"
     },
     {

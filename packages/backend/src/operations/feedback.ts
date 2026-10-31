@@ -70,6 +70,21 @@ export async function resetFeedbackSubmissionState(source: string, db: Db = sql)
   await db`DELETE FROM feedback_submission_state WHERE source_hash = ${source}`;
 }
 
+/**
+ * The page a report came from, as the admin opens it: a web address or a path on this site. A script or data
+ * address (the form takes it from a link) is dropped and the report kept; a leading "//" or "/\" leaves the site.
+ */
+function pageAddress(raw: string | null | undefined): string | null {
+  const page = raw?.trim().slice(0, 500);
+  if (!page) return null;
+  if (page.startsWith("/")) return /^\/[/\\]/.test(page) ? null : page;
+  try {
+    return ["http:", "https:"].includes(new URL(page).protocol) ? page : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface FeedbackInput {
   content: string;
   email?: string | null;
@@ -85,8 +100,9 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
   if (content.length > 5000) throw new FeedbackRejected(400, "invalid_request", "反馈内容最多 5000 字。");
   const email = input.email?.trim() || null;
   if (email && (email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new FeedbackRejected(400, "invalid_request", "邮箱格式不正确。");
-  const pageUrl = input.pageUrl?.trim().slice(0, 500) || null;
+  const pageUrl = pageAddress(input.pageUrl);
   const source = feedbackSourceHash(input.ip, input.userAgent);
+  const network = `network:${createHmac("sha256", identifierSecret()).update(input.ip).digest("base64url")}`;
   // A ban holds under every key the source is known by.
   const keys = [source, ...serverModules().flatMap((m) => m.feedbackKeys?.(input.ip) ?? []), ...(email ? [feedbackEmailKey(email)] : [])];
   // Check before decoding an image, then again under the per-source row lock below.
@@ -121,6 +137,10 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
     const result = await sql.begin(async (tx): Promise<{ id: number; fresh: boolean } | FeedbackRejected> => {
       // Concurrent retries and blue/green API processes must share the same decision and saved ID.
       // The upsert also prevents housekeeping from deleting an expired row before it is locked.
+      // Lock the shared network before the browser source in every API process.
+      const [networkState] = await tx<{ attempts: number[] }[]>`
+        INSERT INTO feedback_submission_state (source_hash, expires_at) VALUES (${network}, ${new Date(Date.now() + HOUR)})
+        ON CONFLICT (source_hash) DO UPDATE SET expires_at = EXCLUDED.expires_at RETURNING attempts`;
       const [state] = await tx<{ attempts: number[]; submissions: Submission[] }[]>`
         INSERT INTO feedback_submission_state (source_hash, expires_at) VALUES (${source}, ${new Date(Date.now() + HOUR)})
         ON CONFLICT (source_hash) DO UPDATE SET expires_at = EXCLUDED.expires_at RETURNING attempts, submissions`;
@@ -141,6 +161,13 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
         await audit("feedback-auto", "feedback.ban", `feedback-source:${source}`, reason, null, { expires_at: until.toISOString() }, { db: tx });
         return new FeedbackRejected(429, "rate_limited", "反馈提交过于频繁，已暂停 1 小时。请稍后再试，草稿会保留。", 3600);
       }
+      // A shared quota throttles rotating UA families without banning the whole network.
+      const networkAttempts = networkState!.attempts.filter(t => t > now - HOUR);
+      if (networkAttempts.length >= MAX_ATTEMPTS) {
+        return new FeedbackRejected(429, "rate_limited", "同一网络反馈提交过于频繁。请稍后再试，草稿会保留。", Math.max(1, Math.ceil((networkAttempts[0]! + HOUR - now) / 1000)));
+      }
+      networkAttempts.push(now);
+      await tx`UPDATE feedback_submission_state SET attempts = ${tx.json(networkAttempts)} WHERE source_hash = ${network}`;
       attempts.push(now);
       await tx`UPDATE feedback_submission_state SET attempts = ${tx.json(attempts)}, submissions = ${tx.json(submissions)}, expires_at = ${new Date(now + HOUR)} WHERE source_hash = ${source}`;
       if (duplicate) return { id: duplicate.id, fresh: false };

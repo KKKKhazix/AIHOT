@@ -100,6 +100,8 @@ export interface Finding {
    * stays on the ops list only.
    */
   agentOnly?: true;
+  /** The hub event type of such a wake, so each kind of agent-only work is its own line there; `alert.review` when unset. */
+  agentType?: `alert.${string}`;
 }
 
 const MARK: Record<Exclude<Level, "later">, string> = { now: "🔴", today: "🟠" };

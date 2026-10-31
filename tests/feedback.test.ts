@@ -216,8 +216,12 @@ test("an unknown kind, an idea outside a suggestion and a stale version are refu
 
 test("the admin page filters by kind and idea and edits both through the API", async () => {
   const { buildApp } = await import("../apps/api/src/app.ts");
+  const { registerAdmin } = await import("../apps/api/src/routes/admin.ts");
+  const { ADMIN } = await import("@aihot/site");
   const { passwordLogin, SESSION_COOKIE } = await import("@aihot/backend/admin/auth");
   const app = await buildApp();
+  // The engine's admin API, which a site without admin pages does not mount.
+  if (!ADMIN) registerAdmin(app);
   const originalPassword = config.adminPassword;
   config.adminPassword = "feedback-handling-test-password";
   try {

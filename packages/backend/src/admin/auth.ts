@@ -2,6 +2,7 @@
 // union_ids / emails; opaque sessions stored hashed, and an audit trail for every manual change.
 // Development may impersonate an admin with DEV_AUTH_ROLE=admin; production refuses to start with it.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { safeReturn, SIGN_IN_HOME } from "@aihot/contracts/admin";
 import { audit } from "../audit.ts";
 import { config, credential } from "../config.ts";
 import { sql } from "../db.ts";
@@ -113,21 +114,6 @@ export function loginRedirect(returnTo: string): { url: string; stateCookie: str
   return { url, stateCookie: sign(state) };
 }
 
-/** Only admin paths on this site; anything else (other hosts, protocol-relative) falls back to /admin. */
-export function safeReturn(target: string): string {
-  let path = target;
-  // A proxy's login redirect may pass the whole original URL; keep only its path and query.
-  if (/^https?:\/\//i.test(path)) {
-    try {
-      const u = new URL(path);
-      path = `${u.pathname}${u.search}`;
-    } catch {
-      return "/admin";
-    }
-  }
-  return /^\/admin(\/|\?|$)/.test(path) && !path.startsWith("//") ? path : "/admin";
-}
-
 interface FeishuUser {
   union_id?: string;
   email?: string;
@@ -178,7 +164,8 @@ export async function completeLogin(code: string, state: string, stateCookie: st
   const expected = unsign(stateCookie);
   const given = unsign(state);
   if (!expected || !given || expected !== given) throw new LoginRejected("登录状态已失效，请重新登录");
-  const returnTo = given.split("|")[1] ?? "/admin";
+  // What follows the random part is the path (safeReturn, signed), which may itself hold a "|".
+  const returnTo = given.includes("|") ? given.slice(given.indexOf("|") + 1) : SIGN_IN_HOME;
   const { user: u, appId } = await feishuUser(code);
   const emailClaim = u.enterprise_email ?? u.email;
   const email = typeof emailClaim === "string" ? emailClaim.toLowerCase() || null : null;

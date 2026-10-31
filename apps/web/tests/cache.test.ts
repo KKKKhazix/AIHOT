@@ -1,6 +1,8 @@
 // Run after `npm run build -w @aihot/web`. Real production server/router, synthetic HTTP API only.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { ADMIN } from "@aihot/site";
+import { SIGN_IN_HOME } from "@aihot/contracts/admin";
 import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { UNSAFE_decodeViaTurboStream } from "react-router";
 import { fakeApi, startWebServer, type WebServer } from "./web-server.ts";
@@ -116,11 +118,17 @@ test("missing routes cannot be hidden by a root-only request; errors and redirec
 });
 
 test("admin data and actions never become public cache entries", async () => {
-  const admin = await fetch(`${origin}/admin/sources.data?_routes=admin-layout`);
-  assert.equal(admin.status, 202);
-  assert.equal(admin.headers.get("Cache-Control"), "private, no-store");
-  assert.equal(admin.headers.get("X-Accel-Expires"), "0");
-  assert.match(await admin.text(), /api\/auth\/login/);
+  if (ADMIN) {
+    const admin = await fetch(`${origin}/admin/sources.data?_routes=admin-layout`);
+    assert.equal(admin.status, 202);
+    assert.equal(admin.headers.get("Cache-Control"), "private, no-store");
+    assert.equal(admin.headers.get("X-Accel-Expires"), "0");
+    assert.match(await admin.text(), /api\/auth\/login/);
+  } else {
+    const none = await fetch(`${origin}/admin/sources`);
+    assert.equal(none.status, 404, "a site without admin pages has none");
+    await none.text();
+  }
   const action = await fetch(`${origin}/hot.data`, { method: "POST" });
   assert.equal(action.status, 405);
   assert.equal(action.headers.get("Cache-Control"), "private, no-store");
@@ -208,9 +216,9 @@ test("a signed-in admin is sent past the sign-in page", async () => {
     assert.equal(res.status, 302);
     assert.equal(res.headers.get("location"), "/admin/content");
     await res.text();
-    for (const target of ["javascript:alert(1)", "//evil.example/admin", "https://evil.example/admin"]) {
-      const away = await fetch(`${signedIn.origin}/admin/login?return=${encodeURIComponent(target)}`, { headers: { cookie: "aihot_admin=fixture" }, redirect: "manual" });
-      assert.equal(away.headers.get("location"), "/admin", target);
+    for (const [target, location] of [["javascript:alert(1)", SIGN_IN_HOME], ["//evil.example/admin", SIGN_IN_HOME], ["/x/..//evil.example", SIGN_IN_HOME], ["https://evil.example/admin", "/admin"], ["/free-preview", "/free-preview"]]) {
+      const away = await fetch(`${signedIn.origin}/admin/login?return=${encodeURIComponent(target!)}`, { headers: { cookie: "aihot_admin=fixture" }, redirect: "manual" });
+      assert.equal(away.headers.get("location"), location, target);
       await away.text();
     }
     const anonymous = await fetch(`${signedIn.origin}/admin/login?return=%2Fadmin`, { redirect: "manual" });

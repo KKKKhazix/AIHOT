@@ -1,7 +1,7 @@
 // Admin sign-in and the /api/admin guard. Public routes never read the session.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
-import type { AdminMe } from "@aihot/contracts/admin";
+import { safeReturn, SIGN_IN_HOME, type AdminMe } from "@aihot/contracts/admin";
 import { DEPLOYMENT, SITE } from "@aihot/site";
 import { config } from "@aihot/backend/config";
 import {
@@ -13,7 +13,6 @@ import {
   loginRedirect,
   parseCookies,
   passwordLogin,
-  safeReturn,
   SESSION_COOKIE,
   SESSION_DAYS,
   sessionPrincipal,
@@ -92,7 +91,7 @@ export function registerAdminAuth(app: FastifyInstance) {
     const returnTo = String(
       (req.query as Record<string, string>).return
       ?? (DEPLOYMENT.loginReturnHeader ? req.headers[DEPLOYMENT.loginReturnHeader.toLowerCase()] : undefined)
-      ?? "/admin",
+      ?? SIGN_IN_HOME,
     );
     // A live session does not need signing in again: go straight to where the visitor was headed.
     if (await sessionPrincipal(req.headers.cookie)) return reply.header("Cache-Control", "no-store").redirect(safeReturn(returnTo), 302);
@@ -109,7 +108,7 @@ export function registerAdminAuth(app: FastifyInstance) {
     });
     form.post("/api/auth/password", async (req, reply) => {
       const b = (req.body ?? {}) as Record<string, string>;
-      const returnTo = String(b.return ?? "/admin");
+      const returnTo = String(b.return ?? SIGN_IN_HOME);
       reply.header("Cache-Control", "no-store");
       if (tooManyAttempts(String(req.ip))) return reply.redirect(loginPage(returnTo, "too-many"), 303);
       try {
@@ -131,7 +130,7 @@ export function registerAdminAuth(app: FastifyInstance) {
 
   // Feishu sign-in (FEISHU_LOGIN_APP_ID / FEISHU_LOGIN_APP_SECRET and an allowlist), from the sign-in page.
   app.get("/api/auth/feishu", async (req, reply) => {
-    const returnTo = String((req.query as Record<string, string>).return ?? "/admin");
+    const returnTo = String((req.query as Record<string, string>).return ?? SIGN_IN_HOME);
     if (!feishuLoginConfigured()) return reply.header("Cache-Control", "no-store").redirect(loginPage(returnTo), 302);
     return feishuRedirect(req, reply, returnTo);
   });

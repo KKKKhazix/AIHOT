@@ -1,6 +1,30 @@
 // Admin API (/api/admin/*): what each back-office endpoint returns, shared by the api's admin
 // functions and the admin pages. Only administrators reach it; it changes with the admin UI and is
 // never a public contract. Rows mirror their SQL columns (snake_case); timestamps are ISO strings.
+import { ADMIN } from "@aihot/site";
+
+/** Where signing in leads when the visitor was not headed anywhere: the admin pages, on a site that has them. */
+export const SIGN_IN_HOME = ADMIN ? "/admin" : "/";
+
+/**
+ * A path on this site to go to after signing in; anything else (other hosts, protocol-relative, schemes) is
+ * SIGN_IN_HOME. So is a path too long for a Location header: a reverse proxy's default response header buffer
+ * is a few kilobytes, and an overflowing response is an error page.
+ */
+export function safeReturn(target: string): string {
+  try {
+    // A proxy's login redirect may pass the whole original URL; only its path and query count.
+    const path = /^https?:\/\//i.test(target) ? ((u) => `${u.pathname}${u.search}`)(new URL(target)) : target;
+    // The URL parser drops tabs and newlines and reads a backslash as a slash, as browsers do.
+    const u = new URL(path, "http://return.invalid");
+    const kept = `${u.pathname}${u.search}`;
+    // Check what is returned, not only what came in: resolved dot segments can leave "//" in front.
+    const here = (p: string) => new URL(p, "http://return.invalid").host === "return.invalid";
+    return path.startsWith("/") && here(path) && here(kept) && kept.length <= 2000 ? kept : SIGN_IN_HOME;
+  } catch {
+    return SIGN_IN_HOME;
+  }
+}
 
 declare const iso: unique symbol;
 
@@ -38,8 +62,8 @@ export interface AdminRerun {
   version?: string;
 }
 
-/** Items waiting for the admin, shown on the navigation: the engine's, and the modules' under their own keys. */
-export type AdminNavCounts = Partial<Record<"feedback" | "sources" | "runs", number>> & Record<string, number | undefined>;
+/** Items waiting for the admin, shown on the navigation. */
+export type AdminNavCounts = Partial<Record<"feedback" | "sources" | "runs", number>>;
 
 /** One manual change (audit_log), as a history list shows it. */
 export interface AdminAuditEntry {
@@ -324,8 +348,6 @@ export interface AdminRuns {
   errors: Array<{ error: string; n: number; last: Timestamp; example: string }>;
   retrying: { count: number; next: Timestamp | null };
   ingest: Array<{ client: string; kind: string; status: string; error: string | null; summary: unknown; created_at: Timestamp }>;
-  /** Each module's part of the page, under its name (what its server module's admin.runs returns). */
-  modules: Record<string, unknown>;
 }
 
 // Settings

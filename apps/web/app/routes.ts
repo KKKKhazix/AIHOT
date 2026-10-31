@@ -10,7 +10,6 @@ const page = (module: string, p: ModulePage) => route(p.path, file(module, p.fil
 const modulePages: RouteConfigEntry[] = MODULES.flatMap((m) =>
   (m.pages ?? []).map((p) => ("layout" in p ? layout(file(m.name, p.layout), p.id ? { id: p.id } : {}, p.pages.map((c) => page(m.name, c))) : page(m.name, p))),
 );
-const moduleAdminPages: RouteConfigEntry[] = MODULES.flatMap((m) => (m.adminPages ?? []).map((p) => page(m.name, p)));
 
 export default [
   index("routes/home.tsx"),
@@ -41,6 +40,7 @@ export default [
   route("agent", "routes/agent.tsx"),
   ...modulePages,
   route("admin/login", "routes/admin-login.tsx"),
+  // A site without admin pages (null ADMIN settings) answers 404 here (the layout); signing in serves every site.
   layout("routes/admin/layout.tsx", { id: "admin-layout" }, [
     route("admin", "routes/admin/index.tsx"),
     route("admin/content", "routes/admin/content.tsx"),
@@ -55,6 +55,5 @@ export default [
     route("admin/selectbench/:runId", "routes/admin/selectbench-run.tsx"),
     route("admin/settings", "routes/admin/settings.tsx"),
     route("admin/audit", "routes/admin/audit.tsx"),
-    ...moduleAdminPages,
   ]),
 ] satisfies RouteConfig;

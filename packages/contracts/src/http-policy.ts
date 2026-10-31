@@ -60,7 +60,6 @@ const ENGINE_REDIRECTS: RedirectRule[] = [
     // never enters shared caches.
     headers: { "Cache-Control": "private, no-store" },
   },
-  { match: "prefix", path: "/sources", status: 302, location: "/admin/sources*", why: "admin bookmarks" },
 ];
 
 

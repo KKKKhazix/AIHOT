@@ -92,7 +92,7 @@ function FeedbackCard({ f }: { f: AdminFeedbackRow }) {
       <ReasonDialog
         open={dialog === "ban"}
         title="封禁这个反馈来源"
-        description={`同一来源之后提交反馈会被拒绝。来源标识不可还原成 IP。${ADMIN.banNote ?? ""}`}
+        description={`同一来源之后提交反馈会被拒绝。来源标识不可还原成 IP。${ADMIN?.banNote ?? ""}`}
         danger
         confirmLabel="封禁"
         onClose={() => setDialog(null)}
@@ -126,7 +126,7 @@ export default function FeedbackAdmin({ loaderData }: Route.ComponentProps) {
   const { run } = useAdminAction();
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   return (
-    <AdminPage title="反馈" subtitle={ADMIN.feedbackNote}>
+    <AdminPage title="反馈" subtitle={ADMIN?.feedbackNote}>
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex flex-col gap-2">
           <FilterChips

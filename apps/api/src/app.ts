@@ -2,6 +2,7 @@ import Fastify, { LogController, type FastifyInstance, type FastifyReply, type F
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { OAUTH_PROBE_PATHS, resolveRedirect } from "@aihot/contracts/http-policy";
+import { ADMIN } from "@aihot/site";
 import { sql } from "@aihot/backend/db";
 import { logError } from "@aihot/backend/lib/log-error";
 import { serverModules } from "@aihot/backend/modules";
@@ -92,7 +93,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerSite(app);
   registerOg(app);
   registerAdminAuth(app);
-  registerAdmin(app);
+  // The admin pages' API, on a site that has the pages; signing in serves every site.
+  if (ADMIN) registerAdmin(app);
   registerIngest(app);
   registerV1(app);
   registerAgent(app);

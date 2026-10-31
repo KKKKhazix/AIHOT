@@ -7,7 +7,6 @@ import type { Heartbeat } from "../operations/heartbeat.ts";
 import { audit } from "../audit.ts";
 import { failureGroupSql, requeueFailed } from "../jobs/content.ts";
 import { groupingOverview, waitingSelectedNews } from "../operations/grouping.ts";
-import { serverModules } from "../modules.ts";
 import { awaitingRelease } from "../providers/receipts.ts";
 
 const STALE_HEARTBEAT_MS = 3 * 60_000;
@@ -15,7 +14,6 @@ const STALE_HEARTBEAT_MS = 3 * 60_000;
 type Runs = BeforeJson<AdminRuns>;
 
 export async function runsOverview(): Promise<Runs> {
-  const currentJobs = (await Promise.all(serverModules().flatMap((m) => m.admin?.currentJobs ? [m.admin.currentJobs()] : []))).flat();
   const [
     heartbeats,
     latest,
@@ -30,14 +28,13 @@ export async function runsOverview(): Promise<Runs> {
     ingest,
     grouping,
     [retrying],
-    modules,
   ] = await Promise.all([
     sql<{ key: string; value: Heartbeat; updated_at: Date }[]>`SELECT key, value, updated_at FROM settings WHERE key LIKE 'heartbeat.%' ORDER BY key`,
     sql<Runs["jobs"]>`
       WITH current_jobs AS (
-        -- Start with live schedules, so each indexed lookup reads one task rather than all history.
-        SELECT substring(name FROM 6) AS job FROM pgboss.schedule WHERE name LIKE 'cron.%'
-        UNION SELECT unnest(${currentJobs}::text[])
+        -- Start with live schedules, so each indexed lookup reads one task rather than all history; a task
+        -- scheduled under several keys is still one task.
+        SELECT DISTINCT substring(name FROM 6) AS job FROM pgboss.schedule WHERE name LIKE 'cron.%'
       )
       SELECT current_jobs.job, latest.*, counts.failed_24h, counts.runs_24h
       FROM current_jobs
@@ -80,7 +77,6 @@ export async function runsOverview(): Promise<Runs> {
     // Articles waiting to retry after a passing provider problem (they are not failed).
     sql<{ n: number; next: Date | null }[]>`
       SELECT count(*)::int AS n, min(processing_retry_at) AS next FROM articles WHERE processing_state = 'new' AND processing_attempts > 0`,
-    Promise.all(serverModules().flatMap((m) => (m.admin?.runs ? [m.admin.runs().then((part) => [m.name, part] as const)] : []))),
   ]);
   const now = Date.now();
   return {
@@ -102,7 +98,6 @@ export async function runsOverview(): Promise<Runs> {
     errors,
     retrying: { count: retrying?.n ?? 0, next: retrying?.next ?? null },
     ingest,
-    modules: Object.fromEntries(modules),
   };
 }
 

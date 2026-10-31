@@ -1,17 +1,25 @@
 import { motion } from "motion/react";
 import { Suspense } from "react";
-import { SITE } from "@aihot/site";
-import { Await, NavLink, Outlet, useLocation, useNavigation, type ShouldRevalidateFunction } from "react-router";
+import { ADMIN, SITE } from "@aihot/site";
+import { Await, data, NavLink, Outlet, useLocation, useNavigation, type ShouldRevalidateFunction } from "react-router";
 import type { Route } from "./+types/layout";
 import { RingMark } from "@aihot/site/brand/Logo.tsx";
 import { NavigationProgress } from "../../components/shell/Chrome";
 import type { AdminMe, AdminNavCounts } from "@aihot/contracts/admin";
 import { Toaster } from "../../features/admin/toast";
 import { adminGet } from "../../lib/admin.server";
-import type { AdminNavEntry } from "../../modules";
-import { webModules } from "../../site-modules";
+
+interface AdminNavEntry {
+  to: string;
+  label: string;
+  /** The badge: one of the navigation counts. */
+  count?: keyof AdminNavCounts;
+  tone?: "bad" | "accent";
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
+  // A site without admin pages (null ADMIN settings) has no admin API behind them either.
+  if (!ADMIN) throw data({ message: "not_found" }, { status: 404 });
   const counts = adminGet<AdminNavCounts>(request, "/api/admin/nav-counts").catch((): AdminNavCounts => ({}));
   const me = await adminGet<AdminMe>(request, "/api/admin/me");
   // Reset the badge boundaries so a navigation transition never keeps the old page waiting on them.
@@ -25,15 +33,12 @@ export const meta: Route.MetaFunction = () => [{ title: `${SITE.name} 后台` },
 
 export const headers: Route.HeadersFunction = () => ({ "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow", "X-Accel-Buffering": "no" });
 
-/** The admin navigation: the modules' own groups first, their content entries after 信源. */
 const nav = (): Array<{ group: string; items: AdminNavEntry[] }> => [
-  ...webModules().flatMap((m) => m.admin?.groups ?? []),
   {
     group: "内容",
     items: [
       { to: "/admin/content", label: "内容诊断" },
       { to: "/admin/sources", label: "信源", count: "sources", tone: "bad" },
-      ...webModules().flatMap((m) => m.admin?.content ?? []),
       { to: "/admin/feedback", label: "反馈", count: "feedback", tone: "accent" },
     ],
   },
@@ -51,7 +56,7 @@ const nav = (): Array<{ group: string; items: AdminNavEntry[] }> => [
 
 type Counts = Pick<Route.ComponentProps["loaderData"], "counts" | "countsKey">;
 
-function NavCount({ counts, countsKey, name, className }: Counts & { name: string | undefined; className: string }) {
+function NavCount({ counts, countsKey, name, className }: Counts & { name: keyof AdminNavCounts | undefined; className: string }) {
   if (!name) return null;
   return (
     <Suspense key={countsKey} fallback={null}>

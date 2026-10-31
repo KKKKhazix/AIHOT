@@ -56,9 +56,13 @@ test("email moderation does not block shared domains, anonymous security reports
 
 test("the authenticated moderation API enforces the pause on multipart submissions for both hosts", async () => {
   const { buildApp } = await import("../apps/api/src/app.ts");
+  const { registerAdmin } = await import("../apps/api/src/routes/admin.ts");
+  const { ADMIN } = await import("@aihot/site");
   const { config } = await import("@aihot/backend/config");
   const { passwordLogin, SESSION_COOKIE } = await import("@aihot/backend/admin/auth");
   const app = await buildApp();
+  // The engine's admin API, which a site without admin pages does not mount.
+  if (!ADMIN) registerAdmin(app);
   const originalPassword = config.adminPassword;
   config.adminPassword = "feedback-moderation-test-password";
   try {

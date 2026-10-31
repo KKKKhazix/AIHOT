@@ -10,12 +10,16 @@ import { upsertMaterial } from "@aihot/backend/content/materials";
 import { publishArticle } from "@aihot/backend/publication/publish";
 import { getBoss, stopBoss } from "@aihot/backend/jobs/queue";
 import { sha256 } from "@aihot/backend/lib/ids";
+import { ADMIN } from "@aihot/site";
 import { buildApp } from "../apps/api/src/app.ts";
+import { registerAdmin } from "../apps/api/src/routes/admin.ts";
 
 const T = tag();
 const sourceId = `admin-${T}`;
 await sql`INSERT INTO sources (id, name, kind, tier) VALUES (${sourceId}, 'Admin review', 'rss', 'T1')`;
 const app = await buildApp();
+// The engine's admin API, which a site without admin pages does not mount.
+if (!ADMIN) registerAdmin(app);
 after(async () => { await app.close(); await stopBoss(); await closeDb(); });
 
 async function article() {

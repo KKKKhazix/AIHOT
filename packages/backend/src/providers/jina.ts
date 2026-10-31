@@ -1,5 +1,6 @@
 // Jina Reader (r.jina.ai): browser-rendered page text. Paid per request, reached through the egress
 // proxy, always behind receipts and the per-minute/hour/day budget (any zero stops it).
+import { randomUUID } from "node:crypto";
 import { credential } from "../config.ts";
 import { guardedFetch } from "../lib/http-fetch.ts";
 import { assertPageContent, contentDocument, UnavailablePageError } from "../lib/page-content.ts";
@@ -27,10 +28,11 @@ export async function jinaRead(
   const base = (credential("collectors", "JINA_BASE_URL") ?? "https://r.jina.ai").replace(/\/$/, "");
   // A listing whose freshness matters (xAI news) caps how old Jina's cached rendering may be.
   const tolerance: Record<string, string> = Number.isInteger(opts.cacheToleranceSeconds) && opts.cacheToleranceSeconds! >= 0 ? { "x-cache-tolerance": String(opts.cacheToleranceSeconds) } : {};
-  const now = new Date().toISOString();
-  const day = opts.perRead ? now : now.slice(0, 10);
+  const day = new Date().toISOString().slice(0, 10);
+  // A per-read listing is keyed by an ID of its own, not the clock: two reads can see the same clock reading.
+  const read = opts.perRead ? { read: randomUUID() } : {};
   const receipt = await paidRequest(
-    { service: "jina", model: null, purpose: opts.purpose, subject: opts.subject, identity: { url: targetUrl, day, format: opts.format ?? "markdown" }, requestSummary: { url: targetUrl } },
+    { service: "jina", model: null, purpose: opts.purpose, subject: opts.subject, identity: { url: targetUrl, day, format: opts.format ?? "markdown", ...read }, requestSummary: { url: targetUrl } },
     async () => {
       const res = await guardedFetch(`${base}/${targetUrl}`, {
         headers: { authorization: `Bearer ${key}`, "x-return-format": opts.format ?? "markdown", accept: "text/plain", ...tolerance },

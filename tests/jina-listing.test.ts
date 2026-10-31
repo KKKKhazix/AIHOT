@@ -141,7 +141,10 @@ test("a listing page received before a storage failure stays on its receipt", as
   assert.equal(hits, before + 2);
 });
 
-test("each admin preview is a paid read of its own", async () => {
+// Two reads can see the same clock reading: a CI VM's clock steps back (Check run 39178263522 reused one
+// preview's receipt for the next).
+test("each admin preview is a paid read of its own, even at the same clock reading", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
   const before = hits;
   assert.equal((await previewStoredSource(SOURCE))!.count, 1);
   assert.equal((await previewStoredSource(SOURCE))!.count, 1);

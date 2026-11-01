@@ -105,9 +105,10 @@ test("Markdown preserves a table's headings, caption, links, alignment and multi
   await sql`UPDATE articles SET language = 'en', body_html = ${table} WHERE id = ${id}`;
   await sql`INSERT INTO translations (article_id, revision, body_html, body_text, origin) VALUES (${id}, 1, ${table.replace('Benchmark results', '基准结果').replace('Model', '模型').replace('Score', '分数')}, '基准结果', 'source')`;
   await publishArticle(id, released());
-  const response = await get(`/items/${id}/markdown`);
-  assert.equal(response.status, 200);
-  const $ = cheerio.load(marked.parse(response.body, { async: false, gfm: true }));
+  const raw = await app.inject({ method: "GET", url: `/items/${id}/markdown` });
+  assert.equal(raw.statusCode, 200);
+  assert.equal(raw.headers.link, `<${config.siteUrl}/items/${id}>; rel="canonical"`);
+  const $ = cheerio.load(marked.parse(raw.body, { async: false, gfm: true }));
   assert.equal($('table').length, 2, 'both original and translated tables survive export');
   assert.deepEqual($('table th').toArray().map((node) => $(node).text()), ['模型', '分数', 'Model', 'Score']);
   assert.equal($('table th').last().attr('align'), 'right');

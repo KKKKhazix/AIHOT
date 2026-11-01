@@ -8,7 +8,6 @@ import { publishArticleTx } from "../publication/publish.ts";
 import { groupingReset, reconcileMaterialSource } from "./provenance.ts";
 import { emit } from "../modules.ts";
 import { rebaseTranslation } from "./presentation.ts";
-import { audit } from "../audit.ts";
 
 export interface MediaItem {
   kind: "image" | "video";

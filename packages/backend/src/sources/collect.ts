@@ -249,7 +249,7 @@ export async function enrichDetails(candidates: CollectionCandidate[], source: S
   return reads;
 }
 
-async function store(sourceId: string, runId: number, candidates: CollectionCandidate[], backfill: string | null) {
+async function store(sourceId: string, candidates: CollectionCandidate[], backfill: string | null) {
   let created = 0;
   let revised = 0;
   for (const c of candidates) {
@@ -391,7 +391,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean; x
     if (found) { nextCursor.detailDatedOut = datedOut; nextCursor.detailRetries = reads.retries; }
     if (!d || !Object.keys(nextCursor.detailDatedOut ?? {}).length) delete nextCursor.detailDatedOut;
     if (!d || !Object.keys(nextCursor.detailRetries ?? {}).length) delete nextCursor.detailRetries;
-    const stored = await store(sourceId, run!.id, candidates, firstImport ? "first-import" : null);
+    const stored = await store(sourceId, candidates, firstImport ? "first-import" : null);
     ({ created, revised } = stored);
     for (const id of await fillScheduledPublications(sourceId)) await queueProcessing(id);
 
@@ -463,7 +463,7 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
     for (const m of members) {
       const handle = shardHandle(m)!.toLowerCase();
       const mine = read.tweets.filter((t) => t.user.screen_name.toLowerCase() === handle);
-      const stored = await store(m.id, runs.get(m.id)!, admitListing(mine.map(tweetToCandidate), m), null);
+      const stored = await store(m.id, admitListing(mine.map(tweetToCandidate), m), null);
       found += mine.length;
       created += stored.created;
       const newest = mine.reduce((a, t) => (BigInt(t.id_str) > BigInt(a) ? t.id_str : a), String(m.cursor!.lastTweetId));

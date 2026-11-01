@@ -3382,6 +3382,11 @@
           },
           "requestId": {
             "type": "string"
+          },
+          "retryAfter": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Minimum number of seconds to wait before retrying (present on 429 and 503 responses)."
           }
         }
       },

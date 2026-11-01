@@ -18,7 +18,7 @@
   ```bash
   npm run typecheck
   DATABASE_URL=postgres://127.0.0.1:5432/<名字>_test npm test   # 名字必须以 _test 或 _ci 结尾；没有会自动建好并迁移，账号要能建库
-  npm run build -w @aihot/web && node --test apps/web/tests/*.test.ts
+  npm run build -w @aihot/web && npm run test:web
   node scripts/smoke.ts --base http://localhost:3000             # 站点跑起来以后
   ```
 - `tests/` 里部分测试用的是示例行业的分类、标签和公司，改了 `industry/taxonomy.ts` 后把这些例子换成新行业的对应项。

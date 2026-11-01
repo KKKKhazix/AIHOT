@@ -104,7 +104,7 @@ flowchart LR
 ```bash
 npm run typecheck
 DATABASE_URL=postgres://127.0.0.1:5432/myhot_test npm test
-npm run build -w @aihot/web && node --test apps/web/tests/*.test.ts
+npm run build -w @aihot/web && npm run test:web
 ```
 
 `DATABASE_URL` 指向的库名必须以 `_test` 或 `_ci` 结尾；没有会自动创建并迁移。每个测试文件在它的一份副本上并行运行，所以数据库账号要有建库权限（`CREATEDB`）。测试不访问任何外部服务：模型和付费接口都由本地假服务回答。

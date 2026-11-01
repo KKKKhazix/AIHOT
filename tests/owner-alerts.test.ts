@@ -1,4 +1,4 @@
-// What the owner is told (alerts, recoveries, reports) goes to the Webhook hub, which passes it on; the alert group
+// What the owner is told (alerts, recoveries, reports) goes to Agent 自动化中台, which passes it on; the alert group
 // gets it only when the hub doesn't take it. Failure cases: with the hub set up an alert also goes to the group; a
 // long one reaches the owner cut differently or out of order, or two pieces share a key; a hub that refuses or can't
 // be reached loses the alert; one that takes the first pieces of a long one and then refuses has the group sent the

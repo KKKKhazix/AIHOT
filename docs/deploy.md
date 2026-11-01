@@ -262,6 +262,13 @@ docker compose logs -f --tail 100 api worker web
 - **付费采集**（X、公众号、Jina）：按请求计费，默认不启用，填了 key 才会用。
 - 所有付费服务都有每分钟、每小时、每天的调用上限（后台“设置 → 付费请求上限”），超过就暂停，不会一夜之间刷爆账单。填 0 表示立即停用这个服务。
 
+想省钱，按这个顺序来：
+
+1. 先看后台“模型与评测”页，每一步的调用次数和输入输出 token 都在那里，找出大头再动手。
+2. 确认关了思考模式：思考过程按输出 token 计费，`.env.example` 里的 `LLM_EXTRA_JSON` 写了怎么关。
+3. 量大的步骤换便宜的模型：`.env` 里可以每一步单独选（`PREFILTER_MODEL`、`SCORE_MODEL`、`STRUCTURE_MODEL`……），也能在“模型与评测”页改。换评分模型之前，用 `scripts/eval-selection.ts` 在同一批样本上比一比，别省了钱却选不准。
+4. 少放进无关的资料：花费基本跟每天进来的条数成正比。综合新闻站尽量只订和你方向相关的栏目，在“信源”页调低更新频率，暂停量大却很少入选的信源。
+
 ## 不用 Docker
 
 需要 Node.js 24.11 以上和 PostgreSQL 16 或 17，系统用 Linux 或 macOS；Windows 上请在 WSL2 里运行，或者用上面的 Docker 方式。

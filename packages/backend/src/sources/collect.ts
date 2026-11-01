@@ -123,6 +123,8 @@ export interface DetailReads {
   /** Entries whose page is still to be read: over the budget, after a spent provider budget, or failed. */
   pending: number;
   failures: Array<{ url: string; error: string }>;
+  /** Pages the site refused: its answer, read once and recorded, not a failure of ours. */
+  refused: Array<{ url: string; error: string }>;
   /** The listing date of each entry a page dated under the rules in force, this run or remembered. */
   listed: Map<string, DatedOut[string]>;
   /** Listed entries whose page still fails with a recoverable error. */
@@ -192,7 +194,7 @@ function applyDetail(c: CollectionCandidate, got: Awaited<ReturnType<typeof fetc
 export async function enrichDetails(candidates: CollectionCandidate[], source: SourceRow, known: Map<string, StoredDetail>,
   opts: { budget: number; after?: string; datedOut: DatedOut; retries: Retries; admits: (c: Candidate) => boolean }): Promise<DetailReads> {
   const rules = detailRulesOf(source);
-  const reads: DetailReads = { attempts: 0, pending: 0, failures: [], listed: new Map(), retries: {} };
+  const reads: DetailReads = { attempts: 0, pending: 0, failures: [], refused: [], listed: new Map(), retries: {} };
   let providerBudgetSpent = false;
   const start = candidates.findIndex(c => c.identityKey === opts.after) + 1;
   const ordered = [...candidates.slice(start), ...candidates.slice(0, start)];
@@ -227,12 +229,13 @@ export async function enrichDetails(candidates: CollectionCandidate[], source: S
         if (shutdownSignal.signal.aborted) throw error;
         // A spent provider budget is not the source's failure.
         const failed = !(error instanceof BudgetExceededError);
-        if (!failed) providerBudgetSpent = true;
-        else reads.failures.push({ url: c.url, error: String(error instanceof Error ? error.message : error).slice(0, 300) });
         // A page the site refuses (paywall, captcha, blocked address) is read under these rules once, like
         // a page without the fields: read again on every run it took the budget from the entries behind
         // it. A missing page, a timeout, rate limiting and server errors have recovered, so they are retried.
-        if (error instanceof HttpStatusError && error.status < 500 && ![404, 408, 425, 429].includes(error.status)) {
+        const refused = error instanceof HttpStatusError && error.status < 500 && ![404, 408, 425, 429].includes(error.status);
+        if (!failed) providerBudgetSpent = true;
+        else (refused ? reads.refused : reads.failures).push({ url: c.url, error: String(error instanceof Error ? error.message : error).slice(0, 300) });
+        if (refused) {
           c.detailRules = rules!;
           reads.listed.set(c.identityKey!, [listed, c.publishedAt?.toISOString() ?? null, null]);
         } else {
@@ -255,12 +258,8 @@ async function store(sourceId: string, runId: number, candidates: CollectionCand
     try { res = await upsertMaterial(material); }
     catch (error) {
       if (!(error instanceof PresentationMismatch)) throw error;
-      // This article's transaction retained the consistent original and translation. Keep its
-      // actionable failure on the fetch run, without withholding later articles in this listing.
-      await sql`UPDATE fetch_runs SET detail = coalesce(detail,'{}'::jsonb) || jsonb_build_object('presentationFailures',
-        coalesce(detail->'presentationFailures','[]'::jsonb) ||
-          ${sql.json([{ identityKey: identityKeyFor(material), url: c.url, error: error.message }])}::jsonb)
-        WHERE id=${runId}`;
+      // Same wording, a layout the translation cannot follow: the article's transaction retained the
+      // consistent original and translation, which is the outcome; later articles are still stored.
       continue;
     }
     // A successful page with no matching field is complete too. Otherwise an undated article at
@@ -370,7 +369,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean; x
       retries: source.cursor?.detailRules === rules ? source.cursor?.detailRetries ?? {} : {},
     });
     if (d) {
-      detail = { ...detail, detailAttempts: reads.attempts, detailFailures: reads.failures.length, detailPending: reads.pending, detailErrors: reads.failures };
+      detail = { ...detail, detailAttempts: reads.attempts, detailFailures: reads.failures.length, detailPending: reads.pending, detailErrors: [...reads.failures, ...reads.refused] };
       nextCursor.detailRules = rules;
       if (reads.after) nextCursor.detailAfter = reads.after;
       // A validator covers the whole listing: accept 304 only after its detail work is complete.

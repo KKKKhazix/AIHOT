@@ -82,14 +82,16 @@ test("a failed detail read stays observable and can recover on a later listing r
   assert.equal((await detail(id)).detailFailures, 0);
 });
 
-test("a page the site refuses is reported once and not read again; the entries behind it get the budget", async () => {
+// 10-20..11-01: every "详情补全失败" follow-up left after the fixes was HN links to sites refusing us
+// (401/403/419), closed as accepted each week; the site's answer is final, nothing of ours failed.
+test("a page the site refuses is recorded once, not counted as a failure and not read again; the entries behind it get the budget", async () => {
   for (const status of [402, 403, 468]) {
     const id = await source(`refused-${status}`, "hot_signal");
     refuse = status;
     try {
       await collectSource(id);
       const first = await detail(id);
-      assert.equal(first.detailFailures, 1);
+      assert.equal(first.detailFailures, 0);
       assert.match(first.detailErrors[0].error, new RegExp(String(status)));
       await collectSource(id);
       await collectSource(id);

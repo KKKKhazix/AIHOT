@@ -43,9 +43,11 @@ const collecting = () => process.env.COLLECT_ENABLED === "true";
 const modelsOn = () => process.env.MODEL_CALLS_ENABLED === "true";
 /**
  * How long the site may go without a new article before it counts as stalled (ALERT_QUIET_MINUTES, else
- * the site's own setting; small source lists are quieter). At most a day: the check looks one day back.
+ * the site's own setting; small source lists are quieter), and how long while editorial fetches keep
+ * succeeding. At most a day: the check looks one day back.
  */
 const QUIET_MINUTES = Math.min(Number(process.env.ALERT_QUIET_MINUTES || ALERTS.quietMinutes), 1440);
+const QUIET_FETCHING_MINUTES = Math.min(Math.max(ALERTS.quietWhileFetchingMinutes, QUIET_MINUTES), 1440);
 
 /** One check: the problems it finds now. `open` retains ongoing incidents, read once per round. */
 type Check = (now: number, open: AlertState) => Promise<Finding[]>;
@@ -86,7 +88,12 @@ async function contentCollection(now: number, open: AlertState): Promise<Finding
   if (!collecting() && !open["content.collect"]) return [];
   const [last] = await sql<{ at: Date | null }[]>`SELECT max(a.discovered_at) AS at FROM articles a
     JOIN sources s ON s.id = a.source_id WHERE s.participation_mode = 'editorial' AND a.discovered_at > now() - interval '1 day'`;
-  if (last?.at && now - last.at.getTime() <= QUIET_MINUTES * 60_000) return [];
+  const quietFor = last?.at ? now - last.at.getTime() : Infinity;
+  if (quietFor <= QUIET_MINUTES * 60_000) return [];
+  // Fetches still succeeding with nothing new is the sources being quiet, not collection stopping.
+  const [fetching] = quietFor <= QUIET_FETCHING_MINUTES * 60_000 ? await sql`SELECT 1 FROM fetch_runs f JOIN sources s ON s.id = f.source_id
+    WHERE s.participation_mode = 'editorial' AND f.status = 'ok' AND f.started_at > ${new Date(now - QUIET_MINUTES * 60_000)} LIMIT 1` : [];
+  if (fetching) return [];
   // A site without an enabled source has nothing to collect.
   const [anySource] = await sql`SELECT 1 FROM sources WHERE enabled AND participation_mode = 'editorial' LIMIT 1`;
   if (!anySource) return [];
@@ -97,7 +104,9 @@ async function contentCollection(now: number, open: AlertState): Promise<Finding
     impact: last?.at ? `读者看不到新文章：最后一篇收录于 ${beijingStamp(last.at)}` : "读者看不到新文章：一天内没有收录任何文章",
     heals: ALERTS.usualFlow ? `没有，${ALERTS.usualFlow}` : "没有",
     action: "尽快发起一次维护处理",
-    detail: `editorial articles.discovered_at 超过 ${QUIET_MINUTES} 分钟没有新值（热度信号单独评估）；查 sources.schedule、出网代理与采集失败`,
+    detail: quietFor <= QUIET_FETCHING_MINUTES * 60_000
+      ? `editorial articles.discovered_at 超过 ${QUIET_MINUTES} 分钟没有新值，期间没有一次成功的 editorial fetch_runs（热度信号单独评估）；查 worker、sources.schedule、出网代理与采集失败`
+      : `editorial articles.discovered_at 超过 ${QUIET_FETCHING_MINUTES} 分钟没有新值（采集仍成功也算）；查采集结果为何一直是 new_count=0：解析、去重与入库`,
     since: last?.at ?? undefined,
   }];
 }

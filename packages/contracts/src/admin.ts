@@ -162,7 +162,7 @@ export interface AdminSourceDetail {
   source: AdminSource;
   runs: Array<{
     id: number; started_at: Timestamp; finished_at: Timestamp | null; status: string; found_count: number | null; new_count: number | null; error: string | null;
-    detail: { pages?: number; backlog?: number; dropped?: number; presentationFailures?: Array<{ url: string; error: string }> } | null;
+    detail: { pages?: number; backlog?: number; dropped?: number } | null;
   }>;
   items: Array<{ id: string; title: string; url: string; discovered_at: Timestamp; published_at: Timestamp | null; processing_state: string; selected: boolean | null; visibility: string | null; title_zh: string | null }>;
   stats: { total: number; last7d: number; selected: number };

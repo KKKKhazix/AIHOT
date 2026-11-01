@@ -32,7 +32,7 @@ type Entry = SitemapEntry;
  * Collection pages have content identities, not invented modification dates: a removed member can
  * change a page without leaving a reliable timestamp on its surviving members.
  */
-export async function loadDiscoveryEntries(at = new Date(), limits?: { stories: number; urls: number }): Promise<Entry[]> {
+export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: number }): Promise<Entry[]> {
   const entries: Entry[] = [];
   const [activity] = limits ? [] : await sql<{ selected: string | null; listed: string | null }[]>`
     SELECT md5(string_agg(p.article_id || ':' || p.revision::text, ',' ORDER BY p.timeline_at DESC, p.article_id)
@@ -88,7 +88,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { stories: 
     WHERE st.merged_into IS NULL AND EXISTS (
       SELECT 1 FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
       WHERE f.story_id = st.id AND ${evidenceCondition()} AND ${listedCondition(at)})
-    ORDER BY st.latest_at DESC NULLS LAST, st.id DESC ${limits ? sql`LIMIT ${limits.stories}` : sql``}`;
+    ORDER BY st.latest_at DESC NULLS LAST, st.id DESC`;
   for (const s of stories) entries.push({ loc: `/story/${s.public_id}`, revision: s.revision, changefreq: "daily", priority: 0.5 });
   for (const m of serverModules()) if (m.sitemap?.entries) entries.push(...(await m.sitemap.entries()));
   // Material/translation timestamps can also record a retry or a state repair. Hash the content;
@@ -105,7 +105,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { stories: 
 }
 
 async function build(at: Date): Promise<string> {
-  const entries = await loadDiscoveryEntries(at, { stories: 500, urls: MAX_URLS });
+  const entries = await loadDiscoveryEntries(at, { urls: MAX_URLS });
   const body = entries
     .slice(0, MAX_URLS)
     .map((e) => {

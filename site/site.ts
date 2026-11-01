@@ -221,6 +221,8 @@ export const REPORTS = {
 export const ALERTS = {
   /** 多少分钟没有收录新文章就告警“网站停止收录新内容”（最多一天）；环境变量 ALERT_QUIET_MINUTES 优先。 */
   quietMinutes: 360,
+  /** 编辑信源一直抓取成功、只是没有新文章时，多少分钟才告警（最多一天）。 */
+  quietWhileFetchingMinutes: 720,
   /** 同一条告警里，“没有”后面补一句平时的收录量；null 就不写。 */
   usualFlow: null as string | null,
   /** worker 停了的告警里，怎么看它的日志。 */

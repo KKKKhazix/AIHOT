@@ -249,12 +249,13 @@ test("a source without enough history to have a rhythm stays visible instead of 
   assert.ok(group.unknown.some(s => s.id === thin), "two dated days are not a rhythm");
   assert.ok(group.unknown.some(s => s.id === never), "a source that never produced anything is visible too");
   assert.ok(!group.overdue.some(s => s.id === thin || s.id === never));
-  assert.match(rhythmText(group.unknown.find(s => s.id === thin)!), /近 7 天 \d+ 次抓取、0 条新内容；窗口内可比较的历史只有 2 天/);
+  assert.match(rhythmText(group.unknown.find(s => s.id === thin)!), /近 7 天 \d+ 次抓取、0 条新内容；近 90 天里只有 2 天发过内容，还看不出固定频率/);
   assert.match(rhythmText(group.unknown.find(s => s.id === never)!), /近 7 天 \d+ 次抓取、0 条新内容；从未收到过内容/);
   assert.deepEqual([...await followUps(thin), ...await followUps(never)], []);
   const report = await weekly();
-  assert.match(report, new RegExp(`${thin}）：近 7 天 \\d+ 次抓取、0 条新内容；窗口内可比较的历史只有 2 天`));
+  assert.match(report, new RegExp(`${thin}）：近 7 天 \\d+ 次抓取、0 条新内容；近 90 天里只有 2 天发过内容，还看不出固定频率`));
   assert.match(report, new RegExp(`${never}）：近 7 天 \\d+ 次抓取、0 条新内容；从未收到过内容`));
+  assert.ok(!report.includes("后台“"));
 });
 
 // Which days count as output: a first import is the one day it arrived, only the rhythm window counts,

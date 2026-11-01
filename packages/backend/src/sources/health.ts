@@ -102,8 +102,8 @@ export function rhythmText(s: QuietSource): string {
     const run = `近 7 天 ${s.runs} 次抓取、0 条新内容`;
     if (!s.ever_output) return `${run}；从未收到过内容`;
     return s.evidence_days > 0
-      ? `${run}；窗口内可比较的历史只有 ${s.evidence_days} 天`
-      : `${run}；近 ${RHYTHM_WINDOW_DAYS} 天窗口内没有可比较的产出`;
+      ? `${run}；近 ${RHYTHM_WINDOW_DAYS} 天里只有 ${s.evidence_days} 天发过内容，还看不出固定频率`
+      : `${run}；近 ${RHYTHM_WINDOW_DAYS} 天没有发过内容`;
   }
   return `近 ${s.quiet_days} 天没有新内容，平时约 ${s.median_gap_days} 天一条（${Number(times.toFixed(1))} 倍）`;
 }

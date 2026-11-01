@@ -15,20 +15,22 @@ import { checkWorkerHeartbeat } from "@aihot/backend/operations/watch";
 const T=tag(), KEY=`test-hub-${T}`;
 const hits: {path:string;auth?:string;body:any}[]=[];
 const told: {auth?:string;body:any}[]=[];
-let status=200, found:Finding[]=[];
+let status=200, tellStatus:number|null=null, found:Finding[]=[];
 const fake:ServerModule={name:'fake', alerts:async()=>found};
 installModules([fake]);
 process.env.COLLECT_ENABLED='false';process.env.MODEL_CALLS_ENABLED='false';
 const server=http.createServer((req,res)=>{
  const chunks:Buffer[]=[];req.on('data',c=>chunks.push(c));req.on('end',()=>{
   const body=JSON.parse(Buffer.concat(chunks).toString());
-  if(req.url==='/tell')told.push({auth:req.headers.authorization,body});else hits.push({path:req.url!,auth:req.headers.authorization,body});
-  res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(req.url==='/tell'?{duplicate:false}:{event:hits.length,duplicate:false,routed:[]}));
+  if(req.url==='/tell')told.push({auth:req.headers.authorization,body});
+  else if(req.url!=='/webhook')hits.push({path:req.url!,auth:req.headers.authorization,body});
+  const code=(req.url==='/tell'||req.url==='/webhook')&&tellStatus!==null?tellStatus:status;
+  res.writeHead(code,{'content-type':'application/json'});res.end(JSON.stringify(req.url==='/tell'?{duplicate:false}:req.url==='/webhook'?{code:code===200?0:1}:{event:hits.length,duplicate:false,routed:[]}));
  });
 });
 before(async()=>{await getBoss();await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));});
 beforeEach(async()=>{
- hits.length=0;told.length=0;found=[];status=200;
+ hits.length=0;told.length=0;found=[];status=200;tellStatus=null;
  process.env.WEBHOOK_HUB_URL=`http://127.0.0.1:${(server.address() as any).port}/events`;
  process.env.WEBHOOK_HUB_KEY=KEY;process.env.FEISHU_INTERNAL_ENABLED='true';
  await sql`DELETE FROM settings WHERE key IN ('alerts.state','alerts.returns','alerts.held','heartbeat.worker','watchdog.worker') OR key LIKE 'webhook.event.%'`;
@@ -203,4 +205,54 @@ test('holds written at the same time for different incidents both stand',async()
  const now=Date.now();found=Array.from({length:6},(_,i)=>({...stuck,key:`content.process.${i}`}));await checkAlerts(now);
  await Promise.all(found.map(f=>holdAlert(f.key,'积压在按时消化',new Date(now+3*3600_000),'test',now)));
  assert.deepEqual((await checkAlerts(now+2*3600_000)).sent,[]);
+});
+
+test('owner alerts claim AI was notified only after the hub actually accepts the wake',async()=>{
+ const now=Date.now();
+ const fullOutage:Finding={key:'probe.public',level:'now',title:'网站打不开',owner:true,action:'把这条发给 AI 排查处理'};
+ status=500;tellStatus=200;found=[fullOutage];
+ await checkAlerts(now);
+ assert.equal(told.length,1);
+ assert.ok(!told[0]!.body.text.includes('已自动通知 AI'),'unaccepted event wake must not claim AI was notified');
+ assert.ok(told[0]!.body.text.includes('把这条发给 AI 排查处理'));
+
+ const at=new Date(Date.now()-3600_000);
+ await sql`INSERT INTO settings(key,value,updated_at) VALUES('heartbeat.worker','{}',${at})`;
+ await checkWorkerHeartbeat();
+ assert.equal(told.length,2);
+ assert.ok(!told[1]!.body.text.includes('已自动通知 AI'),'unaccepted worker wake must not claim AI was notified');
+ assert.ok(told[1]!.body.text.includes('把这条发给 AI 排查重启'));
+
+ await sql`DELETE FROM settings WHERE key IN ('alerts.state','heartbeat.worker','watchdog.worker') OR key LIKE 'webhook.event.%'`;
+ told.length=0;status=200;tellStatus=200;found=[fullOutage];
+ await checkAlerts(now+10*60_000);
+ assert.ok(told[0]!.body.text.includes('已自动通知 AI 排查处理'));
+ await sql`INSERT INTO settings(key,value,updated_at) VALUES('heartbeat.worker','{}',${at})`;
+ await checkWorkerHeartbeat();
+ assert.ok(told[1]!.body.text.includes('已自动通知 AI 排查重启'));
+});
+
+test('a failed owner send after waking never mints a second incident id on retry',async()=>{
+ const t0=Date.now();
+ const refused:Finding={key:'provider.refused.deepseek',level:'now',title:'DeepSeek 拒绝调用',owner:true,action:'去 DeepSeek 开放平台看余额'};
+ const outageNoSince:Finding={key:'probe.public',level:'now',title:'网站打不开',owner:true,action:'把这条发给 AI 排查处理'};
+ process.env.FEISHU_ALERT_WEBHOOK_URL=`http://127.0.0.1:${(server.address() as any).port}/webhook`;
+ try {
+  status=200;tellStatus=500;found=[refused];
+  await assert.rejects(checkAlerts(t0));
+  tellStatus=200;
+  await checkAlerts(t0+60_000);
+  assert.equal(hits.filter(h=>h.body.subject===refused.key).length,1,'refused without since must dispatch once');
+
+  await sql`DELETE FROM settings WHERE key IN ('alerts.state','alerts.returns','alerts.held') OR key LIKE 'webhook.event.%'`;
+  hits.length=0;told.length=0;
+  status=200;tellStatus=500;found=[outageNoSince];
+  await assert.rejects(checkAlerts(t0+120_000));
+  tellStatus=200;
+  await checkAlerts(t0+180_000);
+  assert.equal(hits.filter(h=>h.body.subject===outageNoSince.key).length,1,'pre-woken outage without since must dispatch once');
+  assert.ok(told.at(-1)!.body.text.includes('已自动通知 AI 排查处理'));
+ } finally {
+  delete process.env.FEISHU_ALERT_WEBHOOK_URL;
+ }
 });

@@ -15,8 +15,10 @@ export const RHYTHM_MULTIPLE = 4;
 /**
  * Failing often enough to be worth fixing, for runs and detail pages alike: at least five failures in the
  * seven days and at least a tenth of the tries. Production, 30 days to 2026-10-17: every source with a
- * broken detail page (refused, 500 every time, pages too large, a spent budget) failed 17–100% of its
- * reads; one-off timeouts, TLS drops and pages not yet online were 0.2–4% and gone by the next run.
+ * broken detail page (500 every time, pages too large, a spent budget) failed 17–100% of its reads.
+ * Network errors and the origin's own status are not counted for runs (TRANSIENT): 10-19..11-01 sources at
+ * 10–16% of them, healing by the next run, were closed as accepted 21 times; kept up they reach five in a
+ * row ("failing"), and many sources at once are content.fetch.
  */
 function failsOften(failures: number, tries: number): boolean {
   return failures >= 5 && failures / tries >= 0.1;
@@ -33,14 +35,15 @@ export interface SourceHealthRow {
   last_error: string | null;
   runs: number;
   failed: number;
+  /** Failed runs that are neither TRANSIENT nor a spent budget: the page came back and we could not read it. */
+  unusable: number;
+  last_unusable_at: Date | null;
   discoveries: number;
   items: number;
   undated: number;
   repeated: number;
   detail_attempts: number;
   detail_failures: number;
-  presentation_failures: Array<{ url: string; error: string }>;
-  presentation_failed_at: Date | null;
   last_failed_at: Date | null;
   last_detail_failure_at: Date | null;
   last_undated_at: Date | null;
@@ -61,19 +64,21 @@ export interface QuietSource extends SourceHealthRow {
 
 export const SOURCE_USE_NAMES: Record<string, string> = { editorial: "编辑内容", hot_signal: "热度信号" };
 
-/** A fixable source problem. A blocked presentation needs proof that the same article was updated. */
-export type SourceProblem = "failing" | "unstable" | "undated" | "revisions" | "details" | "presentation";
+/** A fixable source problem. */
+export type SourceProblem = "failing" | "unstable" | "undated" | "revisions" | "details";
 /** Each fixable problem as it is listed, per source: `action` is for the daily follow-up. */
 export const SOURCE_PROBLEMS: { problem: SourceProblem; title: string; describe: (s: SourceHealthRow) => string; observedAt: (s: SourceHealthRow) => Date | null; action: string }[] = [
   { problem: "failing", observedAt: s => s.last_failed_at, title: "连续抓取失败", describe: s => `连续失败 ${s.fail_count} 次${s.last_error ? `，${s.last_error}` : ""}`, action: "转给 AI 检查抓取错误" },
-  { problem: "unstable", observedAt: s => s.last_failed_at, title: "反复抓取失败", describe: s => `近 7 天失败 ${s.failed}/${s.runs} 次`, action: "即使最近成功也需检查，避免继续漏收" },
+  { problem: "unstable", observedAt: s => s.last_unusable_at, title: "反复读不出条目", describe: s => `近 7 天 ${s.unusable}/${s.runs} 次抓到了页面却没解析出条目`, action: "即使最近成功也需检查，避免继续漏收" },
   { problem: "undated", observedAt: s => s.last_undated_at, title: "文章缺发布时间", describe: s => `近 7 天缺发布时间 ${s.undated} 篇`,
     action: "缺时间可能让新闻按历史文章处理" },
   { problem: "revisions", observedAt: s => s.last_repeated_at, title: "文章反复修订", describe: s => `近 7 天反复修订 ${s.repeated} 篇`,
     action: "需核对正文是否混入变化内容" },
-  { problem: "presentation", observedAt: s => s.presentation_failed_at, title: "正文展示待处理", describe: s => s.presentation_failures.map(f => `${f.url}：${f.error}`).join("；"), action: "保留了前版原文与译文，请预览正文展示刷新并核实需正常重翻的文章" },
   { problem: "details", observedAt: s => s.last_detail_failure_at, title: "详情补全失败", describe: s => `近 7 天失败 ${s.detail_failures}/${s.detail_attempts} 页`, action: "查看抓取记录中的详情地址与错误" },
 ];
+
+/** A run error that is the network or the origin's answer, not our reading of the page (fetch_runs.error, 10-01..11-01). */
+const TRANSIENT = sql`~ ${"^([A-Za-z]*Error: )?(fetch failed|The operation was aborted due to timeout|Client network socket disconnected|other side closed|Connect Timeout Error|DNS lookup failed|((jina|socialdata) )?HTTP [0-9]{3})"}`;
 
 /** Matches a saved error that is a spent provider budget. */
 const spentBudget = sql`LIKE ${budgetMessage("%", "%")}`;
@@ -115,25 +120,10 @@ export async function sourceHealth(now = Date.now()) {
         coalesce(sum((detail->>'detailAttempts')::int), 0)::int AS detail_attempts,
         coalesce(sum((detail->>'detailFailures')::int), 0)::int AS detail_failures,
         max(coalesce(finished_at, started_at)) FILTER (WHERE status = 'failed' AND coalesce(error, '') NOT ${spentBudget}) AS last_failed_at,
+        count(*) FILTER (WHERE status = 'failed' AND coalesce(error, '') NOT ${spentBudget} AND NOT coalesce(error, '') ${TRANSIENT})::int AS unusable,
+        max(coalesce(finished_at, started_at)) FILTER (WHERE status = 'failed' AND coalesce(error, '') NOT ${spentBudget} AND NOT coalesce(error, '') ${TRANSIENT}) AS last_unusable_at,
         max(coalesce(finished_at, started_at)) FILTER (WHERE (detail->>'detailFailures')::int > 0) AS last_detail_failure_at
       FROM fetch_runs WHERE started_at >= ${since} GROUP BY source_id
-    ), presentation_events AS (
-      SELECT source_id,id,started_at,failure->>'identityKey' AS identity_key,failure
-      FROM fetch_runs CROSS JOIN LATERAL jsonb_array_elements(detail->'presentationFailures') failure
-      WHERE detail ? 'presentationFailures'
-    ), presentation AS (
-      SELECT e.source_id,jsonb_agg(e.failure) AS failures,max(e.started_at) AS failed_at
-      FROM (
-        SELECT DISTINCT ON (source_id,identity_key) * FROM presentation_events
-        ORDER BY source_id,identity_key,id DESC
-      ) e JOIN articles a ON a.identity_key=e.identity_key
-      WHERE NOT EXISTS (SELECT 1 FROM audit_log log WHERE log.subject='content:' || a.id
-          AND log.action='content.presentation.updated' AND log.created_at > e.started_at)
-        -- A newer body revision supersedes the old layout, including a normal extraction outside collection.
-        AND NOT EXISTS (SELECT 1 FROM article_revisions fresh JOIN article_revisions old
-          ON old.article_id=fresh.article_id AND old.revision=fresh.revision-1
-          WHERE fresh.article_id=a.id AND fresh.created_at > e.started_at AND fresh.body_text IS DISTINCT FROM old.body_text)
-      GROUP BY e.source_id
     ), seen AS (
       SELECT article_id, source_id FROM article_discoveries WHERE discovered_at >= ${since}
       UNION SELECT id, source_id FROM articles WHERE discovered_at >= ${since}
@@ -150,15 +140,13 @@ export async function sourceHealth(now = Date.now()) {
       SELECT a.source_id, count(*)::int AS n, max(r.last_revision_at) AS last_repeated_at FROM revisions r JOIN articles a ON a.id = r.article_id GROUP BY a.source_id
     )
     SELECT s.id,s.name,s.participation_mode,s.created_at,s.health,s.fail_count,s.last_ok_at,left(s.last_error,200) AS last_error,
-      coalesce(r.runs,0) AS runs, coalesce(r.failed,0) AS failed, coalesce(r.detail_attempts,0) AS detail_attempts, coalesce(r.detail_failures,0) AS detail_failures,
+      coalesce(r.runs,0) AS runs, coalesce(r.failed,0) AS failed, coalesce(r.unusable,0) AS unusable, r.last_unusable_at, coalesce(r.detail_attempts,0) AS detail_attempts, coalesce(r.detail_failures,0) AS detail_failures,
       coalesce(d.n,0) AS discoveries, coalesce(a.n,0) AS items, coalesce(a.undated,0) AS undated, coalesce(e.n,0) AS repeated,
-      coalesce(presentation.failures, '[]'::jsonb) AS presentation_failures,presentation.failed_at AS presentation_failed_at,
       r.last_failed_at, r.last_detail_failure_at, a.last_undated_at, e.last_repeated_at,
       (EXISTS (SELECT 1 FROM articles history WHERE history.source_id = s.id)
         OR EXISTS (SELECT 1 FROM article_discoveries history WHERE history.source_id = s.id)) AS ever_output
     FROM sources s LEFT JOIN runs r ON r.source_id = s.id LEFT JOIN discoveries d ON d.source_id = s.id
       LEFT JOIN items a ON a.source_id = s.id LEFT JOIN repeated e ON e.source_id = s.id
-      LEFT JOIN presentation ON presentation.source_id=s.id
     WHERE s.enabled AND s.kind NOT IN ('external','mp_account') AND s.participation_mode IN ('editorial','hot_signal')
     ORDER BY s.name,s.id`;
   // Quiet is the old seven-day signal, kept as the trigger. Whether it is late is now read from the
@@ -174,14 +162,13 @@ export async function sourceHealth(now = Date.now()) {
       mode, name, sources,
       failing: sources.filter(s => s.health === "failing"),
       /** Failing often without failing now: a source failing now is listed as failing, not twice. */
-      unstable: sources.filter(s => s.health !== "failing" && failsOften(s.failed, s.runs)),
+      unstable: sources.filter(s => s.health !== "failing" && failsOften(s.unusable, s.runs)),
       /** The quiet ones past their own rhythm, most overdue first. */
       overdue,
       /** The quiet ones without enough history to judge, including sources that never produced anything. */
       unknown: own.filter(s => rhythmMultiple(s) === null),
       undated: mode === "editorial" ? sources.filter(s => s.undated > 0) : [],
       revisions: mode === "editorial" ? sources.filter(s => s.repeated > 0) : [],
-      presentation: sources.filter(s => s.presentation_failures.length > 0),
       details: sources.filter(s => failsOften(s.detail_failures, s.detail_attempts)),
     };
   });

@@ -354,10 +354,6 @@ export async function updatePresentation(db: Db, articleId: string, next: { html
     }
   }
   await db`UPDATE articles SET body_html=${html},media=${db.json(media as never)},updated_at=now() WHERE id=${articleId}`;
-  // Every entrance shares this committed fact, including extraction outside a fetch run. A cover
-  // change alone says nothing about an earlier failure to align the original and its translation.
-  if (html !== a.body_html) await audit("system", "content.presentation.updated", `content:${articleId}`, "正文展示更新成功",
-    { revision: a.revision, htmlHash: sha256(a.body_html ?? "") }, { revision: a.revision, htmlHash: sha256(html ?? "") }, { db });
   await emit("articleChanged", { id: articleId, kind: "body", reason: "body presentation" }, db);
   return true;
 }

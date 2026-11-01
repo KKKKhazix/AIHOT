@@ -1,6 +1,7 @@
 // Failure cases: fresh hot signals hide an editorial collection outage; intermittent failures vanish
 // after one success; zero-output counts stop at the display limit; publisher attribution makes a
-// working discovery source look idle; missing dates/repeated edits in signals are called bad articles.
+// working discovery source look idle; missing dates/repeated edits in signals are called bad articles;
+// a quiet weekend hour with every fetch succeeding is called a collection stall.
 // And the quiet judgment reads each source's own rhythm: a monthly blog is not late after a week, a
 // daily one is, and a source with too little history stays visible rather than being called healthy.
 // The daily follow-ups list one source and one problem per line, so each closes on its own; a quiet
@@ -17,6 +18,7 @@ import { collectFindings, dismissedFollowUps, dismissFollowUp, restoreFollowUp, 
 import { sourceHealthWeekly } from "@aihot/backend/operations/reports";
 import { sourceHealth, rhythmText, RHYTHM_WINDOW_DAYS } from "@aihot/backend/sources/health";
 import { defineServerModule, installModules } from "@aihot/backend/modules";
+import { ALERTS } from "@aihot/site";
 
 installModules([defineServerModule({ name: "watcher", sourceUses: { watch: { label: "盯梢" } } })]);
 
@@ -92,6 +94,42 @@ test("hot-signal activity does not hide editorial collection stopping", async ()
   assert.equal((await collectFindings(now)).find(f => f.key === "content.collect"), undefined);
 });
 
+// 10-19..11-01: 21 "反复抓取失败" follow-ups were timeouts, dropped TLS and the origin's 404/406/502,
+// healing by the next run, all closed as accepted; the ones worth fixing were our parsing coming back empty.
+async function runs(sourceId: string, ok: number, failed: number, error: string) {
+  await sql`INSERT INTO fetch_runs(source_id,started_at,finished_at,status,error)
+    SELECT ${sourceId}, ${new Date(now)}::timestamptz - i * interval '1 hour', ${new Date(now)}::timestamptz - i * interval '1 hour',
+      CASE WHEN i <= ${failed} THEN 'failed' ELSE 'ok' END, CASE WHEN i <= ${failed} THEN ${error} END
+    FROM generate_series(1,${ok + failed}) i`;
+}
+test("intermittent network and origin errors do not make a source unstable; parsing that comes back empty does", async () => {
+  const unstable = async (id: string) => (await collectFindings(now)).some(f => f.key === `sources.unstable.${id}`);
+  for (const [name, error] of [["timeout", "The operation was aborted due to timeout"], ["tls", "Client network socket disconnected before secure TLS connection was established"],
+    ["fetch", "TypeError: fetch failed"], ["origin", "HTTP 404"], ["dns", "DNS lookup failed for example.test"], ["jina", "jina HTTP 503: upstream connect error"]] as const) {
+    const id = await source(`flaky-${name}`, "editorial", new Date(now));
+    await runs(id, 80, 20, error);
+    assert.equal(await unstable(id), false, error);
+  }
+  const parse = await source("flaky-parse", "editorial", new Date(now));
+  await runs(parse, 44, 6, "no items matched (html)");
+  assert.equal(await unstable(parse), true);
+});
+
+// 11-01 (Sunday) 12:18–13:51: 775 editorial fetches ok, nothing new; told to the owner as a third stall that day.
+test("a quiet spell while editorial fetches keep succeeding is not a stall", async () => {
+  const quiet = await source("quiet-sunday", "editorial", new Date(now));
+  const collect = async (at: number) => (await collectFindings(at)).find(f => f.key === "content.collect");
+  await material(quiet, "quiet");
+  const ok = (at: number) => sql`INSERT INTO fetch_runs(source_id,started_at,finished_at,status,found_count,new_count)
+    VALUES(${quiet},${new Date(at)},${new Date(at)},'ok',20,0)`;
+  const { quietMinutes, quietWhileFetchingMinutes } = ALERTS;
+  await ok(now + (quietMinutes + 30) * 60_000);
+  assert.equal(await collect(now + (quietMinutes + 35) * 60_000), undefined, "fetches ok, past the quiet limit without a new article");
+  assert.equal((await collect(now + (2 * quietMinutes + 32) * 60_000))?.level, "now", "no editorial fetch has succeeded within the quiet limit");
+  await ok(now + (quietWhileFetchingMinutes + 59) * 60_000);
+  assert.equal((await collect(now + (quietWhileFetchingMinutes + 60) * 60_000))?.level, "now", "fetches ok, but past the longer limit without anything new");
+});
+
 test("daily follow-ups retain chronic failures after a successful run, separately by use", async () => {
   const editorial = await source("chronic");
   const signal = await source("signal-intermittent", "hot_signal");
@@ -102,7 +140,7 @@ test("daily follow-ups retain chronic failures after a successful run, separatel
     await sql`INSERT INTO fetch_runs(source_id,started_at,finished_at,status,found_count,new_count,error)
       SELECT ${id}, ${new Date(now)}::timestamptz - i * interval '1 hour', ${new Date(now)}::timestamptz - i * interval '1 hour',
         CASE WHEN i BETWEEN 1 AND 5 THEN 'failed' ELSE 'ok' END, 1, 0,
-        CASE WHEN i BETWEEN 1 AND 5 THEN 'HTTP 503' ELSE NULL END FROM generate_series(0,19) i`;
+        CASE WHEN i BETWEEN 1 AND 5 THEN 'no items matched (html)' ELSE NULL END FROM generate_series(0,19) i`;
   }
   for (const [name, id] of [["编辑内容", editorial], ["热度信号", signal]]) {
     const [f, ...more] = await followUps(id!);

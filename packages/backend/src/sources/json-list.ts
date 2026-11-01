@@ -43,7 +43,7 @@ export function renderTemplate(template: string, item: unknown): string | null {
 }
 
 /** Calendar days and exact epoch/ISO times preserve the source's stated precision. */
-function toDate(v: unknown, unit: string | undefined, utcOffset: string | undefined): PublicationDate {
+export function toDate(v: unknown, unit: string | undefined, utcOffset: string | undefined): PublicationDate {
   const unknown = { publishedAt: null, publicationTime: null };
   if (v === null || v === undefined || v === "") return unknown;
   let text: string;

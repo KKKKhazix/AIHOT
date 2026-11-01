@@ -5,6 +5,7 @@ import { isCategoryKey, isChannelKey, type CategoryKey, type ChannelKey } from "
 import type { ReportIndexResponse, ReportLatestPage, ReportNavigationResponse, SearchSuggestions, SiteContact } from "@aihot/contracts/site";
 import { InvalidCursorError } from "@aihot/backend/lib/cursor";
 import { exportMarkdown, loadItemDetail } from "@aihot/backend/publication/detail";
+import { itemUrl } from "@aihot/backend/publication/links";
 import { loadPool, SearchBusyError } from "@aihot/backend/publication/pool";
 import { loadTimeline } from "@aihot/backend/publication/timeline";
 import { loadStoryFollowups } from "@aihot/backend/publication/followups";
@@ -219,6 +220,7 @@ export function registerSite(app: FastifyInstance) {
       .header("Content-Disposition", `attachment; filename="${md.filename}"`)
       .header("Cache-Control", "public, max-age=300, s-maxage=300")
       .header("X-Robots-Tag", "noindex")
+      .header("Link", `<${itemUrl(id)}>; rel="canonical"`)
       .send(md.body);
   }));
 }

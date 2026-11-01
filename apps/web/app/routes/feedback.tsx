@@ -219,7 +219,7 @@ export default function FeedbackPage() {
                 value={draft.content}
                 onChange={(e) => setDraft({ ...draft, content: e.target.value })}
                 placeholder={SITE.feedbackExample}
-                className={`${field} block resize-y px-4 pb-8 pt-3.5 text-[14.5px] leading-relaxed`}
+                className={`${field} block resize-y px-4 pb-8 pt-3.5 text-[16px] leading-relaxed sm:text-[14.5px]`}
               />
               <span className="mono pointer-events-none absolute bottom-3 right-4 text-[11px] text-ink-4">
                 {draft.content.length} / {MAX_TEXT}
@@ -231,7 +231,7 @@ export default function FeedbackPage() {
             <label htmlFor="fb-email" className={label}>
               邮箱 <span className="font-normal text-ink-4">（选填）</span>
             </label>
-            <input id="fb-email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder={SITE.feedbackEmailHint} className={`${field} h-11 px-4 text-[14.5px]`} />
+            <input id="fb-email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder={SITE.feedbackEmailHint} className={`${field} h-11 px-4 text-[16px] sm:text-[14.5px]`} />
           </div>
 
           <div>

@@ -39,8 +39,8 @@ async function deliver(key: string, receipt: Receipt): Promise<boolean> {
 export async function agentTransportFindings(now: number): Promise<Finding[]> {
   const rows = await sql<{value:Receipt}[]>`SELECT value FROM settings WHERE key LIKE 'webhook.event.%' AND value->>'accepted'='false'`;
   const stuck = rows.filter(r => now-Date.parse(r.value.queuedAt) >= 30*60_000);
-  return stuck.length ? [{key:'webhook.transport',level:'today',owner:true,title:'自动处理暂时接不到任务',
-    impact:'交给 AI 处理的告警送不到它那里；恢复之前，这些告警直接发给你',heals:'尚未确认恢复',action:'核对中台连接和来源配置',
+  return stuck.length ? [{key:'webhook.transport',level:'today',owner:true,title:'AI 自动处理暂时收不到新任务',
+    impact:'交给 AI 处理的告警送不到它那里；恢复之前，这些告警直接发给你',heals:'尚未确认恢复',action:'把这条发给 AI，检查网站服务器到自动化中台的连接',
     detail:`${stuck.length} 项未送达；${[...new Set(stuck.map(r=>r.value.lastError ?? '尚未投递'))].join('、')}`}]:[];
 }
 
@@ -67,9 +67,9 @@ export async function flushAgentEvents(): Promise<void> {
   for (const row of rows) await deliver(row.key,row.value);
 }
 
-export async function wakeAgent(f: Finding, now = Date.now()): Promise<void> {
+export async function wakeAgent(f: Finding, now = Date.now()): Promise<boolean> {
   const identity = f.agentOnly ? f.key : `${f.key}:${f.since!.toISOString()}`;
-  await publish({
+  return publish({
     id: identity.length <= 200 ? identity : `alert:${hash(identity)}`,
     type: f.agentOnly ? f.agentType ?? "alert.review" : f.level === "today" ? "alert.today" : "alert.now",
     subject: subject(f.key), summary: clip(f.title,200), detail: clip([f.impact,f.detail].filter(Boolean).join("\n"),4000),

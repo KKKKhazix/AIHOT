@@ -86,7 +86,7 @@ export async function sourceHealthWeekly(now = Date.now()) {
   // The modules' own collectors, a line each.
   for (const m of serverModules()) if (m.sourceHealth) lines.push(...(await m.sourceHealth(now)));
   for (const group of groups) {
-    lines.push("", `${group.name}：${group.sources.length} 个在用信源；本周归属条目 ${n(group.sources.reduce((sum, s) => sum + s.items, 0))} 条；连续失败 ${group.failing.length} 个、反复失败 ${group.unstable.length} 个、超出自身更新节奏 ${group.overdue.length} 个、7 天没有新内容 ${group.unknown.length} 个`);
+    lines.push("", `${group.name}：${group.sources.length} 个在用信源；本周收录 ${n(group.sources.reduce((sum, s) => sum + s.items, 0))} 条；连续失败 ${group.failing.length} 个、反复失败 ${group.unstable.length} 个、超出自身更新节奏 ${group.overdue.length} 个、7 天没有新内容 ${group.unknown.length} 个`);
     for (const p of SOURCE_PROBLEMS) {
       if (!group[p.problem].length) continue;
       lines.push(`${p.title}：${sourceHealthList(group[p.problem], s => {
@@ -95,7 +95,7 @@ export async function sourceHealthWeekly(now = Date.now()) {
       })}`);
     }
     if (group.overdue.length) lines.push(`超出自身更新节奏（先对照原站，区分采集失效与它自己变慢）：${sourceHealthList(group.overdue, rhythmText)}`);
-    if (group.unknown.length) lines.push(`7 天没有新内容（窗口内产出历史不足以判断节奏，或从未收到内容）：${sourceHealthList(group.unknown, rhythmText)}`);
+    if (group.unknown.length) lines.push(`7 天没有新内容（近期文章太少还看不出固定更新频率，或从未收到内容）：${sourceHealthList(group.unknown, rhythmText)}`);
   }
   const changes = await sourceChanges(since);
   if (changes.length) lines.push("", ...changes);
@@ -104,7 +104,7 @@ export async function sourceHealthWeekly(now = Date.now()) {
   // Quiet sources still worth a look: past their own rhythm, or not judgeable.
   const silent = overdue + groups.reduce((sum, g) => sum + g.unknown.length, 0);
   const followUp = counts!.failing > 0 || served.some((s) => s.failing) || silent > 0 || groups.some(g => g.failing.length || g.unstable.length || g.undated.length || g.revisions.length || g.details.length);
-  lines.push("", followUp ? "需要处理的话，把这条转给 AI；详情在后台“信源”与“运行”页。" : "没有需要处理的信源。");
+  lines.push("", followUp ? "需要处理的话，把这条转给 AI。" : "没有需要处理的信源。");
   await sendAlert("📊 信源周报", lines);
   return { failing, silent, overdue };
 }

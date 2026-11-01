@@ -103,7 +103,7 @@ async function contentCollection(now: number, open: AlertState): Promise<Finding
     title: "网站停止收录新文章",
     impact: last?.at ? `读者看不到新文章：最后一篇收录于 ${beijingStamp(last.at)}` : "读者看不到新文章：一天内没有收录任何文章",
     heals: ALERTS.usualFlow ? `没有，${ALERTS.usualFlow}` : "没有",
-    action: "尽快发起一次维护处理",
+    action: "把这条发给 AI 排查处理",
     detail: quietFor <= QUIET_FETCHING_MINUTES * 60_000
       ? `editorial articles.discovered_at 超过 ${QUIET_MINUTES} 分钟没有新值，期间没有一次成功的 editorial fetch_runs（热度信号单独评估）；查 worker、sources.schedule、出网代理与采集失败`
       : `editorial articles.discovered_at 超过 ${QUIET_FETCHING_MINUTES} 分钟没有新值（采集仍成功也算）；查采集结果为何一直是 new_count=0：解析、去重与入库`,
@@ -286,9 +286,9 @@ async function unknownOutcomes(): Promise<Finding[]> {
            (SELECT string_agg(DISTINCT service || '/' || purpose, '、') FROM receipts WHERE ${awaitingRelease()}) AS services,
            (SELECT count(*)::int FROM deliveries WHERE status = 'unknown') AS deliveries`;
   if (r!.receipts > 0) {
-    out.push({ key: "receipts.unknown", level: "later", title: `${r!.receipts} 个付费请求的结果尚未确认`, detail: `${r!.services}；后台“运行”页查看实际影响；仍阻塞内容的请求需核对或按已有授权恢复` });
+    out.push({ key: "receipts.unknown", level: "later", title: `${r!.receipts} 个付费请求的结果尚未确认`, detail: `${r!.services}；仍挡住内容发布的请求需核对计费或按已有授权放行` });
   }
-  if (r!.deliveries > 0) out.push({ key: "deliveries.unknown", level: "later", title: `${r!.deliveries} 条飞书内容群推送不确定是否送达`, detail: "后台“运行”页核对群里有没有，再标记或重发" });
+  if (r!.deliveries > 0) out.push({ key: "deliveries.unknown", level: "later", title: `${r!.deliveries} 条飞书内容群推送不确定是否送达`, detail: "核对飞书内容群里有没有发出，再标记或补发" });
   return out;
 }
 
@@ -379,7 +379,7 @@ async function providerFindings(now: number, open: AlertState): Promise<Finding[
       title: unused ? `${providerName(service)} 的旧模型限制尚未验证` : `${providerName(service)} 拒绝调用，需要核对账号或额度`,
       impact: unused ? "当前处理步骤未使用这些受限模型；旧限制仍未验证" : await providerStops(service, p.models),
       heals: "需先恢复访问，再确认失败任务已接续",
-      action: `去${providerConsole(service)}看余额、套餐和消费上限，恢复访问后核实一次成功调用，并从后台接续失败任务；都正常的话，发起一次维护查原因`,
+      action: `去${providerConsole(service)}看余额、套餐和消费上限；充值或恢复后让 AI 核实调用并补跑刚才失败的任务（后台看着都正常的话，也把这条发给 AI 查原因）`,
       detail: `${p.models ? `模型 ${[...p.models].join("、")}；` : ""}最近一次成功后被拒 ${p.n} 次，尚未取得后续成功调用：${p.last}`,
     });
   }
@@ -475,7 +475,7 @@ async function dailyReportFindings(now: number, open: AlertState): Promise<Findi
     key: `${DAILY_PREFIX}${date}`, level: "now",
     title: `${date} 的日报还没生成`, impact: `读者看不到 ${date} 的日报`,
     heals: "尚未补齐；需查看运行记录确认是否需要人工补做",
-    action: "尽快发起一次维护处理",
+    action: "把这条发给 AI 排查补跑",
     detail: `reports daily ${date} 不存在；看 reports.compose 的运行记录`,
   }));
 }
@@ -545,8 +545,24 @@ export async function checkAlerts(now = Date.now()) {
     }
     if (open?.sentAt && now - Date.parse(open.sentAt) <= REPEAT_MS[f.level]) continue;
     const since = open ? new Date(open.since) : (f.since ?? new Date(now));
+    // Claim AI was notified only after the hub actually accepts this incident's wake; persist the occurrence
+    // timestamp first so a failed owner send or crash after waking cannot mint a second incident ID on retry.
+    let woken = false;
+    if (handing && f.key !== "webhook.transport" && f.owner !== "only" && f.action === "把这条发给 AI 排查处理") {
+      if (!open) {
+        const entry = { title: f.title, since: since.toISOString() };
+        state[f.key] = entry;
+        await sql`INSERT INTO settings (key, value, updated_by) VALUES ('alerts.state', ${sql.json({ [f.key]: entry } as never)}, 'alerts')
+                  ON CONFLICT (key) DO UPDATE SET value = coalesce(settings.value, '{}'::jsonb) || ${sql.json({ [f.key]: entry } as never)}, updated_at = now()`;
+      }
+      woken = await wakeAgent({ ...f, since }, now);
+    }
     // A problem the agent has had and not closed: the owner learns it is the agent's, and for how long.
-    const shown = handing && !f.owner && open?.handedAt ? { ...f, heals: `AI 接手 ${duration(now - Date.parse(open.handedAt))} 还没解决`, action: "问问 AI 卡在哪了；需要你动手的它会说明" } : f;
+    const shown = handing && !f.owner && open?.handedAt
+      ? { ...f, heals: `AI 接手 ${duration(now - Date.parse(open.handedAt))} 还没解决`, action: "问问 AI 卡在哪了；需要你动手的它会说明" }
+      : woken
+        ? { ...f, action: "已自动通知 AI 排查处理，修不好或要你拍板时会再找你；恢复后会再发一条通知" }
+        : f;
     const msg = formatAlert(shown, since, now, !!open?.sentAt);
     await sendAlert(msg.title, msg.lines);
     state[f.key] = { ...open, title: f.title, since: since.toISOString(), sentAt: new Date(now).toISOString() };

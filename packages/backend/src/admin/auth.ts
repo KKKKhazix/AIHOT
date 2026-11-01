@@ -101,6 +101,7 @@ export function parseCookies(header: string | undefined): Record<string, string>
   return out;
 }
 
+/** A browser extension can call the admin API with the session cookie: after changing these attributes, check it still can. */
 export function cookie(name: string, value: string, maxAgeSeconds: number, secure: boolean): string {
   return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? "; Secure" : ""}`;
 }

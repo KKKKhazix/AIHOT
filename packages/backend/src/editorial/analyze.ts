@@ -492,6 +492,8 @@ export async function runAnalysis(a: AnalyzeInputArticle, opts: StepOpts = {}): 
     const near = scoresSelect(scores) || (sum !== null && sum > UNDERSTAND_FLOOR * SCORE_CALLS);
     const s = await structure;
     if ("error" in s) throw s.error;
+    // Writing checks the material itself and is never handed the structure's fact: given those
+    // extracted conclusions, it rewrote copy that had been right.
     const writing: NonNullable<AnalysisRun["writing"]> = original
       ? { kind: "verbatim", model: null, titleZh: original.title, summaryZh: original.summary ?? "", reasonZh: null, receiptIds: [], reused: true }
       : await mendWording(a, (near ? await runUnderstand(a, opts) : null) ?? (await runSummarize(a, opts)), opts);

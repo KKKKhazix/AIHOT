@@ -101,6 +101,9 @@ function rejectionDetail(body: string): { code: string; message: string } {
   };
 }
 
+// Codes from the vendors' references: https://help.aliyun.com/en/model-studio/error-code,
+// https://docs.bigmodel.cn/cn/api/api-code, https://help.openai.com/en/articles/5955604-troubleshooting-api-rate-limits-and-429-errors,
+// https://github.com/anomalyco/opencode/blob/8c173a8f3805d8e749d44311054b07e37a1b2ce1/packages/ai/src/provider-error.ts (GoUsageLimitError).
 /** Account or spending refusals, shared by live requests and their saved alert evidence. */
 export function providerAccessRefused(service: string, error: string): boolean {
   const http = /(?:^| )HTTP (\d{3})(?:: ?| )([\s\S]*)$/.exec(error);

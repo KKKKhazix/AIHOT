@@ -148,7 +148,11 @@ export interface PreserveRule {
   caption?: string;
 }
 
-/** How a source's article pages are read: the zone of a time printed without one, the widgets to preserve, and the language asked for. */
+/**
+ * How a source's article pages are read: the zone of a time printed without one, the widgets to preserve, and the language asked for.
+ * Never where the body is: extraction uses one set of rules for every page, and boilerplate that leaks into
+ * bodies (subscribe prompts, recommendation blocks) is fixed in those rules rather than per source.
+ */
 export interface PageRules {
   utcOffset?: string;
   preserve?: PreserveRule[];

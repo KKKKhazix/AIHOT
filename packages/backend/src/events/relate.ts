@@ -15,7 +15,10 @@ import { promptText, promptVersion } from "../editorial/prompts.ts";
 export const RELATE_PROMPT_VERSION = promptVersion("group-pair", "group-signal");
 export const BATCH_PROMPT_VERSION = promptVersion("group-batch");
 
-/** Saved original evidence per report, shared by rendering and selected-background retrieval. */
+/**
+ * Saved original evidence per report, shared by rendering and selected-background retrieval. Long analyses
+ * put their conclusions last (one of 10,597 characters lost them at the former 6,000); longer text is still cut.
+ */
 export const GROUP_BODY_CHARS = 10_000;
 
 export const RELATIONS = ["SAME_OCCURRENCE", "SAME_STORY", "UNRELATED", "ROUNDUP"] as const;

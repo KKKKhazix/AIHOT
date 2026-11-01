@@ -404,6 +404,7 @@ export function SectionPage({ id, no, label, children }: { id: string; no?: numb
 /** Two columns with a hairline between them, once the page is wide enough (快讯). */
 const COLUMNS = "@[760px]:columns-2 @[760px]:gap-x-12 @[760px]:[column-rule:1px_solid_var(--line)]";
 
+/** Issues change through these links, never by a sideways swipe: on iOS that would fight the edge swipe back. */
 function Neighbours({ report, index }: { report: ReportDetail; index: ReportNavigationEntry[] }) {
   const titleOf = (key: string) => index.find((e) => e.key === key)?.title ?? `${withSubject(REPORT_NAMES[report.kind])} · ${key}`;
   const cell = "group flex min-w-0 flex-col py-6";

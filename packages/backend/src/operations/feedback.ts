@@ -48,7 +48,10 @@ export function feedbackEmailKey(email: string): string {
 }
 
 const HOUR = 3600_000;
+/** Different reports a source may save in a rolling hour: genuine reporters never sent more over 90 days, while 10 kept letting spam in. */
 const MAX_SUBMISSIONS = 3;
+/** Attempts an hour, retries included, for a source and for its whole network: rotating browsers once saved 47 reports
+ *  from one network, so an office or campus sharing an address shares this too. */
 const MAX_ATTEMPTS = 20;
 type Submission = { at: number; id: number; fingerprint: string };
 

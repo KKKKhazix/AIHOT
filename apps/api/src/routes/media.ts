@@ -1,4 +1,6 @@
-// Signed image proxy. Validate before reading prepared bytes or returning 304; calculate a fresh
+// Signed image proxy. Only addresses this site signed are served; a missing, wrong or expired signature
+// is refused without any upstream fetch, so the proxy can never serve as a free image host.
+// Validate before reading prepared bytes or returning 304; calculate a fresh
 // remaining lifetime on every request so the CDN never inherits an aged HTTP response's max-age.
 import type { FastifyInstance } from "fastify";
 import { createHash } from "node:crypto";

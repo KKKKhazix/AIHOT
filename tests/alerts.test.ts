@@ -147,7 +147,7 @@ test("content incidents survive restarts, pauses, aging failures and partial rec
   }
 });
 
-// F20: alerts about a paid service name the steps currently routed to it: the admin choice, else a valid
+// Alerts about a paid service name the steps currently routed to it: the admin choice, else a valid
 // environment choice, else the site default. Failed calls a step made before it moved do not list it;
 // module steps count alike, and a step with nothing to do (an empty word list) is left out.
 test("refusal and spent-budget alerts name the steps currently routed to the provider", async () => {

@@ -1,4 +1,6 @@
 // A deliberately small online-migration vocabulary. Unknown SQL needs an explicit safety design, not an opt-out.
+// Production, 2026-10-02: a strong lock, a whole-table backfill and a plain index build inside one migration
+// transaction blocked public reads and writes for two minutes.
 export const FIRST_ONLINE_MIGRATION = 55;
 export type MigrationPlan = { kind: "transaction" | "validation" | "statistics" } | { kind: "index"; index: string; table: string };
 

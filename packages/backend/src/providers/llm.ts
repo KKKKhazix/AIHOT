@@ -117,6 +117,7 @@ function isConnectFailure(error: unknown): boolean {
 
 function requestFor<S extends z.ZodType>(opts: ChatJsonOptions<S>, spec: ModelSpec) {
   const temperature = opts.temperature ?? 0.2;
+  // Never below 512: a smaller cap cut short structured answers down to an empty response (production, 2026-06-19).
   const maxTokens = Math.max(opts.maxTokens ?? 1500, 512) + (spec.reasoningTokens ?? 0);
   const userText = typeof opts.user === "string" ? opts.user : JSON.stringify(opts.user);
   const request: ReceiptRequest = {

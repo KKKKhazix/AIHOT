@@ -52,6 +52,7 @@ export async function followXRenames(opts: { now?: number; pauseMs?: number } = 
       if (to) break;
     }
     if (!to || to.toLowerCase() === from.toLowerCase()) continue;
+    // Only the handle is rewritten: a new display name or company alias needs judgement and is left to a person.
     const handle = new RegExp(`(from:|@)${from}(?![A-Za-z0-9_])`, "gi");
     const query = s.query.replace(handle, `$1${to}`);
     const name = s.name.replace(handle, `$1${to}`);

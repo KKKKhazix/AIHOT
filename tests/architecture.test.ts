@@ -1,6 +1,5 @@
 // Architecture boundaries and web rules that otherwise hold only by convention, and nothing kept that
-// nothing uses. Each rule reads the source and names what breaks it. A rule changes here and in the
-// document that states it together.
+// nothing uses. Each rule reads the source and names what breaks it; its message is its documentation.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";

@@ -1,6 +1,8 @@
 // Uses of sources besides the news pipeline, as the installed modules declare them (ServerModule.sourceUses).
 // One collection serves them all: a source names its uses, its pace is the fastest any of them asks for, and
-// each module reads the articles of its sources itself.
+// each module reads the articles of its sources itself. A post one of them found may be credited to another
+// source (its publisher), so a module looks in article_discoveries too, and reads a post once its text is
+// settled (content/materials.ts textSettled).
 import { z } from "zod";
 import { serverModules, type SourceUse } from "../modules.ts";
 

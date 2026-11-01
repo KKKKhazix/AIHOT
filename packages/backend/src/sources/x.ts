@@ -203,7 +203,8 @@ export async function fetchXSearch(source: SourceRow, since?: string): Promise<X
   return { candidates: tweets.map(tweetToCandidate), ...read };
 }
 
-// Shards: plain account queries read together
+// Shards: plain account queries read together. One search per account overran the SocialData budget on
+// production's first day (2026-09-28).
 
 /** A query that can share a search: exactly "from:handle -filter:replies", newest first. */
 const SHARDABLE = /^from:[A-Za-z0-9_]{1,15} -filter:replies$/i;

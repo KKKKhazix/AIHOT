@@ -273,6 +273,8 @@ export async function findDuplicateSource(kind: string, config: Record<string, u
 
 export async function createSource(input: unknown, actor: string): Promise<BeforeJson<AdminSourceCreated>> {
   const s = CreateSchema.parse(input);
+  // First party is tier T1 only: an official account, staff member, original reporting or a link to the
+  // official site does not make a T1_5 or T2 source first party (being a representative is decided separately).
   s.first_party = s.tier === "T1";
   assertSupportedConfig(s.kind, s.config);
   const result = await sql.begin(async (tx) => {

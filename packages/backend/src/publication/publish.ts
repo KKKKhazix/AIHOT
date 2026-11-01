@@ -162,6 +162,8 @@ async function appendLedger(tx: Tx, articleId: string, op: "upsert" | "remove", 
 }
 
 /**
+ * Seats are per fact, never per story: a launch, a later evaluation and a fix are separate news, each with
+ * its own card in its own place; the story page tells how they connect.
  * Ordinary reports share one selected seat per fact: among the fact's selected public reports,
  * the representative (first-party, full text, higher score, earliest) takes it, and a
  * change of representative removes the old one and adds the new one.
@@ -287,6 +289,8 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
     && (!article.backfill || article.published_at !== null || !!options.releasedAt);
   const selectionCandidate = isSelectable(eligible, judgedSelected, source.tier);
   // Scoring nominates a report; a completed identity/value decision admits it to selection.
+  // Nothing releases a candidate without one: a timeout, a missing or invalid answer is no evidence the
+  // report is new, so it waits (readable in the pool) rather than risk a repeat in the selection and its push.
   // A historical import already has its public decision. Preserve that confirmed state on rebuild.
   const selected = selectionCandidate && article.grouping_status === "complete"
     && (f.selected === true || article.selection_adds_value !== false);

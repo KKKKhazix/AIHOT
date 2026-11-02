@@ -1,11 +1,81 @@
 // Failure mode: WeChat's in-app browser cannot save downloads, so the article offers "复制 Markdown" there
 // instead; it copied with the async clipboard, which that browser does not have, and always failed.
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { chromium, expect } from "@playwright/test";
 import { fakeApi, itemDetail, startWebServer, visit, type WebServer } from "./web-server.ts";
 
 const markdown = "# 复制检查\n\n固定正文";
+
+test("article actions support keyboard navigation and return focus on Escape", async () => {
+  const api = fakeApi((url, res) => {
+    if (url.pathname === "/api/site/items/keyboard-menu") return itemDetail({ id: "keyboard-menu", title: "键盘菜单检查" });
+    if (url.pathname === "/items/keyboard-menu/markdown") {
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      return res.end(markdown);
+    }
+  });
+  const browser = await chromium.launch({ channel: "chromium" });
+  let web: WebServer | undefined;
+  try {
+    web = await startWebServer(api);
+    const page = await browser.newPage({ viewport: { width: 1366, height: 900 } });
+    await visit(page, web.origin + "/items/keyboard-menu");
+    const trigger = page.getByRole("button", { name: "更多操作", exact: true }).filter({ visible: true });
+    const first = page.getByRole("menuitem", { name: "分享链接", exact: true });
+    const second = page.getByRole("menuitem", { name: "生成分享海报", exact: true });
+    const last = page.getByRole("menuitem", { name: "导出 Markdown", exact: true });
+    await trigger.press("Enter");
+    await expect(first).toBeFocused();
+    await first.press("ArrowDown");
+    await expect(second).toBeFocused();
+    await second.press("End");
+    await expect(last).toBeFocused();
+    await last.press("ArrowDown");
+    await expect(first).toBeFocused();
+    await first.press("ArrowUp");
+    await expect(last).toBeFocused();
+    await last.press("Home");
+    await expect(first).toBeFocused();
+    await first.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.press("ArrowUp");
+    await expect(last).toBeFocused();
+    await last.press("Shift+Tab");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.press("Space");
+    await expect(first).toBeFocused();
+    await first.press("Tab");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect(trigger).not.toBeFocused();
+    await trigger.click();
+    await expect(first).toBeFocused();
+    await page.getByRole("heading", { name: "键盘菜单检查", exact: true }).click();
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await trigger.press("ArrowDown");
+    await expect(first).toBeFocused();
+    await first.press("ArrowUp");
+    await expect(last).toBeFocused();
+    const download = page.waitForEvent("download");
+    await last.press("Enter");
+    assert.equal(await readFile((await (await download).path())!, "utf8"), markdown);
+    await expect(trigger).toBeFocused();
+    await trigger.press("Enter");
+    await first.press("ArrowDown");
+    await second.press("Enter");
+    const poster = page.getByRole("dialog", { name: "分享海报", exact: true });
+    await expect(poster).toBeVisible();
+    await poster.getByRole("button", { name: "关闭", exact: true }).click();
+    await expect(poster).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  } finally {
+    await browser.close();
+    await web?.stop();
+  }
+});
 
 test("in WeChat, 复制 Markdown copies the article without the async clipboard", async () => {
   const api = fakeApi((url, res) => {

@@ -93,21 +93,6 @@ export function rhythmMultiple(s: QuietSource): number | null {
   return s.quiet_days / s.median_gap_days;
 }
 
-/** One quiet source in the weekly report: its own numbers, so a reader can see why it is listed. Three
- * cases read differently: output that is only outside the window, output too thin to time, and a source
- * that never gave us anything — a broken collection, or nothing published since it was added. */
-export function rhythmText(s: QuietSource): string {
-  const times = rhythmMultiple(s);
-  if (times === null) {
-    const run = `近 7 天 ${s.runs} 次抓取、0 条新内容`;
-    if (!s.ever_output) return `${run}；从未收到过内容`;
-    return s.evidence_days > 0
-      ? `${run}；近 ${RHYTHM_WINDOW_DAYS} 天里只有 ${s.evidence_days} 天发过内容，还看不出固定频率`
-      : `${run}；近 ${RHYTHM_WINDOW_DAYS} 天没有发过内容`;
-  }
-  return `近 ${s.quiet_days} 天没有新内容，平时约 ${s.median_gap_days} 天一条（${Number(times.toFixed(1))} 倍）`;
-}
-
 /** Seven days of outcomes, including intermittent failures that a later success clears on sources.
  * Provider budget waits and process shutdowns are not counted as detail failures by the collector.
  * A request timeout remains a failure. */
@@ -214,9 +199,4 @@ async function withRhythm(sources: SourceHealthRow[], now: number): Promise<Quie
     const r = measured.get(s.id);
     return { ...s, evidence_days: r?.evidence_days ?? 0, median_gap_days: r?.median_gap_days ?? null, quiet_days: r?.quiet_days ?? null };
   });
-}
-
-/** Every listed source with its own numbers. */
-export function sourceHealthList<T extends SourceHealthRow>(rows: T[], describe: (row: T) => string): string {
-  return rows.map(s => `${s.name}（${s.id}）：${describe(s)}`).join("；");
 }

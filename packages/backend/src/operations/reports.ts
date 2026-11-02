@@ -4,9 +4,7 @@ import { beijingDay } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
 import { sendAlert } from "../notify/feishu.ts";
 import { serverModules } from "../modules.ts";
-import { rhythmText, SOURCE_PROBLEMS, sourceHealth, sourceHealthList } from "../sources/health.ts";
 import { useLabels } from "../sources/uses.ts";
-import { dismissedFollowUps } from "./alerts.ts";
 
 /** Sources that serve modules only (out of the news, with uses): counted and named apart from the news sources. */
 const moduleOnly = sql`(participation_mode = 'isolated' AND uses <> '{}')`;
@@ -53,11 +51,14 @@ async function sourceChanges(since: Date): Promise<string[]> {
   ];
 }
 
-/** Monday 09:00: how the sources did over the last seven days, quiet ones included (the daily follow-ups leave them out). */
+/**
+ * Monday 09:00: the week in a few lines, and what agents changed. Per-source lists stay out: nobody can act on
+ * 160 quiet sources in a chat message; the Monday patrol checks them from sourceHealth(), the daily follow-ups name failures.
+ */
 export async function sourceHealthWeekly(now = Date.now()) {
   const since = new Date(now - 7 * 86400_000);
   const before = new Date(now - 14 * 86400_000);
-  const [[counts], [items], groups, dismissed, served] = await Promise.all([
+  const [[counts], [items], served] = await Promise.all([
     sql<{ enabled: number; failing: number; degraded: number; added: number }[]>`
       SELECT count(*) FILTER (WHERE enabled)::int AS enabled,
              count(*) FILTER (WHERE enabled AND health = 'failing')::int AS failing,
@@ -69,8 +70,6 @@ export async function sourceHealthWeekly(now = Date.now()) {
              count(*) FILTER (WHERE discovered_at >= ${before} AND discovered_at < ${since})::int AS prev,
              (SELECT count(*)::int FROM publications p WHERE p.selected AND p.visibility <> 'withdrawn' AND p.discovered_at >= ${since}) AS selected
       FROM articles WHERE discovered_at >= ${before} AND source_id NOT IN (SELECT id FROM sources WHERE ${moduleOnly})`,
-    sourceHealth(now),
-    dismissedFollowUps(),
     sql<{ uses: string[]; failing: boolean }[]>`SELECT uses, health = 'failing' AS failing FROM sources WHERE enabled AND ${moduleOnly}`,
   ]);
   const lines = [
@@ -85,26 +84,8 @@ export async function sourceHealthWeekly(now = Date.now()) {
   }
   // The modules' own collectors, a line each.
   for (const m of serverModules()) if (m.sourceHealth) lines.push(...(await m.sourceHealth(now)));
-  for (const group of groups) {
-    lines.push("", `${group.name}：${group.sources.length} 个在用信源；本周收录 ${n(group.sources.reduce((sum, s) => sum + s.items, 0))} 条；连续失败 ${group.failing.length} 个、反复失败 ${group.unstable.length} 个、超出自身更新节奏 ${group.overdue.length} 个、7 天没有新内容 ${group.unknown.length} 个`);
-    for (const p of SOURCE_PROBLEMS) {
-      if (!group[p.problem].length) continue;
-      lines.push(`${p.title}：${sourceHealthList(group[p.problem], s => {
-        const dismissal = dismissed[`sources.${p.problem}.${s.id}`];
-        return p.describe(s) + (dismissal ? `（已判定不修：${dismissal.reason}）` : "");
-      })}`);
-    }
-    if (group.overdue.length) lines.push(`超出自身更新节奏（先对照原站，区分采集失效与它自己变慢）：${sourceHealthList(group.overdue, rhythmText)}`);
-    if (group.unknown.length) lines.push(`7 天没有新内容（近期文章太少还看不出固定更新频率，或从未收到内容）：${sourceHealthList(group.unknown, rhythmText)}`);
-  }
   const changes = await sourceChanges(since);
   if (changes.length) lines.push("", ...changes);
-  const failing = counts!.failing;
-  const overdue = groups.reduce((sum, g) => sum + g.overdue.length, 0);
-  // Quiet sources still worth a look: past their own rhythm, or not judgeable.
-  const silent = overdue + groups.reduce((sum, g) => sum + g.unknown.length, 0);
-  const followUp = counts!.failing > 0 || served.some((s) => s.failing) || silent > 0 || groups.some(g => g.failing.length || g.unstable.length || g.undated.length || g.revisions.length || g.details.length);
-  lines.push("", followUp ? "需要处理的话，把这条转给 AI。" : "没有需要处理的信源。");
   await sendAlert("📊 信源周报", lines);
-  return { failing, silent, overdue };
+  return { failing: counts!.failing };
 }

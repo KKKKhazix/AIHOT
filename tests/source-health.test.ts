@@ -16,7 +16,7 @@ import { fillScheduledPublications, upsertMaterial } from "@aihot/backend/conten
 import { getBoss, stopBoss } from "@aihot/backend/jobs/queue";
 import { collectFindings, dismissedFollowUps, dismissFollowUp, restoreFollowUp, sendDigest } from "@aihot/backend/operations/alerts";
 import { sourceHealthWeekly } from "@aihot/backend/operations/reports";
-import { sourceHealth, rhythmText, RHYTHM_WINDOW_DAYS } from "@aihot/backend/sources/health";
+import { sourceHealth, RHYTHM_WINDOW_DAYS } from "@aihot/backend/sources/health";
 import { defineServerModule, installModules } from "@aihot/backend/modules";
 import { ALERTS } from "@aihot/site";
 
@@ -164,23 +164,21 @@ test("each failing source is a follow-up of its own, closed when that source rec
   assert.deepEqual((await followUps(second)).map(f => f.key), [`sources.failing.${second}`]);
 });
 
-test("weekly totals count every silent source and include successful attributed discoveries", async () => {
+test("the weekly report stays a few lines: quiet and problem sources are counted elsewhere, not listed", async () => {
   for (let i = 0; i < 18; i++) await source(`silent-${i}`);
   const publisher = await source("publisher", "editorial", new Date(now));
   const collector = await source("collector");
   const { articleId } = await material(publisher, "shared");
   await sql`INSERT INTO article_discoveries(article_id,source_id,via,discovered_at) VALUES(${articleId},${collector},'fetch',${new Date(now)})`;
-  const lines: string[] = [];
-  const log = console.log;
-  console.log = (value: unknown) => { lines.push(String(value)); };
-  try {
-    const result = await sourceHealthWeekly(now);
-    assert.equal(result.silent, 20, "18 silent plus two chronic sources, not the display limit or the collector");
-  } finally { console.log = log; }
-  const text = lines.join("\n");
-  assert.match(text, /编辑内容/);
-  assert.match(text, /热度信号/);
-  assert.doesNotMatch(text, new RegExp(`· ${collector}`));
+  const group = await quietGroup();
+  const quiet = [...group.overdue, ...group.unknown].map(s => s.id);
+  assert.ok(quiet.includes(`${T}-silent-17`), "every quiet source is still there for the patrol");
+  assert.ok(!quiet.includes(collector), "a collector with attributed discoveries is not quiet");
+  const text = await weekly();
+  assert.match(text, /本周收录 /);
+  assert.match(text, /在用信源 \d+ 个/);
+  assert.doesNotMatch(text, /silent-|没有新内容|已判定不修|转给 AI/);
+  assert.ok(text.length < 400, text);
 });
 
 // Undated articles and repeated revisions are different problems: one closed as accepted (dates missing by
@@ -219,9 +217,6 @@ test("detail pages that keep failing are a follow-up, an occasional timeout amon
   assert.equal(more.length, 0);
   assert.equal(f?.key, `sources.details.${refused}`);
   assert.match(f!.detail!, /近 7 天失败 6\/34 页/);
-  const report = await weekly();
-  assert.doesNotMatch(report, new RegExp(`${once}|${rare}`), "nor a line in the weekly report");
-  assert.match(report, new RegExp(`详情补全失败：[^\\n]*${refused}）：近 7 天失败 6/34 页`));
 });
 
 test("a low-frequency source quiet for a week is not late, while a daily one is", async () => {
@@ -236,9 +231,6 @@ test("a low-frequency source quiet for a week is not late, while a daily one is"
   assert.ok(!group.unknown.some(s => s.id === monthly), "and it is not reported at all");
   assert.ok(group.overdue.some(s => s.id === daily), "a daily source quiet for a week is overdue");
   assert.deepEqual(await followUps(daily), [], "being late is not a daily follow-up: it may never end by itself");
-  const report = await weekly();
-  assert.match(report, /超出自身更新节奏（先对照原站/);
-  assert.match(report, new RegExp(`${daily}）：近 7 天没有新内容，平时约 1 天一条（7 倍）`));
 });
 
 test("a source without enough history to have a rhythm stays visible instead of being called fine", async () => {
@@ -249,13 +241,7 @@ test("a source without enough history to have a rhythm stays visible instead of 
   assert.ok(group.unknown.some(s => s.id === thin), "two dated days are not a rhythm");
   assert.ok(group.unknown.some(s => s.id === never), "a source that never produced anything is visible too");
   assert.ok(!group.overdue.some(s => s.id === thin || s.id === never));
-  assert.match(rhythmText(group.unknown.find(s => s.id === thin)!), /近 7 天 \d+ 次抓取、0 条新内容；近 90 天里只有 2 天发过内容，还看不出固定频率/);
-  assert.match(rhythmText(group.unknown.find(s => s.id === never)!), /近 7 天 \d+ 次抓取、0 条新内容；从未收到过内容/);
   assert.deepEqual([...await followUps(thin), ...await followUps(never)], []);
-  const report = await weekly();
-  assert.match(report, new RegExp(`${thin}）：近 7 天 \\d+ 次抓取、0 条新内容；近 90 天里只有 2 天发过内容，还看不出固定频率`));
-  assert.match(report, new RegExp(`${never}）：近 7 天 \\d+ 次抓取、0 条新内容；从未收到过内容`));
-  assert.ok(!report.includes("后台“"));
 });
 
 // Which days count as output: a first import is the one day it arrived, only the rhythm window counts,
@@ -324,13 +310,12 @@ test("collection failures stay reported on their own, also when the source is pa
   assert.ok(!group.unstable.some(s => s.id === broken), "listed once, as failing, not also as failing often");
   assert.ok(group.overdue.some(s => s.id === broken), "a failed source past its rhythm is not excused by its silence");
   assert.deepEqual((await followUps(broken)).map(f => f.key), [`sources.failing.${broken}`]);
-  assert.match(await weekly(), new RegExp(`超出自身更新节奏[^\\n]*${broken}`));
 });
 
 // Ways closing a source follow-up as "not to be fixed" goes wrong: it still shows in the digest; it is
 // accepted without a reason, or for a follow-up that bundles many records (it would also hide records that
 // arrive later) or for an alert; it leaves no audit trail or cannot be undone; it outlives the problem, so a
-// later recurrence is never shown again; the weekly report drops it or hides why.
+// later recurrence is never shown again.
 test("a source follow-up closed as not to be fixed leaves the digest until it is restored or goes away", async () => {
   const blocked = await source("blocked", "editorial", new Date(now));
   const KEY = `sources.failing.${blocked}`;
@@ -357,7 +342,6 @@ test("a source follow-up closed as not to be fixed leaves the digest until it is
     await dismissFollowUp(KEY, "原站屏蔽机房出口，改用其他信源", "test", now);
     assert.ok(!(await digest()).includes(blocked));
     assert.ok(!(await digest()).includes(blocked), "still closed the next day while the problem lasts");
-    assert.match(await weekly(), new RegExp(`${blocked}）：连续失败 9 次，HTTP 403（已判定不修：原站屏蔽机房出口，改用其他信源）`));
 
     assert.ok(await restoreFollowUp(KEY, "原站恢复访问", "test"));
     assert.ok((await digest()).includes(blocked));
@@ -460,11 +444,4 @@ test("sources only a module uses are counted and named on their own, apart from 
   assert.equal(await counts(), before, "the news sources in use are counted without them");
   assert.match(text, /另有只给模块用的信源 2 个（盯梢 2），抓取失败 1 个/);
   assert.match(text, new RegExp(`· ${paused}（AI，[^，）]+，只给盯梢用）：账号设为私密`));
-  // With every news source fine, a module's failing source still needs handling.
-  const news = await sql<{ id: string }[]>`UPDATE sources SET enabled = false WHERE enabled AND uses = '{}' RETURNING id`;
-  try {
-    assert.match(await weekly(), /需要处理的话，把这条转给 AI/);
-  } finally {
-    if (news.length) await sql`UPDATE sources SET enabled = true WHERE id IN ${sql(news.map((r) => r.id))}`;
-  }
 });

@@ -42,7 +42,7 @@ test("indexing and sitemap require a readable source, while manual archive index
   // Existing rows may carry an old indexability decision: the read layer must enforce live scope too.
   await sql`UPDATE publications SET indexable = true WHERE article_id = ${signal}`;
   await sql`UPDATE publications SET visible_after = now() + interval '1 day' WHERE article_id = ${future}`;
-  const sitemap = await app.inject("/sitemap.xml");
+  const sitemap = await app.inject("/sitemaps/items.xml");
   assert.equal(sitemap.statusCode, 200);
   assert.ok(sitemap.body.includes(`/items/${archive}</loc>`), "a readable archive can be explicitly indexed outside the pool");
   assert.ok(!sitemap.body.includes(`/items/${signal}</loc>`), "a stale index bit cannot publish a 404 URL");

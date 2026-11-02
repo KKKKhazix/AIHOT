@@ -20,7 +20,8 @@ test("sitemap responses and rebuild failures preserve the original freshness dea
     VALUES (${id},${id},'Discovery','Summary',${`https://example.org/${id}`},${new Date(now)},${new Date(now)},${new Date(now)},true,true,'news')`;
   const first = await app.inject("/sitemap.xml");
   assert.equal(first.statusCode, 200);
-  assert.ok(first.body.includes(`/items/${id}</loc>`));
+  assert.ok(first.body.includes("/sitemaps/items.xml</loc>"));
+  assert.ok((await app.inject("/sitemaps/items.xml")).body.includes(`/items/${id}</loc>`));
   await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${id}`;
   t.mock.timers.tick(240_000);
   const cached = await app.inject({ url: "/sitemap.xml", headers: { "if-none-match": String(first.headers.etag) } });
@@ -28,8 +29,7 @@ test("sitemap responses and rebuild failures preserve the original freshness dea
   const ttl = Number(String(cached.headers["cache-control"]).match(/s-maxage=(\d+)/)?.[1] ?? Infinity);
   assert.ok(ttl <= 60, `an aged response must not restart its TTL: ${cached.headers["cache-control"]}`);
   t.mock.timers.tick(61_000);
-  const refreshed = await app.inject("/sitemap.xml");
-  assert.equal(refreshed.statusCode, 200);
+  const refreshed = await app.inject("/sitemaps/items.xml");
   assert.ok(!refreshed.body.includes(`/items/${id}</loc>`), "expired content must be rebuilt before it is sent");
   t.mock.timers.tick(301_000);
   await sql`ALTER TABLE publications RENAME TO unavailable_publications`;

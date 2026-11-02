@@ -65,6 +65,31 @@ test('discovery dates follow page content and publication scope', async () => {
   assert.ok(!entries.some(e => e.loc === '/items/dates-signal'));
 });
 
+test('the sitemap lists stories of several reports; notifications keep every story', async () => {
+  await material('story-one');
+  await material('story-two-a');
+  await material('story-two-b');
+  const add = async (ids: string[]) => {
+    const publicId = randomUUID();
+    const [story] = await sql<{ id: number }[]>`INSERT INTO stories (public_id,title,latest_at,digest,digest_updated_at,created_at,updated_at)
+      VALUES (${publicId},'事件','2026-10-08T00:00:00Z','不再有证据的综述','2026-10-07T00:00:00Z','2026-10-01','2026-10-05') RETURNING id`;
+    const [fact] = await sql<{ id: number }[]>`INSERT INTO facts (public_id,story_id,title) VALUES (${randomUUID()},${story!.id},'事实') RETURNING id`;
+    for (const id of ids) await sql`INSERT INTO fact_articles (fact_id,article_id,role) VALUES (${fact!.id},${id},'primary')`;
+    return publicId;
+  };
+  const single = await add(['story-one']);
+  const several = await add(['story-two-a', 'story-two-b']);
+  const at = new Date('2026-10-09');
+  const all = await loadDiscoveryEntries(at);
+  assert.ok(all.some(e => e.loc === `/story/${single}`), 'notifications read the whole inventory');
+  const listed = await loadDiscoveryEntries(at, { urls: 100 });
+  const [report] = await sql<{ at: Date }[]>`SELECT discovered_at AS at FROM publications WHERE article_id = 'story-two-a'`;
+  assert.equal(listed.find(e => e.loc === `/story/${several}`)?.lastmod?.toISOString(), report!.at.toISOString(),
+    'dated by what the page shows: neither a hot signal on latest_at nor a digest that lost its evidence');
+  assert.ok(!listed.some(e => e.loc === `/story/${single}`));
+  assert.ok(listed.some(e => e.loc === `/story/${several}`));
+});
+
 test('dry runs leave changes pending, corrections and disappeared URLs are submitted again', async () => {
   await material('changed-story-item');
   const publicId = randomUUID();

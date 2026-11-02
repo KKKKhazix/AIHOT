@@ -71,3 +71,23 @@ test("ingest skips malformed entries and still accepts and deduplicates the vali
   const [source] = await sql<{ participation_mode: string }[]>`SELECT participation_mode FROM sources WHERE id = ${sourceId}`;
   assert.equal(source!.participation_mode, "isolated");
 });
+
+test("ingest reports exhausted enrichment budget as a retryable service response", async () => {
+  const [budget] = await sql<{ per_day: number }[]>`SELECT per_day FROM budgets WHERE service='dajiala'`;
+  assert.ok(budget);
+  process.env.DAJIALA_KEY = "test-key";
+  try {
+    await sql`UPDATE budgets SET per_day=0 WHERE service='dajiala'`;
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/ingest/items",
+      headers: { authorization: `Bearer ${process.env.INGEST_TOKEN}` },
+      payload: { sourceId: "wechat-manual", items: [{ title: "限额测试", url: `https://mp.weixin.qq.com/s/${tag()}` }] },
+    });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.headers["retry-after"], "3600");
+    assert.deepEqual(response.json(), { ok: false, error: "provider budget exhausted", retryAfterSeconds: 3600 });
+  } finally {
+    await sql`UPDATE budgets SET per_day=${budget!.per_day} WHERE service='dajiala'`;
+  }
+});

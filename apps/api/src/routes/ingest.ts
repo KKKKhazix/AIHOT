@@ -5,6 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { credential } from "@aihot/backend/config";
 import { IngestError, ingestItems } from "@aihot/backend/ingest/items";
+import { BudgetExceededError } from "@aihot/backend/providers/receipts";
 
 const PLACEHOLDER = /^(|changeme|change-me|placeholder|xxx+|todo|test|dev|your[-_]?token.*)$/i;
 
@@ -42,6 +43,13 @@ export function registerIngest(app: FastifyInstance) {
     try {
       return await ingestItems((req.body ?? {}) as never);
     } catch (error) {
+      if (error instanceof BudgetExceededError) {
+        return reply.code(503).header("Retry-After", String(error.retryAfterSeconds)).send({
+          ok: false,
+          error: "provider budget exhausted",
+          retryAfterSeconds: error.retryAfterSeconds,
+        });
+      }
       if (error instanceof IngestError) return reply.code(error.status).send({ ok: false, error: error.message });
       req.log.error({ err: error }, "ingest items failed");
       return reply.code(500).send({ ok: false, error: "internal error" });

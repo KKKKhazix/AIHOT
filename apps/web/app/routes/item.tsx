@@ -1,9 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Await, isRouteErrorResponse, Link, useAsyncError, useLoaderData, useNavigate, useRevalidator, type ClientLoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/item";
-import type { FeedItemSummary, SiteItemDetail } from "@aihot/contracts/site";
+import type { FeedItemSummary, SiteItemDetail, StoryFollowupsResponse } from "@aihot/contracts/site";
 import { ITEM_COPY, SITE } from "@aihot/site";
 import { cachedPage, loadOr404 } from "../lib/api.server";
+import { loadFollowups } from "../features/item/followups.server";
 import { pageReuse } from "../lib/page-reuse";
 import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
 import { fullDateTime, relativeTime } from "../lib/format";
@@ -35,10 +36,11 @@ const PosterSheet = lazy(() => import("../features/item/PosterSheet"));
 
 export async function loader({ params, request }: Route.LoaderArgs) {
   const item = await loadOr404<SiteItemDetail>(`/api/site/items/${encodeURIComponent(params.id)}`, { signal: request.signal });
-  return cachedPage(600, { item });
+  return cachedPage(600, { item, followups: await loadFollowups(item, request.signal) });
 }
 
-type Preview = { item: null; preview: FeedItemSummary; detail: Promise<{ item: SiteItemDetail }> };
+type Loaded = { item: SiteItemDetail; followups: StoryFollowupsResponse | null };
+type Preview = { item: null; preview: FeedItemSummary; detail: Promise<Loaded> };
 
 /**
  * Phones: an article tapped in a list opens at once with what the card showed (title, summary, reason),
@@ -188,12 +190,12 @@ function Toast({ text }: { text: string | null }) {
 }
 
 export default function ItemPage() {
-  const data = useLoaderData<typeof clientLoader>() as { item: SiteItemDetail } | Preview;
-  if (data.item) return <ItemView key={`${data.item.id}:${data.item.bodyLanguage}`} item={data.item} />;
+  const data = useLoaderData<typeof clientLoader>() as Loaded | Preview;
+  if (data.item) return <ItemView key={`${data.item.id}:${data.item.bodyLanguage}`} item={data.item} followups={data.followups} />;
   return (
     <Suspense fallback={<ItemPreview preview={data.preview} />}>
       <Await resolve={data.detail} errorElement={<ItemGone />}>
-        {(loaded) => <ItemView key={`${loaded.item.id}:${loaded.item.bodyLanguage}`} item={loaded.item} />}
+        {(loaded) => <ItemView key={`${loaded.item.id}:${loaded.item.bodyLanguage}`} item={loaded.item} followups={loaded.followups} />}
       </Await>
     </Suspense>
   );
@@ -274,7 +276,7 @@ function ItemGone() {
   );
 }
 
-function ItemView({ item }: { item: SiteItemDetail }) {
+function ItemView({ item, followups }: Loaded) {
   const navigate = useNavigate();
   const hasTranslation = item.hasTranslation;
   const lang = item.bodyLanguage;
@@ -593,7 +595,7 @@ function ItemView({ item }: { item: SiteItemDetail }) {
             </div>
           )}
 
-          {item.story && <StoryFollowups story={item.story} currentId={item.id} />}
+          {item.story && <StoryFollowups followups={followups} story={item.story} currentId={item.id} />}
 
           {related.length > 0 && (
             <section className="mt-8">

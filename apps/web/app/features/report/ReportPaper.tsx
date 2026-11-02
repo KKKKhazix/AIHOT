@@ -136,7 +136,9 @@ function Related({ items, className = "" }: { items: ReportCitation[]; className
 function Coverage({ c }: { c: ReportCitation }) {
   return (
     <>
-      {!!c.otherSources && <span className="shrink-0 text-ink-4">另外 {c.otherSources} 家也报道了</span>}
+      {!!c.otherSources && (c.storyId
+        ? <IntentLink viewTransition to={`/story/${c.storyId}`} className="shrink-0 text-ink-4 transition-colors hover:text-accent">另外 {c.otherSources} 家也报道了</IntentLink>
+        : <span className="shrink-0 text-ink-4">另外 {c.otherSources} 家也报道了</span>)}
       {c.followUp && <Badge title={`${monthDay(c.followUp)}的日报报道过这件事，这里是新进展`}>跟进</Badge>}
     </>
   );

@@ -48,6 +48,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
                   {c.label}
                   <span className="font-mono text-[12px] font-normal text-ink-3 [overflow-wrap:anywhere]">{c.current.model}</span>
                   <Badge tone={c.current.source === "admin" ? "accent" : "muted"}>{SOURCE_LABEL[c.current.source]}</Badge>
+                  {c.current.invalid && <Badge tone="bad">配置的 {c.current.invalid} 不存在，未生效</Badge>}
                   {c.fallback && <span className="text-xs font-normal text-ink-3">
                     备用 {c.fallback.model} · {c.fallback.primaryPaused
                       ? c.fallback.backupPaused ? "主备均暂停，等待恢复" : "正在接续"

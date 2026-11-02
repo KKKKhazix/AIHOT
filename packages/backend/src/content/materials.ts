@@ -182,6 +182,13 @@ function sameBarringLoss(a: string | null | undefined, b: string | null | undefi
   return x.length === y.length && x.every((c, i) => c === y[i] || c === LOST || y[i] === LOST);
 }
 
+/**
+ * An excerpt with the numbers masked in the run of labelled counts that ends it (`Stars: 12976 Forks: 2545`):
+ * a listing refreshes them on every load, so they say nothing about the material. Labels and other numbers
+ * stay, a lone `Accuracy: 90.5` too: an excerpt can be the article's text, where a changed figure is a correction.
+ */
+const maskTrailingCounts = (s: string | null | undefined) => s?.replace(/(?:\s*\p{L}+[:：]\s*\d[\d,]*){2,}\s*$/u, (run) => run.replace(/\d[\d,]*/g, "#"));
+
 export function identityKeyFor(m: MaterialInput): string {
   if (m.identityKey) return m.identityKey;
   if (m.xPost?.tweetId) return `x:${m.xPost.tweetId}`;
@@ -319,8 +326,9 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   // otherwise start over, and a real edit reverted later is rare and loses nothing.
   const [seen] = await db`SELECT 1 FROM article_revisions WHERE article_id = ${existing!.id} AND content_hash = ${next} LIMIT 1`;
   if (!time && seen) return unchanged;
-  // Nor is the stored version with other characters lost in transit, or with them restored.
-  if (!time && sameBarringLoss(existing!.title, title) && sameBarringLoss(existing!.body_text, bodyText) && sameBarringLoss(existing!.excerpt, excerpt)) return unchanged;
+  // Nor is the stored version with other characters lost in transit, or with them restored, or with other trailing counts.
+  if (!time && sameBarringLoss(existing!.title, title) && sameBarringLoss(existing!.body_text, bodyText)
+      && (sameBarringLoss(existing!.excerpt, excerpt) || sameBarringLoss(maskTrailingCounts(existing!.excerpt), maskTrailingCounts(excerpt)))) return unchanged;
 
   const media = m.media ? sql.json(m.media as never) : null;
   await reviseMaterial(db, existing!.id, {

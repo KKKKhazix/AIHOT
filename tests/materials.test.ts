@@ -1,7 +1,7 @@
 // Material storage: every distinct change gets its own revision and history row, also under
 // concurrency; imported history gets a baseline instead of a revision; simultaneous first reports
 // of one URL create one article; other sources' listings, returns to an earlier version, characters
-// lost in transit and characters written as references are no revision (articles used to flip between
+// lost in transit, characters written as references and a listing's trailing counters are no revision (articles used to flip between
 // two versions on every fetch, a feed garbled a few characters differently on every load, and decoding
 // references would have sent every listed post stored with them back to analysis).
 import { tag } from "./setup.ts";
@@ -116,6 +116,28 @@ test("another source listing the same article records a discovery, not a revisio
   assert.deepEqual([a.revision, a.title], [1, "One month without AI"]);
   const found = await sql<{ source_id: string }[]>`SELECT source_id FROM article_discoveries WHERE article_id = ${own.articleId}`;
   assert.ok(found.some((d) => d.source_id === OTHER), "the other source still counts as a discovery");
+});
+
+test("a listing's trailing live counters are no revision, its prose numbers are", async () => {
+  // A trending listing ends every entry's description with counters that move on every load.
+  const listed = { sourceId: SOURCE, url: `https://example.com/trending-${tag()}`, title: "A trending repo", via: "fetch" as const };
+  const counted = (stars: string, forks: string) => `An engine that raised 2 million. Language: TypeScript Stars: ${stars} Forks: ${forks}`;
+  const { articleId } = await upsertMaterial({ ...listed, excerpt: counted("12976", "2545") });
+  for (const [stars, forks] of [["12980", "2546"], ["13,001", "2,550"]]) {
+    assert.equal((await upsertMaterial({ ...listed, excerpt: counted(stars!, forks!) })).revised, false);
+  }
+  assert.equal((await state(articleId)).revision, 1);
+  assert.equal((await upsertMaterial({ ...listed, excerpt: counted("13002", "2551").replace("TypeScript", "Rust") })).revised, true, "a changed label's text is a change");
+  assert.equal((await upsertMaterial({ ...listed, excerpt: counted("13003", "2552").replace("Language: TypeScript", "Language: Rust").replace("2 million", "20 million") })).revised, true, "a number in the prose is a correction");
+  const scored = { ...listed, url: `https://example.com/benchmark-${tag()}` };
+  await upsertMaterial({ ...scored, excerpt: "Model benchmark. Accuracy: 90.5" });
+  assert.equal((await upsertMaterial({ ...scored, excerpt: "Model benchmark. Accuracy: 95.2" })).revised, true, "a lone labelled figure is a correction");
+  const labelled = { ...listed, url: `https://example.com/metrics-${tag()}` };
+  await upsertMaterial({ ...labelled, excerpt: "Benchmark. Accuracy: 90 Recall: 80" });
+  assert.equal((await upsertMaterial({ ...labelled, excerpt: "Benchmark. Precision: 90 Recall: 80" })).revised, true, "a changed label is a change");
+  const encoded = { ...listed, url: `https://example.com/encoded-${tag()}` };
+  await upsertMaterial({ ...encoded, excerpt: "A repo. Stars: 100 Forks&#58; 20" });
+  assert.equal((await upsertMaterial({ ...encoded, excerpt: "A repo. Stars: 100 Forks: 20" })).revised, false, "a label written as a reference is still that label");
 });
 
 test("an article linking to a tweet is stored separately from the tweet", async () => {

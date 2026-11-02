@@ -303,6 +303,8 @@ export interface ReportCitation {
   available: boolean;
   /** A daily entry: other sources that reported the event by the issue's cutoff. */
   otherSources?: number;
+  /** That event's page (publicId). */
+  storyId?: string;
   /** A daily entry's other developments of the event, or reports of the launch merged into it (titles only). */
   related?: ReportCitation[];
   /** A daily entry whose event an earlier daily covered: that issue's date. */

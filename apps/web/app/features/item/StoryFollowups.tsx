@@ -1,43 +1,14 @@
-import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { StoryFollowup, StoryFollowupsResponse, StoryRef } from "@aihot/contracts/site";
 import { MoreLink } from "../../components/ui/Page";
 import { relativeTime } from "../../lib/format";
 
-/**
- * "事件后续": the other developments of the event this report belongs to, newest first, with a link to
- * the whole event. Loaded after the page so the article renders without waiting for it.
- */
-export function StoryFollowups({ story, currentId }: { story: StoryRef; currentId: string }) {
-  const [items, setItems] = useState<StoryFollowup[] | null>(null);
-  const [more, setMore] = useState(false);
-  const anchor = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    let started = false;
-    setItems(null);
-    const load = () => {
-      if (started) return;
-      started = true;
-      fetch(`/api/site/stories/${encodeURIComponent(story.publicId)}/followups`, { signal: controller.signal })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((body: StoryFollowupsResponse | null) => {
-          if (!body || controller.signal.aborted) return;
-          setItems(body.items.filter((d) => d.representative.id !== currentId));
-          setMore(body.more);
-        }).catch(() => {});
-    };
-    const observer = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) { observer?.disconnect(); load(); }
-    }, { rootMargin: "500px" });
-    if (observer && anchor.current) observer.observe(anchor.current);
-    else load();
-    return () => { observer?.disconnect(); controller.abort(); };
-  }, [story.publicId, currentId]);
-  return <div ref={anchor}>
-    <noscript><a href={`/story/${story.publicId}`}>查看事件全部后续</a></noscript>
-    {items && items.length > 0 && <Followups items={items} more={more} story={story} />}
-  </div>;
+/** "事件后续": the other developments of the event this report belongs to, newest first, with a link to the whole event. */
+export function StoryFollowups({ followups, story, currentId }: { followups: StoryFollowupsResponse | null; story: StoryRef; currentId: string }) {
+  const items = followups?.items.filter((d) => d.representative.id !== currentId) ?? [];
+  return items.length > 0
+    ? <Followups items={items} more={followups!.more} story={story} />
+    : <noscript><a href={`/story/${story.publicId}`}>查看事件全部后续</a></noscript>;
 }
 
 function Followups({items, more, story}: {items: StoryFollowup[]; more: boolean; story: StoryRef}) {

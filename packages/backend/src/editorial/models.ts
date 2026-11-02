@@ -61,14 +61,15 @@ export async function stepsOnService(service: string, models?: ReadonlySet<strin
   return [...new Set(steps)];
 }
 
-let cache: { at: number; overrides: Record<string, string> } | null = null;
+let cache: { at: number; switches: Record<string, string> } | null = null;
 
-async function overrides(): Promise<Record<string, string>> {
-  if (cache && Date.now() - cache.at < 60_000) return cache.overrides;
+/** The name each admin switch holds, registered or not. */
+async function switches(): Promise<Record<string, string>> {
+  if (cache && Date.now() - cache.at < 60_000) return cache.switches;
   const rows = await sql<{ key: string; value: { model?: string } }[]>`SELECT key, value FROM settings WHERE key LIKE 'models.%'`;
   const map: Record<string, string> = {};
-  for (const r of rows) if (r.value?.model && MODELS[r.value.model]) map[r.key.slice("models.".length)] = r.value.model;
-  cache = { at: Date.now(), overrides: map };
+  for (const r of rows) if (r.value?.model) map[r.key.slice("models.".length)] = r.value.model;
+  cache = { at: Date.now(), switches: map };
   return map;
 }
 
@@ -90,18 +91,24 @@ export function capabilityAcceptsModel(capability: Capability, model: { vision?:
 export async function modelFor(capability: CapabilityKey | (string & {})): Promise<string> {
   const c = capabilities()[capability];
   if (!c) throw new Error(`unknown model step: ${capability}`);
-  const chosen = (await overrides())[capability] ?? process.env[c.env] ?? c.default;
+  const held = (await switches())[capability];
+  const chosen = held && MODELS[held] ? held : process.env[c.env] ?? c.default;
   return MODELS[chosen] ? chosen : c.default;
 }
 
-/** Where the current choice comes from, for the admin page. */
-export async function modelSources(): Promise<Record<string, { model: string; source: "admin" | "env" | "default" }>> {
-  const o = await overrides();
-  const out: Record<string, { model: string; source: "admin" | "env" | "default" }> = {};
+/** Where the current choice comes from, for the admin page; `invalid` is an unregistered name passed over to reach it. */
+export async function modelSources(): Promise<Record<string, { model: string; source: "admin" | "env" | "default"; invalid?: string }>> {
+  const held = await switches();
+  const out: Record<string, { model: string; source: "admin" | "env" | "default"; invalid?: string }> = {};
   for (const [key, c] of Object.entries(capabilities())) {
-    if (o[key]) out[key] = { model: o[key]!, source: "admin" };
-    else if (process.env[c.env] && MODELS[process.env[c.env]!]) out[key] = { model: process.env[c.env]!, source: "env" };
-    else out[key] = { model: c.default, source: "default" };
+    const pick = held[key];
+    const env = process.env[c.env];
+    if (pick && MODELS[pick]) {
+      out[key] = { model: pick, source: "admin" };
+      continue;
+    }
+    const invalid = pick ?? (env && !MODELS[env] ? env : undefined);
+    out[key] = { ...(env && MODELS[env] ? { model: env, source: "env" as const } : { model: c.default, source: "default" as const }), ...(invalid ? { invalid } : {}) };
   }
   return out;
 }

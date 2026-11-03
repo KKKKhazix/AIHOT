@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { chromium, expect } from "@playwright/test";
+import { chromium, expect, webkit } from "@playwright/test";
 import { fakeApi, itemDetail, startWebServer, visit, type WebServer } from "./web-server.ts";
 
 const markdown = "# 复制检查\n\n固定正文";
@@ -71,6 +71,28 @@ test("article actions support keyboard navigation and return focus on Escape", a
     await poster.getByRole("button", { name: "关闭", exact: true }).click();
     await expect(poster).toHaveCount(0);
     await expect(trigger).toBeFocused();
+  } finally {
+    await browser.close();
+    await web?.stop();
+  }
+});
+
+// Safari does not focus a button when it is pressed, so pressing the open menu's trigger takes focus to nothing.
+test("in Safari, pressing the trigger of an open menu closes it", async () => {
+  const api = fakeApi((url) => {
+    if (url.pathname === "/api/site/items/safari-menu") return itemDetail({ id: "safari-menu", title: "菜单检查" });
+  });
+  const browser = await webkit.launch();
+  let web: WebServer | undefined;
+  try {
+    web = await startWebServer(api);
+    const page = await browser.newPage({ viewport: { width: 1366, height: 900 } });
+    await visit(page, web.origin + "/items/safari-menu");
+    const trigger = page.getByRole("button", { name: "更多操作", exact: true }).filter({ visible: true });
+    await trigger.click();
+    await expect(page.getByRole("menuitem", { name: "分享链接", exact: true })).toBeFocused();
+    await trigger.click();
+    await expect(page.getByRole("menu")).toHaveCount(0);
   } finally {
     await browser.close();
     await web?.stop();

@@ -47,3 +47,14 @@ test("invalid and non-HTTP URLs cannot acquire a tweet identity", () => {
     assert.equal(identityKeyForUrl(url), null, url);
   }
 });
+
+// A readable WeChat short link can omit sn; it is an access parameter, not a different post.
+test('WeChat post identity uses the publisher and mid/idx across signatures and short access links',()=>{
+  const base='https://mp.weixin.qq.com/s?__biz=publisher%3D%3D&mid=224700001&idx=1';
+  for(const url of [base+'&sn=first',base+'&sn=changed','https://mp.weixin.qq.com/s/short?scene=126&__biz=publisher%3D%3D&mid=224700001&idx=1'])
+    assert.equal(identityKeyForUrl(url),'url:'+base);
+  for(const url of [base.replace('publisher','another'),base.replace('224700001','224700002'),base.replace('idx=1','idx=2')])
+    assert.notEqual(identityKeyForUrl(url),identityKeyForUrl(base));
+  for(const url of ['https://mp.weixin.qq.com/s/short','https://example.com/s?__biz=publisher%3D%3D&mid=224700001&idx=1'])
+    assert.equal(identityKeyForUrl(url),'url:'+normalizeUrl(url));
+});

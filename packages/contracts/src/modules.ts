@@ -10,6 +10,11 @@ export interface ModulePage {
   /** The route module, relative to the module's folder. */
   file: string;
   id?: string;
+  /**
+   * Not public yet: served at /preview/<path> to the signed-in admin alone, 404 to everyone else (its loader uses
+   * the web app's grayGet). Launching a page is deleting this, with what else skill launch-aihot-feature lists.
+   */
+  gray?: true;
 }
 
 /** Pages that share a layout route. */

@@ -14,7 +14,7 @@ import { publishArticleTx, setSeoDecision } from "../publication/publish.ts";
 import { emit } from "../modules.ts";
 import { requestRegroup } from "../events/corrections.ts";
 import { resetAutomatic } from "../events/group.ts";
-import { contentHash, decideTimeline, explicitBackfill, isHistorical, updatePresentation, type MediaItem } from "../content/materials.ts";
+import { materialIdentityForUrl, contentHash, decideTimeline, explicitBackfill, isHistorical, updatePresentation, type MediaItem } from "../content/materials.ts";
 import { extractFromUrl, pageFetchable, pageRules } from "../content/extract.ts";
 import { PresentationMismatch, presentationCounts, rebaseTranslation } from "../content/presentation.ts";
 import { fetchRss } from "../sources/rss.ts";
@@ -189,7 +189,7 @@ export async function searchContent(q: string): Promise<BeforeJson<AdminContentR
     if (found.length) return found;
   }
   const url = /^https?:\/\//i.test(term) ? normalizeUrl(term) : null;
-  if (url) return read(sql`a.url IN (${term}, ${url}) OR a.identity_key IN (${identityKeyForUrl(term)}, ${identityKeyForUrl(term, { keepFragment: true })})`);
+  if (url) return read(sql`a.url IN (${term}, ${url}) OR a.identity_key IN (${await materialIdentityForUrl(term)}, ${identityKeyForUrl(term, { keepFragment: true })})`);
   return read(sql`a.title ILIKE ${`%${term}%`} OR p.title ILIKE ${`%${term}%`}`);
 }
 

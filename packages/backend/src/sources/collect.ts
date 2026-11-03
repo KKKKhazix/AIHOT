@@ -1,7 +1,7 @@
 // Collection run for one source: fetch listing → filter → store material → enqueue processing.
 // A failed fetch never advances the success cursor; the source's health reflects consecutive failures.
 import { sql, type Db } from "../db.ts";
-import { fillScheduledPublications, FUTURE_TOLERANCE_MS, identityKeyFor, reuseExternalMaterialIdentities, STALE_ON_DISCOVERY_MS, upsertMaterial } from "../content/materials.ts";
+import { fillScheduledPublications, FUTURE_TOLERANCE_MS, identityKeyFor, materialIdentityForUrl, reuseExternalMaterialIdentities, STALE_ON_DISCOVERY_MS, upsertMaterial } from "../content/materials.ts";
 import { PresentationMismatch } from "../content/presentation.ts";
 import { HttpStatusError } from "../lib/http-fetch.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
@@ -76,9 +76,11 @@ export async function listingEntries(source: SourceRow, found: Candidate[]): Pro
   const unreliableDates = source.config.detail?.publishedAtAuthoritative === true;
   const unique = new Map<string, CollectionCandidate>();
   for (const c of candidates) {
-    const identityKey = c.identityKey
+    const requestedIdentity = c.identityKey
       ?? (source.config.preserveUrlFragment === true ? identityKeyForUrl(c.url, { keepFragment: true }) : null)
       ?? identityKeyFor({ ...c, sourceId: source.id, via: "fetch" });
+    const identityKey = requestedIdentity === identityKeyForUrl(c.url)
+      ? await materialIdentityForUrl(c.url) ?? requestedIdentity : requestedIdentity;
     if (!unique.has(identityKey)) unique.set(identityKey, { ...c, identityKey, ...(unreliableDates ? { publishedAt: null, publicationTime: null } : {}) });
   }
   return [...unique.values()];

@@ -2,7 +2,7 @@
 // It owns identity, revisions and the timeline rule, so no entrance can bypass them.
 import { sql, type Db, type Tx } from "../db.ts";
 import { newArticleId, sha256, stableJson } from "../lib/ids.ts";
-import { identityKeyForUrl } from "../lib/url.ts";
+import { identityKeyForUrl, normalizeUrl, wechatPostUrl } from "../lib/url.ts";
 import { collapseWhitespace, decodeEntities } from "../lib/text.ts";
 import { publishArticleTx } from "../publication/publish.ts";
 import { groupingReset, reconcileMaterialSource } from "./provenance.ts";
@@ -197,6 +197,29 @@ export function identityKeyFor(m: MaterialInput): string {
   return `src:${m.sourceId}:${sha256(m.url + "\u0001" + m.title).slice(0, 32)}`;
 }
 
+/** Shared URL lookup for collection, external reports and administration. Historical WeChat keys
+ * included sn; reuse the earliest stored post without rewriting its public id or access URL. */
+export async function materialIdentityForUrl(url: string, db: Db = sql): Promise<string | null> {
+  const key = identityKeyForUrl(url), normalized = normalizeUrl(url);
+  if (!key || !normalized) return key;
+  const u = new URL(normalized);
+  if (u.hostname !== "mp.weixin.qq.com" || u.username || u.password || !/^\/s(?:\/[^/]+)?$/.test(u.pathname)) return key;
+  const post = wechatPostUrl(normalized), short = u.pathname.startsWith("/s/") ? u.origin + u.pathname : null;
+  const [known] = await db<{ identity_key: string }[]>`SELECT identity_key FROM (
+    SELECT identity_key, discovered_at, id FROM articles
+      WHERE identity_key IN (${key}, ${`url:${normalized}`}) OR url IN (${url}, ${normalized})
+    UNION ALL
+    SELECT identity_key, discovered_at, id FROM articles
+      WHERE ${post}::text IS NOT NULL AND starts_with(identity_key, 'url:https://mp.weixin.qq.com/s?__biz=')
+        AND identity_key NOT LIKE '%#%' AND split_part(identity_key, '&sn=', 1) = ${post ? `url:${post}` : null}
+    UNION ALL
+    SELECT identity_key, discovered_at, id FROM articles
+      WHERE ${short}::text IS NOT NULL AND starts_with(url, 'https://mp.weixin.qq.com/s/')
+        AND split_part(split_part(url, '?', 1), '#', 1) = ${short}
+  ) candidates ORDER BY discovered_at, id LIMIT 1`;
+  return known?.identity_key ?? key;
+}
+
 /**
  * A publisher's stable entry ID survives a URL rename. Reuse the earliest material for that ID within
  * its source; new entries still use URL identity, so another discovery of the same URL converges.
@@ -242,7 +265,9 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
     publishedAt: m.publishedAt && Number.isFinite(m.publishedAt.getTime()) ? m.publishedAt : null,
     sourceUpdatedAt: m.sourceUpdatedAt && Number.isFinite(m.sourceUpdatedAt.getTime()) ? m.sourceUpdatedAt : null,
   };
-  const identityKey = identityKeyFor(m);
+  const requestedIdentity = identityKeyFor(m);
+  const identityKey = requestedIdentity === identityKeyForUrl(m.url)
+    ? await materialIdentityForUrl(m.url, db) ?? requestedIdentity : requestedIdentity;
   const discoveredAt = m.discoveredAt ?? new Date();
   const title = collapseWhitespace(m.title).slice(0, 1000) || m.url;
 

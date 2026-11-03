@@ -1,12 +1,11 @@
 // WeChat official accounts. Dajiala (极致了, a paid service) supplies each account's latest posts and
 // article bodies; every enabled account is checked once per source interval.
 import { sql } from "../db.ts";
-import { upsertMaterial } from "../content/materials.ts";
+import { materialIdentityForUrl, upsertMaterial } from "../content/materials.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { queueProcessing } from "../jobs/content.ts";
 import { stripTags } from "../lib/text.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
-import { identityKeyForUrl } from "../lib/url.ts";
 import { dajialaConfigured, mpArticle, mpHistory, type MpArticle } from "../providers/dajiala.ts";
 import { failureKind } from "../providers/receipts.ts";
 
@@ -56,9 +55,9 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
       if (!p.url || !p.title || fetched >= MAX_NEW_PER_CHECK) continue;
       const publishedAt = p.post_time ? new Date(p.post_time * 1000) : null;
       if (firstCheck && publishedAt && Date.now() - publishedAt.getTime() > FIRST_CHECK_WINDOW_MS) continue;
-      // Same identity rule as every entrance: the long link without tracking parameters. A known post is
+      // Same account/post identity as every entrance, including stored historical keys. A known post is
       // skipped, unless its body failed for a passing reason: then it is tried again a few times.
-      const key = identityKeyForUrl(p.url);
+      const key = await materialIdentityForUrl(p.url);
       const [known] = key
         ? await sql<{ id: string; body_status: string; discovered_at: Date; retry: { attempts: number } | null }[]>`
             SELECT id, body_status, discovered_at, raw->'dajiala'->'bodyRetry' AS retry FROM articles WHERE identity_key = ${key} LIMIT 1`

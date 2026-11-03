@@ -10,7 +10,7 @@
 | `web_list` | 没有 RSS 的网页列表（新闻页、博客列表、更新日志） | 写选择器；按需配置 Jina Reader 渲染（按次计费） |
 | `json_list` | 返回 JSON 的接口（GitHub Releases 等） | 写字段路径 |
 | `x_search` | X（推特）账号 | SocialData 的 key，按请求计费 |
-| `mp_account` | 微信公众号 | 极致了（Dajiala）的 key，按请求计费 |
+| `mp_account` | 微信公众号 | 微小榜（默认）或极致了，按所选服务商的 key 和请求计费 |
 | `external` | 你自己的脚本推送进来的内容 | `INGEST_TOKEN`，见下文 |
 
 `json_list` 的地址或配置可能携带凭据，只跟随同源重定向（协议、主机和端口都相同）。若接口搬到另一个来源，请直接更新信源地址；不要依赖跨源跳转传递认证信息。
@@ -210,7 +210,9 @@ http.createServer((req, res) => {
 
 每个公众号按它的抓取间隔检查一次（查列表按次计费），新文章的正文一并取回。
 
-需要在后端 `.env` 配置 `DAJIALA_KEY`，`ghid` 换成公众号原始 ID。配置字段用上面的 `ghid` / `nickname`，不要写成 `biz` / `name`。当前 `mp_account` 不支持“预览抓取”；`external` 也不支持主动试抓，按下方推送接口接入。
+默认使用微小榜。后端 `.env` 配置 `WXRANK_KEY` 即可；如需使用极致了，同时配置 `DAJIALA_KEY` 并设置 `WECHAT_PROVIDER=dajiala`。`WECHAT_PROVIDER` 默认为 `wxrank`，切换后需重启 API 和 Worker。`ghid` 填公众号原始 ID，配置字段使用上面的 `ghid` / `nickname`，不要写成 `biz` / `name`。
+
+微小榜每次检查读取最新列表页（不翻历史游标），最多为 8 篇新文章获取正文；列表成功调用 ¥0.05，正文成功调用 ¥0.01。两个服务商分别记回执和预算，后台按请求次数熔断。当前 `mp_account` 不支持“预览抓取”；`external` 也不支持主动试抓，按下方推送接口接入。
 
 ## 分级、参与方式与全文
 

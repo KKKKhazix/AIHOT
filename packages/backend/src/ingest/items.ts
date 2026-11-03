@@ -8,7 +8,7 @@ import { readPublicationDate } from "../sources/dates.ts";
 import { identityKeyForUrl, normalizeUrl } from "../lib/url.ts";
 import { stripTags } from "../lib/text.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
-import { mpArticle } from "../providers/dajiala.ts";
+import { mpArticle, mpProviderName } from "../providers/wechat.ts";
 
 export const MAX_ITEMS = 50;
 
@@ -28,7 +28,7 @@ interface ItemIn {
   raw?: { _aihot?: { backfill?: boolean; baseline?: boolean } } & Record<string, unknown>;
 }
 
-/** Only the manual WeChat source's article pages may trigger a paid Dajiala lookup. */
+/** Only the manual WeChat source's article pages may trigger a paid provider lookup. */
 function isManualWechatArticle(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -99,9 +99,10 @@ export async function ingestItems(body: { sourceId?: unknown; sourceName?: unkno
         }
         const incomingRaw = it.raw && typeof it.raw === "object" && !Array.isArray(it.raw)
           ? it.raw as Record<string, unknown> : {};
-        const incomingDajiala = incomingRaw.dajiala && typeof incomingRaw.dajiala === "object" && !Array.isArray(incomingRaw.dajiala)
-          ? incomingRaw.dajiala as Record<string, unknown> : {};
-        raw = { ...incomingRaw, dajiala: { ...incomingDajiala, receiptId: article.receiptId } };
+        const provider = mpProviderName();
+        const incomingProvider = incomingRaw[provider] && typeof incomingRaw[provider] === "object" && !Array.isArray(incomingRaw[provider])
+          ? incomingRaw[provider] as Record<string, unknown> : {};
+        raw = { ...incomingRaw, [provider]: { ...incomingProvider, receiptId: article.receiptId } };
       }
     }
     const res = await upsertMaterial({

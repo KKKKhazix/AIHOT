@@ -1,5 +1,5 @@
-// WeChat official accounts. Dajiala (极致了, a paid service) supplies each account's latest posts and
-// article bodies; every enabled account is checked once per source interval.
+// WeChat official accounts. A configured provider supplies each account's latest posts and article
+// bodies; every enabled account is checked once per source interval.
 import { sql } from "../db.ts";
 import { upsertMaterial } from "../content/materials.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
@@ -7,7 +7,7 @@ import { queueProcessing } from "../jobs/content.ts";
 import { stripTags } from "../lib/text.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
-import { dajialaConfigured, mpArticle, mpHistory, type MpArticle } from "../providers/dajiala.ts";
+import { mpProviderConfigured, mpProviderName, mpArticle, mpHistory, type MpArticle } from "../providers/wechat.ts";
 import { failureKind } from "../providers/receipts.ts";
 
 const MAX_NEW_PER_CHECK = 8;
@@ -47,6 +47,7 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
   const firstCheck = !source.cursor?.lastCheckedAt;
   let created = 0;
   try {
+    const provider = mpProviderName();
     // One paid list call per account per 10-minute window, whoever asks.
     const window = `${reason === "schedule" ? "s" : "m"}:${Math.floor(Date.now() / 600_000)}`;
     const history = await mpHistory(ghid, { subject: sourceId, window });
@@ -61,7 +62,7 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
       const key = identityKeyForUrl(p.url);
       const [known] = key
         ? await sql<{ id: string; body_status: string; discovered_at: Date; retry: { attempts: number } | null }[]>`
-            SELECT id, body_status, discovered_at, raw->'dajiala'->'bodyRetry' AS retry FROM articles WHERE identity_key = ${key} LIMIT 1`
+            SELECT id, body_status, discovered_at, COALESCE(raw->'mp'->'bodyRetry', raw->'wxrank'->'bodyRetry', raw->'dajiala'->'bodyRetry') AS retry FROM articles WHERE identity_key = ${key} LIMIT 1`
         : [];
       const retryBody = !!known?.retry && known.body_status === "none" && known.retry.attempts < BODY_RETRIES && Date.now() - known.discovered_at.getTime() < BODY_RETRY_WINDOW_MS;
       if (known && !retryBody) continue;
@@ -69,7 +70,7 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
       // Without a body the post is listed anyway; analysis works from title and digest.
       const { body, passing } = await fetchBody(p.url, sourceId, p.sn ?? p.url);
       if (known && !body?.content) {
-        const retry = passing ? sql`jsonb_set(raw, '{dajiala,bodyRetry}', ${sql.json({ attempts: known.retry!.attempts + 1, error: passing })})` : sql`raw #- '{dajiala,bodyRetry}'`;
+        const retry = passing ? sql`jsonb_set(raw, '{mp,bodyRetry}', ${sql.json({ attempts: known.retry!.attempts + 1, error: passing })})` : sql`raw #- '{mp,bodyRetry}' #- '{wxrank,bodyRetry}' #- '{dajiala,bodyRetry}'`;
         await sql`UPDATE articles SET raw = ${retry} WHERE id = ${known.id}`;
         continue;
       }
@@ -90,14 +91,14 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
         via: "fetch",
         backfill: firstCheck ? "first-import" : null,
         raw: {
-          dajiala: {
+          [provider]: {
             position: p.position, sn: p.sn ?? null, original: p.original ?? null, itemShowType: p.item_show_type ?? null, cover: p.cover_url ?? null,
-            ...(passing ? { bodyRetry: { attempts: 1, error: passing } } : {}),
           },
+          ...(passing ? { mp: { bodyRetry: { attempts: 1, error: passing } } } : {}),
         },
       });
       // A body fetched again arrives as a new revision (analysed again); stop retrying it.
-      if (known) await sql`UPDATE articles SET raw = raw #- '{dajiala,bodyRetry}' WHERE id = ${known.id}`;
+      if (known) await sql`UPDATE articles SET raw = raw #- '{mp,bodyRetry}' #- '{wxrank,bodyRetry}' #- '{dajiala,bodyRetry}' WHERE id = ${known.id}`;
       if (res.created) created += 1;
       if (res.created || res.revised || res.processingNeeded) await queueProcessing(res.articleId);
     }
@@ -125,8 +126,8 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
 
 /** Every enabled account is checked once per its interval (the paid list call is the cost). */
 export async function scheduleMpReconcile(now = new Date()) {
-  // Without Dajiala there is nothing to check the accounts with.
-  if (!dajialaConfigured()) return { enqueued: 0 };
+  // Only schedule checks when the selected provider has a key configured.
+  if (!mpProviderConfigured()) return { enqueued: 0 };
   const rows = await sql<{ id: string; last: string | null; interval_minutes: number }[]>`
     SELECT id, cursor->>'lastCheckedAt' AS last, interval_minutes FROM sources WHERE kind = 'mp_account' AND enabled`;
   let enqueued = 0;

@@ -260,6 +260,7 @@ const PROVIDERS: Record<string, { name: string; where: string; stops?: string }>
   socialdata: { name: "SocialData", stops: "X（推特）上的新内容收不到", where: "SocialData 后台" },
   jina: { name: "Jina", stops: "部分文章取不到正文", where: "Jina 后台" },
   dajiala: { name: "极致了（Dajiala）", stops: "公众号新文章收不到", where: "极致了后台" },
+  wxrank: { name: "微小榜（wxrank）", stops: "公众号新文章收不到", where: "微小榜 API 平台" },
 };
 export const providerName = (service: string) => PROVIDERS[service]?.name ?? service;
 export const providerStops = async (service: string, models?: ReadonlySet<string>): Promise<string> => {

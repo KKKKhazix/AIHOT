@@ -176,7 +176,6 @@ const CONVERTS_BEIJING_TIME: Record<string, string> = {
   "packages/backend/src/editorial/analyze.ts": "the score input keeps the form its prompt was tuned on (whole seconds without .000)",
   "packages/backend/src/editorial/writing.ts": "a beijingDate written out, left to the next change of editorial/",
   "site/changelog/FeatureRelease.tsx": "a changelog entry's Beijing date and time with its zone, to the minute, in dateTime",
-  "clients/decisions/decisions.mjs": "installed as one file away from the repository, so it cannot import time.ts",
   "clients/watchdog/watchdog.mjs": "installed as one file away from the repository, so it cannot import time.ts",
   "clients/mp-watch/articles.ts": "installed away from the repository with only its module's contracts, so it cannot import time.ts",
 };

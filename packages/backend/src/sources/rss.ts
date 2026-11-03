@@ -124,7 +124,7 @@ function feedText(bodyHtml: string | null, summaryText: string | null, source: S
   const bodyText = bodyHtml ? collapseWhitespace(plainBody ?? stripTags(bodyHtml)) : null;
   const teaser = !!bodyText && readsWhole(source) && isTeaser(bodyText);
   const excerpt = summaryText !== null ? collapseWhitespace(summaryText).slice(0, 2000) : teaser ? collapseWhitespace(bodyText!) : null;
-  return bodyText && (bodyText.length > 280 || source.config.summaryIsBody === true) && !teaser
+  return !source.config.detail?.bodyUrlSuffix && bodyText && (bodyText.length > 280 || source.config.summaryIsBody === true) && !teaser
     ? { excerpt, bodyHtml, bodyText, bodyStatus: "ok" }
     : { excerpt, bodyHtml: null, bodyText: null, bodyStatus: hasPage ? "pending" : "none" };
 }

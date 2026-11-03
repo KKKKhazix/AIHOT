@@ -5,7 +5,7 @@ import type { parseHTML } from "linkedom";
 import { sql } from "../db.ts";
 import { guardedFetch, languageHeaders } from "../lib/http-fetch.ts";
 import { assertPageContent, contentDocument, UnavailablePageError } from "../lib/page-content.ts";
-import { stripTags } from "../lib/text.ts";
+import { escapeXml, stripTags } from "../lib/text.ts";
 import { isVideoPageUrl } from "../lib/video-url.ts";
 import { jinaRead } from "../providers/jina.ts";
 import { BudgetExceededError } from "../providers/receipts.ts";
@@ -21,7 +21,7 @@ export interface ExtractedBody {
   html: string;
   text: string;
   images: Array<{ kind: "image"; url: string; width: number | null; height: number | null }>;
-  via: "readability" | "jina";
+  via: "readability" | "jina" | "text";
   /** The page's publication metadata; neither modification time nor dates mentioned in its prose. */
   publishedAt?: Date | null;
   publicationTime?: string | null;
@@ -157,10 +157,12 @@ export interface PageRules {
   utcOffset?: string;
   preserve?: PreserveRule[];
   acceptLanguage?: string;
+  /** A source's text alternate, such as a commit's .patch; the article keeps its original URL. */
+  bodyUrlSuffix?: string;
 }
 
 export const pageRules = (config: SourceRow["config"]): PageRules =>
-  ({ utcOffset: articleUtcOffset(config), preserve: config.detail?.preserve, acceptLanguage: config.acceptLanguage });
+  ({ utcOffset: articleUtcOffset(config), preserve: config.detail?.preserve, acceptLanguage: config.acceptLanguage, bodyUrlSuffix: config.detail?.bodyUrlSuffix });
 
 type Doc = ReturnType<typeof parseHTML>["document"];
 type El = NonNullable<ReturnType<Doc["querySelector"]>>;
@@ -470,11 +472,19 @@ export function readableDocument(document: Doc, url: string, rules: PageRules = 
 
 export async function extractFromUrl(url: string, subject: string, rules: PageRules = {}, opts: { paidFallback?: boolean } = {}): Promise<ExtractedBody | null> {
   if (isVideoPageUrl(url)) return null;
+  const target = new URL(url);
+  if (rules.bodyUrlSuffix) target.pathname += rules.bodyUrlSuffix;
   try {
-    const res = await guardedFetch(url, { headers: languageHeaders(rules.acceptLanguage), timeoutMs: 20_000, maxBytes: 16 * 1024 * 1024 });
+    const res = await guardedFetch(target.href, { headers: languageHeaders(rules.acceptLanguage), timeoutMs: 20_000, maxBytes: 16 * 1024 * 1024 });
     if (isVideoPageUrl(res.url)) return null;
     if (isSignInRedirect(url, res.url)) return null;
     const type = res.headers.get("content-type") ?? "";
+    if (res.status === 200 && /^(?:text\/plain|text\/markdown|text\/x-(?:diff|patch))\b/i.test(type)) {
+      const text = res.text().trim();
+      if (text.length < MIN_BODY_CHARS) return null;
+      assertPageContent("", text);
+      return { html: `<pre>${escapeXml(text)}</pre>`, text, images: [], via: "text" };
+    }
     if (res.status === 200 && /html/.test(type)) {
       const got = readable(res.text(), res.url, rules);
       if (got) return got;
@@ -484,7 +494,7 @@ export async function extractFromUrl(url: string, subject: string, rules: PageRu
   }
   if (opts.paidFallback === false) return null;
   try {
-    const page = await jinaRead(url, { purpose: "body_fallback", subject });
+    const page = await jinaRead(target.href, { purpose: "body_fallback", subject });
     const html = markdownBody(page.markdown, url);
     const text = stripTags(html);
     if (text.length < MIN_BODY_CHARS) return null;

@@ -186,6 +186,9 @@ test("a source that declares its feed summary the body keeps a short one, in RSS
     assert.deepEqual([declared!.bodyStatus, declared!.bodyText, declared!.excerpt], ["ok", note, note], `${path}: declared, it is the body`);
   }
   assert.equal((await read("/teaser.xml", true))[0]!.bodyStatus, "pending", "a teaser still asks for the page");
+  const alternate = await fetchRss({ id: "test-feed", config: { feedUrl: `${site}/teaser.xml`, detail: { bodyUrlSuffix: ".patch" } }, participation_mode: "isolated", uses: ["free-tokens"], cursor: null } as never, { force: true });
+  assert.ok(alternate.candidates.length);
+  assert.ok(alternate.candidates.every((c) => c.bodyStatus === "pending"), "an explicit body alternate also replaces long commit summaries");
 });
 
 test("hidden page parts are dropped whole, and a news page's closing blocks are trimmed", () => {

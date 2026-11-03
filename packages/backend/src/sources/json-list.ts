@@ -179,7 +179,7 @@ export async function fetchJsonList(source: SourceRow): Promise<Candidate[]> {
     if (!title || !url) continue;
     const externalId = c.externalIdPath ? getPath(item, c.externalIdPath) : null;
     const summary = firstString(item, c.summaryPaths);
-    const summaryIsBody = c.summaryIsBody === true && !!summary;
+    const summaryIsBody = !c.detail?.bodyUrlSuffix && c.summaryIsBody === true && !!summary;
     out.push({
       url,
       title: collapseWhitespace(stripTags(title)),

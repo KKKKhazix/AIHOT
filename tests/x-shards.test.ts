@@ -116,7 +116,11 @@ test("a page failing after the first keeps what was read and goes on from there 
   assert.equal((await cursorOf(IDS[0]!)).lastTweetId, String(BASE + 104n), "the watermark moves to the account's newest post read");
   const cursor = (await sql<{ cursor: { lastTweetId: string; xBacklog?: unknown[] } }[]>`SELECT cursor FROM sources WHERE id = ${IDS[2]!}`)[0]!.cursor;
   assert.equal(cursor.lastTweetId, String(WATERMARK - 1n), "a quiet account keeps its own");
-  assert.equal(cursor.xBacklog?.length, 1, "the rest is kept to read");
+  assert.equal(cursor.xBacklog, undefined, "the stretch is not copied onto every account");
+  const holders = await sql<{ id: string; cursor: { xBacklog?: unknown[] } }[]>`
+    SELECT id, cursor FROM sources WHERE id IN ${sql(IDS)} AND cursor ? 'xBacklog'`;
+  assert.deepEqual(holders.map((h) => h.id), [IDS[0]], "one account of the shard keeps the rest to read");
+  assert.equal(holders[0]!.cursor.xBacklog?.length, 1);
   const partial = await sql`SELECT status FROM receipts WHERE subject = ${`x-shard:editorial:test-${T}`}
     AND request->>'query' LIKE ${`%since_id:${WATERMARK - 1n}`} ORDER BY id`;
   assert.deepEqual(partial.map((r) => r.status), ["completed", "failed"], "only received pages complete; a failed page remains retryable");

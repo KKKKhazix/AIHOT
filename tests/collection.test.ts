@@ -66,3 +66,17 @@ test("an X search longer than one run is read to the old watermark over the next
   assert.equal((await cursor()).xBacklog, undefined, "nothing is left to read");
   assert.equal(socialdata.hits(), 20 + 1 + 3, "no page is requested twice");
 });
+
+test("a stretch left over for days is given up instead of bought again", async () => {
+  const stale = new Date(Date.now() - 5 * 86_400_000).toISOString();
+  await sql`UPDATE sources SET cursor = cursor || ${sql.json({ xBacklog: [{ query: `from:acct${T} since_id:${BASE + 1n}`, next: "0", at: stale }] })}
+            WHERE id = ${X_SOURCE}`;
+  const hits = socialdata.hits();
+  const res = await collectSource(X_SOURCE, { force: true });
+  assert.equal(res.status, "ok");
+  const [kept] = await sql<{ cursor: { xBacklog?: unknown[] } }[]>`SELECT cursor FROM sources WHERE id = ${X_SOURCE}`;
+  assert.equal(kept!.cursor.xBacklog, undefined, "the old stretch is not kept");
+  assert.equal(socialdata.hits(), hits, "the old stretch's page is not requested again");
+  const [run] = await sql<{ detail: { dropped: number } }[]>`SELECT detail FROM fetch_runs WHERE source_id = ${X_SOURCE} ORDER BY id DESC LIMIT 1`;
+  assert.equal(run!.detail.dropped, 1, "the admin sees the stretch given up");
+});

@@ -434,8 +434,8 @@ function coveredTo(m: SourceRow): bigint {
  * it, and every account keeps its own fetch run, health and cursor. The oldest watermark bounds the
  * search, so no account misses a post (the others only see posts they already have again); afterwards
  * each account's watermark moves to its own newest post the search saw (another account's would hide
- * its late posts and, read on its own, the posts below it), and the stretches still unread are kept in
- * each account's cursor, so they survive a change of shards.
+ * its late posts and, read on its own, the posts below it), and the stretches still unread are kept on
+ * one account of the shard, so they survive a change of shards without every later shard buying them.
  */
 export async function collectXShard(key: string, sourceIds: string[]): Promise<{ key: string; status: "ok" | "failed" | "skipped"; accounts: number; found: number; created: number; error?: string }> {
   const members = (
@@ -451,14 +451,8 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
   let created = 0;
   try {
     const since = members.map(coveredTo).reduce((a, b) => (b < a ? b : a));
-    const backlog: XBacklog[] = [];
-    const stretches = new Set<string>();
-    for (const m of members) {
-      for (const b of (Array.isArray(m.cursor?.xBacklog) ? m.cursor.xBacklog : []) as XBacklog[]) {
-        if (!stretches.has(`${b.query} ${b.next}`)) backlog.push(b);
-        stretches.add(`${b.query} ${b.next}`);
-      }
-    }
+    // readXSearch keeps one copy per query and gives up stretches left over for days.
+    const backlog: XBacklog[] = members.flatMap((m) => (Array.isArray(m.cursor?.xBacklog) ? m.cursor.xBacklog as XBacklog[] : []));
     const read = await readXSearch(shardQuery(members.map((m) => shardHandle(m)!), members.map(selfThreadHandle).filter((h): h is string => h !== null)), { lastId: String(since), backlog, subject: `x-shard:${key}` });
     const detail = { shard: key, accounts: members.length, pages: read.pages, truncated: read.truncated, backlog: read.backlog.length, backlogPages: read.backlogPages, dropped: read.dropped };
     const counts = new Map<string, { found: number; created: number; newest: string }>();
@@ -472,12 +466,15 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
       counts.set(m.id, { found: mine.length, created: stored.created, newest });
     }
     // Only a fully stored search advances coverage. A failed write can replay every paid page;
-    // material already committed is idempotent, and no member is left half-finished.
+    // material already committed is idempotent, and no member is left half-finished. The unread stretch
+    // is written once, on the shard's first account: on every member it travelled with them when shards
+    // were regrouped, and each shard then bought its own copy of the same pages.
+    const keeper = members[0]!.id;
     await sql.begin(async tx => {
       for (const m of members) {
         const { newest, ...count } = counts.get(m.id)!;
         const cursor: Record<string, unknown> = { ...m.cursor, lastTweetId: newest, lastOkAt: new Date().toISOString() };
-        if (read.backlog.length) cursor.xBacklog = read.backlog;
+        if (read.backlog.length && m.id === keeper) cursor.xBacklog = read.backlog;
         else delete cursor.xBacklog;
         await recordFetch(tx, m.id, runs.get(m.id)!, { ...count, detail, cursor });
       }

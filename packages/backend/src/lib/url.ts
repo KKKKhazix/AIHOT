@@ -17,7 +17,7 @@ export function normalizeUrl(input: string): string | null {
   u.hostname = u.hostname.toLowerCase().replace(/^www\./, "");
   u.protocol = "https:";
   if (u.port === "443" || u.port === "80") u.port = "";
-  // WeChat articles are identified by __biz/mid/idx/sn only.
+  // Keep the article address parameters, including sn when needed to open the long link.
   if (u.hostname === "mp.weixin.qq.com") {
     const keep = ["__biz", "mid", "idx", "sn"];
     const params = new URLSearchParams();
@@ -49,6 +49,20 @@ export function tweetIdFromUrl(url: string): string | null {
   return m ? m[1]! : null;
 }
 
+/** Page-confirmed account and post identifiers, independent of the signature or short access path. */
+export function wechatPostUrl(url: string): string | null {
+  let u: URL;
+  try { u = new URL(url); } catch { return null; }
+  if (!/^https?:$/.test(u.protocol) || u.hostname !== "mp.weixin.qq.com" || u.username || u.password || !/^\/s(?:\/[^/]+)?$/.test(u.pathname)) return null;
+  const post = new URL("https://mp.weixin.qq.com/s");
+  for (const key of ["__biz", "mid", "idx"]) {
+    const value = u.searchParams.get(key);
+    if (!value) return null;
+    post.searchParams.set(key, value);
+  }
+  return post.toString();
+}
+
 /**
  * Identity of material at an address. `keepFragment` is for sources whose entries are sections of one
  * page (release notes: overview#september-24-2026): without it every section is the same article.
@@ -59,7 +73,7 @@ export function identityKeyForUrl(url: string, opts: { keepFragment?: boolean } 
   const normalized = normalizeUrl(url);
   if (!normalized) return null;
   const fragment = opts.keepFragment ? new URL(url.trim()).hash : "";
-  return `url:${normalized}${fragment.length > 1 ? fragment : ""}`;
+  return `url:${wechatPostUrl(normalized) ?? normalized}${fragment.length > 1 ? fragment : ""}`;
 }
 
 function ipv4Blocked(o: [number, number, number, number]): boolean {

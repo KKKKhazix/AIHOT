@@ -593,6 +593,30 @@ test("a failed comparison holds the owner's article back: the post stays alone, 
   assert.deepEqual([retried.retired, (await state(article)).selected, (await state(post.id)).selected], [[post.id], true, false]);
 });
 
+test("a revision that lets the owner's article into selection replaces their post, even when the fact already shows it", async () => {
+  sameNewsAhead();
+  const text = family();
+  const article = await report(text, "single", false, ownArticles);
+  const founded = await groupArticle(article);
+  relation = "SAME_OCCURRENCE";
+  otherNews("UNRELATED");
+  const post = await report(text + "帖子", "single", true, ownPosts);
+  assert.equal((await groupArticle(post)).factId, founded.factId, "fixture: the post is the fact's card while the article is not selected");
+  await releasedMinuteAgo(post);
+  assert.deepEqual([(await state(article)).selected, (await state(post)).selected], [false, true]);
+
+  sameNewsAhead();
+  relation = "SAME_OCCURRENCE";
+  const [row] = await sql<{ url: string }[]>`SELECT url FROM articles WHERE id = ${article}`;
+  const revised = text + "文章补全";
+  await upsertMaterial({ sourceId: ownArticles, url: row!.url, title: revised, bodyText: revised, bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+  await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,title_zh,summary_zh,category,score,selected,output)
+    VALUES(${article},2,'rule','pass',${revised},${revised},'ai-products',80,true,${sql.json({ scope: "single", fact: { title: revised, subject: text, action: "发布", object: text } })})`;
+  const result = await groupArticle(article);
+  assert.deepEqual([result.verdict, result.retired], ["kept", [post]]);
+  assert.deepEqual([(await state(article)).selected, (await state(post)).selected], [true, false]);
+});
+
 test("the owner's post stays when the article will not be shown", async () => {
   sameNewsAhead();
   const text = family();

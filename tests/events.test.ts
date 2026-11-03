@@ -153,6 +153,15 @@ test("a post regrouped elsewhere stays where it went when its old fact merges", 
   assert.equal((await sql`SELECT 1 FROM story_signals WHERE story_id = ${from.story} AND article_id = ${post}`).length, 1, "its heat stays with the fact it belongs to now");
   const decisions = await sql<{ fact_id: number }[]>`SELECT fact_id FROM grouping_decisions WHERE article_id = ${post} ORDER BY id`;
   assert.deepEqual(decisions.map((d) => Number(d.fact_id)), [from.fact, sibling.fact], "only a current attachment moves");
+
+  const again = await newFact(from.story);
+  await signalIn(from.story, await member(again.fact));
+  const placed = await report(randomText(), randomText());
+  await signalIn(from.story, placed);
+  await sql`INSERT INTO grouping_decisions (article_id, fact_id, story_id, verdict) VALUES (${placed}, ${again.fact}, ${from.story}, 'signal')`;
+  await sql`INSERT INTO fact_articles (fact_id, article_id, role, manual) VALUES (${sibling.fact}, ${placed}, 'report', true)`;
+  await mergeFactInto(again.fact, into.fact, "test", "grouping");
+  assert.equal((await sql`SELECT 1 FROM story_signals WHERE story_id = ${from.story} AND article_id = ${placed}`).length, 1, "a post an editor placed keeps its heat where they put it");
 });
 
 test("a merged fact's story keeps its address and its other facts when other reports remain", async () => {

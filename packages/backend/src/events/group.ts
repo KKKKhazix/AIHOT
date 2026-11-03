@@ -430,8 +430,8 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
   if (kept) {
     // A sibling already selected for this same fact still permits representative replacement.
     if (cands.some(c => c.factId === kept.factId && c.selected)) selection = { addsValue: true, reason: "同一新闻的代表报道候选" };
-    // A revision keeps its fact, so it does not fold: without a card of its fact it faces the other cards again.
-    else selection = (await faceCards(selection, kept.factId)).selection;
+    // A revision keeps its fact, so it does not fold: it faces the cards again and can only stay out.
+    selection = (await faceCards(selection, kept.factId)).selection;
     const late = await sql.begin(async tx => {
       await lockCurrentRevision(tx, articleId, a.revision);
       const manual = await manualDecision(tx, articleId);

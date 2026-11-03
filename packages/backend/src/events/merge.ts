@@ -70,12 +70,13 @@ export async function mergeFactInto(fromId: number, intoId: number, reason: stri
         ON CONFLICT (fact_id, article_id) DO UPDATE SET role = EXCLUDED.role, evidence = coalesce(fact_articles.evidence, EXCLUDED.evidence)
         WHERE fact_articles.role = 'mention' AND EXCLUDED.role <> 'mention')
       SELECT article_id, role FROM gone`;
-    // Recall finds an attached post's fact through its latest attaching decision; a post regrouped since belongs elsewhere.
+    // Recall finds an attached post's fact through its latest attaching decision; a post regrouped or placed by an editor since belongs elsewhere.
     const posts = await tx<{ article_id: string }[]>`
       WITH latest AS (
         SELECT DISTINCT ON (d.article_id) d.id, d.fact_id FROM grouping_decisions d
         WHERE d.verdict IN ('signal', 'signal-native')
           AND d.article_id IN (SELECT article_id FROM grouping_decisions WHERE fact_id = ${fromId} AND verdict IN ('signal', 'signal-native'))
+          AND NOT EXISTS (SELECT 1 FROM fact_articles m WHERE m.article_id = d.article_id AND m.manual)
         ORDER BY d.article_id, d.id DESC)
       UPDATE grouping_decisions d SET fact_id = ${intoId}, story_id = ${intoStory} FROM latest WHERE d.id = latest.id AND latest.fact_id = ${fromId} RETURNING d.article_id`;
     if (fromStory && fromStory !== intoStory) {

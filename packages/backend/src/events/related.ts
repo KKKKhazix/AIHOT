@@ -22,7 +22,7 @@ export function latestJudgements(scope: Fragment) {
 
 /** Judgement `d` firmly tied its report to candidate `c`, one of `d.candidates` (relate.ts firmlyTied). */
 export function firmTie(d: Fragment, c: Fragment) {
-  return sql`${d}.verdict IN ('same-fact', 'same-url', 'new-fact-in-story', 'new-story')
+  return sql`${d}.verdict IN ('same-fact', 'same-card', 'same-url', 'new-fact-in-story', 'new-story')
     AND ${c}->>'relation' IN ${sql(TIE_RELATIONS)} AND (${c}->>'confidence')::numeric >= ${TIE_MIN_CONFIDENCE}`;
 }
 

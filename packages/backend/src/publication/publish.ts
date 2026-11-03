@@ -222,16 +222,19 @@ async function syncLedger(tx: Tx, articleId: string, now: Date): Promise<"upsert
 }
 
 export async function publishArticle(articleId: string, options: PublishOptions = {}): Promise<PublishResult | null> {
-  return sql.begin(async (tx) => {
-    await tx`SELECT 1 FROM articles WHERE id = ${articleId} FOR UPDATE`;
-    const [previous] = await tx<{ story_id: number | null }[]>`SELECT story_id FROM publications WHERE article_id = ${articleId}`;
-    const result = await publishArticleTx(tx, articleId, options);
-    // Body and translation writes announce their own changes; an unchanged projection needs no purge.
-    if (previous && result?.changed) await emit("articleChanged", {
-      id: articleId, reason: "republication", kind: result.changeKind, reduced: result.reduced, previousStoryIds: previous.story_id === null ? [] : [previous.story_id],
-    }, tx);
-    return result;
-  });
+  return sql.begin((tx) => republishTx(tx, articleId, options));
+}
+
+/** publishArticle inside the caller's transaction: the write behind it and every exit commit together. */
+export async function republishTx(tx: Tx, articleId: string, options: PublishOptions = {}): Promise<PublishResult | null> {
+  await tx`SELECT 1 FROM articles WHERE id = ${articleId} FOR UPDATE`;
+  const [previous] = await tx<{ story_id: number | null }[]>`SELECT story_id FROM publications WHERE article_id = ${articleId}`;
+  const result = await publishArticleTx(tx, articleId, options);
+  // Body and translation writes announce their own changes; an unchanged projection needs no purge.
+  if (previous && result?.changed) await emit("articleChanged", {
+    id: articleId, reason: "republication", kind: result.changeKind, reduced: result.reduced, previousStoryIds: previous.story_id === null ? [] : [previous.story_id],
+  }, tx);
+  return result;
 }
 
 export async function publishArticleTx(tx: Tx, articleId: string, options: PublishOptions = {}): Promise<PublishResult | null> {

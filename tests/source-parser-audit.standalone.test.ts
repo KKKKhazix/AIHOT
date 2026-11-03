@@ -17,6 +17,11 @@ const older = section("h_older", "September 25, 2026", "Build plugins", "Create 
 const newest = section("h_newest", "September 28, 2026", "A model launch", 'A new model is available. <a href="/docs/new">Read about it</a>.');
 let prepend = false;
 const server = http.createServer((req, res) => {
+  if (req.url === "/notes.md") {
+    res.setHeader("content-type", "text/markdown");
+    res.end(`# Release notes\n\n## November 2, 2026 {% id="11-02-2026" %}\n\n**Model deprecation:** Migrate to [the replacement](/docs/models/new).\n\n## October 30, 2026 {% id="10-30-2026" %}\n\nComputer use is generally available.\n`);
+    return;
+  }
   res.setHeader("content-type", "text/html");
   if (req.url === "/redirect") {
     res.writeHead(302, { location: "/help/notes" });
@@ -40,6 +45,20 @@ after(async () => {
 });
 
 const source = { config: { url: base + "/redirect", parseMode: "intercom_changelog", publishedAtUtcOffset: "+00:00" } } as never;
+
+test("Markdown changelog sections keep explicit anchors, publication days and separate complete bodies", async () => {
+  const draft = { config: { url: base + "/notes.md", baseUrl: base + "/docs/changelog", parseMode: "markdown_changelog", preserveUrlFragment: true, publishedAtUtcOffset: "+00:00" } } as never;
+  const items = await fetchWebList(draft);
+  assert.deepEqual(unsupportedConfig("web_list", (draft as { config: Record<string, unknown> }).config), []);
+  assert.deepEqual(items.map(item => [item.url, item.title, item.publicationTime, item.bodyStatus]), [
+    [base + "/docs/changelog#11-02-2026", "November 2, 2026", "2026-11-02", "ok"],
+    [base + "/docs/changelog#10-30-2026", "October 30, 2026", "2026-10-30", "ok"],
+  ]);
+  assert.match(items[0]!.bodyHtml!, new RegExp(`href="${base}/docs/models/new"`));
+  assert.match(items[0]!.bodyText!, /Model deprecation/);
+  assert.doesNotMatch(items[0]!.bodyText!, /Computer use|Release notes/);
+  assert.match(items[1]!.bodyText!, /Computer use is generally available/);
+});
 
 test("dates require a real complete calendar day, never a product version or an impossible day", () => {
   for (const value of ["Version 3", "Sonnet 5", "5", "September 2026", "2026-02-30", "2026/02/30 12:00", "2026年4月31日", "February 30, 2026"]) {

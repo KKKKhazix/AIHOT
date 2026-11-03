@@ -1,5 +1,6 @@
 // Web list pages: HTML with selectors, Markdown through Jina Reader, and dated changelog sections.
 import * as cheerio from "cheerio";
+import { marked } from "marked";
 import { guardedFetch, languageHeaders, requireOk } from "../lib/http-fetch.ts";
 import { contentDocument, UnavailablePageError } from "../lib/page-content.ts";
 import { fetchListing } from "./listing-fetch.ts";
@@ -261,6 +262,30 @@ function fromDocusaurusChangelog(html: string, base: string, source: SourceRow):
   return out;
 }
 
+/** Markdown documentation keeps section addresses in explicit {% id="…" %} heading annotations. */
+function fromMarkdownChangelog(markdown: string, base: string, source: SourceRow): Candidate[] {
+  const tokens = marked.lexer(markdown);
+  const out: Candidate[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const heading = tokens[i]!;
+    if (heading.type !== "heading" || heading.depth !== 2) continue;
+    const anchor = /\s+\{%\s*id="([\w-]+)"\s*%\}\s*$/.exec(heading.text);
+    if (!anchor) continue;
+    const title = heading.text.slice(0, anchor.index).trim();
+    let end = i + 1;
+    while (end < tokens.length) {
+      const next = tokens[end]!;
+      if (next.type === "heading" && next.depth <= 2) break;
+      end++;
+    }
+    const url = `${base.replace(/#.*$/, "")}#${anchor[1]}`;
+    if (!allowed(url, source)) continue;
+    const bodyHtml = sanitizeBody(marked.parser(tokens.slice(i + 1, end), { async: false }), base);
+    out.push({ url, title, ...readPublicationDate(title, source.config.publishedAtUtcOffset), bodyHtml, bodyText: stripTags(bodyHtml), bodyStatus: "ok" });
+  }
+  return out;
+}
+
 async function fetchScript(url: string): Promise<string> {
   return requireOk(await guardedFetch(url, { timeoutMs: 25_000 }), url).text();
 }
@@ -336,6 +361,7 @@ export async function fetchWebList(source: SourceRow): Promise<Candidate[]> {
   if (mode === "mimo_home") out = await fromMimoHome(text, base, source);
   else if (mode === "markdown") out = fromMarkdown(text, base, source);
   else if (mode === "docusaurus_changelog") out = fromDocusaurusChangelog(text, base, source);
+  else if (mode === "markdown_changelog") out = fromMarkdownChangelog(text, base, source);
   else if (mode === "intercom_changelog") out = fromIntercomChangelog(text, base, source);
   else out = fromHtml(text, base, source);
   if (out.length === 0) throw new FetchError(`no items matched (${mode})`);

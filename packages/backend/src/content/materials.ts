@@ -198,16 +198,18 @@ export function identityKeyFor(m: MaterialInput): string {
 }
 
 /** Shared URL lookup for collection, external reports and administration. Historical WeChat keys
- * included sn; reuse the earliest stored post without rewriting its public id or access URL. */
-export async function materialIdentityForUrl(url: string, db: Db = sql): Promise<string | null> {
+ * included sn; reuse the earliest stored post without rewriting its public id or access URL.
+ * A browser-verified access URL also joins a short-only import to its confirmed publisher ID. */
+export async function materialIdentityForUrl(url: string, db: Db = sql, verifiedAccessUrl?: string): Promise<string | null> {
   const key = identityKeyForUrl(url), normalized = normalizeUrl(url);
   if (!key || !normalized) return key;
   const u = new URL(normalized);
   if (u.hostname !== "mp.weixin.qq.com" || u.username || u.password || !/^\/s(?:\/[^/]+)?$/.test(u.pathname)) return key;
-  const post = wechatPostUrl(normalized), short = u.pathname.startsWith("/s/") ? u.origin + u.pathname : null;
+  const access = new URL(verifiedAccessUrl ?? normalized);
+  const post = wechatPostUrl(normalized), short = access.pathname.startsWith("/s/") ? access.origin + access.pathname : null;
   const [known] = await db<{ identity_key: string }[]>`SELECT identity_key FROM (
     SELECT identity_key, discovered_at, id FROM articles
-      WHERE identity_key IN (${key}, ${`url:${normalized}`}) OR url IN (${url}, ${normalized})
+      WHERE identity_key IN (${key}, ${`url:${normalized}`}) OR url IN (${url}, ${normalized}, ${verifiedAccessUrl ?? null})
     UNION ALL
     SELECT identity_key, discovered_at, id FROM articles
       WHERE ${post}::text IS NOT NULL AND starts_with(identity_key, 'url:https://mp.weixin.qq.com/s?__biz=')
@@ -216,6 +218,9 @@ export async function materialIdentityForUrl(url: string, db: Db = sql): Promise
     SELECT identity_key, discovered_at, id FROM articles
       WHERE ${short}::text IS NOT NULL AND starts_with(url, 'https://mp.weixin.qq.com/s/')
         AND split_part(split_part(url, '?', 1), '#', 1) = ${short}
+    UNION ALL
+    SELECT identity_key, discovered_at, id FROM articles
+      WHERE starts_with(raw->>'externalId', 'https://mp.weixin.qq.com/s?__biz=') AND raw->>'externalId' = ${post}
   ) candidates ORDER BY discovered_at, id LIMIT 1`;
   return known?.identity_key ?? key;
 }

@@ -34,9 +34,7 @@ export function Menu({ trigger, label, children }: { trigger: ReactNode; label: 
     };
   }, [open]);
   return (
-    <div ref={ref} className="relative" onBlur={(e) => {
-      if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
-    }}>
+    <div ref={ref} className="relative">
       <button
         ref={triggerRef}
         type="button"

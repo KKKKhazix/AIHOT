@@ -33,7 +33,7 @@ const NESTED: Record<string, string[]> = {
   minNumeric: ["path", "min"],
   detail: [
     "maxFetches", "publishedAtSelector", "publishedAtRegex", "publishedAtUtcOffset", "publishedAtAuthoritative", "upgradeDatePrecision",
-    "titleSelector", "titleRegex", "titleAuthoritative", "summarySelector", "preserve",
+    "titleSelector", "titleRegex", "titleAuthoritative", "summarySelector", "preserve", "bodyUrlSuffix",
   ],
 };
 

@@ -7,11 +7,13 @@ import http from "node:http";
 import { after, before, test } from "node:test";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
-import { extractArticleBody } from "@aihot/backend/content/extract";
+import { extractArticleBody, extractFromUrl, pageRules } from "@aihot/backend/content/extract";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { getBoss, stopBoss } from "@aihot/backend/jobs/queue";
 import { queueProcessing, registerExtractionJobs } from "@aihot/backend/jobs/content";
 import { rerun } from "@aihot/backend/admin/content";
+import { fetchDetail } from "@aihot/backend/sources/web-list";
+import { fetchJsonList } from "@aihot/backend/sources/json-list";
 
 const sourceId = `extract-consistency-${tag()}`;
 const body = "This is the original article, with enough substantive text to extract its paragraphs. ".repeat(12);
@@ -19,6 +21,18 @@ let presentationHtml: string | null = null;
 let rssHtml = "";
 let hold: { entered: ReturnType<typeof gate<void>>; release: ReturnType<typeof gate<void>>; count: number; empty: boolean; failed?: boolean };
 const page = http.createServer(async (_req, res) => {
+  if (_req.url === "/commit/abc?lang=en") {
+    res.writeHead(200, { "content-type": "text/html" });
+    return res.end(`<html><head><title>Commit title</title></head><body><article><h1>Commit title</h1><p>${body}</p></article></body></html>`);
+  }
+  if (_req.url === "/commits.json") {
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(JSON.stringify([{ id: "abc", title: "Commit title", summary: body }]));
+  }
+  if (_req.url === "/commit/abc.patch?lang=en") {
+    res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+    return res.end("diff --git a/README.md b/README.md\n-Old offer ended\n+New free model credits <100>\n" + body);
+  }
   if (_req.url === "/feed") {
     res.writeHead(200, { "content-type": "application/rss+xml" });
     return res.end(`<rss version="2.0"><channel><title>Feed</title><item><title>RSS original</title><link>${base}/rss-original</link><content:encoded><![CDATA[${rssHtml}]]></content:encoded></item></channel></rss>`);
@@ -49,6 +63,20 @@ before(async () => {
 after(async () => { page.close(); await socialdata.close(); await stopBoss(); await closeDb(); });
 const reset = (count = 1, empty = false) => { presentationHtml = null; hold = { entered: gate(), release: gate(), count, empty }; };
 const state = async (id: string) => ({ ...(await sql`SELECT title,body_text,body_status,revision,content_hash FROM articles WHERE id=${id}`)[0] });
+
+test("a source can read a text alternate without losing patch lines or mistaking markup for HTML", async () => {
+  const source = { config: { url: `${base}/commits.json`, titlePaths: ['title'], summaryPaths: ['summary'], summaryIsBody: true,
+    urlTemplate: `${base}/commit/{id}?lang=en`, detail: { bodyUrlSuffix: '.patch', titleSelector: 'h1' } } } as never;
+  const [candidate] = await fetchJsonList(source);
+  assert.equal(candidate!.bodyStatus, 'pending', 'a JSON summary is not the explicit body alternate');
+  const detail = await fetchDetail(candidate!.url, source, { date: false, title: true, summary: false, body: true });
+  assert.equal(detail.title, 'Commit title');
+  assert.equal(detail.body, null, 'metadata extraction must leave the alternate body for extraction');
+  const got = await extractFromUrl(`${base}/commit/abc?lang=en`, "test-patch", pageRules({ detail: { bodyUrlSuffix: ".patch" } }), { paidFallback: false });
+  assert.ok(got);
+  assert.match(got.text, /\n-Old offer ended\n\+New free model credits <100>/);
+  assert.match(got.html, /&lt;100&gt;/);
+});
 
 for (const x of [false, true]) for (const empty of [false, true]) {
   test(`a stale ${x ? "X Article" : "page"} ${empty ? "empty" : "successful"} response cannot change newer material`, async () => {

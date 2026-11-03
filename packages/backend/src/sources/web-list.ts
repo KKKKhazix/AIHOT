@@ -402,7 +402,7 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
 
   // The body last, from the same document: Readability changes what it reads.
   let body: ExtractedBody | null = null;
-  if (need.body && page?.whole) {
+  if (need.body && page?.whole && !d.bodyUrlSuffix) {
     try { body = readableDocument(page.document, page.url, pageRules(source.config)); }
     catch { /* A failed extraction must not discard the detail metadata. */ }
   }

@@ -15,7 +15,8 @@
 // reports merges into where it went, so its address keeps working. A discussion post is recalled by
 // reports and by the posts already attached to a fact; one that found no story gets another look,
 // while it still counts for heat, whenever a fact close to it gains evidence (rematchSignals). History
-// (isHistorical) founds no event. Runs serially (queue concurrency 1).
+// (isHistorical) founds no event. A report about to open a card is compared with the cards readers
+// already see (cards.ts). Runs serially (queue concurrency 1).
 import { modelFor, modelRoute } from "../editorial/models.ts";
 import { beijingDate, beijingMidnight } from "@aihot/contracts/time";
 import { sql, type Db, type Tx } from "../db.ts";
@@ -26,12 +27,14 @@ import { embeddingsAvailable } from "../providers/embeddings.ts";
 import { isHistorical, newsCondition } from "../content/materials.ts";
 import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
 import { groupingPriority } from "../jobs/content.ts";
-import { publishArticle, publishArticleTx } from "../publication/publish.ts";
+import { publishArticle, publishArticleTx, republishTx } from "../publication/publish.ts";
+import { isIndependentSelectedSource } from "../publication/rules.ts";
 import { latestCompositeCondition } from "../publication/scope.ts";
+import { alreadyOnCard, echoesOnCard, factHasCard, foldsUnder, ownArticleOnCard, readerOf, retireCardTx, seenOnCard } from "./cards.ts";
 import { consolidate, liveStory, type Consolidation } from "./consolidate.ts";
 import { HEAT_WINDOW_HOURS } from "./hot.ts";
-import { mergeStoryInto } from "./merge.ts";
-import { bestPerFact, candidateViews, cosine32, recallFacts, recallFactsByPosts, recallSelectedBackground, relatedPosts, vectorsFor, type Recalled } from "./recall.ts";
+import { mergeFactInto, mergeStoryInto } from "./merge.ts";
+import { bestPerFact, candidateViews, cosine32, recallFacts, recallFactsByPosts, recallSelectedBackground, relatedPosts, vectorsFor, type Recalled, type CardRow } from "./recall.ts";
 import {
   BATCH_SYSTEM, BATCH_PROMPT_VERSION, BatchSchema, PAIR_SYSTEM, PairSchema, RELATE_PROMPT_VERSION, SIGNAL_SYSTEM, SignalSchema, TIE_MIN_CONFIDENCE,
   batchUser, completeDecisions, firmlyTied, pairUser, reportText, sameOccurrence, signalTarget, signalText, storyForDevelopment, verdictsByFact,
@@ -217,13 +220,17 @@ async function markGrouped(articleId: string, revision: number, selection?: Sele
 
 export interface GroupResult {
   verdict:
-    | "same-fact" | "same-url" | "new-fact-in-story" | "new-story" | "roundup" | "kept" | "standalone" | "manual" | "skipped"
+    | "same-fact" | "same-card" | "same-url" | "new-fact-in-story" | "new-story" | "roundup" | "kept" | "standalone" | "manual" | "skipped"
     | "signal" | "signal-native" | "signal-unmatched" | "historical";
   factId?: number;
   storyId?: number;
   /** Stories compared because this report tied them together (see consolidate). */
   consolidated?: Consolidation[];
   consolidationError?: string;
+  /** The fact this report had joined, merged into the fact of the card telling the same news (cards.ts). */
+  absorbed?: { from: number; moved: number } | null;
+  /** Cards of the author's other account that gave way to this article (cards.ts). */
+  retired?: string[];
   /** Stories left without reports when this report moved: merged into its story, their public ids redirect. */
   redirected?: number[];
   /** Unattached discussion posts close to this new evidence of a fact, grouped again (rematchSignals). */
@@ -256,9 +263,15 @@ export async function groupArticle(articleId: string, opts: GroupOptions = {}): 
   if (!input) return { verdict: "skipped" };
   const revision = input.revision;
   try {
-    const result = await decide(articleId, opts, revision, input.grouping_status !== 'complete' && input.selection_adds_value === null);
+    const { replaces, ...result } = await decide(articleId, opts, revision, input.grouping_status !== 'complete' && input.selection_adds_value === null, input.selection_adds_value);
     await markGrouped(articleId, revision);
-    await publishArticle(articleId);
+    // An article replaces its author's posts only once it is really shown, in the commit that shows it.
+    await sql.begin(async (tx) => {
+      const shown = await republishTx(tx, articleId);
+      if (!replaces || !shown?.selected || shown.visibility !== "public") return;
+      for (const id of replaces.ids) await retireCardTx(tx, id, replaces.title);
+      result.retired = replaces.ids;
+    });
     return result;
   } catch (error) {
     // A late failed model call must not undo an editor's completed decision, or a fact already
@@ -277,7 +290,7 @@ export async function groupArticle(articleId: string, opts: GroupOptions = {}): 
 /** An analysis that says the material cannot establish what the current news is: grouping confirms no fact for it. */
 export const unsupportedMaterial = (output: Record<string, any> | null | undefined): boolean => output?.scope === "unknown" && !output.fact;
 
-async function decide(articleId: string, opts: GroupOptions, revision: number, recheckSelection: boolean): Promise<GroupResult> {
+async function decide(articleId: string, opts: GroupOptions, revision: number, recheckSelection: boolean, addedValue: boolean | null): Promise<GroupResult & { replaces?: { ids: string[]; title: string } }> {
   const [a] = await sql<ArticleRow[]>`
     SELECT a.id, a.revision, a.title, a.url, a.published_at, a.publication_time, a.discovered_at, a.grouped_at, a.body_text, a.x_post, a.backfill,
            s.id AS source_id, s.name AS source_name, s.signal_group_id, (s.tier = 'T1') AS first_party, s.participation_mode
@@ -306,10 +319,34 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
     ? await sql.begin(async (tx) => { await lockCurrentRevision(tx, articleId, a.revision); return resetAutomatic(tx, articleId); })
     : [];
 
+  const reader = a.participation_mode === "editorial" ? await readerOf(articleId) : null;
+  const independent = isIndependentSelectedSource(a.source_id);
+  let replaces: { ids: string[]; title: string } | undefined;
+  /**
+   * A report about to be shown faces the cards readers already see, before anything is written: a
+   * failed call leaves it waiting, not a duplicate out. An article finds the posts it replaces; a post
+   * gives way to its author's article; any other report stays out, or folds when it can (`into`).
+   */
+  const faceCards = async (selection: SelectionValue, ownFact: number | null = null): Promise<{ selection: SelectionValue; into?: CardRow }> => {
+    if (!reader || !selection.addsValue) return { selection };
+    if (independent) {
+      const echoes = await echoesOnCard(reader);
+      if (echoes.length) replaces = { ids: echoes.map((echo) => echo.article_id), title: reader.view.title };
+      return { selection };
+    }
+    const article = await ownArticleOnCard(reader);
+    if (article) return { selection: { addsValue: false, reason: alreadyOnCard(article.title) } };
+    if (ownFact && await factHasCard(ownFact)) return { selection };
+    const card = await seenOnCard(reader, ownFact);
+    return card ? { selection: { addsValue: false, reason: alreadyOnCard(card.title) }, into: card } : { selection };
+  };
+
   // History founds no event and adds no heat (isHistorical); a regroup takes it out of any it joined.
+  // It comes back at its own date, next to the card that told it when it was news.
   if (historical) {
-    await markGrouped(articleId, a.revision, { addsValue: true, reason: "历史资料按原文时间归档" });
-    return { verdict: "historical" };
+    const faced = await faceCards({ addsValue: true, reason: "历史资料按原文时间归档" });
+    await markGrouped(articleId, a.revision, faced.selection);
+    return { verdict: "historical", replaces };
   }
 
   if (opts.signalOnly || a.participation_mode !== "editorial") return groupSignal(a, source, observedAt, opts.regroup === true);
@@ -325,8 +362,10 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
   // that identity after judging the replacement material below; ordinary repeats and confirmed
   // nulls from before the value check keep their existing value without buying another judgement.
   if (kept && !recheckSelection) {
+    // A retry after the commit below failed still owes the article's replacement; the answers are saved.
+    if (independent) await faceCards({ addsValue: addedValue !== false, reason: "" });
     await markGrouped(articleId, a.revision);
-    return { verdict: "kept", factId: kept.factId, storyId: kept.storyId };
+    return { verdict: "kept", factId: kept.factId, storyId: kept.storyId, replaces };
   }
 
   const frame = (an?.output?.fact ?? null) as Record<string, any> | null;
@@ -360,6 +399,7 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
     receipts.push(judged.receiptId);
   }
   if (composite) {
+    selection = (await faceCards(selection)).selection;
     // Use the existing batch judgement only to find mentions. Even a mistaken SAME_OCCURRENCE
     // answer cannot give a composite a primary/report membership or trigger consolidation.
     const receiptId = receipts[0] ?? null;
@@ -385,11 +425,13 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
     // A newly identified composite may have supplied an older digest. Rebuild its former stories
     // from their remaining reports, without redirecting an emptied story into an unrelated one.
     for (const id of left) await enqueue(QUEUES.digest, { storyId: id }, { singletonKey: `story:${id}` });
-    return late ? { verdict: "manual", factId: late.factId } : { verdict: "roundup" };
+    return late ? { verdict: "manual", factId: late.factId } : { verdict: "roundup", replaces };
   }
   if (kept) {
     // A sibling already selected for this same fact still permits representative replacement.
     if (cands.some(c => c.factId === kept.factId && c.selected)) selection = { addsValue: true, reason: "同一新闻的代表报道候选" };
+    // A revision keeps its fact, so it does not fold: without a card of its fact it faces the other cards again.
+    else selection = (await faceCards(selection, kept.factId)).selection;
     const late = await sql.begin(async tx => {
       await lockCurrentRevision(tx, articleId, a.revision);
       const manual = await manualDecision(tx, articleId);
@@ -399,7 +441,7 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
       for (const receiptId of receipts) await completeReceipt(tx, receiptId);
       return manual;
     });
-    return late ? { verdict: "manual", factId: late.factId } : { verdict: "kept", factId: kept.factId, storyId: kept.storyId };
+    return late ? { verdict: "manual", factId: late.factId } : { verdict: "kept", factId: kept.factId, storyId: kept.storyId, replaces };
   }
   let verdict: GroupResult["verdict"] = "new-story";
   let factId: number | null = null;
@@ -452,6 +494,25 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
     selection = { addsValue: true, reason: "同一新闻的代表报道候选" };
   }
 
+  // About to open a card: the news may already be on one, whatever the candidates above were called.
+  // The fact it joined then holds that same news: one happening that grew two facts. Merged before
+  // this report's own decision, so a failed merge leaves the report waiting and its retry finds it.
+  let absorbed: GroupResult["absorbed"];
+  const faced = await faceCards(selection, factId);
+  if (faced.into && foldsUnder(faced.into)) {
+    const card = faced.into;
+    if (factId) {
+      const from: number = factId;
+      const merged = await mergeFactInto(from, card.fact_id, `同一条新闻，并入读者已看到的卡片（报道 ${articleId}）`, "grouping");
+      absorbed = merged && { from, moved: merged.moved };
+    }
+    factId = card.fact_id;
+    storyId = card.story_id;
+    verdict = "same-card";
+    selection = { addsValue: true, reason: "同一新闻的代表报道候选" };
+    decisionCandidates.push({ id: card.fact_id, score: Math.round(card.score * 1000) / 1000, relation: "SAME_OCCURRENCE", confidence: 1 });
+  } else selection = faced.selection;
+
   // Written under the article's row lock after reading the manual state again: a detach or other
   // manual decision made while the model was answering wins (detachFromFact takes the same lock).
   const written = await sql.begin(async (tx) => {
@@ -479,7 +540,7 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
     return { manual: null, factId: fact, storyId: story };
   });
   if (written.manual) return { verdict: "manual", factId: written.manual.factId };
-  const result: GroupResult = { verdict, factId: written.factId!, storyId: written.storyId! };
+  const result: GroupResult & { replaces?: { ids: string[]; title: string } } = { verdict, factId: written.factId!, storyId: written.storyId!, replaces, ...(absorbed === undefined ? {} : { absorbed }) };
 
   // Other stories this report is firmly tied to: one story may have grown two roots. Best effort:
   // the report's own decision is written; a failed comparison is reported in the job's result.

@@ -54,6 +54,9 @@ const LITERAL = `(?:'(?:[^']|'')*'|-?\\d+(?:\\.\\d+)?|true|false|null)(?: :: ${T
 const addColumn = new RegExp(`^alter table ${RELATION} add column (?:if not exists )?${IDENT} ${TYPE}(?: not null)?(?: default ${LITERAL})?(?: not null)?$`, "i");
 const alterDefault = new RegExp(`^alter table ${RELATION} alter column ${IDENT} (?:set default ${LITERAL}|drop default)$`, "i");
 const indexStart = new RegExp(`^create (unique )?index concurrently if not exists (${IDENT}) on (${RELATION}) `, "i");
+// Small provider-budget seed rows are bounded writes with an idempotent conflict action. Keep this
+// exception scoped to the budgets table and its fixed column order; arbitrary INSERTs remain rejected.
+const budgetSeed = /^insert into budgets \( service , per_minute , per_hour , per_day , note \) values \( '[a-z0-9_]+' , \d+ , \d+ , \d+ , '(?:[^']|'')*' \) on conflict \( service \) do nothing$/i;
 
 function singleAction(tokens: string[]) {
   let depth = 0;
@@ -71,6 +74,7 @@ export function migrationPlan(text: string): MigrationPlan {
   const tokens = all[0];
   const sql = tokens.join(" ");
   const words = tokens.filter((token) => /^[a-z_]/i.test(token)).join(" ");
+  if (budgetSeed.test(sql)) return { kind: "transaction" };
   if (/^create (?:unique )?index\b/i.test(sql)) {
     const match = indexStart.exec(sql);
     if (!match) throw new Error("indexes require CREATE INDEX CONCURRENTLY IF NOT EXISTS");

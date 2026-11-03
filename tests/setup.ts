@@ -29,7 +29,7 @@ const STEP_MODELS: Record<string, [env: string, model: string]> = {
   prefilter: ["PREFILTER_MODEL", "qwen3.7-flash"], score: ["SCORE_MODEL", "glm-5.3-flash-selection"], understand: ["UNDERSTAND_MODEL", "glm-5.3-flash"],
   summarize: ["SUMMARIZE_MODEL", "deepseek-flash"], structure: ["STRUCTURE_MODEL", "qwen3.8-flash"], group: ["GROUP_MODEL", "deepseek-flash"],
   groupReview: ["GROUP_REVIEW_MODEL", "mimo-v2.6-flash"], digest: ["DIGEST_MODEL", "deepseek-flash"], report: ["REPORT_MODEL", "deepseek-flash"],
-  translate: ["TRANSLATE_MODEL", "deepseek-flash"], wording: ["WORDING_MODEL", "deepseek-flash"],
+  translate: ["TRANSLATE_MODEL", "deepseek-flash"], wording: ["WORDING_MODEL", "deepseek-flash"], feedback: ["FEEDBACK_MODEL", "qwen3.7-flash"],
 };
 for (const [step, [env, model]] of Object.entries(STEP_MODELS)) if (!DEFAULTS[step]) process.env[env] ??= model;
 

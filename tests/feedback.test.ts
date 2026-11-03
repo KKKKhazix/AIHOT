@@ -6,7 +6,9 @@
 // Handling records what each feedback is (a bug, a suggestion, a question or other), and suggestions that
 // name the same idea add up by sender, so the admin sees what readers ask for most. The pool lists every
 // idea: handling names a suggestion after the names in it, and one missing would get a second name.
-import { tag } from "./setup.ts";
+// Before a report is pushed a cheap model reads it: one with nothing in it is marked spam and not pushed,
+// and a model that cannot answer never holds a report back.
+import { pointModels, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,9 +31,16 @@ process.env.FEISHU_INTERNAL_CHAT_ID = "oc_test";
 
 // Feishu's message app, answered here: uploads and sends fail while the switches say so.
 const feishu = { uploadFails: false, uploadRefused: false, uploads: 0, sendFails: false, sent: [] as Array<{ title: string; content: unknown[][] }> };
+const MODEL_URL = "https://model.test/v1";
+const model = { noise: false, fails: false, calls: 0 };
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = String(input instanceof Request ? input.url : input);
+  if (url.startsWith(MODEL_URL)) {
+    model.calls += 1;
+    if (model.fails) return new Response("down", { status: 500 });
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ noise: model.noise }) }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+  }
   if (!url.startsWith("https://open.feishu.cn/")) return realFetch(input, init);
   if (url.endsWith("/auth/v3/tenant_access_token/internal")) return Response.json({ code: 0, tenant_access_token: "t", expire: 7200 });
   if (url.endsWith("/im/v1/images")) {
@@ -156,6 +165,67 @@ test("a browser retry creates one feedback and forwards one notification", async
   assert.ok((await state(id)).forwarded);
   assert.equal(feishu.sent.filter(m => m.title === `反馈 #${id}`).length, 1);
   assert.ok(JSON.stringify(sentFor(id)?.content).includes(input.content));
+});
+
+test("a report the model reads as empty is marked spam and not pushed; a real one, or a model that cannot answer, still goes out", async () => {
+  pointModels(MODEL_URL, ["qwen3.7-flash"]);
+  config.modelCallsEnabled = true;
+  try {
+    const pending = async (content: string, screenshot = false) => {
+      delete process.env.FEISHU_INTERNAL_ENABLED;
+      const { id } = await submitFeedback({ content: `${content} ${T}`, ip: `198.51.100.${100 + ++n}`, userAgent: "Firefox", ...(screenshot ? { screenshot: { mime: "image/png", data: await sharp({ create: { width: 4, height: 4, channels: 3, background: { r: n, g: 1, b: 1 } } }).png().toBuffer() } } : {}) });
+      process.env.FEISHU_INTERNAL_ENABLED = "true";
+      await olderBy(id, "10 minutes");
+      return id;
+    };
+    const record = async (id: number) => (await sql<{ status: string; kind: string | null; note: string | null; forward_error: string | null }[]>`SELECT status, kind, note, forward_error FROM feedback WHERE id = ${id}`)[0]!;
+
+    model.noise = true;
+    const empty = await pending("111111");
+    await forwardPendingFeedback();
+    assert.equal(sentFor(empty), undefined);
+    const dropped = await record(empty);
+    assert.deepEqual([dropped.status, dropped.kind, dropped.forward_error], ["spam", "other", null]);
+    assert.match(dropped.note!, /模型/, "the record says why nobody was told");
+    const [logged] = await sql<{ actor: string }[]>`SELECT actor FROM audit_log WHERE subject = ${`feedback:${empty}`} AND action = 'feedback.update'`;
+    assert.equal(logged?.actor, "feedback-auto");
+    const calls = model.calls;
+    await forwardPendingFeedback();
+    assert.equal(model.calls, calls, "settled: not read again on the next sweep");
+
+    const handled = await pending("已经有人处理了的反馈");
+    await sql`UPDATE feedback SET status = 'triaged' WHERE id = ${handled}`;
+    await forwardPendingFeedback();
+    assert.ok(sentFor(handled), "only a report nobody has looked at yet can be dropped");
+    assert.equal((await record(handled)).status, "triaged");
+
+    model.noise = false;
+    const real = await pending("搜索打不开");
+    await forwardPendingFeedback();
+    assert.ok(sentFor(real));
+    assert.equal((await record(real)).status, "new");
+
+    model.fails = true;
+    const down = await pending("模型挂了的时候提的反馈");
+    await forwardPendingFeedback();
+    assert.ok(sentFor(down), "a model that cannot answer does not hold the report back");
+    assert.equal((await record(down)).status, "new");
+    model.fails = false;
+
+    const asked: string[] = [];
+    const before = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).startsWith(MODEL_URL)) asked.push(JSON.parse(String(init?.body)).messages.at(-1).content);
+      return before(input, init);
+    }) as typeof fetch;
+    const shot = await pending("这里不对", true);
+    await forwardPendingFeedback();
+    globalThis.fetch = before;
+    assert.ok(sentFor(shot));
+    assert.ok(asked.some((text) => text.includes("这里不对") && text.includes('"has_screenshot":true')), "the model knows a picture came with the words");
+  } finally {
+    config.modelCallsEnabled = false;
+  }
 });
 
 /** Handles one feedback as the admin would: against the version it was read at. */

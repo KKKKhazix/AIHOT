@@ -2,6 +2,7 @@
 // Every route goes through adminHandler (session + CSRF); manual changes are audited in the modules.
 import { readFile } from "node:fs/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { strToU8, zipSync } from "fflate";
 import type { AdminSourceUpdate } from "@aihot/contracts/admin";
 import { actorOf } from "@aihot/backend/admin/auth";
 import { navCounts } from "@aihot/backend/admin/navigation";
@@ -15,7 +16,7 @@ import { requeueFailedArticles, runsOverview } from "@aihot/backend/admin/runs";
 import { resolveDelivery } from "@aihot/backend/notify/deliver";
 import { releaseReceipt } from "@aihot/backend/operations/recover";
 import { replaceContactQr, setTargetEnabled, settingsOverview, updateBudget } from "@aihot/backend/admin/settings";
-import { createSource, fetchNow, listSources, previewSource, previewStoredSource, sourceDetail, updateSource } from "@aihot/backend/admin/sources";
+import { createSource, exportSources, fetchNow, listSources, previewSource, previewStoredSource, sourceDetail, updateSource } from "@aihot/backend/admin/sources";
 import { sendProblem } from "../http/respond.ts";
 import { adminHandler } from "./admin-auth.ts";
 
@@ -28,6 +29,21 @@ const notFound = (req: FastifyRequest, reply: FastifyReply) => sendProblem(req, 
 export const orNotFound = <T>(req: FastifyRequest, reply: FastifyReply, value: T | null) => (value === null || value === undefined ? notFound(req, reply) : value);
 export const page = (req: FastifyRequest) => Math.max(1, Number(q(req).page) || 1);
 
+function sourceWorkbook(sources: Awaited<ReturnType<typeof exportSources>>["sources"]): Uint8Array {
+  const escape = (value: unknown) => String(value ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&apos;");
+  const columns = ["ID", "名称", "采集类型", "配置（JSON）", "标签", "等级", "参与方式", "信号组 ID", "主体 ID", "采集间隔（分钟）", "站内全文", "全文再分发", "启用"];
+  const rows: unknown[][] = [columns, ...sources.map((s) => [s.id, s.name, s.kind, JSON.stringify(s.config), s.tags.join(", "), s.tier, s.participation_mode, s.signal_group_id, s.owner_entity_id, s.interval_minutes, s.site_fulltext ? "是" : "否", s.syndicate_fulltext ? "是" : "否", s.enabled ? "是" : "否"])];
+  const sheet = rows.map((row, ri) => `<row r="${ri + 1}">${row.map((value, ci) => `<c r="${String.fromCharCode(65 + ci)}${ri + 1}" t="inlineStr"><is><t xml:space="preserve">${escape(value)}</t></is></c>`).join("")}</row>`).join("");
+  const xml = (body: string) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${body}`;
+  return zipSync({
+    "[Content_Types].xml": strToU8(xml('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>')),
+    "_rels/.rels": strToU8(xml('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')),
+    "xl/workbook.xml": strToU8(xml('<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="信源" sheetId="1" r:id="rId1"/></sheets></workbook>')),
+    "xl/_rels/workbook.xml.rels": strToU8(xml('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')),
+    "xl/worksheets/sheet1.xml": strToU8(xml(`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheet}</sheetData></worksheet>`)),
+  }, { level: 6 });
+}
+
 function decodeImage(dataUrl: unknown): Buffer {
   const m = /^data:image\/(png|jpeg|webp);base64,(.+)$/s.exec(String(dataUrl ?? ""));
   if (!m) throw Object.assign(new Error("image must be a PNG, JPEG or WebP data URL"), { statusCode: 400 });
@@ -39,6 +55,17 @@ export function registerAdmin(app: FastifyInstance) {
   app.get("/api/admin/sources", adminHandler(async (req) => {
     const f = q(req);
     return listSources({ q: f.q, kind: f.kind, health: f.health, mode: f.mode, enabled: f.enabled as "true" | "false" | undefined, page: page(req) });
+  }));
+  app.get("/api/admin/sources/export", adminHandler(async (_req, reply) => reply
+    .header("Content-Type", "application/json; charset=utf-8")
+    .header("Content-Disposition", `attachment; filename="aihot-sources-${new Date().toISOString().slice(0, 10)}.json"`)
+    .send(JSON.stringify(await exportSources(), null, 2))));
+  app.get("/api/admin/sources/export.xlsx", adminHandler(async (_req, reply) => {
+    const data = await exportSources();
+    return reply
+      .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .header("Content-Disposition", `attachment; filename="aihot-sources-${new Date().toISOString().slice(0, 10)}.xlsx"`)
+      .send(Buffer.from(sourceWorkbook(data.sources)));
   }));
   app.post("/api/admin/sources", adminHandler(async (req, _reply, admin) => createSource(body(req), actorOf(admin))));
   app.post("/api/admin/sources/preview", adminHandler(async (req) => previewSource(body(req) as never)));

@@ -24,7 +24,13 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
     <AdminPage
       title="信源"
       subtitle="列表按健康度排序：失败的在最前。点进详情可以预览抓取、手动采集、调整频率与参与方式。"
-      actions={<ButtonLink to="/admin/sources/new" tone="primary">新建信源</ButtonLink>}
+      actions={
+        <>
+          <a href="/api/admin/sources/export" download className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-control bg-surface px-3.5 text-[13.5px] font-medium text-ink ring-1 ring-line-strong hover:bg-bg-sunk">导出 JSON</a>
+          <a href="/api/admin/sources/export.xlsx" download className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-control bg-surface px-3.5 text-[13.5px] font-medium text-ink ring-1 ring-line-strong hover:bg-bg-sunk">导出 Excel</a>
+          <ButtonLink to="/admin/sources/new" tone="primary">新建信源</ButtonLink>
+        </>
+      }
     >
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="全部" value={num(totals.total)} />

@@ -15,6 +15,7 @@
     "@aihot/industry": "*",
     "@aihot/site": "*",
     "@modelcontextprotocol/server": "2.1.0",
+    "fflate": "0.7.5",
     "fastify": "5.12.5",
     "zod": "4.6.5"
   }

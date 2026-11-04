@@ -59,6 +59,15 @@ export async function listSources(f: SourceListFilters): Promise<BeforeJson<Admi
   return { page, rows, totals };
 }
 
+/** A portable snapshot of source configuration; runtime cursors and fetch health are omitted. */
+export async function exportSources() {
+  const sources = await sql<Pick<AdminSource, "id" | "name" | "kind" | "config" | "tags" | "tier" | "participation_mode" | "signal_group_id" | "owner_entity_id" | "interval_minutes" | "site_fulltext" | "syndicate_fulltext" | "enabled">[]>`
+    SELECT id, name, kind, config, tags, tier, participation_mode, signal_group_id, owner_entity_id,
+           interval_minutes, site_fulltext, syndicate_fulltext, enabled
+    FROM sources ORDER BY name, id`;
+  return { version: 1, exported_at: new Date().toISOString(), sources };
+}
+
 export async function sourceDetail(id: string): Promise<BeforeJson<AdminSourceDetail> | null> {
   const [source] = await sql<BeforeJson<AdminSource>[]>`SELECT *, (tier = 'T1') AS first_party FROM sources WHERE id = ${id}`;
   if (!source) return null;

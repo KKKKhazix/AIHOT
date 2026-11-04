@@ -20,14 +20,14 @@ export const EDITION_WHEN = {
 
 export const SITE = {
   /** 站名：导航、页面标题、分享图、RSS、MCP、后台都用它。 */
-  name: "MyHOT",
+  name: "EduHOT",
   /**
    * 行业词：拼进默认说法里，比如“AI 日报”“AI 动态”。
    * 改成“法律”“HR”“黄金”之类，页面上就会变成“法律日报”“法律动态”。
    */
   subject: "AI",
   /** 首页的完整标题（浏览器标签、搜索结果）。 */
-  homeTitle: "MyHOT — AI 行业动态 · 每日精选与日报",
+  homeTitle: "EduHOT — AI 行业动态 · 每日精选与日报",
   /** 主题目录页（/topics）的标题。 */
   topicsTitle: "AI 主题：公司与模型、技术方向、内容形态的最新动态",
   /** 反馈表单输入框里的示例。 */
@@ -74,7 +74,7 @@ export const SITE = {
   github: null as string | null,
   /** 结构化数据里的网站运营者（搜索引擎用）。 */
   organization: {
-    name: "MyHOT",
+    name: "EduHOT",
     /** 创始人（选填）。 */
     founder: null as Founder | null,
   },

@@ -1,0 +1,17 @@
+{
+  "groups": [
+    { "key": "life-stage", "name": "成长阶段", "blurb": "按孩子成长与家庭关系浏览" },
+    { "key": "issues", "name": "关注议题", "blurb": "按教育、健康、安全和科技议题浏览" },
+    { "key": "formats", "name": "内容类型", "blurb": "按研究、政策、指南和观点浏览" }
+  ],
+  "topics": [
+    { "slug": "adolescence", "name": "青春期", "group": "life-stage", "tags": ["青春期"], "definition": "青春期身心变化、家庭沟通和同伴关系。" },
+    { "slug": "parent-child", "name": "亲子沟通", "group": "life-stage", "tags": ["亲子沟通"], "definition": "家长与儿童青少年的沟通、冲突和关系建设。" },
+    { "slug": "school", "name": "学校与考试", "group": "issues", "tags": ["校园", "考试招生"], "definition": "学校管理、教育政策、课程和考试招生信息。" },
+    { "slug": "mental-health", "name": "心理健康", "group": "issues", "tags": ["心理健康"], "definition": "儿童青少年心理健康及其研究和公共服务。" },
+    { "slug": "online-safety", "name": "网络安全", "group": "issues", "tags": ["网络安全", "数字素养"], "definition": "未成年人使用网络、平台和数字服务时的安全与权益。" },
+    { "slug": "ai-and-children", "name": "AI 与孩子", "group": "issues", "tags": ["人工智能"], "definition": "AI 对学习、成长、家庭生活和未成年人权益的实际影响。" },
+    { "slug": "research", "name": "研究与调查", "group": "formats", "tags": ["研究调查"], "definition": "儿童发展、教育和家庭议题的研究、调查及数据解读。" },
+    { "slug": "practical-guides", "name": "家长实用指南", "group": "formats", "tags": ["实用指南"], "definition": "面向家长、可执行且有可靠出处的操作指南和公共服务信息。" }
+  ]
+}

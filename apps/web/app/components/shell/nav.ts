@@ -83,6 +83,18 @@ export function sidebarIsActive(item: Pick<NavItem, "to" | "end">, pathname: str
 }
 
 /**
+ * The deepest entry a path belongs to: a page can sit under more than one entry of its section (a module's
+ * list and a detail page under it), and only the most specific one is lit.
+ */
+export function activeSidebarItem(items: readonly NavItem[], pathname: string): NavItem | null {
+  let lit: NavItem | null = null;
+  for (const item of items) {
+    if (sidebarIsActive(item, pathname) && (!lit || item.to.length > lit.to.length)) lit = item;
+  }
+  return lit;
+}
+
+/**
  * The phone tab bar: 全部 lives beside 精选 as a switch, 热点 and 日报 are tabs, and "我的" at /more holds
  * 收藏, 外观, the tools and the site's own pages. Which tab a page sits under is declared by the page
  * itself (components/shell/screens.ts).

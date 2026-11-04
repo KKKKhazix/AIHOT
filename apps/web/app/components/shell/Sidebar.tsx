@@ -4,7 +4,7 @@ import { IntentLink } from "../ui/IntentLink";
 import { SITE } from "@aihot/site";
 import { RingMark, Wordmark } from "@aihot/site/brand/Logo.tsx";
 import { useChangelogSeen } from "../../lib/local-state";
-import { rail, railIsActive, sidebar, sidebarIsActive, type NavItem } from "./nav";
+import { activeSidebarItem, rail, railIsActive, sidebar, type NavItem } from "./nav";
 import { useScreen } from "./screens";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { Filings } from "./Filings";
@@ -19,19 +19,17 @@ export function useChangelogDot(latestVersion: string | null): boolean {
   return !seen || seen < latestVersion;
 }
 
-function SideLink({ item, dot }: { item: NavItem; dot: boolean }) {
-  const { pathname } = useLocation();
-  const isActive = sidebarIsActive(item, pathname);
+function SideLink({ item, dot, active }: { item: NavItem; dot: boolean; active: boolean }) {
   const Icon = item.icon;
   return (
     <IntentLink
       to={item.to}
-      aria-current={isActive ? "page" : undefined}
+      aria-current={active ? "page" : undefined}
       className={`flex h-10 items-center gap-2.5 rounded-control px-2.5 text-[14px] transition-colors duration-150 touch:h-11 ${
-        isActive ? "bg-accent/10 font-semibold text-ink dark:bg-accent-soft" : "font-medium text-ink-3 hover:bg-bg-sunk hover:text-ink"
+        active ? "bg-accent/10 font-semibold text-ink dark:bg-accent-soft" : "font-medium text-ink-3 hover:bg-bg-sunk hover:text-ink"
       }`}
     >
-      <span className={`flex w-[22px] shrink-0 justify-center ${isActive ? "text-accent" : ""}`}>
+      <span className={`flex w-[22px] shrink-0 justify-center ${active ? "text-accent" : ""}`}>
         <Icon size={17} />
       </span>
       <span className="min-w-0 truncate">{item.label}</span>
@@ -81,6 +79,7 @@ function Rail({ dot }: { dot: boolean }) {
 
 export function Sidebar({ changelogVersion }: { changelogVersion: string | null }) {
   const dot = useChangelogDot(changelogVersion);
+  const { pathname } = useLocation();
   // The links scroll between the wordmark and the footer; in a short window the footer would leave them
   // only a few rows, so the whole column scrolls instead.
   return (
@@ -91,16 +90,20 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
           <Wordmark size={26} />
         </Link>
         <nav className="scrollbar-thin -mx-1 flex-1 overflow-y-auto px-1 short:flex-none short:overflow-visible" aria-label="主导航">
-          {sidebar().map((section) => (
-            <div key={section.title}>
-              <div className="px-2.5 pb-1 pt-3.5 text-[11px] text-ink-4">{section.title}</div>
-              <div className="flex flex-col gap-1">
-                {section.items.map((item) => (
-                  <SideLink key={item.to} item={item} dot={dot} />
-                ))}
+          {sidebar().map((section) => {
+            // Only the most specific entry of a section is lit, so a detail page does not light the list above it too.
+            const lit = activeSidebarItem(section.items, pathname);
+            return (
+              <div key={section.title}>
+                <div className="px-2.5 pb-1 pt-3.5 text-[11px] text-ink-4">{section.title}</div>
+                <div className="flex flex-col gap-1">
+                  {section.items.map((item) => (
+                    <SideLink key={item.to} item={item} dot={dot} active={item.to === lit?.to} />
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
         <div className="mt-2 space-y-2.5 px-1 pt-1">
           {SITE.github && (

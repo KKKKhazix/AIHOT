@@ -54,7 +54,9 @@ export default function NewSource() {
               <Select
                 value={form.kind}
                 onChange={(e) => {
-                  setForm({ ...form, kind: e.target.value });
+                  const kind = e.target.value;
+                  const defaultFor = (value: string) => value === "mp_account" ? 360 : 30;
+                  setForm({ ...form, kind, interval_minutes: form.interval_minutes === defaultFor(form.kind) ? defaultFor(kind) : form.interval_minutes });
                   setConfig(JSON.stringify(TEMPLATES[e.target.value] ?? {}, null, 2));
                   setPreview(null);
                 }}

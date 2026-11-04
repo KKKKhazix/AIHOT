@@ -299,7 +299,8 @@ export async function lookupMpAccountFromArticle(input: unknown) {
 }
 
 export async function createSource(input: unknown, actor: string): Promise<BeforeJson<AdminSourceCreated>> {
-  const s = CreateSchema.parse(input);
+  const sourceInput = input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {};
+  const s = CreateSchema.parse({ ...sourceInput, interval_minutes: sourceInput.interval_minutes ?? (sourceInput.kind === "mp_account" ? 360 : 30) });
   s.first_party = s.tier === "T1";
   assertSupportedConfig(s.kind, s.config);
   return sql.begin(async (tx) => {

@@ -66,7 +66,7 @@ export function ImportWechatSource() {
       config: { ghid, nickname: name },
       tier: "T2",
       participation_mode: "editorial",
-      interval_minutes: 30,
+      interval_minutes: 360,
       first_party: false,
       tags: tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
       site_fulltext: false,

@@ -11,6 +11,9 @@ import { Wordmark } from "@aihot/site/brand/Logo.tsx";
 import { BarButton, PhoneBar } from "../../components/shell/PhoneBar";
 import { openSearch } from "../search/SearchOverlay";
 
+const WECHAT_SOURCE_FILTER = "source:wechat-share";
+const WECHAT_SOURCE_LABEL = "我 AI 我家";
+
 /** Same page with some query parameters changed (paging state dropped). */
 function hrefWith(base: string, params: URLSearchParams, patch: Record<string, string | null>) {
   const sp = new URLSearchParams(params);
@@ -30,32 +33,34 @@ function hrefWith(base: string, params: URLSearchParams, patch: Record<string, s
  * choice then shows as none.
  */
 function filterOptions(base: string, params: URLSearchParams, noneLabel: string) {
+  const clearSourceFilter: Record<string, string | null> = params.get("tag") === WECHAT_SOURCE_FILTER ? { tag: null } : {};
   return [
-    { key: "all", label: noneLabel, to: hrefWith(base, params, { category: null, channel: null }) },
-    { key: "firstParty", label: CHANNEL_LABELS.firstParty, to: hrefWith(base, params, { category: null, channel: "firstParty" }) },
-    ...CATEGORY_KEYS.map((k) => ({ key: k, label: CATEGORY_LABELS[k], to: hrefWith(base, params, { category: k, channel: null }) })),
+    { key: "all", label: noneLabel, to: hrefWith(base, params, { category: null, channel: null, ...clearSourceFilter }) },
+    { key: "firstParty", label: CHANNEL_LABELS.firstParty, to: hrefWith(base, params, { category: null, channel: "firstParty", ...clearSourceFilter }) },
+    ...CATEGORY_KEYS.map((k) => ({ key: k, label: CATEGORY_LABELS[k], to: hrefWith(base, params, { category: k, channel: null, ...clearSourceFilter }) })),
+    { key: WECHAT_SOURCE_FILTER, label: WECHAT_SOURCE_LABEL, to: hrefWith(base, params, { category: null, channel: null, tag: WECHAT_SOURCE_FILTER }) },
   ];
 }
 
-function filterKey(category: CategoryKey | null, channel: ChannelKey): string {
-  return channel === "firstParty" ? "firstParty" : (category ?? "all");
+function filterKey(category: CategoryKey | null, channel: ChannelKey, tag?: string | null): string {
+  return tag === WECHAT_SOURCE_FILTER ? WECHAT_SOURCE_FILTER : channel === "firstParty" ? "firstParty" : (category ?? "all");
 }
 
 /** Desktop: the filter as a row of tabs beside the search field. */
-export function CategoryTabs({ base, category, channel = "all", layoutId, className = "" }: { base: string; category: CategoryKey | null; channel?: ChannelKey; layoutId: string; className?: string }) {
+export function CategoryTabs({ base, category, channel = "all", tag, layoutId, className = "" }: { base: string; category: CategoryKey | null; channel?: ChannelKey; tag?: string | null; layoutId: string; className?: string }) {
   const [params] = useSearchParams();
-  return <PillTabs items={filterOptions(base, params, "全部").map(o => ({ ...o, prefetchOnPress: true }))} active={filterKey(category, channel)} layoutId={layoutId} label="筛选" className={className} />;
+  return <PillTabs items={filterOptions(base, params, "全部").map(o => ({ ...o, prefetchOnPress: true }))} active={filterKey(category, channel, tag)} layoutId={layoutId} label="筛选" className={className} />;
 }
 
 /**
  * The phone bar of 精选 and 全部: the brand, the 精选 | 全部 switch (a filter in use carries over), and
  * buttons for the filter sheet and search.
  */
-export function FeedBar({ base, category, channel }: { base: "/" | "/all"; category: CategoryKey | null; channel: ChannelKey }) {
+export function FeedBar({ base, category, channel, tag }: { base: "/" | "/all"; category: CategoryKey | null; channel: ChannelKey; tag?: string | null }) {
   const [params] = useSearchParams();
   const [sheet, setSheet] = useState(false);
   const scope = (to: string) => hrefWith(to, params, { q: null, tab: null, search: null });
-  const filtered = filterKey(category, channel) !== "all";
+  const filtered = filterKey(category, channel, tag) !== "all";
   return (
     <>
       <PhoneBar
@@ -86,7 +91,7 @@ export function FeedBar({ base, category, channel }: { base: "/" | "/all"; categ
           </>
         }
       />
-      <FilterSheet open={sheet} onClose={() => setSheet(false)} base={base} active={filterKey(category, channel)} />
+      <FilterSheet open={sheet} onClose={() => setSheet(false)} base={base} active={filterKey(category, channel, tag)} />
     </>
   );
 }
@@ -121,20 +126,21 @@ function FilterSheet({ open, onClose, base, active }: { open: boolean; onClose: 
 /** Phones: the filter and tag in use as chips under the bar; each one clears itself when tapped. */
 export function ActiveFilters({ base, category, channel, tag }: { base: string; category: CategoryKey | null; channel: ChannelKey; tag: string | null }) {
   const [params] = useSearchParams();
-  const label = channel === "firstParty" ? CHANNEL_LABELS.firstParty : category ? CATEGORY_LABELS[category] : null;
-  if (!label && !tag) return null;
+  const label = tag === WECHAT_SOURCE_FILTER ? WECHAT_SOURCE_LABEL : channel === "firstParty" ? CHANNEL_LABELS.firstParty : category ? CATEGORY_LABELS[category] : null;
+  const displayedTag = tag === WECHAT_SOURCE_FILTER ? null : tag;
+  if (!label && !displayedTag) return null;
   const chip = "inline-flex min-h-11 max-w-full items-center gap-1 rounded-full bg-accent-soft pl-3 pr-2 text-[13px] font-medium text-accent transition-opacity active:opacity-60";
   return (
     <div className="flex flex-wrap gap-2 pb-3 pt-1 lg:hidden">
       {label && (
-        <Link to={hrefWith(base, params, { category: null, channel: null })} aria-label={`取消筛选：${label}`} className={chip}>
+        <Link to={hrefWith(base, params, { category: null, channel: null, ...(tag === WECHAT_SOURCE_FILTER ? { tag: null } : {}) })} aria-label={`取消筛选：${label}`} className={chip}>
           只看{label}
           <IconClose size={14} strokeWidth={2} />
         </Link>
       )}
-      {tag && (
+      {displayedTag && (
         <Link to={hrefWith(base, params, { tag: null })} aria-label={`取消标签：${tag}`} className={chip}>
-          <span className="truncate">#{tag}</span>
+          <span className="truncate">#{displayedTag}</span>
           <IconClose size={14} strokeWidth={2} className="shrink-0" />
         </Link>
       )}

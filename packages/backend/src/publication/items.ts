@@ -94,6 +94,7 @@ export function publicCategoryCondition(category: PublicApiCategoryKey | null | 
 
 export function tagCondition(tag: string | null | undefined) {
   if (!tag) return sql``;
+  if (tag === "source:wechat-share") return sql`AND p.source_id IN (SELECT id FROM sources WHERE tags @> ${["wechat-share"]}::text[])`;
   return sql`AND p.tags @> ${[tag]}::text[]`;
 }
 

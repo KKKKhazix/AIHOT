@@ -20,6 +20,7 @@ import { FetchError, type Candidate, type SourceRow } from "../sources/types.ts"
 import { fetchWebList } from "../sources/web-list.ts";
 import { fetchXSearch } from "../sources/x.ts";
 import { xHandle } from "../sources/account.ts";
+import { mpAccountInfoByBiz } from "../providers/wxrank.ts";
 
 
 export interface SourceListFilters {
@@ -258,6 +259,19 @@ export async function findDuplicateSource(kind: string, config: Record<string, u
   if (!identity) return null;
   const rows = await db<{ id: string; kind: string; config: Record<string, unknown>; name: string }[]>`SELECT id, kind, config, name FROM sources WHERE kind = ${kind}`;
   return rows.find((r) => r.id !== exceptId && sourceIdentity(r.kind, r.config) === identity) ?? null;
+}
+
+const WxBizSchema = z.string().trim().min(4).max(256).regex(/^[A-Za-z0-9+/_=-]+$/, "请输入文章链接中的 Biz 参数");
+
+/** Resolve an article's Biz through wxrank and report an already configured account, if any. */
+export async function lookupMpAccountByBiz(input: unknown) {
+  const biz = WxBizSchema.parse(input);
+  const result = await mpAccountInfoByBiz(biz, { subject: "admin:source-lookup" });
+  if (!result.account) return { ...result, duplicate: null };
+  const duplicate = result.account.ghid
+    ? await findDuplicateSource("mp_account", { ghid: result.account.ghid })
+    : null;
+  return { ...result, duplicate: duplicate ? { id: duplicate.id, name: duplicate.name } : null };
 }
 
 export async function createSource(input: unknown, actor: string): Promise<BeforeJson<AdminSourceCreated>> {

@@ -276,7 +276,7 @@ async function bizFromWechatArticle(input: unknown): Promise<string> {
 
   // Short article links often omit __biz. Resolve only the fixed WeChat article host, with same-origin
   // redirects and a small response cap; this lookup itself is free, unlike the following wxrank call.
-  const response = await guardedFetch(url.toString(), { timeoutMs: 12_000, maxBytes: 2 * 1024 * 1024, maxRedirects: 3, redirectPolicy: "same-origin" });
+  const response = await guardedFetch(url.toString(), { timeoutMs: 12_000, maxBytes: 2 * 1024 * 1024, truncate: true, maxRedirects: 3, redirectPolicy: "same-origin" });
   if (response.status !== 200) throw Object.assign(new Error(`读取公众号文章失败（HTTP ${response.status}）`), { statusCode: 400 });
   const html = response.text();
   const match = /(?:[?&]|&amp;)__biz=([A-Za-z0-9+/_=%-]{4,256})|\b(?:var\s+)?(?:biz|appuin)\s*=\s*["']([A-Za-z0-9+/_=-]{4,256})["']|["'](?:__biz|biz)["']\s*:\s*["']([A-Za-z0-9+/_=-]{4,256})["']/i.exec(html);

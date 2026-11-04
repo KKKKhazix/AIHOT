@@ -29,7 +29,7 @@ export function ImportWechatSource() {
   const navigate = useNavigate();
   const { run, pending } = useAdminAction();
   const [open, setOpen] = useState(false);
-  const [articleUrl, setArticleUrl] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [lookup, setLookup] = useState<WechatLookup | null>(null);
   const [tags, setTags] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -44,11 +44,11 @@ export function ImportWechatSource() {
     event.preventDefault();
     setError(null);
     setLookup(null);
-    if (!articleUrl.trim()) {
-      setError("请粘贴一篇公众号文章链接。");
+    if (!identifier.trim()) {
+      setError("请粘贴一篇公众号文章链接或输入 ghid。");
       return;
     }
-    const result = await run<WechatLookup>("POST", "/api/admin/sources/wechat/lookup", { articleUrl: articleUrl.trim() }, { label: "wechat-lookup", revalidate: false });
+    const result = await run<WechatLookup>("POST", "/api/admin/sources/wechat/lookup", { input: identifier.trim() }, { label: "wechat-lookup", revalidate: false });
     if (!result) return;
     setLookup(result);
     setTags(result.account?.tags.join("，") ?? "");
@@ -79,29 +79,29 @@ export function ImportWechatSource() {
 
   return (
     <>
-      <Button onClick={() => { setOpen(true); setArticleUrl(""); setLookup(null); setTags(""); setError(null); }}>导入公众号</Button>
+      <Button onClick={() => { setOpen(true); setIdentifier(""); setLookup(null); setTags(""); setError(null); }}>导入公众号</Button>
       {open && (
         <div className="fixed inset-0 z-[75] flex items-end justify-center p-3 sm:items-center" onKeyDown={(event) => { if (event.key === "Escape") close(); }}>
           <button type="button" aria-label="关闭导入窗口" className="absolute inset-0 bg-ink/30 backdrop-blur-[2px]" onClick={close} />
           <section role="dialog" aria-modal="true" aria-labelledby="wechat-import-title" className="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-sheet bg-raised p-5 shadow-2xl ring-1 ring-line-strong">
             <h2 id="wechat-import-title" className="text-[16px] font-semibold text-ink">导入微信公众号信源</h2>
-            <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">粘贴一篇公众号文章链接。系统会用链接中的 Biz 查询 wxrank 资料，并检查该公众号是否已添加。</p>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">粘贴一篇公众号文章链接，或输入以 gh_ 开头的公众号原始 ID。系统会查询 wxrank 资料并检查该公众号是否已添加。</p>
             <form onSubmit={lookupAccount} className="mt-4 space-y-3">
-              <Field label="公众号文章链接">
-                <Textarea rows={2} value={articleUrl} onChange={(event) => setArticleUrl(event.target.value)} placeholder="https://mp.weixin.qq.com/s/..." />
+              <Field label="文章链接或公众号 ghid">
+                <Textarea rows={2} value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="https://mp.weixin.qq.com/s/... 或 gh_1234567890" />
               </Field>
               <p className="text-[12px] text-amber-ink">wxrank 每次查询收费 ¥0.05；未收录的查询也会收费。相同 Biz 当天重复查询会复用结果。</p>
               {error && <p role="alert" className="text-[12.5px] text-hot">{error}</p>}
               <div className="flex justify-end gap-2">
                 <Button tone="ghost" onClick={close}>取消</Button>
-                <Button type="submit" tone="primary" busy={pending === "wechat-lookup"} disabled={!articleUrl.trim()}>查询公众号</Button>
+                <Button type="submit" tone="primary" busy={pending === "wechat-lookup"} disabled={!identifier.trim()}>查询公众号</Button>
               </div>
             </form>
 
             {lookup && (
               <div className="mt-4 rounded-card bg-bg-sunk/70 p-4 ring-1 ring-line">
                 {!lookup.found || !lookup.account ? (
-                  <p className="text-[13px] text-ink-2">wxrank 资源库暂未收录这个 Biz。没有创建信源。</p>
+                  <p className="text-[13px] text-ink-2">wxrank 资源库暂未收录这个公众号标识。没有创建信源。</p>
                 ) : (
                   <>
                     <div className="grid gap-x-4 gap-y-2 text-[13px] sm:grid-cols-[110px_1fr]">

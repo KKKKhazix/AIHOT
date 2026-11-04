@@ -212,7 +212,7 @@ http.createServer((req, res) => {
 
 默认使用微小榜。后端 `.env` 配置 `WXRANK_KEY` 即可；如需使用极致了，同时配置 `DAJIALA_KEY` 并设置 `WECHAT_PROVIDER=dajiala`。`WECHAT_PROVIDER` 默认为 `wxrank`，切换后需重启 API 和 Worker。`ghid` 填公众号原始 ID，配置字段使用上面的 `ghid` / `nickname`，不要写成 `biz` / `name`。
 
-管理员可通过信源列表的“导入公众号”粘贴一篇微信文章链接。`POST /api/admin/sources/wechat/lookup` 会优先从链接读取 `__biz`，短链接缺少该参数时仅从 `mp.weixin.qq.com` 文章页尝试提取，再查询 wxrank `gzhinfo`（每次成功请求 ¥0.05，包含未命中结果）。命中后预览原始 ID、名称、标签、简介等信息，并检查本地是否已有同 ID 信源；确认后才创建 `mp_account` 信源。标签会预填并允许编辑，wxrank 资源库未收录的账号会提示且不会创建。
+管理员可通过信源列表的“导入公众号”粘贴微信文章链接，或直接输入公众号 `ghid`。`POST /api/admin/sources/wechat/lookup` 对文章链接优先读取 `__biz`，短链接缺少该参数时仅从 `mp.weixin.qq.com` 文章页尝试提取；`ghid` 则直接作为 `gzhinfo` 的精确查询词。每次成功查询收费 ¥0.05，包含未命中结果。命中后预览原始 ID、名称、标签、简介等信息，并检查本地是否已有同 ID 信源；确认后才创建 `mp_account` 信源。标签会预填并允许编辑，wxrank 资源库未收录的账号会提示且不会创建。
 
 公众号信源新建时默认每 360 分钟检查一次；后台自动调整节奏时仍会按信源近期产出更新间隔。微小榜每次检查读取最新列表页（不翻历史游标），最多为 8 篇新文章获取正文；列表成功调用 ¥0.05，正文成功调用 ¥0.01。两个服务商分别记回执和预算，后台按请求次数熔断。当前 `mp_account` 不支持“预览抓取”；`external` 也不支持主动试抓，按下方推送接口接入。
 

@@ -21,7 +21,7 @@ import { FetchError, type Candidate, type SourceRow } from "../sources/types.ts"
 import { fetchWebList } from "../sources/web-list.ts";
 import { fetchXSearch } from "../sources/x.ts";
 import { xHandle } from "../sources/account.ts";
-import { mpAccountInfoByBiz } from "../providers/wxrank.ts";
+import { mpAccountInfoByKeyword } from "../providers/wxrank.ts";
 
 
 export interface SourceListFilters {
@@ -287,10 +287,13 @@ async function bizFromWechatArticle(input: unknown): Promise<string> {
   return biz;
 }
 
-/** Resolve an article link's Biz through wxrank and report an already configured account, if any. */
-export async function lookupMpAccountFromArticle(input: unknown) {
-  const biz = await bizFromWechatArticle(input);
-  const result = await mpAccountInfoByBiz(biz, { subject: "admin:source-lookup" });
+/** Resolve a WeChat article link or look up a ghid, then report an already configured account, if any. */
+export async function lookupMpAccount(input: unknown) {
+  const value = z.string().trim().min(4).max(2048).parse(input);
+  const keyword = /^gh_/i.test(value)
+    ? z.string().regex(/^gh_[A-Za-z0-9_-]{4,100}$/).parse(value)
+    : await bizFromWechatArticle(value);
+  const result = await mpAccountInfoByKeyword(keyword, { subject: "admin:source-lookup" });
   if (!result.account) return { ...result, duplicate: null };
   const duplicate = result.account.ghid
     ? await findDuplicateSource("mp_account", { ghid: result.account.ghid })

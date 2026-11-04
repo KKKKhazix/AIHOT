@@ -104,14 +104,14 @@ function asNumberOrNull(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-/** Account profile from wxrank's local library. Successful empty lookups are still billed ¥0.05. */
-export async function mpAccountInfoByBiz(biz: string, opts: { subject: string }): Promise<{ found: boolean; account: MpAccountInfo | null; receiptId: number; reused: boolean }> {
-  const normalizedBiz = biz.trim();
+/** Account profile from wxrank's local library, looked up by Biz or original ID. Successful empty lookups are billed ¥0.05. */
+export async function mpAccountInfoByKeyword(keyword: string, opts: { subject: string }): Promise<{ found: boolean; account: MpAccountInfo | null; receiptId: number; reused: boolean }> {
+  const normalizedKeyword = keyword.trim();
   const day = new Date().toISOString().slice(0, 10);
   const receipt = await paidRequest(
-    { service: "wxrank", purpose: "mp_account_info", subject: opts.subject, identity: { biz: normalizedBiz, day }, requestSummary: { biz: normalizedBiz } },
+    { service: "wxrank", purpose: "mp_account_info", subject: opts.subject, identity: { biz: normalizedKeyword, day }, requestSummary: { keyword: normalizedKeyword } },
     async () => {
-      const response = await post("gzhinfo", { keyword: normalizedBiz });
+      const response = await post("gzhinfo", { keyword: normalizedKeyword });
       const cost = providerOutcome(response as { code?: number; msg?: string }, "gzhinfo", 0.05);
       const data = asRecord(response.data);
       return { response, cost, usage: { found: Object.keys(data).length > 0 } };
@@ -125,7 +125,7 @@ export async function mpAccountInfoByBiz(biz: string, opts: { subject: string })
   return {
     found: true,
     account: {
-      biz: asStringOrNull(data.wx_biz) ?? normalizedBiz,
+      biz: asStringOrNull(data.wx_biz) ?? (/^gh_/i.test(normalizedKeyword) ? "" : normalizedKeyword),
       ghid: asStringOrNull(data.wx_user),
       name: asStringOrNull(data.wx_name),
       type: asStringOrNull(data.wx_type),

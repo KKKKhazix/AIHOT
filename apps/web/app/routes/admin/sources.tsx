@@ -4,6 +4,7 @@ import type { Route } from "./+types/sources";
 import type { AdminSources } from "@aihot/contracts/admin";
 import { adminGet } from "../../lib/admin.server";
 import { num } from "../../features/admin/format";
+import { ImportWechatSource } from "../../features/admin/ImportWechatSource";
 import { HEALTH_LABEL, KIND_LABEL, MODE_LABEL } from "../../features/admin/labels";
 import { AdminPage, Badge, ButtonLink, Card, DataTable, Dot, FilterChips, healthTone, Input, Pager, Select, Stat, Time } from "../../features/admin/ui";
 
@@ -26,6 +27,7 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
       subtitle="列表按健康度排序：失败的在最前。点进详情可以预览抓取、手动采集、调整频率与参与方式。"
       actions={
         <>
+          <ImportWechatSource />
           <a href="/api/admin/sources/export" download className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-control bg-surface px-3.5 text-[13.5px] font-medium text-ink ring-1 ring-line-strong hover:bg-bg-sunk">导出 JSON</a>
           <a href="/api/admin/sources/export.xlsx" download className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-control bg-surface px-3.5 text-[13.5px] font-medium text-ink ring-1 ring-line-strong hover:bg-bg-sunk">导出 Excel</a>
           <ButtonLink to="/admin/sources/new" tone="primary">新建信源</ButtonLink>

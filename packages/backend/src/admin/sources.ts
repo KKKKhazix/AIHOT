@@ -10,6 +10,7 @@ import { sql, type Db } from "../db.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { republishKey, requestRepublish } from "../jobs/publication.ts";
 import { normalizeUrl } from "../lib/url.ts";
+import { guardedFetch } from "../lib/http-fetch.ts";
 import { serverModules } from "../modules.ts";
 import { fetchJsonList } from "../sources/json-list.ts";
 import { fetchRss } from "../sources/rss.ts";
@@ -261,11 +262,34 @@ export async function findDuplicateSource(kind: string, config: Record<string, u
   return rows.find((r) => r.id !== exceptId && sourceIdentity(r.kind, r.config) === identity) ?? null;
 }
 
-const WxBizSchema = z.string().trim().min(4).max(256).regex(/^[A-Za-z0-9+/_=-]+$/, "请输入文章链接中的 Biz 参数");
+const WxArticleUrlSchema = z.string().trim().url().max(2048);
 
-/** Resolve an article's Biz through wxrank and report an already configured account, if any. */
-export async function lookupMpAccountByBiz(input: unknown) {
-  const biz = WxBizSchema.parse(input);
+async function bizFromWechatArticle(input: unknown): Promise<string> {
+  const value = WxArticleUrlSchema.parse(input);
+  let url: URL;
+  try { url = new URL(value); } catch { throw Object.assign(new Error("请输入有效的公众号文章链接"), { statusCode: 400 }); }
+  if (url.protocol !== "https:" || url.hostname !== "mp.weixin.qq.com" || url.port || url.username || url.password || !/^\/s(?:\/|$)/.test(url.pathname)) {
+    throw Object.assign(new Error("链接必须是 https://mp.weixin.qq.com/s/... 公众号文章链接"), { statusCode: 400 });
+  }
+  const inUrl = url.searchParams.get("__biz");
+  if (inUrl && /^[A-Za-z0-9+/_=-]{4,256}$/.test(inUrl)) return inUrl;
+
+  // Short article links often omit __biz. Resolve only the fixed WeChat article host, with same-origin
+  // redirects and a small response cap; this lookup itself is free, unlike the following wxrank call.
+  const response = await guardedFetch(url.toString(), { timeoutMs: 12_000, maxBytes: 2 * 1024 * 1024, maxRedirects: 3, redirectPolicy: "same-origin" });
+  if (response.status !== 200) throw Object.assign(new Error(`读取公众号文章失败（HTTP ${response.status}）`), { statusCode: 400 });
+  const html = response.text();
+  const match = /(?:[?&]|&amp;)__biz=([A-Za-z0-9+/_=%-]{4,256})|\b(?:var\s+)?(?:biz|appuin)\s*=\s*["']([A-Za-z0-9+/_=-]{4,256})["']|["'](?:__biz|biz)["']\s*:\s*["']([A-Za-z0-9+/_=-]{4,256})["']/i.exec(html);
+  const rawBiz = match?.[1] ?? match?.[2] ?? match?.[3];
+  let biz = "";
+  try { biz = rawBiz ? decodeURIComponent(rawBiz.replace(/&amp;/g, "&").split("&")[0]!) : ""; } catch { /* report the same unsupported-link error below */ }
+  if (!/^[A-Za-z0-9+/_=-]{4,256}$/.test(biz)) throw Object.assign(new Error("无法从文章页识别公众号 Biz；请使用包含 __biz 参数的文章链接"), { statusCode: 400 });
+  return biz;
+}
+
+/** Resolve an article link's Biz through wxrank and report an already configured account, if any. */
+export async function lookupMpAccountFromArticle(input: unknown) {
+  const biz = await bizFromWechatArticle(input);
   const result = await mpAccountInfoByBiz(biz, { subject: "admin:source-lookup" });
   if (!result.account) return { ...result, duplicate: null };
   const duplicate = result.account.ghid

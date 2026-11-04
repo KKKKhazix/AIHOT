@@ -16,7 +16,7 @@ import { requeueFailedArticles, runsOverview } from "@aihot/backend/admin/runs";
 import { resolveDelivery } from "@aihot/backend/notify/deliver";
 import { releaseReceipt } from "@aihot/backend/operations/recover";
 import { replaceContactQr, setTargetEnabled, settingsOverview, updateBudget } from "@aihot/backend/admin/settings";
-import { createSource, exportSources, fetchNow, listSources, lookupMpAccountByBiz, previewSource, previewStoredSource, sourceDetail, updateSource } from "@aihot/backend/admin/sources";
+import { createSource, exportSources, fetchNow, listSources, lookupMpAccountFromArticle, previewSource, previewStoredSource, sourceDetail, updateSource } from "@aihot/backend/admin/sources";
 import { sendProblem } from "../http/respond.ts";
 import { adminHandler } from "./admin-auth.ts";
 
@@ -67,7 +67,7 @@ export function registerAdmin(app: FastifyInstance) {
       .header("Content-Disposition", `attachment; filename="aihot-sources-${new Date().toISOString().slice(0, 10)}.xlsx"`)
       .send(Buffer.from(sourceWorkbook(data.sources)));
   }));
-  app.post("/api/admin/sources/wechat/lookup", adminHandler(async (req) => lookupMpAccountByBiz(body<{ biz: string }>(req).biz)));
+  app.post("/api/admin/sources/wechat/lookup", adminHandler(async (req) => lookupMpAccountFromArticle(body<{ articleUrl: string }>(req).articleUrl)));
   app.post("/api/admin/sources", adminHandler(async (req, _reply, admin) => createSource(body(req), actorOf(admin))));
   app.post("/api/admin/sources/preview", adminHandler(async (req) => previewSource(body(req) as never)));
   app.get("/api/admin/sources/:id", adminHandler(async (req, reply) => orNotFound(req, reply, await sourceDetail(param(req, "id")))));

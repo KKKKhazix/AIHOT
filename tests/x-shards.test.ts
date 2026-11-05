@@ -130,6 +130,18 @@ test("a page failing after the first keeps what was read and goes on from there 
   assert.equal(stored[0]!.n, 4, "no post between the old watermark and the newest is lost");
 });
 
+test("posts of an account regrouped elsewhere since a stretch was left over still reach it", async () => {
+  await sql`DELETE FROM articles WHERE source_id IN ${sql(IDS)}`;
+  const stretch = { query: `${shardQuery([HANDLES[0]!, HANDLES[1]!])} since_id:${WATERMARK - 2n}`, next: "0", at: new Date().toISOString() };
+  await sql`UPDATE sources SET cursor = (cursor - 'lastOkAt') || ${sql.json({ lastTweetId: String(BASE + 104n), xBacklog: [stretch] })} WHERE id = ${IDS[0]!}`;
+  await sql`UPDATE sources SET cursor = (cursor - 'lastOkAt' - 'xBacklog') || ${sql.json({ lastTweetId: String(BASE + 104n) })} WHERE id = ${IDS[1]!}`;
+  assert.equal((await collectXShard(`editorial:regrouped-${T}`, [IDS[0]!])).status, "ok");
+  const [moved] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM articles WHERE source_id = ${IDS[1]!}`;
+  assert.equal(moved!.n, 1, "the post goes to its account, which holds no copy of the stretch");
+  await sql`UPDATE sources SET cursor = (cursor - 'xBacklog') || ${sql.json({ lastTweetId: String(WATERMARK) })} WHERE id IN ${sql(IDS)}`;
+  await sql`DELETE FROM articles WHERE source_id IN ${sql(IDS)}`;
+});
+
 test("a quiet account's old newest post does not drag the shard's search back: its last check does", async () => {
   const checked = Date.now() - 45 * 60_000;
   await sql`UPDATE sources SET cursor = cursor || ${sql.json({ lastTweetId: String(WATERMARK - 3n), lastOkAt: new Date(checked).toISOString() })} WHERE id IN ${sql(IDS)}`;

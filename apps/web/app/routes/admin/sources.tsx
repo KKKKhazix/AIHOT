@@ -2,11 +2,13 @@ import { SITE } from "@aihot/site";
 import { Form, Link, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/sources";
 import type { AdminSources } from "@aihot/contracts/admin";
+import { useState } from "react";
 import { adminGet } from "../../lib/admin.server";
+import { useAdminAction } from "../../features/admin/action";
 import { num } from "../../features/admin/format";
 import { ImportWechatSource } from "../../features/admin/ImportWechatSource";
 import { HEALTH_LABEL, KIND_LABEL, MODE_LABEL } from "../../features/admin/labels";
-import { AdminPage, Badge, ButtonLink, Card, DataTable, Dot, FilterChips, healthTone, Input, Pager, Select, Stat, Time } from "../../features/admin/ui";
+import { AdminPage, Badge, Button, ButtonLink, Card, DataTable, Dot, FilterChips, healthTone, Input, Pager, Select, Stat, Time } from "../../features/admin/ui";
 
 
 
@@ -21,6 +23,11 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
   const { rows, totals, page } = loaderData;
   const [sp] = useSearchParams();
   const navigate = useNavigate();
+  const [selected, setSelected] = useState<string[]>([]);
+  const { run, busy } = useAdminAction();
+  const changeEnabled = async (enabled: boolean) => {
+    if (await run("POST", "/api/admin/sources/bulk-enabled", { ids: selected, enabled }, { success: enabled ? "已批量启动信源" : "已批量暂停信源", label: `bulk-sources-${enabled}-${selected.join(",")}` })) setSelected([]);
+  };
   return (
     <AdminPage
       title="信源"
@@ -67,11 +74,18 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
             </Select>
           </div>
         </div>
+        {selected.length > 0 && <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
+          <span className="mr-1 text-[13px] text-ink-3">已选 {selected.length} 个</span>
+          <Button size="sm" busy={busy} onClick={() => void changeEnabled(true)}>批量启动</Button>
+          <Button size="sm" busy={busy} onClick={() => void changeEnabled(false)}>批量暂停</Button>
+          <Button size="sm" tone="ghost" onClick={() => setSelected([])}>清除选择</Button>
+        </div>}
         <DataTable
           rows={rows}
           rowKey={(r) => r.id}
           onRowClick={(r) => navigate(`/admin/sources/${encodeURIComponent(r.id)}`)}
           columns={[
+            { key: "select", label: "选择", render: (r) => <input type="checkbox" aria-label={`选择${r.name}`} checked={selected.includes(r.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => setSelected((current) => e.target.checked ? [...current, r.id] : current.filter((id) => id !== r.id))} /> },
             {
               key: "name",
               label: "信源",

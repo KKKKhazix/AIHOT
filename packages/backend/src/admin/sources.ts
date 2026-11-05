@@ -210,6 +210,21 @@ export async function updateSource(id: string, input: { patch: unknown; version:
   });
 }
 
+/** Apply the existing audited enable/disable behavior to a bounded selection of sources. */
+export async function setSourcesEnabled(ids: string[], enabled: boolean, actor: string) {
+  const uniqueIds = [...new Set(ids)];
+  if (!uniqueIds.length || uniqueIds.length > 100) throw new Error("请选择 1 到 100 个信源");
+  let updated = 0;
+  for (const id of uniqueIds) {
+    const [source] = await sql<{ updated_at: Date }[]>`SELECT updated_at FROM sources WHERE id = ${id}`;
+    if (!source) throw new Error(`信源不存在：${id}`);
+    const result = await updateSource(id, { patch: { enabled }, version: new Date(source.updated_at).toISOString(), reason: enabled ? "批量启动" : "批量暂停" }, actor);
+    if (!result) throw new Error(`信源不存在：${id}`);
+    updated++;
+  }
+  return { updated, enabled };
+}
+
 /** Source fields the public projection reads (publication/rules.ts and the v1 payload). */
 const PUBLICATION_FIELDS: string[] = ["kind", "participation_mode", "site_fulltext", "syndicate_fulltext", "tier", "name", "first_party", "owner_entity_id"];
 

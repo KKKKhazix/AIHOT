@@ -16,7 +16,7 @@ import { requeueFailedArticles, runsOverview } from "@aihot/backend/admin/runs";
 import { resolveDelivery } from "@aihot/backend/notify/deliver";
 import { releaseReceipt } from "@aihot/backend/operations/recover";
 import { replaceContactQr, setTargetEnabled, settingsOverview, updateBudget } from "@aihot/backend/admin/settings";
-import { createSource, exportSources, fetchNow, listSources, lookupMpAccount, previewSource, previewStoredSource, sourceDetail, updateSource } from "@aihot/backend/admin/sources";
+import { createSource, exportSources, fetchNow, listSources, lookupMpAccount, previewSource, previewStoredSource, setSourcesEnabled, sourceDetail, updateSource } from "@aihot/backend/admin/sources";
 import { sendProblem } from "../http/respond.ts";
 import { adminHandler } from "./admin-auth.ts";
 
@@ -69,6 +69,11 @@ export function registerAdmin(app: FastifyInstance) {
   }));
   app.post("/api/admin/sources/wechat/lookup", adminHandler(async (req) => lookupMpAccount(body<{ input: string }>(req).input)));
   app.post("/api/admin/sources", adminHandler(async (req, _reply, admin) => createSource(body(req), actorOf(admin))));
+  app.post("/api/admin/sources/bulk-enabled", adminHandler(async (req, _reply, admin) => {
+    const b = body<{ ids: string[]; enabled: boolean }>(req);
+    if (!Array.isArray(b.ids) || typeof b.enabled !== "boolean") throw Object.assign(new Error("请求参数无效"), { statusCode: 400 });
+    return setSourcesEnabled(b.ids, b.enabled, actorOf(admin));
+  }));
   app.post("/api/admin/sources/preview", adminHandler(async (req) => previewSource(body(req) as never)));
   app.get("/api/admin/sources/:id", adminHandler(async (req, reply) => orNotFound(req, reply, await sourceDetail(param(req, "id")))));
   app.patch("/api/admin/sources/:id", adminHandler(async (req, reply, admin) => {

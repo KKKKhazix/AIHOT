@@ -30,6 +30,14 @@ export interface ExtractedBody {
 const MIN_BODY_CHARS = 200;
 
 /**
+ * What the browser renderer leaves out of a body it reads: its answer is the whole page, so a site that
+ * refuses the direct fetch had its consent dialog, navigation and footer stored and translated as the
+ * article. Only what a page itself marks as not being the article: narrowing to main or running
+ * Readability over the rendered page lost real text on many sites.
+ */
+const PAGE_CHROME = "nav,footer,dialog,header:not(article header,main header),[role=banner],[role=navigation],[role=contentinfo],[role=dialog],[role=alertdialog],[aria-modal=true],#onetrust-consent-sdk";
+
+/**
  * Paths that serve a sign-in form rather than the page that was asked for. A path segment, never a
  * substring: "/auth-for-agents" and "/authors/x" are ordinary pages.
  */
@@ -494,7 +502,7 @@ export async function extractFromUrl(url: string, subject: string, rules: PageRu
   }
   if (opts.paidFallback === false) return null;
   try {
-    const page = await jinaRead(target.href, { purpose: "body_fallback", subject });
+    const page = await jinaRead(target.href, { purpose: "body_fallback", subject, removeSelector: PAGE_CHROME });
     const html = markdownBody(page.markdown, url);
     const text = stripTags(html);
     if (text.length < MIN_BODY_CHARS) return null;

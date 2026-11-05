@@ -519,25 +519,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-ajcass-fe6aa6808b",
-      "name": "社科期刊网 · 社会学研究",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/ajcass/shxyj/2024/1",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-aliresearch-673ae63688",
       "name": "阿里研究院 · 资讯",
       "kind": "rss",
@@ -880,25 +861,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-bilibili-60b56d8cca",
-      "name": "哔哩哔哩 bilibili · 热搜",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/bilibili/hot-search",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-bilibili-c547ba0b8c",
       "name": "哔哩哔哩 bilibili · 分区视频排行榜",
       "kind": "rss",
@@ -975,87 +937,11 @@
       "enabled": false
     },
     {
-      "id": "rsshub-bilibili-0f5467092d",
-      "name": "哔哩哔哩 bilibili · UP 主图文",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/bilibili/user/article/334958638",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-bilibili-d352656d1a",
       "name": "哔哩哔哩 bilibili · UP 主频道的视频列表",
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/bilibili/user/channel/2267573/396050",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-bilibili-ab20192fce",
-      "name": "哔哩哔哩 bilibili · BILIBILI_COOKIE_*",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/bilibili/user/dynamic/2267573",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-bilibili-7204d15955",
-      "name": "哔哩哔哩 bilibili · UP 主投稿",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/bilibili/user/video/2267573",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-bilibili-52539fdbe0",
-      "name": "哔哩哔哩 bilibili · BILIBILI_COOKIE_*（vsearch/:kw/:order?/:embed?/:tid?）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/bilibili/vsearch/RSSHub",
         "_aihot": {
           "initialBackfillLimit": 8
         }
@@ -1317,25 +1203,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-cas-52d7e5fe2b",
-      "name": "中国科学院 · 信息工程研究所 第二研究室 处理架构组 知识库",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/cas/mesalab/kb",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-cas-99f866add7",
       "name": "中国科学院 · 上海微系统与信息技术研究所 科技进展",
       "kind": "rss",
@@ -1431,25 +1298,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-ccreports-d262fb9baf",
-      "name": "消费者报道 · 要闻",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/ccreports/article",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-cctv-79aadfc724",
       "name": "央视新闻 · 专题",
       "kind": "rss",
@@ -1493,25 +1341,6 @@
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/chinanews",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-chsi-deb1aa8dba",
-      "name": "中国研究生招生信息网 · 教育部阳光高考信息公开平台招生政策规定",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/chsi/zszcgd",
         "_aihot": {
           "initialBackfillLimit": 8
         }
@@ -1621,25 +1450,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-cneb-7ff8964ef8",
-      "name": "中国国家应急广播 · 应急新闻",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/cneb/yjxw",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-cneb-7b4adf3e19",
       "name": "中国国家应急广播 · 预警信息",
       "kind": "rss",
@@ -1659,87 +1469,11 @@
       "enabled": false
     },
     {
-      "id": "rsshub-cnki-f3e9bb6dda",
-      "name": "中国知网 · 作者",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/cnki/author/%E4%B8%81%E6%99%93%E4%B8%9C/%E4%B8%AD%E5%9B%BD%E4%BA%BA%E6%B0%91%E5%A4%A7%E5%AD%A6",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-cnki-5347cb7923",
-      "name": "中国知网 · 期刊缩写，可以在网址中得到",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/cnki/journals/LKGP",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-cnki-225aa53c47",
-      "name": "中国知网 · 期刊缩写，可以在网址中得到（journals/debut/:name）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/cnki/journals/debut/LKGP",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-cohere-abad8302ac",
       "name": "Cohere · Blog",
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/cohere/blog",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-consumer-d4727e854a",
-      "name": "消费者委员会 · 文章",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/consumer",
         "_aihot": {
           "initialBackfillLimit": 8
         }
@@ -2039,25 +1773,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-douban-bf1cb24674",
-      "name": "豆瓣 · 商务印书馆新书速递",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/douban/commercialpress/latest",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-douban-dd364e8fab",
       "name": "豆瓣 · 小组",
       "kind": "rss",
@@ -2115,25 +1830,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-douban-08e6e78778",
-      "name": "豆瓣 · 用户广播",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/douban/people/75118396/status",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-douban-4083faf5d0",
       "name": "豆瓣 · 用户想看",
       "kind": "rss",
@@ -2153,87 +1849,11 @@
       "enabled": false
     },
     {
-      "id": "rsshub-douban-24eb345402",
-      "name": "豆瓣 · DOUBAN_COOKIE",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/douban/topic/48823",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-douyin-98e3fb66b8",
-      "name": "抖音直播 · 标签",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/douyin/hashtag/1592824105719812",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-douyin-dc23e2ec84",
       "name": "抖音直播 · 博主",
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/douyin/user/MS4wLjABAAAARcAHmmF9mAG3JEixq_CdP72APhBlGlLVbN-1eBcPqao",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-dtcj-a49ebf9804",
-      "name": "DT 财经 · 数据侠专栏",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/dtcj/datahero",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-dtcj-ba28e092d0",
-      "name": "DT 财经 · 数据洞察",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/dtcj/datainsight",
         "_aihot": {
           "initialBackfillLimit": 8
         }
@@ -2362,44 +1982,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-elecfans-f8a4bdb725",
-      "name": "电子发烧友 · 文章",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/elecfans/article/special",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-elecfans-9aa6f0dae5",
-      "name": "电子发烧友 · 资料",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/elecfans/soft/special",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-geekbang-5de5f767c5",
       "name": "极客时间 · 专栏文章",
       "kind": "rss",
@@ -2462,25 +2044,6 @@
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/github/advisor/data/reviewed/composer",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-github-7186d654df",
-      "name": "GitHub · GITHUB_ACCESS_TOKEN",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/github/discussion/DIYgod/RSSHub",
         "_aihot": {
           "initialBackfillLimit": 8
         }
@@ -2614,25 +2177,6 @@
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/github/topics/framework",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-github-18c6cbc40b",
-      "name": "GitHub · GITHUB_ACCESS_TOKEN（trending/:since/:language/:spoken_language?）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/github/trending/daily/javascript/en",
         "_aihot": {
           "initialBackfillLimit": 8
         }
@@ -2837,82 +2381,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-gov-69f5dc5e97",
-      "name": "中国信息通信研究院 · 蓝皮书",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/gov/caict/bps",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-gov-0088207775",
-      "name": "中国信息通信研究院 · CAICT 观点",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/gov/caict/caictgd",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-gov-1085b8f24b",
-      "name": "中国信息通信研究院 · 权威数据",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/gov/caict/qwsj",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-gov-76d662a6ad",
-      "name": "中国载人航天工程 · 空间科学",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/gov/cmse/kjkx/kjkxyjyyy",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-gov-83fd3f9fb7",
       "name": "中国载人航天工程 · 科普教育",
       "kind": "rss",
@@ -3027,25 +2495,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-gov-ebcd3525aa",
-      "name": "贵州省人民政府 · 教育厅 - 通知公告",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/gov/guizhou/jyt/tzgg",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-gov-bc163418d2",
       "name": "中华人民共和国工业和信息化部 · 文件发布",
       "kind": "rss",
@@ -3141,25 +2590,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-gov-7ac2400e3a",
-      "name": "中华人民共和国教育部 · 司局通知",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/gov/moe/s78/A13",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-gov-36e750f26f",
       "name": "全国哲学社会科学工作办公室 · 通用",
       "kind": "rss",
@@ -3236,25 +2666,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-gov-be4ae04782",
-      "name": "国务院政策文件库 · 最新文件",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/gov/zhengce/wenjian",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-gov-74cdf15ca6",
       "name": "国务院政策文件库 · 政策文件库",
       "kind": "rss",
@@ -3287,25 +2698,6 @@
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-guduodata-93e431be4e",
-      "name": "骨朵数据 · 日榜",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/guduodata/daily",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
       "tags": [],
       "site_fulltext": false,
       "syndicate_fulltext": false,
@@ -3901,25 +3293,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-ithome-a84ae44e73",
-      "name": "IT之家 / iThome · 分类资讯",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/ithome/it",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-ithome-0d5560a67c",
       "name": "IT之家 / iThome · 热榜",
       "kind": "rss",
@@ -4148,25 +3521,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-juejin-f154d4d497",
-      "name": "掘金 · 用户文章",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/juejin/posts/3051900006845944",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-juejin-adb87902e6",
       "name": "掘金 · 标签",
       "kind": "rss",
@@ -4199,25 +3553,6 @@
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-kepu-71db4774d6",
-      "name": "中国科普博览 · 直播回看",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/kepu/live",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
       "tags": [],
       "site_fulltext": false,
       "syndicate_fulltext": false,
@@ -4338,25 +3673,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-lifeweek-4ea3644d36",
-      "name": "三联生活周刊 · 栏目",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/lifeweek/channel/9",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-lifeweek-13044a5f65",
       "name": "三联生活周刊 · 标签",
       "kind": "rss",
@@ -4370,63 +3686,6 @@
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-makerworld-3406a5b4b6",
-      "name": "MakerWorld · Contests",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/makerworld/contests",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-makerworld-f3c60f0654",
-      "name": "MakerWorld · Trending Models",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/makerworld/trending",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-makerworld-5a965e5a9c",
-      "name": "MakerWorld · User Uploads",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/makerworld/user/@Wcad00/upload",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
       "tags": [],
       "site_fulltext": false,
       "syndicate_fulltext": false,
@@ -4832,87 +4091,11 @@
       "enabled": false
     },
     {
-      "id": "rsshub-ncpssd-e1da7396ad",
-      "name": "国家哲学社会科学文献中心 · 最新文献",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/ncpssd/newlist",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-neea-7ea11f7904",
-      "name": "中国教育考试网 · 日本语能力测试 JLPT 通知",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/neea/jlpt",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-neea-a259a2ebc2",
       "name": "中国教育考试网 · 国内考试动态",
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/neea/local/cet",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-newrank-caaaa0c29d",
-      "name": "新榜 · NEWRANK_COOKIE",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/newrank/douyin/110266463747",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-newrank-0f977da612",
-      "name": "新榜 · NEWRANK_COOKIE（wechat/:wxid）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/newrank/wechat/chijiread",
         "_aihot": {
           "initialBackfillLimit": 8
         }
@@ -4940,25 +4123,6 @@
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-noi-da3ba70af1",
-      "name": "NOI 全国青少年信息学奥林匹克竞赛 · 新闻",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/noi",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
       "tags": [],
       "site_fulltext": false,
       "syndicate_fulltext": false,
@@ -4997,63 +4161,6 @@
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-oeeee-674491f78b",
-      "name": "南方都市报 · 南都客户端（按南都号 ID）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/oeeee/app/channel/50",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-oeeee-bd3025c65d",
-      "name": "南方都市报 · 南都客户端（按记者）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/oeeee/app/reporter/249",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-oeeee-c1a91fb7b9",
-      "name": "南方都市报 · 奥一网",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/oeeee/web/170",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
       "tags": [],
       "site_fulltext": false,
       "syndicate_fulltext": false,
@@ -5136,25 +4243,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-openai-2d101837dd",
-      "name": "OpenAI · Cookbook",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/openai/cookbook",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-openai-a3609ff5b8",
       "name": "OpenAI · News",
       "kind": "rss",
@@ -5187,25 +4275,6 @@
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-openalex-f8522a61b8",
-      "name": "OpenAlex · Works",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/openalex/s64187185/subfield/2604",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
       "tags": [],
       "site_fulltext": false,
       "syndicate_fulltext": false,
@@ -5345,25 +4414,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-pconline-5be2de6348",
-      "name": "太平洋科技 · 科技新闻",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/pconline/focus",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-people-21dde79304",
       "name": "人民网 · 首页头条",
       "kind": "rss",
@@ -5415,44 +4465,6 @@
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-pnas-aba61137d0",
-      "name": "Proceedings of The National Academy of Sciences · Journal",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/pnas/latest",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-producthunt-e13654d685",
-      "name": "Product Hunt · Top Products Launching Today",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/producthunt/today",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
       "tags": [],
       "site_fulltext": false,
       "syndicate_fulltext": false,
@@ -5730,63 +4742,6 @@
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/samrdprc/news/xfpzh/xfpgnzh",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-science-572d1f1d0a",
-      "name": "Science Magazine · Short name for the blog, get this from the url. Defaults to pipeline",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/science/blogs/pipeline",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-science-788aeb42d7",
-      "name": "Science Magazine · Current Issue",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/science/current/science",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-science-3b5d5fbfb2",
-      "name": "Science Magazine · First Release",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/science/early",
         "_aihot": {
           "initialBackfillLimit": 8
         }
@@ -6219,44 +5174,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-stcn-bb64c994a0",
-      "name": "证券时报网 · 列表",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/stcn/article/list/yw",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-stcn-b7d0399ece",
-      "name": "证券时报网 · 热榜",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/stcn/article/rank/yw",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-stdaily-6bfb325d2e",
       "name": "中国科技网 · 科技日报",
       "kind": "rss",
@@ -6346,44 +5263,6 @@
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-techpowerup-1acc938048",
-      "name": "TechPowerUp · Latest Content",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/techpowerup",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-techpowerup-8a89c8b0e5",
-      "name": "TechPowerUp · Reviews",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/techpowerup/review/amd",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
       "tags": [],
       "site_fulltext": false,
       "syndicate_fulltext": false,
@@ -6561,25 +5440,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-tisi-8bff10013d",
-      "name": "腾讯研究院 · 最近更新",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/tisi/latest",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-tmtpost-79fedd8a77",
       "name": "钛媒体 · 最新",
       "kind": "rss",
@@ -6631,101 +5491,6 @@
       "owner_entity_id": null,
       "participation_mode": "editorial",
       "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-toodaylab-2d397203c1",
-      "name": "理想生活实验室 · 专栏",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/toodaylab/column/299",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-toodaylab-566ef803e9",
-      "name": "理想生活实验室 · 领域",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/toodaylab/field/308",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-toodaylab-7825650837",
-      "name": "理想生活实验室 · 最热",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/toodaylab/hot",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-toodaylab-0dbbfe9846",
-      "name": "理想生活实验室 · 滚动",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/toodaylab/posts",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-toodaylab-912f05e4d0",
-      "name": "理想生活实验室 · 话题",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/toodaylab/topic/309",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
       "tags": [],
       "site_fulltext": false,
       "syndicate_fulltext": false,
@@ -6922,139 +5687,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-wechat-b0ab7d520a",
-      "name": "微信小程序 · 公众号（CareerEngine 来源）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/wechat/ce/595a5b14d7164e53908f1606",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-wechat-42f1f5985d",
-      "name": "微信小程序 · 公众号（微阅读来源）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/wechat/data258/gh_cbbad4c1d33c",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-wechat-c0452d476e",
-      "name": "微信小程序 · 公众号（二十次幂来源）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/wechat/ershicimi/813oxJOl",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-wechat-ce27c7686d",
-      "name": "微信小程序 · 公众号栏目 (非推送 & 历史消息)",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/wechat/mp/homepage/MzA3MDM3NjE5NQ==/16",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-wechat-7792b93e9d",
-      "name": "微信小程序 · 公众号文章话题 Tag",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/wechat/mp/msgalbum/MzA3MDM3NjE5NQ==/1375870284640911361",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-wechat-57f1ae3f52",
-      "name": "微信小程序 · 公众号（搜狗来源）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/wechat/sogou/qimao0908",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-wechat-d00d2b84f6",
-      "name": "微信小程序 · 公众号（优读来源）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/wechat/uread/shensing",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-wechat-14892b2500",
       "name": "微信小程序 · 公众号（Wechat2RSS 来源）",
       "kind": "rss",
@@ -7226,25 +5858,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-xiaohongshu-78c37cc1dd",
-      "name": "小红书 · 专辑",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/xiaohongshu/board/5db6f79200000000020032df",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-xiaohongshu-eca55e7fbd",
       "name": "小红书 · 用户笔记/收藏",
       "kind": "rss",
@@ -7302,25 +5915,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-xiaoyuzhou-8a34bca47c",
-      "name": "小宇宙 · 发现",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/xiaoyuzhou",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-xiaoyuzhou-5aac963b4c",
       "name": "小宇宙 · 播客",
       "kind": "rss",
@@ -7333,44 +5927,6 @@
       "tier": "T2",
       "owner_entity_id": null,
       "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-xinpianchang-ff1b68020d",
-      "name": "新片场 · 发现",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/xinpianchang/discover",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "isolated",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-xinpianchang-6d5238f2e2",
-      "name": "新片场 · 排行榜",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/xinpianchang/rank",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "isolated",
       "interval_minutes": 180,
       "tags": [],
       "site_fulltext": false,
@@ -7492,87 +6048,11 @@
       "enabled": false
     },
     {
-      "id": "rsshub-zcool-b479708ea2",
-      "name": "站酷 · 发现",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zcool/discover",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "isolated",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-zcool-1708eec64e",
-      "name": "站酷 · 作品总榜单",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zcool/top/design",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "isolated",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-zcool-dc3a89a3bd",
-      "name": "站酷 · 用户作品",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zcool/user/baiyong",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "isolated",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-zhihu-8ecd783ebd",
       "name": "知乎 · ZHIHU_COOKIES",
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/zhihu/hot",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-zhihu-0f15aad8e0",
-      "name": "知乎 · ZHIHU_COOKIES（people/answers/:id）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zhihu/people/answers/diygod",
         "_aihot": {
           "initialBackfillLimit": 8
         }
@@ -7606,106 +6086,11 @@
       "enabled": false
     },
     {
-      "id": "rsshub-zhihu-8f74ae97de",
-      "name": "知乎 · ZHIHU_COOKIES（question/:questionId/:sortBy?）",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zhihu/question/59895982",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-zhihu-2d23a6b356",
       "name": "知乎 · ZHIHU_COOKIES（topic/:topicId/:isTop?）",
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/zhihu/topic/19828946",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-zhihu-41b08a8313",
-      "name": "知乎 · xhu - 用户回答",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zhihu/xhu/people/answers/246e6cf44e94cefbf4b959cb5042bc91",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-zhihu-45732080ae",
-      "name": "知乎 · xhu - 问题",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zhihu/xhu/question/264051433",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-zhihu-0209b00257",
-      "name": "知乎 · xhu - 话题",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zhihu/xhu/topic/19566035",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-zhihu-18dd25658e",
-      "name": "知乎 · xhu- 专栏",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zhihu/xhu/zhuanlan/githubdaily",
         "_aihot": {
           "initialBackfillLimit": 8
         }
@@ -7732,44 +6117,6 @@
       "tier": "T2",
       "owner_entity_id": null,
       "participation_mode": "hot_signal",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-zhubai-f9f2b69b15",
-      "name": "竹白 · 文章",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zhubai/posts/via",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
-      "id": "rsshub-zhubai-83be02a7d4",
-      "name": "竹白 · 上周热门 TOP 20",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/zhubai/top20",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
       "interval_minutes": 180,
       "tags": [],
       "site_fulltext": false,

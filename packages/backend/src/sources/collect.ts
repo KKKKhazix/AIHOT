@@ -465,6 +465,20 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
       const newest = mine.reduce((a, t) => (BigInt(t.id_str) > BigInt(a) ? t.id_str : a), String(m.cursor!.lastTweetId));
       counts.set(m.id, { found: mine.length, created: stored.created, newest });
     }
+    // A stretch left over before a regrouping still names accounts now in other shards, which hold no copy
+    // of it and whose coverage has moved on: their posts go to them from here.
+    const here = new Set(members.map((m) => shardHandle(m)!.toLowerCase()));
+    const strays = read.tweets.filter((t) => !here.has(t.user.screen_name.toLowerCase()));
+    if (strays.length) {
+      const owners = await sql<SourceRow[]>`
+        SELECT id, name, kind, config, tier, participation_mode, uses, first_party, interval_minutes, enabled, cursor, fail_count
+        FROM sources WHERE enabled AND ${sharded()}`;
+      for (const owner of owners) {
+        const handle = shardHandle(owner)?.toLowerCase();
+        const mine = strays.filter((t) => t.user.screen_name.toLowerCase() === handle);
+        if (mine.length) created += (await store(owner.id, admitListing(mine.map(tweetToCandidate), owner), null)).created;
+      }
+    }
     // Only a fully stored search advances coverage. A failed write can replay every paid page;
     // material already committed is idempotent, and no member is left half-finished. The unread stretch
     // is written once, on the shard's first account: on every member it travelled with them when shards

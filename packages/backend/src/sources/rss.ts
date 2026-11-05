@@ -141,6 +141,8 @@ export interface RssRead {
   notModified: boolean;
 }
 
+const RSS_LISTING_TIMEOUT_MS = 120_000;
+
 export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}): Promise<RssRead> {
   const url = String(source.config.feedUrl ?? "");
   if (!url) throw new FetchError("feedUrl missing");
@@ -151,10 +153,10 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
   const headers: Record<string, string> = { ...plain };
   if (previous?.etag) headers["if-none-match"] = previous.etag;
   if (previous?.lastModified) headers["if-modified-since"] = previous.lastModified;
-  let res = await fetchListing(url, { headers, timeoutMs: 25_000 });
+  let res = await fetchListing(url, { headers, timeoutMs: RSS_LISTING_TIMEOUT_MS });
   // A redirect may have changed destinations, whose ETag namespace is unrelated to the old one.
   if (res.status === 304 && previous && res.url !== previous.responseUrl) {
-    res = await fetchListing(url, { headers: plain, timeoutMs: 25_000 });
+    res = await fetchListing(url, { headers: plain, timeoutMs: RSS_LISTING_TIMEOUT_MS });
   }
   const validator: RssValidator = {
     configHash, responseUrl: res.url,

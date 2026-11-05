@@ -22,6 +22,7 @@ const prose = "A real report explains why a service returned 404 and how CAPTCHA
 const html = (title: string, text: string) => `<html><head><title>${title}</title><meta name="description" content="False description"></head><body><article><h1>${title}</h1><p>${text}</p><a href="/news/post">Navigation item</a></article></body></html>`;
 const signInPage = html("Sign in to Example", "Sign in to your account. Enter your email address and password to continue. ".repeat(6));
 const autofill = "A real report explains how password managers fill a sign-in form and why autofill is safer than typing. ".repeat(4);
+const consent = "Manage your consent preferences. These cookies are necessary. Confirm My Choices. Reject All. Accept All.";
 let readerHits = 0;
 const readerPages: Record<string, string> = {
   missing: `Title: 404 Not Found | Example\n\nMarkdown Content:\n${navigation}\n404 Page Not Found\nThat page does not exist.\n${navigation}`,
@@ -37,6 +38,11 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { "content-type": req.url?.startsWith("/reader/") ? "text/plain" : "text/html", "x-usage-tokens": "100" });
   if (req.url?.startsWith("/reader/")) {
     readerHits++;
+    // Like the real reader: what the request names to leave out never reaches the answer.
+    if (req.url.endsWith("/with-chrome")) {
+      const banner = req.headers["x-remove-selector"]?.toString().includes("[role=alertdialog]") ? "" : `${consent}\n\n`;
+      return void res.end(`Title: A page behind a consent banner\n\nMarkdown Content:\n${banner}${prose}`);
+    }
     return void res.end(readerPages[req.url.split("/").at(-1)!] ?? readerPages.missing);
   }
   // The form itself is long enough to be mistaken for a body by the length and density checks.
@@ -81,6 +87,14 @@ test("a missing target stays unconfirmed and its paid response is reused, not bo
   assert.equal(receipt!.status, "received");
   assert.equal(receipt!.attempts, 1);
   assert.equal(receipt!.usage.tokens, 100);
+});
+
+test("a body read through the reader leaves out the page's consent banner", async () => {
+  const { articleId } = await upsertMaterial({ sourceId, url: `${base}/${T}/with-chrome`, title: "A page behind a consent banner", via: "fetch" });
+  assert.equal(await extractArticleBody(articleId), "ok");
+  const [article] = await sql<{ body_text: string }[]>`SELECT body_text FROM articles WHERE id=${articleId}`;
+  assert.ok(!article!.body_text.includes("Manage your consent preferences"));
+  assert.ok(article!.body_text.includes("CAPTCHA verification"));
 });
 
 test("Reader target failures and rendered HTML challenges reject before listing or detail parsing", async () => {

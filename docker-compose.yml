@@ -1,5 +1,4 @@
 # docker compose up -d --build     → http://localhost:3000   (the admin is at /admin)
-# docker compose --profile https up -d --build   → HTTPS for SITE_DOMAIN through Caddy
 name: aihot
 
 x-app: &app
@@ -84,22 +83,6 @@ services:
       api:
         condition: service_started
 
-  caddy:
-    image: caddy:2-alpine
-    profiles: ["https"]
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      SITE_DOMAIN: ${SITE_DOMAIN:-localhost}
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy:/data
-    depends_on:
-      - web
-
 volumes:
   db: {}
   data: {}
-  caddy: {}

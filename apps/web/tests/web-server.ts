@@ -17,7 +17,7 @@ export const FIXTURE_AT = "2026-10-04T08:00:00.000Z";
 export function feedItem(fields: Partial<FeedItemSummary> & Pick<FeedItemSummary, "id" | "title">): FeedItemSummary {
   return {
     summary: "固定摘要", reason: "固定推荐理由", source: { name: "Fixture" }, publishedAt: FIXTURE_AT, timelineAt: FIXTURE_AT,
-    category: "ai-models", tags: [], score: 80, selected: true, channel: "news", x: null, ...fields,
+    category: "education", tags: [], score: 80, selected: true, channel: "news", x: null, ...fields,
   };
 }
 

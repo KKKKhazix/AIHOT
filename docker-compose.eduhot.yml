@@ -1,0 +1,71 @@
+name: eduhot
+
+x-app: &app
+  build: .
+  image: eduhot-app
+  restart: unless-stopped
+
+x-backend: &backend
+  <<: *app
+  env_file: .env
+  environment: &backend-env
+    NODE_ENV: production
+    DATABASE_URL: postgres://eduhot:${POSTGRES_PASSWORD}@postgres:5432/eduhot
+    AIHOT_DATA_DIR: /data
+    API_BASE_URL: http://api:3001
+    INGEST_RATE_LIMIT: ${INGEST_RATE_LIMIT:-10}
+  volumes:
+    - data:/data
+  networks:
+    - default
+    - postgres-backend
+
+services:
+  setup:
+    <<: *backend
+    restart: "no"
+    command: ["node", "scripts/migrate.ts"]
+
+  api:
+    <<: *backend
+    command: ["node", "apps/api/src/main.ts"]
+    environment:
+      <<: *backend-env
+      API_HOST: 0.0.0.0
+      API_PORT: "3001"
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *backend
+    command: ["node", "apps/worker/src/main.ts"]
+    stop_grace_period: 515s
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
+  web:
+    <<: *app
+    command: ["node", "apps/web/server.ts"]
+    environment:
+      NODE_ENV: production
+      API_BASE_URL: http://api:3001
+      SITE_URL: ${SITE_URL:-https://eduhot.xruns.cn}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      AIHOT_RELEASE: ${AIHOT_RELEASE:-}
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: "3000"
+    ports:
+      - "${PORT:-127.0.0.1:3001}:3000"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  data:
+    name: eduhot_data
+
+networks:
+  postgres-backend:
+    external: true

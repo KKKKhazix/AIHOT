@@ -99,6 +99,10 @@ docker compose run --rm setup && docker compose up -d
 
 下面按时间从新到旧列出每次更新要注意的事。
 
+#### 站长平台的网站验证（2026 年 11 月 8 日）
+
+没有迁移，没有新的环境变量。`site/site.ts` 新增 `SITE.siteVerification`：百度、必应、360、搜狗、神马、头条等站长平台给的 HTML 标签验证码按“meta 名 → 验证码”填进去，就会出现在首页的 head 里；验证通过后也要留着。自己维护 `site/site.ts` 的站，合并时加上这一行，用不到就写 `siteVerification: {}`；不加的话构建会报找不到 `siteVerification`。
+
 #### 页脚的“由 AIHOT 驱动”（2026 年 11 月 8 日）
 
 没有迁移，没有新的环境变量。`site/site.ts` 新增 `SITE.poweredBy`：填了就在侧栏底部和“我的”页底部显示“由 X 驱动”并链到它的网址，模板默认链回 AIHOT。自己维护 `site/site.ts` 的站，合并时把这一行加上；不想显示就写 `poweredBy: null`。不加这一行构建会报找不到 `poweredBy`。

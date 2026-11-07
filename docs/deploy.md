@@ -99,6 +99,10 @@ docker compose run --rm setup && docker compose up -d
 
 下面按时间从新到旧列出每次更新要注意的事。
 
+#### 页脚的“由 AIHOT 驱动”（2026 年 11 月 8 日）
+
+没有迁移，没有新的环境变量。`site/site.ts` 新增 `SITE.poweredBy`：填了就在侧栏底部和“我的”页底部显示“由 X 驱动”并链到它的网址，模板默认链回 AIHOT。自己维护 `site/site.ts` 的站，合并时把这一行加上；不想显示就写 `poweredBy: null`。不加这一行构建会报找不到 `poweredBy`。
+
 #### 搜索结果里的标题（2026 年 11 月 8 日）
 
 没有迁移，没有新的环境变量。`site/site.ts` 新增必填的 `SEO_TITLES`：热点榜、全部动态、Agent 接入页、关于页、日报周报月报的最新一期和主题页在搜索结果里的标题，读者会搜的词在前，页面自动在最后接上“ · 站名”；首页仍用 `SITE.homeTitle`。自己维护 `site/site.ts` 的站，合并时把模板里的这一段复制过去，再换成你行业的说法；不加的话构建会报找不到 `SEO_TITLES`。

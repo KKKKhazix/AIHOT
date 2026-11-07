@@ -140,3 +140,13 @@ test("a dingtalk target with its channel valve off records a skip and sends noth
   assert.deepEqual(out.targets?.map((t) => t.status), ["skipped"]);
   await dingtalk.close();
 });
+
+test("DingTalk markdown keeps an original link with brackets whole and dates like the Feishu card", async () => {
+  const { dingtalkMarkdown } = await import("@aihot/backend/notify/dingtalk");
+  const { text } = dingtalkMarkdown({
+    title: "t", sourceName: "s", published: "11月7日发布", summary: null, reason: null, reasonLabel: "r",
+    articleId: "a1", url: "https://en.wikipedia.org/wiki/Claude_(language_model) x",
+  });
+  assert.ok(text.includes("s · 11月7日发布"), text);
+  assert.ok(text.includes("(https://en.wikipedia.org/wiki/Claude_%28language_model%29%20x)"), text);
+});

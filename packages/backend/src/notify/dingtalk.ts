@@ -10,7 +10,8 @@ import { SITE } from "@aihot/site";
 export interface DingtalkContent {
   title: string;
   sourceName: string;
-  publishedAt: Date;
+  /** The original's publication date, written as on the Feishu card. */
+  published: string;
   summary: string | null;
   reason: string | null;
   reasonLabel: string;
@@ -21,14 +22,16 @@ export interface DingtalkContent {
 /** DingTalk renders markdown itself: keep markup characters out of model-written words. */
 const escape = (text: string) => text.replace(/([\\`*_~[\]])/g, "\\$&");
 
+/** A link target ends at the first ")" or space: percent-encode them so original URLs stay whole. */
+const href = (url: string) => url.replace(/[()<> ]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
 export function dingtalkMarkdown(c: DingtalkContent): { title: string; text: string } {
-  const published = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: "Asia/Shanghai" }).format(c.publishedAt);
   const text = [
     `**${escape(c.title)}**`,
-    `${escape(c.sourceName)} · ${published}`,
+    `${escape(c.sourceName)} · ${c.published}`,
     c.summary ? escape(c.summary) : null,
     c.reason ? `**${escape(c.reasonLabel)}**　${escape(c.reason)}` : null,
-    `[${escape(`在 ${SITE.name} 阅读`)}](${itemUrl(c.articleId)}) ｜ [${escape("原文")}](${c.url})`,
+    `[${escape(`在 ${SITE.name} 阅读`)}](${href(itemUrl(c.articleId))}) ｜ [${escape("原文")}](${href(c.url)})`,
   ].filter(Boolean).join("\n\n");
   return { title: c.title, text };
 }

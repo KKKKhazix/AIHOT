@@ -66,7 +66,7 @@ function dingtalk(r: Row): { title: string; text: string } {
   return dingtalkMarkdown({
     title: r.title,
     sourceName: publicSourceName(r.source_name),
-    publishedAt: r.published_at!,
+    published: published(r.published_at!),
     summary: r.summary,
     reason: r.reason,
     reasonLabel: ITEM_COPY.reasonLabel,

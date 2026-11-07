@@ -1,0 +1,1 @@
+ALTER TABLE notify_targets VALIDATE CONSTRAINT notify_targets_kind_check;

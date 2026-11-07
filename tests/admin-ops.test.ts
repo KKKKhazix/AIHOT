@@ -1,10 +1,12 @@
 // Operations that must act on what they were meant for: releasing an unknown receipt of any analysis
 // step puts its article back into processing; a selected card is not sent again to a group that
 // already got another report of the same fact.
-import { tag } from "./setup.ts";
+import { tag, stub } from "./setup.ts";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
+import { config } from "@aihot/backend/config";
 import { releaseReceipt } from "@aihot/backend/operations/recover";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
@@ -13,7 +15,20 @@ import { publishArticle } from "@aihot/backend/publication/publish";
 
 const T = tag();
 const SOURCE = `test-ops-${T}`;
+const savedEnv: Array<[string, string | undefined]> = [];
+const stubs: Array<{ close: () => Promise<void> }> = [];
+// config is a module-load snapshot: mutating it (not process.env) is what the running code sees.
+const savedConfigValve = config.dingtalkContentPushEnabled;
+const setEnv = (key: string, value: string) => {
+  savedEnv.push([key, process.env[key]]);
+  process.env[key] = value;
+};
 after(async () => {
+  config.dingtalkContentPushEnabled = savedConfigValve;
+  for (const [key, value] of savedEnv.reverse()) {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }
+  for (const stub of stubs.reverse()) await stub.close();
   await stopBoss();
   await closeDb();
 });
@@ -67,4 +82,61 @@ test("the content group gets first-party and near-first-party sources only", asy
   await sql`UPDATE articles SET grouping_status = 'complete', grouped_at = now() WHERE id = ${articleId}`;
   await publishArticle(articleId);
   assert.deepEqual(await pushSelected(articleId), { status: "skipped", reason: "not a first-party source" });
+});
+
+test("an enabled DingTalk target receives signed markdown", async () => {
+  const secret = `SEC-${T}`;
+  const bodies: Array<{ url: string; body: string }> = [];
+  const dingtalk = await stub((_hit, req) => {
+    bodies.push({ url: req.url, body: req.body });
+    return { errcode: 0, errmsg: "ok" };
+  });
+  stubs.push(dingtalk);
+  setEnv("FEISHU_CONTENT_PUSH_ENABLED", "false");
+  setEnv("DINGTALK_CONTENT_PUSH_ENABLED", "true");
+  config.dingtalkContentPushEnabled = true; // config is a load-time snapshot: the running code reads this
+  setEnv("DINGTALK_PUSH_WEBHOOK_URL", `${dingtalk.url}/robot/send?access_token=tok-${T}`);
+  setEnv("DINGTALK_PUSH_SECRET", secret);
+  await sql`INSERT INTO notify_targets (key, purpose, kind, enabled, enabled_at, config_ref, note)
+            VALUES (${`test-dingtalk-${T}`}, 'content', 'dingtalk_webhook', true, now() - interval '1 day', 'DINGTALK_PUSH_WEBHOOK_URL', 'test')`;
+
+  const id = await article(true);
+  await sql`UPDATE articles SET grouping_status = 'complete', grouped_at = now() WHERE id = ${id}`;
+  await publishArticle(id);
+  assert.equal((await pushSelected(id)).status, "pushed");
+
+  assert.ok(bodies.length >= 1, "the webhook was called");
+  const last = bodies[bodies.length - 1]!;
+  const [pub] = await sql<{ title: string }[]>`SELECT title FROM publications WHERE article_id = ${id}`;
+  const message = JSON.parse(last.body) as { msgtype: string; markdown: { title: string; text: string } };
+  assert.equal(message.msgtype, "markdown");
+  assert.equal(message.markdown.title, pub!.title);
+  assert.ok(message.markdown.text.includes(pub!.title), "the title is in the text");
+  assert.ok(message.markdown.text.includes("原文"), "the original link is in the text");
+  // The signature: HMAC-SHA256 of "timestamp\nsecret", base64 — the robot's 加签 rule. searchParams
+  // already decodes the URL-encoded sign the sender appends, so compare the raw base64.
+  const url = new URL(last.url, "http://127.0.0.1");
+  const timestamp = url.searchParams.get("timestamp")!;
+  const sign = url.searchParams.get("sign")!;
+  const expected = createHmac("sha256", secret).update(`${timestamp}\n${secret}`).digest("base64");
+  assert.equal(sign, expected);
+  await dingtalk.close();
+});
+
+test("a dingtalk target with its channel valve off records a skip and sends nothing", async () => {
+  config.dingtalkContentPushEnabled = false;
+  await sql`UPDATE notify_targets SET enabled = false WHERE key IN (${`test-dingtalk-${T}`}, ${`test-target-${T}`})`;
+  const dingtalk = await stub(() => ({ errcode: 0 }));
+  stubs.push(dingtalk);
+  setEnv("DINGTALK_CONTENT_PUSH_ENABLED", "false");
+  setEnv("DINGTALK_PUSH_WEBHOOK_URL", `${dingtalk.url}/robot/send?access_token=off-${T}`);
+  await sql`INSERT INTO notify_targets (key, purpose, kind, enabled, enabled_at, config_ref, note)
+            VALUES (${`test-dingtalk-off-${T}`}, 'content', 'dingtalk_webhook', true, now() - interval '1 day', 'DINGTALK_PUSH_WEBHOOK_URL', 'test')`;
+  const id = await article(true);
+  await sql`UPDATE articles SET grouping_status = 'complete', grouped_at = now() WHERE id = ${id}`;
+  await publishArticle(id);
+  const out = await pushSelected(id);
+  assert.equal(out.status, "skipped");
+  assert.deepEqual(out.targets?.map((t) => t.status), ["skipped"]);
+  await dingtalk.close();
 });

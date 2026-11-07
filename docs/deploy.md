@@ -99,6 +99,10 @@ docker compose run --rm setup && docker compose up -d
 
 下面按时间从新到旧列出每次更新要注意的事。
 
+#### 搜索结果里的标题（2026 年 11 月 8 日）
+
+没有迁移，没有新的环境变量。`site/site.ts` 新增必填的 `SEO_TITLES`：热点榜、全部动态、Agent 接入页、关于页、日报周报月报的最新一期和主题页在搜索结果里的标题，读者会搜的词在前，页面自动在最后接上“ · 站名”；首页仍用 `SITE.homeTitle`。自己维护 `site/site.ts` 的站，合并时把模板里的这一段复制过去，再换成你行业的说法；不加的话构建会报找不到 `SEO_TITLES`。
+
 #### 钉钉内容推送（2026 年 11 月 6 日）
 
 新增一个可选的推送渠道：精选卡片可以推到钉钉群（自定义机器人，markdown 消息，支持加签）。没有迁移必做事项，`setup` 启动时自动执行；已有的飞书推送部署升级后行为不变。要用的话在 `.env` 里设 `DINGTALK_CONTENT_PUSH_ENABLED=true` 和 `DINGTALK_PUSH_WEBHOOK_URL`（机器人开了加签再设 `DINGTALK_PUSH_SECRET`），然后到后台“设置 → 通知目的地”启用“钉钉内容群”，与飞书内容推送互相独立、可同时开。详见 `.env.example` 里的说明。

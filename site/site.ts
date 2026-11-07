@@ -329,3 +329,24 @@ function spokenTime(time: string): string {
   const [hour, minute] = time.split(":").map(Number) as [number, number];
   return `${hour} 点${minute ? ` ${minute} 分` : ""}`;
 }
+
+/**
+ * 入口页在搜索结果里的标题：读者会搜的词放前面，页面自动在最后接上“ · 站名”（首页用 SITE.homeTitle）。
+ * 日期一律是这一期、这一页内容的日期，不是今天的日期。换行业时把里面的说法一起换掉。
+ */
+export const SEO_TITLES = {
+  /** 热点榜（/hot）。 */
+  hot: `${withSubject("热点榜")}：今日热门事件排行`,
+  /** 全部动态（/all），不含搜索和筛选结果。 */
+  all: `${subjectAfter("最新", "动态")}：实时更新`,
+  /** Agent 接入页（/agent）。 */
+  agent: `${withSubject("资讯")} API、MCP 与 RSS：接进你的 Agent`,
+  /** 关于页（/about）的完整标题，已含站名。 */
+  about: `关于 ${SITE.name}：${SITE.tagline}`,
+  /** 日报、周报、月报的最新一期（/daily、/weekly、/monthly）；date 是这一期的日期：“11月7日”“10月26日—11月1日”“2026年10月”。 */
+  latestReport: (kind: "daily" | "weekly" | "monthly", date: string): string =>
+    ({ daily: `${withSubject("日报")}：${subjectAfter("每日", "新闻")}（${date}）`, weekly: `${withSubject("周报")}：一周大事回顾（${date}）`, monthly: `${withSubject("月报")}：${date} 大事回顾` })[kind],
+  /** 主题页第一页：公司搜“最新消息”，方向和内容类型搜“最新进展”；updated 是最新一篇精选的日期（“11月7日”），没有时为 null。 */
+  topic: (name: string, group: "company" | "field" | "genre", updated: string | null): string =>
+    `${name} ${group === "company" ? "最新消息与动态" : "最新动态与进展"}${updated ? `（${updated}更新）` : ""}`,
+};

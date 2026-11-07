@@ -36,6 +36,6 @@ export async function pushSelected(articleId: string, now = new Date()): Promise
   const siblings = r.fact_id
     ? (await sql<{ article_id: string }[]>`SELECT article_id FROM fact_articles WHERE fact_id = ${r.fact_id} AND article_id <> ${articleId}`).map((x) => x.article_id)
     : [];
-  const targets = await deliverContent({ subjectKind: "selected", subjectId: articleId, dedupeKey, contentAt: r.discovered_at, card: content.card, siblings });
+  const targets = await deliverContent({ subjectKind: "selected", subjectId: articleId, dedupeKey, contentAt: r.discovered_at, card: content.card, dingtalk: content.dingtalk, siblings });
   return { status: targets.some((t) => t.status === "sent") ? "pushed" : "skipped", targets, reason: targets.length ? undefined : "no new target" };
 }

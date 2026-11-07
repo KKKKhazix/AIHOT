@@ -1,13 +1,14 @@
-// Content-group deliveries (Feishu custom-bot webhooks), such as the cards of selected items.
+// Content-group deliveries (Feishu and DingTalk custom-bot webhooks), such as the cards of selected items.
 // One row per target and dedupe key, so nothing is pushed twice; an outcome we cannot know
 // ("unknown") is never retried automatically; content older than a target's enabled_at is never
-// back-filled. FEISHU_CONTENT_PUSH_ENABLED is the safety valve: off, deliveries are recorded as
-// skipped and nothing leaves the process.
+// back-filled. Each channel has its own safety valve (FEISHU_/DINGTALK_CONTENT_PUSH_ENABLED): off,
+// deliveries are recorded as skipped and nothing leaves the process.
 import { z } from "zod";
 import { audit, Conflict } from "../audit.ts";
 import { config, credential } from "../config.ts";
 import { sql } from "../db.ts";
 import { postWebhook } from "./feishu.ts";
+import { sendDingtalk } from "./dingtalk.ts";
 import { selectedContent } from "./selected-content.ts";
 
 export interface DeliveryRequest {
@@ -18,6 +19,8 @@ export interface DeliveryRequest {
   /** When the underlying content appeared; older than a target's enabled_at means skip. */
   contentAt: Date;
   card: unknown;
+  /** The same content as DingTalk markdown; a dingtalk_webhook target without one records a skip. */
+  dingtalk?: unknown;
   /** A follow-up may only belong to one of the content groups. */
   targetKey?: string;
   /**
@@ -29,9 +32,15 @@ export interface DeliveryRequest {
 
 interface Target {
   key: string;
-  kind: "feishu_webhook" | "feishu_chat" | "log";
+  kind: "feishu_webhook" | "dingtalk_webhook" | "feishu_chat" | "log";
   enabled_at: Date | null;
   config_ref: string | null;
+}
+
+/** Each channel has its own safety valve; a target of a channel whose valve is off records skips. */
+export function pushEnabled(kind: string): boolean {
+  return kind === "feishu_webhook" ? config.feishuContentPushEnabled
+    : kind === "dingtalk_webhook" ? config.dingtalkContentPushEnabled : false;
 }
 
 /** Default content targets; they start disabled and are switched on in production only. */
@@ -39,7 +48,8 @@ export async function ensureContentTargets() {
   await sql`
     INSERT INTO notify_targets (key, purpose, kind, enabled, config_ref, note) VALUES
       ('feishu-content-main', 'content', 'feishu_webhook', false, 'FEISHU_PUSH_WEBHOOK_URL', '飞书内容主群'),
-      ('feishu-content-mirror', 'content', 'feishu_webhook', false, 'FEISHU_PUSH_MIRROR_WEBHOOK_URL', '飞书内容镜像群')
+      ('feishu-content-mirror', 'content', 'feishu_webhook', false, 'FEISHU_PUSH_MIRROR_WEBHOOK_URL', '飞书内容镜像群'),
+      ('dingtalk-content-main', 'content', 'dingtalk_webhook', false, 'DINGTALK_PUSH_WEBHOOK_URL', '钉钉内容群')
     ON CONFLICT (key) DO NOTHING`;
 }
 
@@ -61,7 +71,7 @@ export async function deliverContent(req: DeliveryRequest): Promise<Array<{ targ
   // A selected article may acquire a different fact after correction. Its own previous delivery
   // still counts, even when the dedupe key changes. Other kinds of push keep their own keys.
   const sentSubjects = req.subjectKind === "selected" ? [req.subjectId, ...(req.siblings ?? [])] : (req.siblings ?? []);
-  const targets = await sql<{ key: string }[]>`SELECT key FROM notify_targets WHERE purpose = 'content' AND enabled
+  const targets = await sql<{ key: string; kind: string }[]>`SELECT key, kind FROM notify_targets WHERE purpose = 'content' AND enabled
     AND (${req.targetKey ?? null}::text IS NULL OR key = ${req.targetKey ?? null}) ORDER BY key`;
   const results: Array<{ target: string; status: string }> = [];
   for (const target of targets) {
@@ -70,6 +80,8 @@ export async function deliverContent(req: DeliveryRequest): Promise<Array<{ targ
     const current = req.subjectKind === "selected" ? await selectedContent(req.subjectId) : null;
     if (current && current.status !== "ready") break;
     const card = current?.card ?? req.card;
+    const dingtalk = current?.dingtalk ?? req.dingtalk;
+    const message = target.kind === "dingtalk_webhook" ? dingtalk : card;
     const claim = await sql.begin(async (tx) => {
       // Reserve a target in a short transaction: concurrent siblings must see each other's pending
       // delivery, even before either network request starts. No lock is held while sending.
@@ -83,14 +95,19 @@ export async function deliverContent(req: DeliveryRequest): Promise<Array<{ targ
       }
       const [row] = await tx<{ id: number }[]>`
         INSERT INTO deliveries (target_key, subject_kind, subject_id, dedupe_key, status, payload)
-        VALUES (${t.key}, ${req.subjectKind}, ${req.subjectId}, ${req.dedupeKey}, 'pending', ${tx.json(card as never)})
+        VALUES (${t.key}, ${req.subjectKind}, ${req.subjectId}, ${req.dedupeKey}, 'pending', ${tx.json(message as never)})
         ON CONFLICT (target_key, dedupe_key) DO NOTHING RETURNING id`;
       return row ? { id: row.id, target: t } : null;
     });
     if (!claim) continue;
     const { id, target: t } = claim;
-    if (!config.feishuContentPushEnabled || t.kind !== "feishu_webhook") {
+    if (!pushEnabled(t.kind)) {
       await sql`UPDATE deliveries SET status = 'skipped', response = 'content push disabled', updated_at = now() WHERE id = ${id}`;
+      results.push({ target: t.key, status: "skipped" });
+      continue;
+    }
+    if (!message) {
+      await sql`UPDATE deliveries SET status = 'skipped', response = 'no message for this channel', updated_at = now() WHERE id = ${id}`;
       results.push({ target: t.key, status: "skipped" });
       continue;
     }
@@ -101,7 +118,9 @@ export async function deliverContent(req: DeliveryRequest): Promise<Array<{ targ
       continue;
     }
     await sql`UPDATE deliveries SET status = 'sending', attempts = attempts + 1, updated_at = now() WHERE id = ${id}`;
-    results.push({ target: t.key, ...(await sendDelivery(id, url, card)) });
+    results.push({ target: t.key, ...(t.kind === "dingtalk_webhook"
+      ? await sendDingtalk(id, url, message)
+      : await sendDelivery(id, url, message)) });
   }
   return results;
 }
@@ -116,13 +135,13 @@ export async function resendDelivery(id: number, version?: string): Promise<{ st
     FROM deliveries d JOIN notify_targets t ON t.key = d.target_key WHERE d.id = ${id}`;
   if (!d) throw new Error(`delivery ${id} not found`);
   if (d.status !== "unknown" && d.status !== "failed") throw new Conflict("这条投递不需要处理");
-  if (!config.feishuContentPushEnabled || d.kind !== "feishu_webhook") throw new Error("content push is disabled in this environment");
+  if (!pushEnabled(d.kind)) throw new Error("content push is disabled in this environment");
   if (!d.enabled) throw new Conflict("这个推送群已停用");
   const current = d.subject_kind === "selected" ? await selectedContent(d.subject_id) : null;
   if (current && (current.status !== "ready" || (d.enabled_at && current.article.discovered_at < d.enabled_at))) {
     throw new Conflict("这条内容已不再符合推送条件");
   }
-  const payload = current?.card ?? d.payload;
+  const payload = current ? (d.kind === "dingtalk_webhook" ? current.dingtalk : current.card) : d.payload;
   const url = d.config_ref ? credential("integrations", d.config_ref) : undefined;
   if (!url) throw new Error("webhook not configured");
   // Keep PostgreSQL's timestamp precision: a retry may already have failed again by the time this
@@ -130,7 +149,7 @@ export async function resendDelivery(id: number, version?: string): Promise<{ st
   const claimed = await sql`UPDATE deliveries SET status = 'sending', attempts = attempts + 1, payload = ${sql.json(payload as never)}, updated_at = now()
     WHERE id = ${id} AND status IN ('unknown', 'failed') AND updated_at::text = ${version ?? d.version}`;
   if (!claimed.count) throw new Conflict("这条投递已被其他操作处理，请刷新后重试");
-  return sendDelivery(id, url, payload);
+  return d.kind === "dingtalk_webhook" ? sendDingtalk(id, url, payload) : sendDelivery(id, url, payload);
 }
 
 /**

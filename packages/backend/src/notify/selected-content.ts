@@ -2,6 +2,7 @@
 import { sql } from "../db.ts";
 import { itemUrl } from "../publication/links.ts";
 import { publicSourceName } from "../publication/rules.ts";
+import { dingtalkMarkdown, type DingtalkContent } from "./dingtalk.ts";
 import { type CategoryKey } from "@aihot/contracts/taxonomy";
 import { beijingDay } from "@aihot/contracts/time";
 import { CATEGORIES } from "@aihot/industry/taxonomy";
@@ -60,8 +61,22 @@ function card(r: Row) {
   };
 }
 
+/** The same content for DingTalk's markdown bots: no fonts or buttons, links inline. */
+function dingtalk(r: Row): { title: string; text: string } {
+  return dingtalkMarkdown({
+    title: r.title,
+    sourceName: publicSourceName(r.source_name),
+    publishedAt: r.published_at!,
+    summary: r.summary,
+    reason: r.reason,
+    reasonLabel: ITEM_COPY.reasonLabel,
+    articleId: r.article_id,
+    url: r.url,
+  } satisfies DingtalkContent);
+}
+
 export async function selectedContent(articleId: string, now = new Date()): Promise<
-  | { status: "ready"; article: Row; card: ReturnType<typeof card> }
+  | { status: "ready"; article: Row; card: ReturnType<typeof card>; dingtalk: ReturnType<typeof dingtalk> }
   | { status: "skipped"; reason: string }
 > {
   const [r] = await sql<Row[]>`
@@ -76,5 +91,5 @@ export async function selectedContent(articleId: string, now = new Date()): Prom
   if (!PUSH_TIERS.includes(r.source_tier)) return { status: "skipped", reason: "not a first-party source" };
   if (r.backfill || now.getTime() - r.timeline_at.getTime() > MAX_AGE_MS) return { status: "skipped", reason: "not live" };
 
-  return { status: "ready", article: r, card: card(r) };
+  return { status: "ready", article: r, card: card(r), dingtalk: dingtalk(r) };
 }

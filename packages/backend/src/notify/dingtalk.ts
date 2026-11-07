@@ -1,9 +1,9 @@
 // DingTalk custom-bot webhook delivery: a markdown message, optionally signed with the robot's secret.
-// Separate from the Feishu sender because the acknowledgement differs (errcode, not code) and the URL
-// may need a per-request timestamp/signature pair.
+// It goes through the Feishu sender's request and outcome rules; only the message, the acknowledgement
+// (errcode, not code) and the per-request timestamp/signature pair differ.
 import { createHmac } from "node:crypto";
-import { sql } from "../db.ts";
 import { credential } from "../config.ts";
+import { sendWebhook } from "./feishu.ts";
 import { itemUrl } from "../publication/links.ts";
 import { SITE } from "@aihot/site";
 
@@ -47,35 +47,6 @@ function signedUrl(url: string): string {
   return `${url}&timestamp=${timestamp}&sign=${sign}`;
 }
 
-async function postDingtalk(url: string, message: unknown): Promise<{ status: "sent" | "failed" | "unknown"; body: string }> {
-  const res = await fetch(signedUrl(url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    // The wire format DingTalk expects: { msgtype: "markdown", markdown: { title, text } }.
-    body: JSON.stringify({ msgtype: "markdown", markdown: message }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  const body = await res.text();
-  // A successful HTTP transport is not an acknowledgement: proxies can return HTML or empty JSON.
-  let status: "sent" | "failed" | "unknown" = res.status >= 400 && res.status < 500 ? "failed" : "unknown";
-  try {
-    const json = JSON.parse(body) as { errcode?: number } | null;
-    if (res.ok && typeof json?.errcode === "number") status = json.errcode === 0 ? "sent" : "failed";
-  } catch {
-    // non-JSON body
-  }
-  return { status, body: body.slice(0, 500) };
-}
-
-export async function sendDingtalk(id: number, url: string, message: unknown): Promise<{ status: string }> {
-  let result: Awaited<ReturnType<typeof postDingtalk>>;
-  try {
-    result = await postDingtalk(url, message);
-  } catch (error) {
-    // A timeout or lost connection may still have delivered. Never retry it automatically.
-    result = { status: "unknown", body: String(error).slice(0, 500) };
-  }
-  await sql`UPDATE deliveries SET status = ${result.status}, response = ${result.body},
-    sent_at = ${result.status === "sent" ? new Date() : null}, updated_at = now() WHERE id = ${id}`;
-  return { status: result.status };
+export function postDingtalk(url: string, message: unknown): Promise<{ status: "sent" | "failed" | "unknown"; body: string }> {
+  return sendWebhook(signedUrl(url), { msgtype: "markdown", markdown: message }, (json) => json?.errcode);
 }

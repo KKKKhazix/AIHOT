@@ -8,7 +8,7 @@ import { audit, Conflict } from "../audit.ts";
 import { config, credential } from "../config.ts";
 import { sql } from "../db.ts";
 import { postWebhook } from "./feishu.ts";
-import { sendDingtalk } from "./dingtalk.ts";
+import { postDingtalk } from "./dingtalk.ts";
 import { selectedContent } from "./selected-content.ts";
 
 export interface DeliveryRequest {
@@ -54,10 +54,10 @@ export async function ensureContentTargets() {
 }
 
 /** The acknowledgement and stored outcome follow the same rules for first sends and recovery. */
-async function sendDelivery(id: number, url: string, card: unknown): Promise<{ status: string }> {
+async function sendDelivery(id: number, kind: string, url: string, message: unknown): Promise<{ status: string }> {
   let result: Awaited<ReturnType<typeof postWebhook>>;
   try {
-    result = await postWebhook(url, card);
+    result = await (kind === "dingtalk_webhook" ? postDingtalk : postWebhook)(url, message);
   } catch (error) {
     // A timeout or lost connection may still have delivered. Never retry it automatically.
     result = { status: "unknown", body: String(error).slice(0, 500) };
@@ -95,7 +95,7 @@ export async function deliverContent(req: DeliveryRequest): Promise<Array<{ targ
       }
       const [row] = await tx<{ id: number }[]>`
         INSERT INTO deliveries (target_key, subject_kind, subject_id, dedupe_key, status, payload)
-        VALUES (${t.key}, ${req.subjectKind}, ${req.subjectId}, ${req.dedupeKey}, 'pending', ${tx.json(message as never)})
+        VALUES (${t.key}, ${req.subjectKind}, ${req.subjectId}, ${req.dedupeKey}, 'pending', ${message === undefined ? null : tx.json(message as never)})
         ON CONFLICT (target_key, dedupe_key) DO NOTHING RETURNING id`;
       return row ? { id: row.id, target: t } : null;
     });
@@ -118,9 +118,7 @@ export async function deliverContent(req: DeliveryRequest): Promise<Array<{ targ
       continue;
     }
     await sql`UPDATE deliveries SET status = 'sending', attempts = attempts + 1, updated_at = now() WHERE id = ${id}`;
-    results.push({ target: t.key, ...(t.kind === "dingtalk_webhook"
-      ? await sendDingtalk(id, url, message)
-      : await sendDelivery(id, url, message)) });
+    results.push({ target: t.key, ...(await sendDelivery(id, t.kind, url, message)) });
   }
   return results;
 }
@@ -149,7 +147,7 @@ export async function resendDelivery(id: number, version?: string): Promise<{ st
   const claimed = await sql`UPDATE deliveries SET status = 'sending', attempts = attempts + 1, payload = ${sql.json(payload as never)}, updated_at = now()
     WHERE id = ${id} AND status IN ('unknown', 'failed') AND updated_at::text = ${version ?? d.version}`;
   if (!claimed.count) throw new Conflict("这条投递已被其他操作处理，请刷新后重试");
-  return d.kind === "dingtalk_webhook" ? sendDingtalk(id, url, payload) : sendDelivery(id, url, payload);
+  return sendDelivery(id, d.kind, url, payload);
 }
 
 /**

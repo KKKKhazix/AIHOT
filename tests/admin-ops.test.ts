@@ -150,3 +150,14 @@ test("DingTalk markdown keeps an original link with brackets whole and dates lik
   assert.ok(text.includes("s · 11月7日发布"), text);
   assert.ok(text.includes("(https://en.wikipedia.org/wiki/Claude_%28language_model%29%20x)"), text);
 });
+
+test("a push with no DingTalk form records a skip at an enabled DingTalk target", async () => {
+  config.dingtalkContentPushEnabled = true;
+  const key = `test-dingtalk-cardonly-${T}`;
+  await sql`INSERT INTO notify_targets (key, purpose, kind, enabled, enabled_at, config_ref, note)
+            VALUES (${key}, 'content', 'dingtalk_webhook', true, now() - interval '1 day', 'DINGTALK_PUSH_WEBHOOK_URL', 'test')`;
+  const { deliverContent } = await import("@aihot/backend/notify/deliver");
+  const out = await deliverContent({ subjectKind: "test", subjectId: `cardonly-${T}`, dedupeKey: `cardonly-${T}`, contentAt: new Date(), card: { any: 1 }, targetKey: key });
+  assert.deepEqual(out, [{ target: key, status: "skipped" }]);
+  config.dingtalkContentPushEnabled = false;
+});

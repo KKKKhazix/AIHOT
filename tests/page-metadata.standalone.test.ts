@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 import { after, before, test } from "node:test";
 import * as cheerio from "cheerio";
 import { reportDateLabel, type FeedItemSummary, type ReportCitation, type ReportDetail, type ReportKind, type SiteItemDetail, type StoryDetail } from "@aihot/contracts/site";
-import { SITE, withSubject } from "@aihot/site";
+import { SEO_TITLES, SITE, withSubject } from "@aihot/site";
 import { articleLd, readFilters, reportLd } from "../apps/web/app/lib/seo.ts";
 import { startWebServer, type WebServer } from "../apps/web/tests/web-server.ts";
 
@@ -79,7 +79,7 @@ test("ordinary feed pages remain indexable and normalize ignored parameters", as
 
 // Chinese readers search issues by the date as they write it ("10月4日 AI 新闻"), not by the key.
 for (const [kind, label, date] of [["daily", "日报", "10月4日"], ["weekly", "周报", "9月28日—10月4日"], ["monthly", "月报", "2026年10月"]] as const) {
-  test(`${kind} issue metadata describes its visible lead while the permanent entry keeps its title`, async () => {
+  test(`${kind} issue metadata describes its visible lead and the permanent entry names the latest issue's date`, async () => {
     const r = report(kind);
     const $ = await page(`/${kind}/${r.key}`);
     const title = `${withSubject(label)}｜${date}：${r.lead!.title}`;
@@ -91,7 +91,8 @@ for (const [kind, label, date] of [["daily", "日报", "10月4日"], ["weekly", 
     assert.equal(article.image, `${web.origin}/og/reports/${kind}/${r.key}.png`);
     assert.equal("dateModified" in article, false);
     const latest = await page(`/${kind}`);
-    assert.equal(latest("title").text(), `${withSubject(label)} · ${SITE.name}`);
+    assert.equal(latest("title").text(), `${SEO_TITLES.latestReport(kind, date)} · ${SITE.name}`);
+    assert.ok(latest("title").text().includes(date));
   });
 }
 

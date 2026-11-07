@@ -1,7 +1,7 @@
 import { useLoaderData } from "react-router";
 import type { Route } from "./+types/report-latest";
 import { REPORT_NAMES, reportDateLabel, type ReportLatestPage } from "@aihot/contracts/site";
-import { REPORTS, subjectAfter, withSubject } from "@aihot/site";
+import { REPORTS, SEO_TITLES, subjectAfter, withSubject } from "@aihot/site";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { pageMeta, reportLd } from "../lib/seo";
@@ -29,7 +29,7 @@ export function meta({ loaderData, location }: Route.MetaArgs) {
   const lead = report?.lead?.leadParagraph ?? report?.overview?.slice(0, 150);
   const description = report && lead ? `${reportDateLabel(kind, report.key)} ${withSubject("资讯")}：${lead}` : `${REPORTS.descriptions[kind]}。`;
   return [...pageMeta({
-    title: withSubject(REPORT_NAMES[kind]),
+    title: report ? SEO_TITLES.latestReport(kind, reportDateLabel(kind, report.key)) : withSubject(REPORT_NAMES[kind]),
     description,
     path: location.pathname,
     image: `/og/pages/${kind}.png`,

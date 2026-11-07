@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Link, redirect, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/all";
 import type { PoolResponse } from "@aihot/contracts/site";
-import { SITE, subjectAfter } from "@aihot/site";
+import { SEO_TITLES, SITE, subjectAfter } from "@aihot/site";
 import { beijingTime } from "@aihot/contracts/time";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
@@ -44,8 +44,8 @@ export function meta({ loaderData }: Route.MetaArgs) {
   const q = f?.q;
   const page = loaderData?.data.page ?? 1;
   const path = listPath("/all", { ...(f && filterParams(f)), q, tab: q && f?.tab === "relevance" ? "relevance" : null, page: page > 1 ? page : null });
-  const title = `${q ? `搜索：${q}` : ALL_TITLE}${page > 1 ? ` · 第 ${page} 页` : ""}`;
   const noindex = !!q || hasFeedFilters(f);
+  const title = `${q ? `搜索：${q}` : noindex ? ALL_TITLE : SEO_TITLES.all}${page > 1 ? ` · 第 ${page} 页` : ""}`;
   return pageMeta({
     title,
     description: `${SITE.name} 收录的${subjectAfter("全部", "相关动态")}，可按频道、类别与标签筛选，支持中英文搜索。`,

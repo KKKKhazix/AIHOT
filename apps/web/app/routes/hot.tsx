@@ -1,7 +1,7 @@
 import { useLoaderData } from "react-router";
 import { IntentLink } from "../components/ui/IntentLink";
 import type { HotEntryView, HotResponse } from "@aihot/contracts/site";
-import { subjectAfter, withSubject } from "@aihot/site";
+import { SEO_TITLES, subjectAfter, withSubject } from "@aihot/site";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { pageMeta } from "../lib/seo";
@@ -28,7 +28,7 @@ export async function loader({ request }: { request: Request }) {
 
 export function meta() {
   return pageMeta({
-    title: withSubject("热点榜"),
+    title: SEO_TITLES.hot,
     description: `${subjectAfter("过去 48 小时", "圈")}讨论最多的 10 个事件：热度、走势，以及都有谁在报道。`,
     path: "/hot",
     image: "/og/pages/hot.png",

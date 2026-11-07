@@ -252,9 +252,6 @@ test("scripts read the reduced-motion preference only through lib/motion.ts", ()
   assert.deepEqual(found, [], "use reducedMotion() or scrollBehavior() from lib/motion.ts");
 });
 
-// Pages are prefetched only when the reader presses a link (IntentLink). React Router's own prefetch runs
-// on hover, focus, render or viewport; the phone tab bar kept it after every other link had moved to
-// presses, so a narrow desktop window downloaded a tab's page whenever the pointer crossed it.
 test("a gray page is the admin's alone: its loader goes through grayGet and answers with GRAY_HEADERS", async () => {
   const { MODULES } = await import("@aihot/site/modules");
   const gray = MODULES.flatMap((m) => (m.pages ?? []).flatMap((p) => ("layout" in p ? p.pages : [p])).filter((p) => p.gray).map((p) => `modules/${m.name}/${p.file}`));
@@ -264,6 +261,9 @@ test("a gray page is the admin's alone: its loader goes through grayGet and answ
   }
 });
 
+// Pages are prefetched only when the reader presses a link (IntentLink). React Router's own prefetch runs
+// on hover, focus, render or viewport; the phone tab bar kept it after every other link had moved to
+// presses, so a narrow desktop window downloaded a tab's page whenever the pointer crossed it.
 test("pages are prefetched only through IntentLink", () => {
   const found = webLines()
     .filter(({ file, line }) => file !== "apps/web/app/components/ui/IntentLink.tsx"

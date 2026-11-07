@@ -94,6 +94,11 @@ export interface Finding {
    */
   owner?: true | "only";
   /**
+   * The agent is the one to act: whenever the owner is messaged about it, the agent is woken first and the
+   * message says so instead of asking him to pass it on (operations/alerts.ts).
+   */
+  agentFirst?: true;
+  /**
    * Do not message the owner, including when it clears or when a follow-up is derived from the handoff.
    * On the incident itself it is now or today and is woken: a later finding is not. One such key is one
    * occurrence, so the wake's event id is the key, not a time. The derived follow-up keeps the flag and

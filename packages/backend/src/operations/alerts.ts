@@ -104,6 +104,7 @@ async function contentCollection(now: number, open: AlertState): Promise<Finding
     impact: last?.at ? `读者看不到新文章：最后一篇收录于 ${beijingStamp(last.at)}` : "读者看不到新文章：一天内没有收录任何文章",
     heals: ALERTS.usualFlow ? `没有，${ALERTS.usualFlow}` : "没有",
     action: "把这条发给 AI 排查处理",
+    agentFirst: true,
     detail: quietFor <= QUIET_FETCHING_MINUTES * 60_000
       ? `editorial articles.discovered_at 超过 ${QUIET_MINUTES} 分钟没有新值，期间没有一次成功的 editorial fetch_runs（热度信号单独评估）；查 worker、sources.schedule、出网代理与采集失败`
       : `editorial articles.discovered_at 超过 ${QUIET_FETCHING_MINUTES} 分钟没有新值（采集仍成功也算）；查采集结果为何一直是 new_count=0：解析、去重与入库`,
@@ -549,7 +550,7 @@ export async function checkAlerts(now = Date.now()) {
     // Claim AI was notified only after the hub actually accepts this incident's wake; persist the occurrence
     // timestamp first so a failed owner send or crash after waking cannot mint a second incident ID on retry.
     let woken = false;
-    if (handing && f.key !== "webhook.transport" && f.owner !== "only" && f.action === "把这条发给 AI 排查处理") {
+    if (handing && f.agentFirst) {
       if (!open) {
         const entry = { title: f.title, since: since.toISOString() };
         state[f.key] = entry;

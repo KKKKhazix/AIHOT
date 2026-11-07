@@ -26,6 +26,8 @@ export interface PageMetaInput {
   path: string;
   image?: string | null;
   noindex?: boolean;
+  /** Only Google is asked not to index the page; other engines index it unless `noindex`. */
+  googleNoindex?: boolean;
   nofollow?: boolean;
   type?: "website" | "article";
   jsonLd?: Record<string, unknown> | Array<Record<string, unknown>>;
@@ -95,6 +97,7 @@ export function pageMeta(input: PageMetaInput): MetaDescriptor[] {
     { name: "twitter:image", content: image },
   ];
   if (input.noindex) tags.push({ name: "robots", content: input.nofollow ? "noindex, nofollow" : "noindex, follow" });
+  else if (input.googleNoindex) tags.push({ name: "googlebot", content: "noindex" });
   if (input.jsonLd) tags.push({ "script:ld+json": input.jsonLd });
   return tags;
 }

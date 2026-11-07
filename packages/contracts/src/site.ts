@@ -156,6 +156,8 @@ export interface SiteItemDetail extends ItemSummary {
   /** The topics the report belongs to. */
   topics: TopicLink[];
   indexable: boolean;
+  /** Indexable, but its own text says no more than its summary: only Google is asked not to index it. */
+  googleNoindex: boolean;
   markdownAvailable: boolean;
   group: GroupInfo | null;
   hasTranslation: boolean;

@@ -14,10 +14,12 @@ test("sitemap responses and rebuild failures preserve the original freshness dea
   t.mock.timers.enable({ apis: ["Date"], now });
   const id = `discovery-${tag()}`;
   await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES (${id},'Discovery','rss','T1','editorial')`;
-  await sql`INSERT INTO articles (id,source_id,identity_key,url,title,timeline_at,discovered_at)
-    VALUES (${id},${id},${id},${`https://example.org/${id}`},'Discovery',${new Date(now)},${new Date(now)})`;
-  await sql`INSERT INTO publications (article_id,source_id,title,summary,url,timeline_at,discovered_at,sort_at,indexable,eligible,channel)
-    VALUES (${id},${id},'Discovery','Summary',${`https://example.org/${id}`},${new Date(now)},${new Date(now)},${new Date(now)},true,true,'news')`;
+  // A full article: a page with only its summary stays out of the sitemap (publication/items.ts thinPageCondition).
+  const body = "Discovery body. ".repeat(40);
+  await sql`INSERT INTO articles (id,source_id,identity_key,url,title,timeline_at,discovered_at,body_status,body_text,body_html)
+    VALUES (${id},${id},${id},${`https://example.org/${id}`},'Discovery',${new Date(now)},${new Date(now)},'ok',${body},${`<p>${body}</p>`})`;
+  await sql`INSERT INTO publications (article_id,source_id,title,summary,url,timeline_at,discovered_at,sort_at,indexable,eligible,channel,body_mode)
+    VALUES (${id},${id},'Discovery','Summary',${`https://example.org/${id}`},${new Date(now)},${new Date(now)},${new Date(now)},true,true,'news','full')`;
   const first = await app.inject("/sitemap.xml");
   assert.equal(first.statusCode, 200);
   assert.ok(first.body.includes("/sitemaps/items.xml</loc>"));

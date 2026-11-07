@@ -1,4 +1,5 @@
 import { redirect, useLoaderData } from "react-router";
+import { SITE } from "@aihot/site";
 import type { Route } from "./+types/home";
 import type { TimelineResponse } from "@aihot/contracts/site";
 import { cachedPage, loadOr404 } from "../lib/api.server";
@@ -29,7 +30,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 export function meta({ loaderData }: Route.MetaArgs) {
   const path = listPath("/", loaderData ? filterParams(loaderData.filters) : {});
   const titles = loaderData?.data.cards.map((c) => c.item.title) ?? [];
-  return pageMeta({ path, noindex: hasFeedFilters(loaderData?.filters), jsonLd: path === "/" ? [...siteLd(), itemListLd("/", "精选", titles)] : undefined });
+  const tags = pageMeta({ path, noindex: hasFeedFilters(loaderData?.filters), jsonLd: path === "/" ? [...siteLd(), itemListLd("/", "精选", titles)] : undefined });
+  // Webmaster platforms look for their verification tag on the home page only.
+  if (path !== "/") return tags;
+  return [...tags, ...Object.entries(SITE.siteVerification).map(([name, content]) => ({ name, content }))];
 }
 
 export default function Home() {

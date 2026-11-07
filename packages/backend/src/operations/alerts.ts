@@ -206,7 +206,7 @@ async function contentProcessing(now: number, open: AlertState): Promise<Finding
   }];
 }
 
-// Content-group pushes the Feishu webhook refused (a removed bot, a changed address); nothing resends them.
+// Content-group pushes the group's webhook refused (a removed bot, a changed address); nothing resends them.
 async function refusedDeliveries(now: number, open: AlertState): Promise<Finding[]> {
   const incident = open["deliveries.failed"];
   const since = new Date((incident ? Date.parse(incident.since) : now) - 86400_000);
@@ -220,7 +220,7 @@ async function refusedDeliveries(now: number, open: AlertState): Promise<Finding
   return [{
     key: "deliveries.failed",
     level: "today",
-    title: "飞书内容群有推送没发出去",
+    title: `${refused!.target ?? "内容群"}有推送没发出去`,
     impact: `${refused!.n} 条通知尚未确认送达${refused!.target ?? "内容群"}`,
     heals: "不会自动重发",
     action: "转给 AI 处理；如果推送机器人被移出了群，需要你把它加回去",
@@ -281,14 +281,15 @@ async function sourceFollowUps(now: number): Promise<Finding[]> {
 async function unknownOutcomes(): Promise<Finding[]> {
   const out: Finding[] = [];
 
-  const [r] = await sql<{ receipts: number; services: string | null; deliveries: number }[]>`
+  const [r] = await sql<{ receipts: number; services: string | null; deliveries: number; targets: string | null }[]>`
     SELECT (SELECT count(*)::int FROM receipts WHERE ${awaitingRelease()}) AS receipts,
            (SELECT string_agg(DISTINCT service || '/' || purpose, '、') FROM receipts WHERE ${awaitingRelease()}) AS services,
-           (SELECT count(*)::int FROM deliveries WHERE status = 'unknown') AS deliveries`;
+           (SELECT count(*)::int FROM deliveries WHERE status = 'unknown') AS deliveries,
+           (SELECT string_agg(DISTINCT t.note, '、') FROM deliveries d JOIN notify_targets t ON t.key = d.target_key WHERE d.status = 'unknown') AS targets`;
   if (r!.receipts > 0) {
     out.push({ key: "receipts.unknown", level: "later", title: `${r!.receipts} 个付费请求的结果尚未确认`, detail: `${r!.services}；仍挡住内容发布的请求需核对计费或按已有授权放行` });
   }
-  if (r!.deliveries > 0) out.push({ key: "deliveries.unknown", level: "later", title: `${r!.deliveries} 条飞书内容群推送不确定是否送达`, detail: "核对飞书内容群里有没有发出，再标记或补发" });
+  if (r!.deliveries > 0) out.push({ key: "deliveries.unknown", level: "later", title: `${r!.deliveries} 条内容群推送不确定是否送达`, detail: `核对${r!.targets ?? "内容群"}里有没有发出，再标记或补发` });
   return out;
 }
 

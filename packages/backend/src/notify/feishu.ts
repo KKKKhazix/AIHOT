@@ -304,7 +304,14 @@ export function postWebhook(url: string, card: unknown): Promise<{ status: "sent
   return sendWebhook(url, { msg_type: "interactive", card });
 }
 
-async function sendWebhook(url: string, message: unknown): Promise<{ status: "sent" | "failed" | "unknown"; body: string }> {
+/**
+ * POST a custom-bot message and read the acknowledgement. `code` picks the bot's result code (0 = accepted)
+ * from its JSON answer; the other bots (notify/dingtalk.ts) differ only there.
+ */
+export async function sendWebhook(
+  url: string, message: unknown,
+  code: (json: Record<string, unknown> | null) => unknown = (json) => json?.code ?? json?.StatusCode,
+): Promise<{ status: "sent" | "failed" | "unknown"; body: string }> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -315,9 +322,8 @@ async function sendWebhook(url: string, message: unknown): Promise<{ status: "se
   // A successful HTTP transport is not an acknowledgement: proxies can return HTML or empty JSON.
   let status: "sent" | "failed" | "unknown" = res.status >= 400 && res.status < 500 ? "failed" : "unknown";
   try {
-    const json = JSON.parse(body) as { code?: number; StatusCode?: number } | null;
-    const code = json?.code ?? json?.StatusCode;
-    if (res.ok && typeof code === "number") status = code === 0 ? "sent" : "failed";
+    const result = code(JSON.parse(body) as Record<string, unknown> | null);
+    if (res.ok && typeof result === "number") status = result === 0 ? "sent" : "failed";
   } catch {
     // non-JSON body
   }

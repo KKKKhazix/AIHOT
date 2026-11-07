@@ -13,6 +13,8 @@ export interface NavItem {
   icon: (p: { size?: number }) => ReactNode;
   /** Match the path exactly (the home page). */
   end?: boolean;
+  /** Other pages the entry stands for: they and the pages under them light it too. */
+  covers?: string[];
   /** Shows the unread dot while the changelog has news. */
   changelog?: boolean;
 }
@@ -24,7 +26,7 @@ const SECTIONS: Array<{ title: string; items: NavItem[] }> = [
       { to: "/", label: "精选", icon: IconBolt, end: true },
       { to: "/all", label: subjectAfter("全部", "动态"), icon: IconList },
       { to: "/hot", label: "热点榜", icon: IconFlame },
-      { to: "/daily", label: withSubject("日报"), icon: IconDoc },
+      { to: "/daily", label: withSubject("日报"), icon: IconDoc, covers: ["/weekly", "/monthly"] },
       { to: "/topics", label: "主题", icon: IconGrid },
       { to: "/starred", label: "收藏", icon: IconBookmark },
     ],
@@ -75,11 +77,10 @@ export function sidebar(): Array<{ title: string; items: NavItem[] }> {
   return [...sections, more];
 }
 
-/** A sidebar entry is lit on its pages; 日报 also covers weekly and monthly reports. */
-export function sidebarIsActive(item: Pick<NavItem, "to" | "end">, pathname: string): boolean {
+/** A sidebar entry is lit on its pages and the ones it covers (日报 also covers weekly and monthly reports). */
+export function sidebarIsActive(item: Pick<NavItem, "to" | "end" | "covers">, pathname: string): boolean {
   if (item.end) return pathname === item.to;
-  if (item.to === "/daily") return /^\/(daily|weekly|monthly)(\/|$)/.test(pathname);
-  return pathname === item.to || pathname.startsWith(`${item.to}/`);
+  return [item.to, ...(item.covers ?? [])].some((to) => pathname === to || pathname.startsWith(`${to}/`));
 }
 
 /**
@@ -112,13 +113,15 @@ export interface Tab {
   to: string;
   label: string;
   icon: (p: { size?: number }) => ReactNode;
+  /** As NavItem.covers. */
+  covers?: string[];
   changelog?: boolean;
 }
 
 const ENGINE_TABS: Tab[] = [
   { key: "featured", to: "/", label: "精选", icon: IconBolt },
   { key: "hot", to: "/hot", label: "热点", icon: IconFlame },
-  { key: "daily", to: "/daily", label: "日报", icon: IconDoc },
+  { key: "daily", to: "/daily", label: "日报", icon: IconDoc, covers: ["/weekly", "/monthly"] },
   { key: "me", to: "/more", label: "我的", icon: IconUser, changelog: true },
 ];
 
@@ -141,5 +144,5 @@ export function rail(): Tab[] {
 /** A rail entry is lit on its pages; 我的 also on the pages that sit under it on phones. */
 export function railIsActive(tab: Tab, pathname: string, screenTab: TabKey | undefined): boolean {
   if (tab.key === "me") return pathname === tab.to || screenTab === "me";
-  return sidebarIsActive({ to: tab.to, end: tab.to === "/" }, pathname);
+  return sidebarIsActive({ to: tab.to, end: tab.to === "/", covers: tab.covers }, pathname);
 }

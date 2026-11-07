@@ -1,4 +1,4 @@
-import { REPORTS, SITE } from "@aihot/site";
+import { REPORTS, SEO_TITLES, SITE } from "@aihot/site";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/topic";
 import type { TopicPage } from "@aihot/contracts/site";
@@ -69,7 +69,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
   return pageMeta({
     title: page > 1
       ? `${topic.name} 精选 · 第 ${page} 页`
-      : `${topic.name} 最新动态${parts.length ? `与${parts.map((p) => p.name).join("、")}` : ""}`,
+      : SEO_TITLES.topic(topic.name, topic.group, topic.latest ? monthDay(beijingDate(topic.latest.at)) : null),
     description: text,
     path,
     image: `/og/topics/${topic.slug}.png`,

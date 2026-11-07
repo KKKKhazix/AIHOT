@@ -3,7 +3,7 @@ import { IntentLink } from "../components/ui/IntentLink";
 import { useLoaderData, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/agent";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
-import { SITE } from "@aihot/site";
+import { SEO_TITLES, SITE } from "@aihot/site";
 import { apiGet, cachedPage } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { listPath, pageMeta, siteUrl } from "../lib/seo";
@@ -77,7 +77,7 @@ export function meta({ location }: Route.MetaArgs) {
   const tab = tabKey(new URLSearchParams(location.search).get('tab'));
   const path = listPath("/agent", { tab: tab !== FIRST ? tab : null });
   return pageMeta({
-    title: "Agent 接入",
+    title: SEO_TITLES.agent,
     description: `把 ${SITE.name} 接进你的 Agent：${TRACKS.map((t) => t.name).join("、")} ${WAYS}种方式，匿名只读，无需 API Key，一分钟接好。`,
     path,
     image: "/og/pages/agent.png",

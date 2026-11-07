@@ -44,6 +44,11 @@ export const SITE = {
   tagline: "值得关注的 AI 动态",
   /** 搜索引擎读到的关键词（首页结构化数据）。 */
   keywords: ["AI 资讯", "AI 新闻", "AI 日报", "AI 行业动态"] as string[],
+  /**
+   * 搜索引擎站长平台的网站验证（选填）：meta 名 → 平台给的验证码，放在首页的 head 里。
+   * 比如 "baidu-site-verification": "codeva-…"、"msvalidate.01": "…"。验证通过后也要留着，平台会定期复查。
+   */
+  siteVerification: {} as Record<string, string>,
   /** 网站开始收录的年份（结构化数据的时间范围，选填）。 */
   since: null as string | null,
   /** 界面语言（HTML lang、og:locale）。 */

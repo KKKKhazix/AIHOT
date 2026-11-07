@@ -6,7 +6,7 @@ import { sql } from "../db.ts";
 import { stripTagMarkup } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { textToHtml } from "../content/sanitize.ts";
-import { exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, toItemSummary, xView, type ItemRow } from "./items.ts";
+import { exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, thinPageCondition, toItemSummary, xView, type ItemRow } from "./items.ts";
 import { evidenceCondition, listedCondition } from "./scope.ts";
 import { itemUrl, siteUrl } from "./links.ts";
 import { hasItemPage, publicSourceName } from "./rules.ts";
@@ -19,6 +19,7 @@ interface DetailRow extends ItemRow {
   tr_html: string | null;
   tr_complete: boolean | null;
   topics: string[];
+  thin: boolean;
 }
 
 export type DetailResult =
@@ -42,7 +43,7 @@ function withOutline(html: string): { html: string; outline: OutlineEntry[] } {
 async function loadRow(id: string): Promise<DetailRow | null> {
   const [row] = await sql<DetailRow[]>`
     SELECT ${ITEM_COLUMNS}, a.body_html, a.body_text, a.body_status, tr.body_html AS tr_html, tr.complete AS tr_complete,
-      ${topicMembership()} AS topics
+      ${topicMembership()} AS topics, ${thinPageCondition()} AS thin
     ${ITEM_FROM}
     WHERE p.article_id = ${id}`;
   return row ?? null;
@@ -98,6 +99,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
       relatedStories: [],
       topics: [],
       indexable: false,
+      googleNoindex: false,
       markdownAvailable: false,
       group: null,
       hasTranslation: false,
@@ -159,6 +161,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
     relatedStories: related,
     topics: topicLinks(row.topics),
     indexable: row.indexable,
+    googleNoindex: row.indexable && row.thin,
     markdownAvailable: markdownAvailable(row),
     group,
     hasTranslation: reading.hasTranslation,

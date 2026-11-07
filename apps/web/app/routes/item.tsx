@@ -67,6 +67,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
     image: `/og/items/${item.id}.png`,
     type: "article",
     noindex: !item.indexable,
+    googleNoindex: item.googleNoindex,
     jsonLd: [
       articleLd({ path: `/items/${item.id}`, headline: item.title, description: item.summary, publishedAt: item.publishedAt, image: `/og/items/${item.id}.png`, basedOn: item.links.original }),
       breadcrumbLd([

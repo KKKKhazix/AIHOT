@@ -152,6 +152,27 @@ export function showsPost(row: { channel: string; body_mode: string }): boolean 
   return row.channel === "x" && (!POLICY.xPostIsFullText || row.body_mode === "full");
 }
 
+/** A page's own text shorter than this is one standard post's worth (280 characters) or less. */
+export const THIN_PAGE_CHARS = 300;
+
+/**
+ * A thin article page, over ITEM_FROM: its own text, as the page shows it (the post with its long article
+ * where pages show posts, else the full text), runs under THIN_PAGE_CHARS, so the page says no more than its
+ * summary (about 150 characters) already does. Google is asked not to index such a page (googlebot noindex)
+ * and the sitemap leaves it out, so Google's fetches go to events, reports and full articles. Every other
+ * engine indexes it as `indexable` says, and change notifications keep it. A page an editor marked for
+ * indexing is never thin. Counted on the article itself, never its translation, so a translation arriving
+ * later does not flip the decision.
+ */
+export function thinPageCondition() {
+  const post = POLICY.xPostIsFullText ? sql`p.channel = 'x' AND p.body_mode = 'full'` : sql`p.channel = 'x'`;
+  return sql`(p.seo_indexed_at IS NULL AND CASE
+    WHEN ${post} THEN char_length(CASE WHEN a.x_post IS NULL THEN coalesce(a.body_text, '') ELSE coalesce(a.x_post->>'text', '') END)
+      + CASE WHEN p.body_mode = 'full' THEN char_length(coalesce(a.x_article->>'text', '')) ELSE 0 END
+    WHEN p.body_mode = 'full' AND a.body_html IS NOT NULL THEN char_length(coalesce(a.body_text, ''))
+    ELSE 0 END < ${THIN_PAGE_CHARS})`;
+}
+
 /** The shared public article; its X post is added as each answer shows it. */
 export function toItemSummary(row: ItemRow): ItemSummary {
   return {

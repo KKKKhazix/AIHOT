@@ -6,7 +6,9 @@
 // - an article invents a modification date from its source's publication date or omits its image;
 // - a story has no machine-readable subject, or claims its first report is its own publication date;
 // - the founder is tied to only one public profile, so search engines and AI answers cannot connect the
-//   others to the site (2026-10-17).
+//   others to the site (2026-10-17);
+// - an article whose own text is a summary's worth is kept from every engine instead of only from Google,
+//   or its original-language page says otherwise.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { after, before, test } from "node:test";
@@ -18,7 +20,13 @@ import { startWebServer, type WebServer } from "../apps/web/tests/web-server.ts"
 
 const at = "2026-10-04T08:00:00.000Z";
 const item: FeedItemSummary = { id: "metadata-fixture", title: "可核实的测试报道", summary: "报道摘要", reason: null, source: { name: "Fixture" }, publishedAt: at, timelineAt: at, category: "ai-models", tags: [], score: 80, selected: true, channel: "news", x: null };
-const detail: SiteItemDetail = { ...item, x: null, originalTitle: null, links: { original: "https://example.org/report" }, discoveredAt: at, story: null, readingMode: "full", author: null, body: { zh: "<p>可核实的测试正文。</p>", original: null, zhKind: "original", complete: true }, outline: [], relatedStories: [], topics: [], indexable: true, markdownAvailable: true, group: null, hasTranslation: false, bodyLanguage: "zh" };
+const detail: SiteItemDetail = { ...item, x: null, originalTitle: null, links: { original: "https://example.org/report" }, discoveredAt: at, story: null, readingMode: "full", author: null, body: { zh: "<p>可核实的测试正文。</p>", original: null, zhKind: "original", complete: true }, outline: [], relatedStories: [], topics: [], indexable: true, googleNoindex: false, markdownAvailable: true, group: null, hasTranslation: false, bodyLanguage: "zh" };
+/** Article pages by id: the fixture, one kept from Google only, one kept from every engine. */
+const details: Record<string, SiteItemDetail> = {
+  [item.id]: detail,
+  "metadata-short": { ...detail, id: "metadata-short", googleNoindex: true },
+  "metadata-hidden": { ...detail, id: "metadata-hidden", selected: false, indexable: false },
+};
 const citation = (available: boolean): ReportCitation => ({ itemId: available ? item.id : "withdrawn", title: available ? item.title : "已撤下的旧头条", summary: item.summary, sourceName: item.source.name, sourceUrl: detail.links.original, sourceIconUrl: null, firstParty: true, publishedAt: at, available });
 const report = (kind: ReportKind): ReportDetail => ({ kind, key: kind === "daily" ? "2026-10-04" : kind === "weekly" ? "2026-W40" : "2026-10", issueNumber: 1, title: `${SITE.name} 测试刊物`, generatedAt: at, lead: { title: "本期已验证的重要变化", leadParagraph: "本期的导读与依据。" }, leadItemId: item.id, overview: null, highlights: [citation(true)], sections: [], flashes: [], cover: null, metrics: {}, readingMinutes: 1, prev: null, next: null });
 const story: StoryDetail = { publicId: "metadata-story", title: "测试事件的最新进展", status: "settled", reportCount: 1, sourceCount: 1, firstReportAt: at, latestAt: at, digest: "当前可核实的事件综述。", digestUpdatedAt: "2026-10-04T09:00:00.000Z", summary: null, excerpt: null, latest: null, latestReport: null, whyHot: { participants48h: 0, newParticipants6h: 0, recentReports24h: 0, observationComplete: true, rank: null }, developments: [], officialReports: [], timeline: [{ id: item.id, title: item.title, summary: item.summary, source: { name: item.source.name, firstParty: true }, publishedAt: at, selected: true }], heat: [], related: [], topics: [] };
@@ -31,7 +39,8 @@ const api = createServer((req, res) => {
   if (path === "/api/site/meta") return send({ changelogVersion: "fixture" });
   if (path === "/api/site/timeline") return send({ filters: readFilters(url.searchParams), cards: [{ key: item.id, anchorAt: at, item, group: null }], nextCursor: null, hot: null, dayCounts: { "2026-10-04": 1 } });
   if (path === "/api/site/pool") return send({ filters: { ...readFilters(url.searchParams), q: url.searchParams.get("q"), tab: url.searchParams.get("tab") ?? "time" }, items: [item], page: Number(url.searchParams.get("page") ?? 1), pageCount: 3, total: 100, todayCount: 1, freshness: at });
-  if (path === `/api/site/items/${item.id}`) return send(detail);
+  const article = /^\/api\/site\/items\/([^/]+?)(?:\/original)?$/.exec(path)?.[1];
+  if (article && details[article]) return send(details[article]);
   if (path === `/api/site/stories/${story.publicId}`) return send(story);
   const match = /^\/api\/site\/reports\/(daily|weekly|monthly)\/(.+)$/.exec(path);
   if (match) {
@@ -125,6 +134,20 @@ test("article metadata has a representative image and does not invent an update 
   assert.deepEqual(article.author, { "@id": `${web.origin}/#organization` });
   const modified = "2026-10-04T10:00:00.000Z";
   assert.equal(articleLd({ path: "/items/test", headline: "更正", modifiedAt: modified }).dateModified, modified);
+});
+
+test("an article whose own text is a summary's worth asks only Google not to index it", async () => {
+  for (const path of ["/items/metadata-short", "/items/metadata-short/original"]) {
+    const $ = await page(path);
+    assert.equal($("meta[name=googlebot]").attr("content"), "noindex", path);
+    assert.equal($("meta[name=robots]").length, 0, `${path}: other engines keep indexing it`);
+    assert.equal($("link[rel=canonical]").attr("href"), `${web.origin}/items/metadata-short`);
+  }
+  const ordinary = await page(`/items/${item.id}`);
+  assert.equal(ordinary("meta[name=googlebot]").length + ordinary("meta[name=robots]").length, 0);
+  const hidden = await page("/items/metadata-hidden");
+  assert.equal(hidden("meta[name=robots]").attr("content"), "noindex, follow");
+  assert.equal(hidden("meta[name=googlebot]").length, 0, "robots already covers Google");
 });
 
 test("story metadata describes the visible collection, current summary and report list", async () => {

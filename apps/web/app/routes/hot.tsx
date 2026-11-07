@@ -1,11 +1,13 @@
 import { useLoaderData } from "react-router";
+import type { Route } from "./+types/hot";
 import { IntentLink } from "../components/ui/IntentLink";
 import type { HotEntryView, HotResponse } from "@aihot/contracts/site";
+import { beijingDate } from "@aihot/contracts/time";
 import { SEO_TITLES, subjectAfter, withSubject } from "@aihot/site";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { pageMeta } from "../lib/seo";
-import { monthDayTime } from "../lib/format";
+import { archiveLd, pageMeta } from "../lib/seo";
+import { monthDay, monthDayTime } from "../lib/format";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/Page";
 import { IconChevronDown, IconInfo } from "../components/icons";
@@ -26,12 +28,19 @@ export async function loader({ request }: { request: Request }) {
   return cachedPage(120, { hot: await loadOr404<HotResponse>("/api/site/hot", { signal: request.signal }) });
 }
 
-export function meta() {
+export function meta({ loaderData }: Route.MetaArgs) {
+  const hot = loaderData?.hot;
+  const entries = hot?.entries ?? [];
+  // A search result answers "what is hot today" with the three events the page leads with, dated by the ranking.
+  const lead = hot?.computedAt && entries.length
+    ? `${subjectAfter(monthDay(beijingDate(hot.computedAt)), "热点")}：${entries.slice(0, 3).map((e) => e.story.title).join("；")}。`
+    : "";
   return pageMeta({
     title: SEO_TITLES.hot,
-    description: `${subjectAfter("过去 48 小时", "圈")}讨论最多的 10 个事件：热度、走势，以及都有谁在报道。`,
+    description: `${lead}${subjectAfter("过去 48 小时", "圈")}讨论最多的 10 个事件：热度、走势，以及都有谁在报道。`,
     path: "/hot",
     image: "/og/pages/hot.png",
+    jsonLd: entries.length ? archiveLd("/hot", SEO_TITLES.hot, entries.map((e) => ({ path: `/story/${e.story.publicId}`, name: e.story.title }))) : undefined,
   });
 }
 

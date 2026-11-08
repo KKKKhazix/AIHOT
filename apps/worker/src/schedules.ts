@@ -15,6 +15,7 @@ import { linkRelatedStories } from "@aihot/backend/events/consolidate";
 import { composeDueReports } from "@aihot/backend/reports/compose";
 import { dailyRetention } from "@aihot/backend/operations/retention";
 import { submitIndexNow } from "@aihot/backend/operations/indexnow";
+import { submitBaiduPush } from "@aihot/backend/operations/baidu-push";
 import { checkAlerts, sendDigest } from "@aihot/backend/operations/alerts";
 import { recoverStaleWork } from "@aihot/backend/operations/recover";
 import { forwardPendingFeedback } from "@aihot/backend/operations/feedback";
@@ -38,6 +39,8 @@ const ENGINE_SCHEDULES: Scheduled[] = [
   // IndexNow for added, changed and removed discovery URLs, hourly so a new story or report reaches Bing,
   // and the AI answers that search it, within the hour (off unless INDEXNOW_SUBMIT_ENABLED).
   { name: "seo.indexnow", cron: "50 * * * *", missed: "once", run: () => submitIndexNow() },
+  // Baidu's push for URLs new since the last run, within its daily quota (off unless BAIDU_PUSH_ENABLED).
+  { name: "seo.baidu-push", cron: "55 * * * *", missed: "once", run: () => submitBaiduPush() },
   // Work a stopped process left half way becomes visible, and unknown paid requests get their one
   // automatic release; ops.alerts runs in parallel and sees the result by its next run at the latest.
   { name: "ops.recover", cron: "*/10 * * * *", run: () => recoverStaleWork() },

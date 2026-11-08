@@ -8,7 +8,7 @@ import { cachedPage, loadOr404 } from "../lib/api.server";
 import { loadFollowups } from "../features/item/followups.server";
 import { pageReuse } from "../lib/page-reuse";
 import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
-import { fullDateTime, relativeTime } from "../lib/format";
+import { fullDateTime, timeAgo } from "../lib/format";
 import { markRead } from "../lib/local-state";
 import { copyText } from "../lib/clipboard";
 import { SameEventBadge, SelectedBadge } from "../components/ui/Badge";
@@ -156,6 +156,14 @@ function hostOf(url: string): string {
   } catch {
     return "";
   }
+}
+
+/** The byline, unless the source's name already says it (公众号：卡尔的AI沃茨 by AI沃茨, Claude：YouTube by Claude). */
+function bylineOf(author: string | null, source: string): string | null {
+  const key = (s: string) => s.toLowerCase().replace(/[\s\p{P}]/gu, "");
+  const a = author ? key(author) : "";
+  const s = key(source);
+  return a && !s.includes(a) && !a.includes(s) ? author : null;
 }
 
 async function shareOrCopy(item: Pick<SiteItemDetail, "id" | "title">): Promise<"shared" | "copied" | null> {
@@ -320,6 +328,7 @@ function ItemView({ item, followups }: Loaded) {
   const bodyHtml = lang === "zh" ? (item.body?.zh ?? item.body?.original) : (item.body?.original ?? item.body?.zh);
   const bodyLabel = !item.body ? null : lang === "zh" && item.body.zhKind === "translation" ? "正文 · AI 翻译" : lang === "original" ? "正文 · 原文" : "正文";
   const isX = item.channel === "x" && !!item.x;
+  const byline = isX ? null : bylineOf(item.author, item.source.name);
   // Without a reliable date from the original, the time shown is when it was collected, labelled as such.
   const shownAt = item.publishedAt ?? item.discoveredAt;
   const timeLabel = item.publishedAt ? "发布时间" : "收录时间";
@@ -400,14 +409,14 @@ function ItemView({ item, followups }: Loaded) {
     <RailSection title="来源">
       <div className="text-[14px] font-semibold leading-snug text-ink">{isX ? item.x!.authorName : item.source.name}</div>
       <div className="mt-1 text-[12.5px] leading-relaxed text-ink-3">
-        {isX ? `@${item.x!.handle} · X` : item.author ?? hostOf(item.links.original)}
+        {isX ? `@${item.x!.handle} · X` : byline ?? hostOf(item.links.original)}
       </div>
       <div className="mt-3 text-[12px] text-ink-4">{timeLabel}</div>
       <time dateTime={shownAt} className="mono mt-0.5 block text-[12.5px] text-ink-2">
         {fullDateTime(shownAt)}
       </time>
-      <div className="mt-0.5 text-[12px] text-ink-4" suppressHydrationWarning>
-        {relativeTime(shownAt)}
+      <div className="mt-0.5 text-[12px] text-ink-4 empty:hidden" suppressHydrationWarning>
+        {timeAgo(shownAt)}
       </div>
     </RailSection>
   );
@@ -498,11 +507,11 @@ function ItemView({ item, followups }: Loaded) {
           <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-ink-3 2xl:hidden ${isX ? "" : "mb-3"}`}>
             <span className="font-semibold text-ink-2">{isX ? item.x!.authorName : item.source.name}</span>
             {isX && <span>· @{item.x!.handle} · X</span>}
-            {item.author && !isX && <span>· {item.author}</span>}
+            {byline && <span>· {byline}</span>}
             <span>·</span>
             {!item.publishedAt && <span>收录于</span>}
             <time dateTime={shownAt} className="mono">{fullDateTime(shownAt)}</time>
-            <span suppressHydrationWarning>· {relativeTime(shownAt)}</span>
+            <span className="empty:hidden" suppressHydrationWarning>{timeAgo(shownAt) && `· ${timeAgo(shownAt)}`}</span>
             {item.selected && (
               <span className="ml-1 side:hidden">
                 {item.sameEvent ? <SameEventBadge /> : <SelectedBadge />}

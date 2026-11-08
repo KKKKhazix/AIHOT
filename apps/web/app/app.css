@@ -461,8 +461,10 @@
 @media (min-width: 80rem) {
   .prose { font-size: 18px; }
 }
+/* One gap between any two blocks, whatever they are; headings and figures adjust it below. Paragraphs
+   need no margin reset of their own (preflight has one): a `.prose p` rule outranked this one and left a
+   paragraph after a list, quote, code block or table with no gap at all. */
 .prose > * + * { margin-top: 1.2em; }
-.prose p { margin: 0; }
 .prose p + p { margin-top: 1.2em; }
 .prose h2, .prose h3, .prose h4, .prose h5 {
   color: var(--ink);
@@ -502,6 +504,20 @@
 }
 .prose figure { margin: 1.5em 0; }
 .prose figcaption { font-size: 13px; color: var(--ink-4); text-align: center; margin-top: 0.6em; }
+.prose figcaption > :is(b, strong):first-child { margin-right: 0.5em; }
+/* A figure whose picture did not come through and that is left with only words (a chart's own
+   description, a panel of numbers) stands apart from the running text in a well. */
+.prose figure:not(:has(img, picture, video, table, pre, blockquote)):has(> :is(p, h3, h4, h5, ul, ol, dl)) {
+  padding: 0.9em 1.1em;
+  border-radius: var(--radius-panel);
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  color: var(--ink-2);
+  font-size: 0.88em;
+  line-height: 1.7;
+}
+.prose figure:not(:has(img, picture, video, table, pre, blockquote)) > * + * { margin-top: 0.5em; }
+.prose figure:not(:has(img, picture, video, table, pre, blockquote)) figcaption { text-align: left; }
 .prose code {
   font-family: var(--font-mono);
   font-size: 0.86em;

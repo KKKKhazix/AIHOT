@@ -26,6 +26,11 @@ export function weekdayShort(date: string): string {
 }
 
 export function relativeTime(iso: string, now = Date.now()): string {
+  return timeAgo(iso, now) ?? beijingDate(iso);
+}
+
+/** "3 天前" while that is under a month, else null: beside a full time, the date it would fall back to says nothing new. */
+export function timeAgo(iso: string, now = Date.now()): string | null {
   const t = Date.parse(iso);
   const s = Math.max(0, Math.round((now - t) / 1000));
   if (s < 60) return "刚刚";
@@ -34,8 +39,7 @@ export function relativeTime(iso: string, now = Date.now()): string {
   const h = Math.round(m / 60);
   if (h < 24) return `${h} 小时前`;
   const d = Math.round(h / 24);
-  if (d < 30) return `${d} 天前`;
-  return beijingDate(iso);
+  return d < 30 ? `${d} 天前` : null;
 }
 
 export function fullDateTime(iso: string): string {

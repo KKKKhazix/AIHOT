@@ -1,5 +1,6 @@
 // First-party site API (/api/site/*). Not a public API: it may evolve with the website,
 // but it is served from the same public read layer as v1, RSS and MCP.
+import type { MentionTarget } from "./mentions.ts";
 import type { CategoryKey, ChannelKey } from "./taxonomy.ts";
 import { isoWeekRange, monthDay } from "./time.ts";
 
@@ -162,6 +163,8 @@ export interface SiteItemDetail extends ItemSummary {
   group: GroupInfo | null;
   hasTranslation: boolean;
   bodyLanguage: "zh" | "original";
+  /** The pages its summary names (mentions.ts). */
+  mentions: MentionTarget[];
 }
 
 /** A fact's public reports under the list's filters: what "另外 N 家也报道了" opens. */
@@ -273,6 +276,8 @@ export interface StoryDetail {
   related: Array<StoryRef & { relation: "storyline" | "related" }>;
   /** The topics its reports belong to, most reports first. */
   topics: TopicLink[];
+  /** The pages its overview names (mentions.ts). */
+  mentions: MentionTarget[];
 }
 
 // Reports (daily / weekly / monthly)
@@ -337,6 +342,8 @@ export interface ReportDetail {
   readingMinutes: number;
   prev: string | null;
   next: string | null;
+  /** The pages its paragraphs and summaries name (mentions.ts). */
+  mentions: MentionTarget[];
 }
 
 export interface ReportIndexEntry {

@@ -11,6 +11,7 @@ import { evidenceCondition, listedCondition } from "./scope.ts";
 import { itemUrl, siteUrl } from "./links.ts";
 import { hasItemPage, publicSourceName } from "./rules.ts";
 import { topicLinks, topicMembership } from "./topics.ts";
+import { mentionsIn } from "./mentions.ts";
 
 interface DetailRow extends ItemRow {
   body_html: string | null;
@@ -104,6 +105,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
       group: null,
       hasTranslation: false,
       bodyLanguage: "original",
+      mentions: await mentionsIn([summary.summary]),
     };
     return { kind: "found", item, row };
   }
@@ -166,6 +168,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
     group,
     hasTranslation: reading.hasTranslation,
     bodyLanguage: reading.bodyLanguage,
+    mentions: await mentionsIn([summary.summary]),
   };
   return { kind: "found", item, row };
 }

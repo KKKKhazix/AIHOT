@@ -9,6 +9,7 @@ import { isoWeekRange, monthRange } from "@aihot/contracts/time";
 import { dailyUrl, itemUrl, periodUrl, siteUrl } from "./links.ts";
 import { publicSourceName } from "./rules.ts";
 import { listedCondition } from "./scope.ts";
+import { mentionsIn } from "./mentions.ts";
 
 export type { ReportKind };
 
@@ -363,6 +364,10 @@ export async function loadReport(kind: ReportKind, key: string): Promise<ReportD
   const [{ prev, next }, picture] = await Promise.all([neighbors(kind, key), leadItem?.itemId && leadItem.available ? leadCover(leadItem.itemId) : null]);
   const cover = picture && leadItem ? { ...picture, caption: kind === "daily" || c.leadItemId ? null : leadItem.title } : null;
   const headline = kind === "daily" ? null : periodicHeadline(c);
+  const lead = hasCitedLead
+    ? (named ? { title: named.title, leadParagraph: (kind === "daily" ? named.leadParagraph : overview) ?? "" } : null)
+    : kind === "daily" ? c.lead ?? null
+      : c.lead ? { ...c.lead, leadParagraph: overview ?? "" } : (headline ? { title: headline, leadParagraph: overview ?? "" } : null);
   const title = kind === "daily" ? `${withSubject("日报")} · ${key}`
     : String((hasCitedLead && c.title === headline ? named?.title : c.title) ?? (kind === "weekly" ? `${SITE.name} 周报 · ${key}` : `${SITE.name} 月报 · ${key}`));
   return {
@@ -371,10 +376,7 @@ export async function loadReport(kind: ReportKind, key: string): Promise<ReportD
     issueNumber: r.issue_number,
     title,
     generatedAt: r.generated_at.toISOString(),
-    lead: hasCitedLead
-      ? (named ? { title: named.title, leadParagraph: (kind === "daily" ? named.leadParagraph : overview) ?? "" } : null)
-      : kind === "daily" ? c.lead ?? null
-        : c.lead ? { ...c.lead, leadParagraph: overview ?? "" } : (headline ? { title: headline, leadParagraph: overview ?? "" } : null),
+    lead,
     leadItemId: (kind === "daily" || c.leadItemId) && leadItem?.available ? leadItem.itemId : null,
     overview,
     highlights,
@@ -389,6 +391,8 @@ export async function loadReport(kind: ReportKind, key: string): Promise<ReportD
     readingMinutes: readingMinutes(text),
     prev,
     next,
+    // The texts the issue's page draws: its lead, overview and each section's summary and stories.
+    mentions: await mentionsIn([lead?.leadParagraph, overview, ...sections.flatMap((s) => [s.summary, ...s.items.map((i) => i.summary)])]),
   };
 }
 

@@ -1,8 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Await, isRouteErrorResponse, Link, useAsyncError, useLoaderData, useNavigate, useRevalidator, type ClientLoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/item";
 import type { FeedItemSummary, SiteItemDetail, StoryFollowupsResponse } from "@aihot/contracts/site";
 import { ITEM_COPY, SITE } from "@aihot/site";
+import { linkMentions } from "@aihot/contracts/mentions";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { loadFollowups } from "../features/item/followups.server";
 import { pageReuse } from "../lib/page-reuse";
@@ -21,6 +22,7 @@ import { StoryFollowups } from "../features/item/StoryFollowups";
 import { MediaGallery } from "../features/item/MediaGallery";
 import { QuotedPost } from "../features/item/QuotedPost";
 import { ArticleBody } from "../features/item/ArticleBody";
+import { MentionText } from "../components/ui/MentionText";
 import { ActionsSheet, ReaderToolbar, type ActionRow } from "../features/item/ReaderTools";
 import { OutlineSheet } from "../components/ui/OutlineSheet";
 import { scrollToAnchor } from "../lib/motion";
@@ -326,6 +328,7 @@ function ItemView({ item, followups }: Loaded) {
   const originalLabel = isX ? "在 X 查看原推" : "打开原文";
 
   const related = item.relatedStories.filter((s) => s.publicId !== item.story?.publicId);
+  const [summaryRuns] = useMemo(() => linkMentions([item.summary], item.mentions), [item.summary, item.mentions]);
 
   const back = () => {
     if (window.history.state?.idx > 0) navigate(-1);
@@ -517,7 +520,7 @@ function ItemView({ item, followups }: Loaded) {
           {item.summary && (!isX || item.summary.replace(/\s+/g, " ").trim() !== item.title) && (
             <section className={isX ? "mt-4" : "mt-7 xl:mt-8"}>
               <div className="mb-2 text-[12px] font-semibold text-accent">{summaryOnly ? "摘要" : "AI 导读"}</div>
-              <p className="text-[18px] leading-[1.7] text-ink xl:text-[20px] xl:leading-[1.7]">{item.summary}</p>
+              <p className="text-[18px] leading-[1.7] text-ink xl:text-[20px] xl:leading-[1.7]"><MentionText runs={summaryRuns} /></p>
             </section>
           )}
 

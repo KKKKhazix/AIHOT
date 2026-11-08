@@ -1,8 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Await, isRouteErrorResponse, Link, useAsyncError, useLoaderData, useNavigate, useRevalidator, type ClientLoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/item";
-import type { FeedItemSummary, SiteItemDetail, StoryFollowupsResponse } from "@aihot/contracts/site";
-import { ITEM_COPY, SITE } from "@aihot/site";
+import { REPORT_NAMES, reportDateLabel, type FeedItemSummary, type SiteItemDetail, type StoryFollowupsResponse } from "@aihot/contracts/site";
+import { ITEM_COPY, SITE, withSubject } from "@aihot/site";
 import { linkMentions } from "@aihot/contracts/mentions";
 import { addressRuns } from "@aihot/contracts/addresses";
 import { cachedPage, loadOr404 } from "../lib/api.server";
@@ -165,6 +165,25 @@ function bylineOf(author: string | null, source: string): string | null {
   const a = author ? key(author) : "";
   const s = key(source);
   return a && !s.includes(a) && !a.includes(s) ? author : null;
+}
+
+/** "11月7日 AI 日报 · 头条": the daily that carries the article, named as the site names its issues. */
+function dailyName(daily: NonNullable<SiteItemDetail["daily"]>): string {
+  return `${reportDateLabel("daily", daily.key)} ${withSubject(REPORT_NAMES.daily)}${daily.lead ? " · 头条" : ""}`;
+}
+
+/**
+ * The tag chips that go beside the article's topic chips (every place showing tags shows all its topics): a
+ * tag that is a topic's own leads to the topic's page, not to a filtered list search engines are kept from,
+ * and beside that topic's chip it is not repeated.
+ */
+function tagChips(item: SiteItemDetail): Array<{ tag: string; to: string }> {
+  const shown = new Set(item.topics.map((t) => t.slug));
+  return item.tags.flatMap((tag) => {
+    const topic = item.tagTopics[tag];
+    if (topic && shown.has(topic)) return [];
+    return [{ tag, to: topic ? `/topics/${topic}` : `/all?tag=${encodeURIComponent(tag)}` }];
+  });
 }
 
 async function shareOrCopy(item: Pick<SiteItemDetail, "id" | "title">): Promise<"shared" | "copied" | null> {
@@ -343,6 +362,8 @@ function ItemView({ item, followups }: Loaded) {
 
   const related = item.relatedStories.filter((s) => s.publicId !== item.story?.publicId);
   const [summaryRuns] = useMemo(() => linkMentions([item.summary], item.mentions), [item.summary, item.mentions]);
+  const daily = item.daily && { to: `/daily/${item.daily.key}`, name: dailyName(item.daily) };
+  const tags = tagChips(item);
 
   const back = () => {
     if (window.history.state?.idx > 0) navigate(-1);
@@ -436,6 +457,15 @@ function ItemView({ item, followups }: Loaded) {
       ) : (
         verdict && <RailSection title={shownScore(item.score) !== null ? "AI 评分" : undefined}>{verdict}</RailSection>
       )}
+      {daily && (
+        <RailSection title="收录于">
+          <div className="flex flex-wrap gap-1.5">
+            <Link viewTransition to={daily.to} className="chip">
+              {daily.name}
+            </Link>
+          </div>
+        </RailSection>
+      )}
       {item.topics.length > 0 && (
         <RailSection title="主题">
           <div className="flex flex-wrap gap-1.5">
@@ -447,12 +477,12 @@ function ItemView({ item, followups }: Loaded) {
           </div>
         </RailSection>
       )}
-      {item.tags.length > 0 && (
+      {tags.length > 0 && (
         <RailSection title="标签">
           <div className="flex flex-wrap gap-1.5">
-            {item.tags.slice(0, 8).map((t) => (
-              <Link key={t} to={`/all?tag=${encodeURIComponent(t)}`} className="chip">
-                #{t}
+            {tags.slice(0, 8).map(({ tag, to }) => (
+              <Link key={tag} to={to} className="chip">
+                #{tag}
               </Link>
             ))}
           </div>
@@ -598,16 +628,21 @@ function ItemView({ item, followups }: Loaded) {
             <span> · {hostOf(item.links.original)}</span>
           </p>
 
-          {(item.topics.length > 0 || item.tags.length > 0) && (
+          {(daily || item.topics.length > 0 || tags.length > 0) && (
             <div className="mt-4 flex flex-wrap gap-1.5 side:hidden">
+              {daily && (
+                <Link viewTransition to={daily.to} className="chip">
+                  收录于 {daily.name}
+                </Link>
+              )}
               {item.topics.map((t) => (
                 <Link viewTransition key={t.slug} to={`/topics/${t.slug}`} className="chip">
                   {t.name}
                 </Link>
               ))}
-              {item.tags.slice(0, 6).map((t) => (
-                <Link key={t} to={`/all?tag=${encodeURIComponent(t)}`} className="chip">
-                  #{t}
+              {tags.slice(0, 6).map(({ tag, to }) => (
+                <Link key={tag} to={to} className="chip">
+                  #{tag}
                 </Link>
               ))}
             </div>

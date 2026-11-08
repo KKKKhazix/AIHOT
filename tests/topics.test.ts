@@ -8,6 +8,7 @@
 // - a technical-direction topic stops taking its tags;
 // - withdrawn or not yet released articles appear in a list or a count;
 // - an article or story page names a topic its reports do not belong to;
+// - an article page cannot tell which of its tags are a topic's own, so they link to filtered lists;
 // - a topic without content has no page, or an unknown slug or a page past the end has one.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
@@ -122,6 +123,17 @@ test("a company topic takes the articles about it, not the ones that only mentio
   assert.deepEqual(await topicsOf(subpoena), ["openai", "model-releases"]);
   assert.deepEqual(await topicsOf(pact), ["model-releases"]);
   assert.deepEqual(await topicsOf(agent), ["agent", "model-releases"]);
+});
+
+test("an article page says which of its tags are a topic's own", async () => {
+  // A direction's or a form's tags, and the tag cards show for a company (its subject tag is never shown).
+  const id = await report({ at: hoursAgo(3), title: `Anthropic 开源智能体框架 ${T}`, subjects: ["anthropic", "openai"], tags: ["Agent", "开源/仓库", "Anthropic", "OpenAI", "框架"] });
+  const res = await app.inject({ method: "GET", url: `/api/site/items/${id}` });
+  const body = JSON.parse(res.body) as { tags: string[]; tagTopics: Record<string, string>; topics: Array<{ slug: string }> };
+  assert.deepEqual(body.tags, ["模型发布", "Agent", "开源/仓库", "Anthropic", "OpenAI", "框架"]);
+  assert.deepEqual(body.tagTopics, { "模型发布": "model-releases", Agent: "agent", "开源/仓库": "open-source", Anthropic: "anthropic", OpenAI: "openai" });
+  // The company its title does not name is a topic of the tag, not of the article.
+  assert.deepEqual(body.topics.map((t) => t.slug), ["anthropic", "agent", "open-source", "model-releases"]);
 });
 
 test("renaming a company topic keeps its old full name usable for search", async () => {

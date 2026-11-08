@@ -5,8 +5,10 @@
 // with a new fact; an event with an official post and three or more independent participants is
 // carried even when none of its reports was selected; entries rank by importance (score, the day's
 // independent participants, first-hand), and the first one leads. Sections are the industry pack's
-// (industry/taxonomy.ts CATEGORIES).
+// (industry/taxonomy.ts CATEGORIES). A thin issue's highlights are filled from the window's best reports it
+// left out (dailyPicks).
 import { addDays } from "@aihot/contracts/time";
+import { SELECTION } from "@aihot/industry/selection";
 import { CATEGORIES } from "@aihot/industry/taxonomy";
 import { sql } from "../db.ts";
 import { currentSignals } from "../events/hot.ts";
@@ -203,18 +205,59 @@ export function citedIn(content: Record<string, any>): Array<Record<string, any>
   return [...entries, ...entries.flatMap((e: any) => e.related ?? [])];
 }
 
+/** A report a thin issue's highlights are filled with scored at least what any source needs to be selected. */
+const PICK_FLOOR = Math.min(...Object.values(SELECTION.thresholds));
+
+/**
+ * Reports to fill a thin issue's highlights with (a weekend's issue often carries a single entry): the
+ * window's best scored editorial reports the editors did not select, best first (then the earlier), one per
+ * event, none of an event this issue or the week's issues carried or their highlights showed, and none
+ * scored below PICK_FLOOR. Every selected report is already a candidate of its own issue (periodReports),
+ * which may be the next one; and what highlights showed never keeps a report out of a later issue's body
+ * (citedIn leaves them out): a report confirmed after the cutoff, or an official post on the same news, is
+ * carried in full there. A report withdrawn later stays cited and is shown as withdrawn, as an entry is.
+ */
+export async function dailyPicks(date: string, start: Date, end: Date, issue: EditionEntry[], count: number): Promise<ReportEntry[]> {
+  if (count <= 0) return [];
+  const memory = await dailyMemory(date, true);
+  const cited = issue.flatMap((e) => [e.entry, ...(e.entry.related ?? [])]);
+  const keys = new Set([...memory.keys, ...cited.flatMap((c) => [c.factId, `a:${c.itemId}`]).filter((k): k is string => !!k)]);
+  const stories = new Set<number | string>([...memory.stories.keys(), ...issue.map((e) => e.storyId).filter((id): id is number => id !== null),
+    ...cited.map((c) => c.storyPublicId).filter((id): id is string => !!id)]);
+  const rows = await sql<ReportRow[]>`
+    SELECT ${REPORT_FIELDS}
+    FROM publications p JOIN sources s ON s.id = p.source_id
+    LEFT JOIN facts f ON f.id = p.fact_id AND ${ownFactEvidenceCondition()}
+    LEFT JOIN stories st ON st.id = f.story_id
+    WHERE ${listedCondition(end)} AND NOT p.selected AND s.participation_mode = 'editorial' AND NOT p.backfill
+      AND p.timeline_at >= ${start} AND p.timeline_at < ${end} AND p.score >= ${PICK_FLOOR}
+    ORDER BY p.score DESC, p.timeline_at, p.article_id`;
+  const picks: ReportEntry[] = [];
+  const events = new Set<string>();
+  for (const r of rows) {
+    const event = r.story_id === null ? factKeyOf(r) : `s:${r.story_id}`;
+    if (events.has(event) || keys.has(factKeyOf(r)) || keys.has(`a:${r.id}`)) continue;
+    if (r.story_id !== null && (stories.has(r.story_id) || (r.story_public_id && stories.has(r.story_public_id)))) continue;
+    events.add(event);
+    picks.push(reportEntry(r));
+    if (picks.length === count) break;
+  }
+  return picks;
+}
+
 /**
  * What the issues of the week before `date` carried: their facts and reports, which are not repeated,
- * and their events with the latest issue and headline that covered each. Facts and events are also
- * read from the cited reports' current grouping, so a later merge or regrouping still counts.
+ * and their events with the latest issue and headline that covered each; with `picks`, also what their
+ * highlights were filled with (dailyPicks). Facts and events are also read from the cited reports'
+ * current grouping, so a later merge or regrouping still counts.
  */
-export async function dailyMemory(date: string): Promise<{ keys: Set<string>; stories: Map<number, { key: string; title: string }> }> {
+export async function dailyMemory(date: string, picks = false): Promise<{ keys: Set<string>; stories: Map<number, { key: string; title: string }> }> {
   const issues = await sql<{ key: string; content: Record<string, any> }[]>`
     SELECT key, content FROM reports WHERE kind = 'daily' AND key < ${date} AND key >= ${addDays(date, -MEMORY_DAYS)} ORDER BY key DESC`;
   const keys = new Set<string>();
   const cited = new Map<string, { key: string; title: string }>();
   for (const issue of issues) {
-    for (const it of citedIn(issue.content)) {
+    for (const it of [...citedIn(issue.content), ...(picks ? issue.content.picks ?? [] : [])]) {
       if (it.factId) keys.add(String(it.factId));
       if (!it.itemId) continue;
       keys.add(`a:${it.itemId}`);

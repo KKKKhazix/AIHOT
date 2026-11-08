@@ -12,7 +12,8 @@ import { eventPageCondition, exportTranslation, isChineseBody, ITEM_COLUMNS, ITE
 import { evidenceCondition, listedCondition } from "./scope.ts";
 import { itemUrl, siteUrl } from "./links.ts";
 import { hasItemPage, publicSourceName } from "./rules.ts";
-import { topicLinks, topicMembership } from "./topics.ts";
+import { tagTopics, topicLinks, topicMembership } from "./topics.ts";
+import { firstDaily } from "./reports.ts";
 import { mentionsIn } from "./mentions.ts";
 
 interface DetailRow extends ItemRow {
@@ -107,6 +108,8 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
       outline: [],
       relatedStories: [],
       topics: [],
+      tagTopics: {},
+      daily: null,
       indexable: false,
       googleNoindex: false,
       markdownAvailable: false,
@@ -191,6 +194,8 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
     outline: reading.outline,
     relatedStories: related,
     topics: topicLinks(row.topics),
+    tagTopics: tagTopics(summary.tags),
+    daily: await firstDaily(id),
     indexable: row.indexable,
     googleNoindex: row.indexable && (row.thin || row.event_page),
     markdownAvailable: markdownAvailable(row),

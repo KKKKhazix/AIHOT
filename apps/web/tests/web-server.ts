@@ -27,7 +27,7 @@ export function itemDetail(fields: Partial<SiteItemDetail> & Pick<SiteItemDetail
     ...feedItem({ id: fields.id, title: fields.title }), x: null, originalTitle: null, links: { original: "https://example.org/article" },
     discoveredAt: FIXTURE_AT, story: null, readingMode: "full", author: null,
     body: { zh: "<p>固定正文</p>", original: null, zhKind: "translation", complete: true },
-    outline: [], relatedStories: [], topics: [], indexable: true, googleNoindex: false, markdownAvailable: true, group: null, hasTranslation: true, bodyLanguage: "zh", mentions: [],
+    outline: [], relatedStories: [], topics: [], tagTopics: {}, daily: null, indexable: true, googleNoindex: false, markdownAvailable: true, group: null, hasTranslation: true, bodyLanguage: "zh", mentions: [],
     ...fields,
   };
 }

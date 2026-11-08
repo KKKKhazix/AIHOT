@@ -1,7 +1,9 @@
 // The same issue through the website, JSON, Agent answer and RSS. Failure cases: withdrawal
 // changes a headline but drops its paragraph in projected indexes/feeds; written historical leads
 // keep withdrawn news; citations leak a scheduled selection; missing frozen summaries or corrected
-// publication dates differ between readers; discovery claims to list topics it actually omits.
+// publication dates differ between readers; discovery claims to list topics it actually omits; an
+// article's page names a later daily than the first one that carries it, a daily that no longer shows
+// it, or calls it the lead of an issue whose page leads with another.
 import { tag } from './setup.ts';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -13,7 +15,7 @@ import { reportFeed } from '@aihot/backend/publication/feeds';
 import { llmsTxt } from '@aihot/backend/publication/llms';
 import { stopBoss } from '@aihot/backend/jobs/queue';
 import { buildApp } from '../apps/api/src/app.ts';
-import type { ReportKind } from '@aihot/contracts/site';
+import type { ReportKind, SiteItemDetail } from '@aihot/contracts/site';
 
 const T = tag();
 const source = `report-outlets-${T}`;
@@ -49,6 +51,13 @@ async function dailyOutlets(key: string) {
     feed: (await feedIssues('daily', 30)).find((r) => r.key === key)!,
     agent: (await app.inject({ method: 'GET', url: `/api/v1/agent/daily/${key}` })).body,
   };
+}
+
+/** The daily an article's page says carries it. */
+async function dailyOf(itemId: string) {
+  const res = await app.inject({ method: 'GET', url: `/api/site/items/${itemId}` });
+  assert.equal(res.statusCode, 200);
+  return (JSON.parse(res.body) as SiteItemDetail).daily;
 }
 
 test('withdrawing a named lead preserves the replacement headline and its own frozen paragraph everywhere', async (t) => {
@@ -222,4 +231,60 @@ test('an expired report index waits for the current withdrawal result',async(t)=
   await sql`UPDATE publications SET visibility='withdrawn' WHERE article_id=${removed.itemId}`;
   t.mock.timers.tick(60_001);
   assert.equal((await v1Dailies(50)).items.find(r=>r.date===key)!.leadTitle,replacement.title);
+});
+
+test('an article page names the first daily that carries it anywhere, and leads there as the issue page does', async () => {
+  const lead = await citation('Carried lead');
+  const entry = await citation('Carried entry');
+  const related = await citation('Carried related development');
+  const flash = await citation('Carried flash');
+  const periodic = await citation('Carried by a weekly only');
+  const [first, later] = ['2097-02-01', '2097-02-02'];
+  await issue('daily', first, { leadItemId: lead.itemId, lead: { title: lead.title, leadParagraph: lead.summary }, highlights: [entry.itemId],
+    sections: [{ label: 'News', items: [lead, { ...entry, related: [related] }] }], flashes: [flash] });
+  await issue('daily', later, { leadItemId: entry.itemId, lead: { title: entry.title, leadParagraph: entry.summary }, sections: [{ label: 'News', items: [entry] }] });
+  await issue('weekly', '2097-W06', { leadItemId: periodic.itemId, themes: [{ heading: 'News', storyRefs: [periodic] }] });
+  assert.deepEqual(await dailyOf(lead.itemId), { key: first, lead: true });
+  assert.deepEqual(await dailyOf(entry.itemId), { key: first, lead: false }, 'the first issue, though a later one leads with it');
+  assert.deepEqual(await dailyOf(related.itemId), { key: first, lead: false });
+  assert.deepEqual(await dailyOf(flash.itemId), { key: first, lead: false });
+  assert.equal(await dailyOf(periodic.itemId), null, 'weeklies and monthlies are not dailies');
+  await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${lead.itemId}`;
+  assert.equal((await loadReport('daily', first))!.leadItemId, entry.itemId, 'the issue leads with the next public candidate');
+  assert.deepEqual(await dailyOf(entry.itemId), { key: first, lead: true }, 'and that article says so');
+  // The issue strikes an article it no longer lists through; that article's page does not send readers there.
+  await sql`UPDATE publications SET eligible = false WHERE article_id = ${flash.itemId}`;
+  assert.equal((await loadReport('daily', first))!.flashes[0]!.available, false);
+  assert.equal(await dailyOf(flash.itemId), null);
+});
+
+test('an article page leads an issue without a named lead item exactly when that issue page does', async () => {
+  // Issues composed before leads were named: a written lead matched to its citation by title, highlights
+  // without a lead, or neither.
+  for (const [key, shape] of [['2097-02-03', 'written'], ['2097-02-04', 'none'], ['2097-02-05', 'highlights']] as const) {
+    const opening = await citation(`${key} 开篇模型发布`);
+    const described = await citation(`${key} 安全工具正式上线`);
+    await issue('daily', key, { lead: shape === 'written' ? { title: described.title, leadParagraph: '旧版导语' } : null,
+      ...(shape === 'highlights' ? { highlights: [described.itemId] } : {}), sections: [{ label: 'News', items: [opening, described] }] });
+    const page = (await loadReport('daily', key))!;
+    assert.equal(page.leadItemId, shape === 'none' ? opening.itemId : described.itemId, key);
+    for (const c of [opening, described]) assert.deepEqual(await dailyOf(c.itemId), { key, lead: page.leadItemId === c.itemId }, c.title);
+  }
+});
+
+test('an article page names the first daily whose page lists it, not one that only keeps it in its content', async () => {
+  const parent = await citation('Entry with developments');
+  const developments = [];
+  for (const n of [1, 2, 3, 4, 5]) developments.push(await citation(`Listed development ${n}`));
+  const [first, later] = ['2097-02-06', '2097-02-07'];
+  await issue('daily', first, { leadItemId: parent.itemId, lead: { title: parent.title, leadParagraph: parent.summary },
+    sections: [{ label: 'News', items: [{ ...parent, related: developments }] }] });
+  await issue('daily', later, { sections: [{ label: 'News', items: [developments[0]] }] });
+  assert.deepEqual(await dailyOf(developments[0]!.itemId), { key: first, lead: false });
+  assert.equal((await loadReport('daily', first))!.sections[0]!.items[0]!.related!.length, 4, 'an entry lists its first four developments');
+  assert.equal(await dailyOf(developments[4]!.itemId), null, 'the fifth is in the content, not on the page');
+  // The page strikes the entry through and lists nothing under it: the later issue is the first to list the development.
+  await sql`UPDATE publications SET eligible = false WHERE article_id = ${parent.itemId}`;
+  assert.equal((await loadReport('daily', first))!.sections[0]!.items[0]!.related, undefined);
+  assert.deepEqual(await dailyOf(developments[0]!.itemId), { key: later, lead: true }, 'that issue leads with its only entry');
 });

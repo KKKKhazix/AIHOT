@@ -3,7 +3,8 @@
 // - nothing tells an engine what is new, so today's events, selections and reports queue behind old URLs;
 // - pages whose own text is only a summary's worth are advertised to Google, which spends its fetches on them;
 // - keeping those pages from Google also keeps them from the engines that index them, or from notifications;
-// - the news section's dates leak into the notification inventory, so every URL looks changed.
+// - the news section's dates leak into the notification inventory, so every URL looks changed;
+// - an article whose event already gathers several reports competes at Google with that event's page (2026-11-09).
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -49,11 +50,13 @@ async function report(name: string, r: Report) {
   return article;
 }
 
-async function story(members: string[]) {
+/** `own`: the members' page names this story as theirs, as publishing does for an article's primary event. */
+async function story(members: string[], own = false) {
   const publicId = randomUUID();
   const [st] = await sql<{ id: number }[]>`INSERT INTO stories (public_id,title,latest_at) VALUES (${publicId},'事件',${ago(1)}) RETURNING id`;
   const [fact] = await sql<{ id: number }[]>`INSERT INTO facts (public_id,story_id,title) VALUES (${randomUUID()},${st!.id},'事实') RETURNING id`;
   for (const member of members) await sql`INSERT INTO fact_articles (fact_id,article_id,role) VALUES (${fact!.id},${member},'primary')`;
+  if (own) await sql`UPDATE publications SET story_id = ${st!.id}, fact_id = ${fact!.id} WHERE article_id = ANY(${members})`;
   return publicId;
 }
 
@@ -81,11 +84,17 @@ before(async () => {
     lone: await report("lone", { at: ago(1), body: long, selected: false, indexable: false }),
     staleA: await report("stale-a", { at: ago(80), body: long, selected: false, indexable: false }),
     staleB: await report("stale-b", { at: ago(79), body: long, selected: false, indexable: false }),
+    pairA: await report("pair-a", { at: ago(1), body: long }),
+    pairB: await report("pair-b", { at: ago(2), body: long }),
+    pairManual: await report("pair-manual", { at: ago(3), body: long, manual: true }),
+    single: await report("single", { at: ago(1), body: long }),
   });
   Object.assign(stories, {
     fresh: await story([ids.storyA!, ids.storyB!]),
     lone: await story([ids.lone!]),
     stale: await story([ids.staleA!, ids.staleB!]),
+    pair: await story([ids.pairA!, ids.pairB!, ids.pairManual!], true),
+    single: await story([ids.single!], true),
   });
   // A daily that cites an article: the reports section leaves it undated (a cited article can change it).
   await sql`INSERT INTO reports (kind,key,window_start,window_end,content,generated_at,updated_at) VALUES
@@ -132,6 +141,27 @@ test("a page whose own text is a summary's worth is kept from Google only, and f
     assert.equal(listed.includes(`/items/${ids[name]}`), want.indexable && !want.googleNoindex, `${name}: the sitemap agrees with the page`);
     if (want.indexable) assert.ok(inventory.has(`/items/${ids[name]}`), `${name}: engines that index it are still notified`);
   }
+});
+
+test("an article whose event gathers several reports is left to the event page at Google, and only there", async () => {
+  const listed = urls(await file("items"));
+  const inventory = new Set((await loadDiscoveryEntries(new Date())).map((e) => e.loc));
+  // A full article otherwise indexed everywhere; an editor's mark keeps it; an event of one report has no page in search.
+  const expected: Record<string, boolean> = { pairA: true, pairB: true, pairManual: false, single: false };
+  for (const [name, googleNoindex] of Object.entries(expected)) {
+    const res = await app.inject(`/api/site/items/${ids[name]}`);
+    assert.equal(res.statusCode, 200, name);
+    const detail = res.json() as { indexable: boolean; googleNoindex: boolean; story: { publicId: string } | null };
+    assert.ok(detail.story, `${name}: the page names its event`);
+    assert.deepEqual({ indexable: detail.indexable, googleNoindex: detail.googleNoindex }, { indexable: true, googleNoindex }, name);
+    assert.equal(listed.includes(`/items/${ids[name]}`), !googleNoindex, `${name}: the sitemap agrees with the page`);
+    assert.ok(inventory.has(`/items/${ids[name]}`), `${name}: engines that index it are still notified`);
+  }
+  const events = urls(await file("stories"));
+  assert.ok(events.includes(`/story/${stories.pair}`), "the event page stands for its reports");
+  assert.ok(!events.includes(`/story/${stories.single}`), "an event of one report is left to that report's page");
+  assert.ok(inventory.has(`/story/${stories.pair}`));
+  assert.ok(!inventory.has(`/story/${stories.single}`), "its page is noindex: no engine is asked to fetch it");
 });
 
 test("the news section lists the last 48 hours of events, selections and reports, dated", async () => {

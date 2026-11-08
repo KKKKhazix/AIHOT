@@ -175,18 +175,21 @@ test('the report goes first, then pages that answer lasting searches, then stori
   await submitBaiduPush(DAY1);
   lasting = ['/about-new', '/topics/baidu-topic', '/leaderboard/prices'];
   await material('baidu-older', '2026-10-09T02:10:00Z');
+  await material('baidu-older-also', '2026-10-09T02:10:00Z');
   await material('baidu-newer', '2026-10-09T02:20:00Z');
-  // Public ids sort against their age, so only the stories' own order puts the newer first.
-  const story = async (publicId: string, article: string, latest: string) => {
+  await material('baidu-newer-also', '2026-10-09T02:20:00Z');
+  // Public ids sort against their age, so only the stories' own order puts the newer first. Each gathers two
+  // reports: a story of one has a noindex page and is never pushed.
+  const story = async (publicId: string, articles: string[], latest: string) => {
     const [row] = await sql<{ id: number }[]>`INSERT INTO stories (public_id,title,latest_at,created_at,updated_at)
       VALUES (${publicId},'事件',${latest},${latest},${latest}) RETURNING id`;
     const [fact] = await sql<{ id: number }[]>`INSERT INTO facts (public_id,story_id,title) VALUES (${randomUUID()},${row!.id},'事实') RETURNING id`;
-    await sql`INSERT INTO fact_articles (fact_id,article_id,role) VALUES (${fact!.id},${article},'primary')`;
+    for (const article of articles) await sql`INSERT INTO fact_articles (fact_id,article_id,role) VALUES (${fact!.id},${article},'primary')`;
   };
   const olderStory = '00000000-0000-4000-8000-000000000000';
   const publicId = 'ffffffff-ffff-4fff-bfff-ffffffffffff';
-  await story(olderStory, 'baidu-older', '2026-10-09T02:10:00Z');
-  await story(publicId, 'baidu-newer', '2026-10-09T02:20:00Z');
+  await story(olderStory, ['baidu-older', 'baidu-older-also'], '2026-10-09T02:10:00Z');
+  await story(publicId, ['baidu-newer', 'baidu-newer-also'], '2026-10-09T02:20:00Z');
   await sql`INSERT INTO reports (kind,key,window_start,window_end,content,generated_at,updated_at)
     VALUES ('daily','2026-10-09','2026-10-08','2026-10-09','{}','2026-10-09T02:30:00Z','2026-10-09T02:30:00Z')`;
   await submitBaiduPush(DAY1_LATER);

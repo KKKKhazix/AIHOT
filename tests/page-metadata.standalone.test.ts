@@ -13,7 +13,9 @@
 //   neither, or has no publication date when its source gave none; indexable pages keep search results and
 //   Discover from showing their picture large (2026-11-08);
 // - the latest daily's search snippet repeats its lead article's, so two pages read alike; its heading never
-//   says what readers search it by; or /daily/ stands as a page of its own (2026-11-08).
+//   says what readers search it by; or /daily/ stands as a page of its own (2026-11-08);
+// - 全部动态's later pages and an event page of a single report compete in search with the pages that stand
+//   for them, the first page and that report's own page, while their links stop being followed (2026-11-09).
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { after, before, test } from "node:test";
@@ -37,6 +39,8 @@ const details: Record<string, SiteItemDetail> = {
 const citation = (available: boolean): ReportCitation => ({ itemId: available ? item.id : "withdrawn", title: available ? item.title : "已撤下的旧头条", summary: item.summary, sourceName: item.source.name, sourceUrl: detail.links.original, sourceIconUrl: null, firstParty: true, publishedAt: at, available });
 const report = (kind: ReportKind): ReportDetail => ({ kind, key: kind === "daily" ? "2026-10-04" : kind === "weekly" ? "2026-W40" : "2026-10", issueNumber: 1, title: `${SITE.name} 测试刊物`, generatedAt: at, lead: { title: "本期已验证的重要变化", leadParagraph: "本期的导读与依据。" }, leadItemId: item.id, overview: null, highlights: [citation(true)], sections: [], flashes: [], cover: null, metrics: {}, readingMinutes: 1, prev: null, next: null, mentions: [] });
 const story: StoryDetail = { publicId: "metadata-story", title: "测试事件的最新进展", status: "settled", reportCount: 1, sourceCount: 1, firstReportAt: at, latestAt: at, digest: "当前可核实的事件综述。", digestUpdatedAt: "2026-10-04T09:00:00.000Z", summary: null, excerpt: null, latest: null, latestReport: null, whyHot: { participants48h: 0, newParticipants6h: 0, recentReports24h: 0, observationComplete: true, rank: null }, developments: [], officialReports: [], timeline: [{ id: item.id, title: item.title, summary: item.summary, source: { name: item.source.name, firstParty: true }, publishedAt: at, selected: true }], heat: [], related: [], topics: [], mentions: [] };
+/** The same event once a second report joined it. */
+const severalReports: StoryDetail = { ...story, publicId: "metadata-story-several", reportCount: 2, sourceCount: 2 };
 let web: WebServer;
 const api = createServer((req, res) => {
   const url = new URL(req.url!, "http://local");
@@ -49,6 +53,7 @@ const api = createServer((req, res) => {
   const article = /^\/api\/site\/items\/([^/]+?)(?:\/original)?$/.exec(path)?.[1];
   if (article && details[article]) return send(details[article]);
   if (path === `/api/site/stories/${story.publicId}`) return send(story);
+  if (path === `/api/site/stories/${severalReports.publicId}`) return send(severalReports);
   const match = /^\/api\/site\/reports\/(daily|weekly|monthly)\/(.+)$/.exec(path);
   if (match) {
     const r = report(match[1] as ReportKind);
@@ -87,12 +92,27 @@ test("filtered feeds keep their exact content address but leave indexing to the 
 });
 
 test("ordinary feed pages remain indexable and normalize ignored parameters", async () => {
-  for (const [requested, canonical] of [["/?channel=invalid&category=invalid&tag=%20&utm_source=fixture", "/"], ["/all?channel=all&tab=relevance&anchorAt=old&page=2&utm_source=fixture", "/all?page=2"]]) {
+  for (const [requested, canonical] of [["/?channel=invalid&category=invalid&tag=%20&utm_source=fixture", "/"], ["/all?channel=all&tab=relevance&anchorAt=old&utm_source=fixture", "/all"]]) {
     const $ = await page(requested!);
     assert.equal($("meta[name=robots]").attr("content"), "max-image-preview:large");
     assert.equal($("link[rel=canonical]").attr("href"), `${web.origin}${canonical}`);
-    if (canonical?.includes("page=2")) assert.match($("title").text(), /第 2 页/);
   }
+});
+
+test("全部动态's later pages leave search to its first page and keep their links followed", async () => {
+  const $ = await page("/all?channel=all&tab=relevance&anchorAt=old&page=2&utm_source=fixture");
+  assert.equal($("meta[name=robots]").attr("content"), "noindex, follow");
+  assert.equal($("link[rel=canonical]").attr("href"), `${web.origin}/all?page=2`);
+  assert.match($("title").text(), new RegExp(`^${SEO_TITLES.all} · 第 2 页`), "the title still names what the list is");
+  assert.ok($("main").text().includes(item.title), "the page itself is unchanged");
+});
+
+test("an event page stands in search once it gathers more than one report", async () => {
+  const single = await page(`/story/${story.publicId}`);
+  assert.equal(single("meta[name=robots]").attr("content"), "noindex, follow", "one report: its own article page stands for it");
+  const several = await page(`/story/${severalReports.publicId}`);
+  assert.equal(several("meta[name=robots]").attr("content"), "max-image-preview:large");
+  assert.equal(several("meta[name=googlebot]").length, 0);
 });
 
 // Chinese readers search issues by the date as they write it ("10月4日 AI 新闻"), not by the key.

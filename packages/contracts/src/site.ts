@@ -259,6 +259,13 @@ export interface StoryFactView {
   representative: StoryReportView;
 }
 
+/**
+ * An event page stands for its reports in search once it gathers this many public reports (reportCount):
+ * with fewer it only repeats its one report's page, so it is noindex and neither the sitemap nor change
+ * notifications list it; with as many, its reports' own pages leave Google to it (2026-11-09).
+ */
+export const STORY_INDEX_MIN_REPORTS = 2;
+
 export interface StoryDetail {
   publicId: string;
   title: string;

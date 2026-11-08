@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { IntentLink } from "../components/ui/IntentLink";
 import { Link, useLoaderData, useLocation } from "react-router";
 import type { Route } from "./+types/story";
-import type { StoryDetail, StoryReportView } from "@aihot/contracts/site";
+import { STORY_INDEX_MIN_REPORTS, type StoryDetail, type StoryReportView } from "@aihot/contracts/site";
 import { SITE } from "@aihot/site";
 import { linkMentions } from "@aihot/contracts/mentions";
 import { addressRuns } from "@aihot/contracts/addresses";
@@ -44,6 +44,8 @@ export function meta({ loaderData }: Route.MetaArgs) {
     path: `/story/${s.publicId}`,
     image: `/og/stories/${s.publicId}.png`,
     type: "article",
+    // With one report the page only repeats that report's own page, which stands in search instead.
+    noindex: s.reportCount < STORY_INDEX_MIN_REPORTS,
     jsonLd: [
       storyLd(s),
       breadcrumbLd([{ name: SITE.name, path: "/" }, ...UP.crumbs, { name: s.title, path: `/story/${s.publicId}` }]),

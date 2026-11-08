@@ -424,6 +424,33 @@ function keepAsidesAmongParagraphs(document: Doc) {
 }
 
 /**
+ * Readability reads "media" in a class or id as a social-media widget and drops the box. A picture's box is
+ * often named for what it holds ("media-column", "article-media"), so every figure of such a page went with
+ * its caption. A box holding a picture among the article's paragraphs is the article's own: the word is
+ * taken out of its names before scoring, and the rest still counts ("share-media" still reads as sharing).
+ */
+function keepPicturesAmongParagraphs(document: Doc) {
+  for (const picture of document.querySelectorAll("img, picture, video, figure")) {
+    const boxes: El[] = [];
+    let box: El = picture;
+    while (box.parentElement && ![...box.parentElement.children].some((child) => child.localName === "p")) {
+      boxes.push(box);
+      box = box.parentElement;
+    }
+    if (!box.parentElement) continue;
+    for (const el of [...boxes, box]) {
+      for (const attribute of ["class", "id"]) {
+        const value = el.getAttribute(attribute);
+        if (!value || !/media/i.test(value)) continue;
+        const rest = value.replace(/media/gi, "").replace(/\s+/g, " ").trim();
+        if (rest) el.setAttribute(attribute, rest);
+        else el.removeAttribute(attribute);
+      }
+    }
+  }
+}
+
+/**
  * Readability scores class names, and utility classes that only set overflow, scrolling or snapping read to
  * it as "hidden" or "scroll" ("overflow-hidden", "scroll-mt-24"): a box of the author's text with such a class
  * was dropped. They say nothing about what the box holds, so they are taken off before scoring.
@@ -455,6 +482,7 @@ export function readableDocument(document: Doc, url: string, rules: PageRules = 
   preserveWidgets(document, rules.preserve ?? []);
   describeFigureDrawings(document);
   keepAsidesAmongParagraphs(document);
+  keepPicturesAmongParagraphs(document);
   dropLayoutClasses(document);
   // A document theme is not an article candidate: names such as "header-dark" can discard the root.
   document.documentElement.removeAttribute("class");

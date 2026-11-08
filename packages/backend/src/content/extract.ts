@@ -16,6 +16,7 @@ import { onlyXArticleLink, xArticleText } from "../sources/x.ts";
 import { sanitizeBody, trimTrailingChrome } from "./sanitize.ts";
 import { contentHash, fillPublicationTime, reviseMaterial, updatePresentation, type MediaItem } from "./materials.ts";
 import { markdownBody } from "./markdown.ts";
+import { articleCover, declaredCover, hasPicture, type Cover } from "./cover.ts";
 
 export interface ExtractedBody {
   html: string;
@@ -25,6 +26,11 @@ export interface ExtractedBody {
   /** The page's publication metadata; neither modification time nor dates mentioned in its prose. */
   publishedAt?: Date | null;
   publicationTime?: string | null;
+  /**
+   * The picture the page declares for sharing, for a body without a picture of its own (cover.ts), set above
+   * the body where it is shown. A caller that fetched the page checks it against the site's own (articleCover).
+   */
+  cover?: Cover | null;
 }
 
 const MIN_BODY_CHARS = 200;
@@ -502,6 +508,7 @@ function dropLayoutClasses(document: Doc) {
 export function readableDocument(document: Doc, url: string, rules: PageRules = {}): ExtractedBody | null {
   if (isVideoPageUrl(url)) return null;
   const date = pagePublicationDate(document, rules.utcOffset);
+  const declared = declaredCover(document, url);
   try {
     const base = document.createElement("base");
     base.setAttribute("href", url);
@@ -536,13 +543,14 @@ export function readableDocument(document: Doc, url: string, rules: PageRules = 
     images.push({ kind: "image", url: m[1]!.replace(/&amp;/g, "&"), width: w ? Number(w[1]) : null, height: h ? Number(h[1]) : null });
     if (images.length >= 12) break;
   }
-  return { html: clean, text, images, via: "readability", ...date };
+  return { html: clean, text, images, via: "readability", ...date, cover: hasPicture(clean) ? null : declared };
 }
 
 export async function extractFromUrl(url: string, subject: string, rules: PageRules = {}, opts: { paidFallback?: boolean } = {}): Promise<ExtractedBody | null> {
   if (isVideoPageUrl(url)) return null;
   const target = new URL(url);
   if (rules.bodyUrlSuffix) target.pathname += rules.bodyUrlSuffix;
+  let read: { body: ExtractedBody; pageUrl: string } | null = null;
   try {
     const res = await guardedFetch(target.href, { headers: languageHeaders(rules.acceptLanguage), timeoutMs: 20_000, maxBytes: 16 * 1024 * 1024 });
     if (isVideoPageUrl(res.url)) return null;
@@ -556,13 +564,16 @@ export async function extractFromUrl(url: string, subject: string, rules: PageRu
     }
     if (res.status === 200 && /html/.test(type)) {
       const got = readable(res.text(), res.url, rules);
-      if (got) return got;
+      if (got) read = { body: got, pageUrl: res.url };
     }
   } catch {
     // fall through to Jina
   }
+  // Outside the page's read: a failure of the store while checking the cover is no unreadable page.
+  if (read) return { ...read.body, cover: await articleCover(read.body.cover ?? null, url, read.pageUrl) };
   if (opts.paidFallback === false) return null;
   try {
+    // The rendered text carries none of the page's metadata, so a body read this way has no cover.
     const page = await jinaRead(target.href, { purpose: "body_fallback", subject, removeSelector: PAGE_CHROME });
     const html = markdownBody(page.markdown, url);
     const text = stripTags(html);
@@ -604,13 +615,15 @@ export async function extractArticleBody(articleId: string): Promise<"ok" | "unc
     if (!row) return "skipped";
     const time = a.config.detail?.publishedAtAuthoritative === true ? null : await fillPublicationTime(tx, articleId, got.publishedAt, undefined, got.publicationTime);
     const hash = contentHash({ title: row.title, bodyText: got.text, excerpt: row.excerpt });
+    // A cover decided before (when the article was first stored) stays.
+    const cover = got.cover ? sql.json(got.cover as never) : null;
     if (!time && hash === row.content_hash) {
       await updatePresentation(tx, articleId, { html: got.html, media: row.media.length ? row.media : got.images });
-      await tx`UPDATE articles SET body_status = 'ok', updated_at = now() WHERE id = ${articleId}`;
+      await tx`UPDATE articles SET body_status = 'ok', cover = coalesce(cover, ${cover}::jsonb), updated_at = now() WHERE id = ${articleId}`;
       return "ok";
     }
     await reviseMaterial(tx, articleId, {
-      set: sql`body_html = ${got.html}, body_text = ${got.text}, body_status = 'ok',
+      set: sql`body_html = ${got.html}, body_text = ${got.text}, body_status = 'ok', cover = coalesce(cover, ${cover}::jsonb),
         media = CASE WHEN jsonb_array_length(media) = 0 THEN ${sql.json(got.images as never)}::jsonb ELSE media END`,
       hash, title: row.title, bodyText: got.text,
     });

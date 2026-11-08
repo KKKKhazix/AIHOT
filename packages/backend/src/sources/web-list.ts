@@ -8,6 +8,7 @@ import { identityKeyForUrl, normalizeUrl } from "../lib/url.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
 import { isSignInRedirect, isSignInUrl, pagePublicationDate, pageRules, readableDocument, type ExtractedBody } from "../content/extract.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
+import { articleCover } from "../content/cover.ts";
 import { JINA_PREFIX, jinaRead } from "../providers/jina.ts";
 import { articleUtcOffset, readPublicationDate, readRelativeDate, type PublicationDate } from "./dates.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
@@ -431,6 +432,8 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
   if (need.body && page?.whole && !d.bodyUrlSuffix) {
     try { body = readableDocument(page.document, page.url, pageRules(source.config)); }
     catch { /* A failed extraction must not discard the detail metadata. */ }
+    // Outside it: a failure of the store while checking the cover fails the read, which is retried.
+    if (body) body = { ...body, cover: await articleCover(body.cover ?? null, url, page.url) };
   }
   return { ...date, title, summary, body };
 }

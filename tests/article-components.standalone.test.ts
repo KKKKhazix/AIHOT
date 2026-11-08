@@ -5,8 +5,8 @@
 // Kinds of markup lose content on any site: Readability removes every aside, so an update note set among
 // the paragraphs vanished, and it reads utility classes such as "overflow-hidden" as hidden, so a box of
 // the author's text was dropped (a reader compared a page with its original and found both gone). It reads
-// "media" in a name as a social-media widget, so every figure in a box named for the picture it holds
-// went with its caption (anthropic.com research posts, 2026-11-08: 16 pictures on the page, none stored).
+// "media" in a name as a social-media widget, so every box named for what it embeds went with its picture,
+// caption or quotes (anthropic.com, 2026-11-08: 16 pictures on a page, none stored; customer quotes gone).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as cheerio from "cheerio";
@@ -97,7 +97,9 @@ test("a box of the author's text survives classes that only set overflow or scro
   assert.doesNotMatch(extract(junk).text, /nice post|Popular posts/);
 });
 
-test("a picture box among the article's paragraphs keeps its picture and caption when its name says media; other words still count", () => {
+test("a box among the article's paragraphs keeps what it embeds when its name says media; other words still count", () => {
+  const quotes = '<div class="PA4F1q_media-column"><section class="_1oJwFW_root"><div class="_1oJwFW_stage"><div class="_1oJwFW_slide"><article class="_16pwma_card"><div class="_16pwma_body"><blockquote class="_16pwma_quote"><p>“In early testing, the model cleared the quality bar you would expect from a higher tier.”</p></blockquote></div></article></div></div></section></div>';
+  assert.match(extract(quotes).text, /cleared the quality bar/, "a carousel of customer quotes");
   const figure = (box: string, caption = "Claude can use dreaming to organize memory.") => `<div class="${box}" data-type="image"><figure class="Duq99q_e-imageWithCaption"><img alt="Diagram of a memory hierarchy" width="3840" height="1754" src="/_next/image?url=https%3A%2F%2Fcdn.publisher.example%2Fimages%2Fmemory.png&amp;w=3840&amp;q=75"><figcaption><div>${caption}</div></figcaption></figure></div>`;
   for (const box of ["PA4F1q_media-column", "article-media", "media"]) {
     const body = extract(figure(box));

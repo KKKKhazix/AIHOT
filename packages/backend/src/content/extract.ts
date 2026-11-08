@@ -424,27 +424,29 @@ function keepAsidesAmongParagraphs(document: Doc) {
 }
 
 /**
- * Readability reads "media" in a class or id as a social-media widget and drops the box. A picture's box is
- * often named for what it holds ("media-column", "article-media"), so every figure of such a page went with
- * its caption. A box holding a picture among the article's paragraphs is the article's own: the word is
- * taken out of its names before scoring, and the rest still counts ("share-media" still reads as sharing).
+ * Readability reads "media" in a class or id as a social-media widget and drops the box. A box among the
+ * article's paragraphs is often named for what it embeds ("media-column", "article-media": a figure, a chart,
+ * a carousel of quotes), and every such box of a page went with its picture, caption or text. In the
+ * paragraphs' flow (each paragraph and box beside them, and what they hold) the word is taken out of the
+ * names before scoring; the rest still counts ("sponsor-media" still reads as sponsored, "social-media" as
+ * a social widget).
  */
-function keepPicturesAmongParagraphs(document: Doc) {
-  for (const picture of document.querySelectorAll("img, picture, video, figure")) {
-    const boxes: El[] = [];
-    let box: El = picture;
-    while (box.parentElement && ![...box.parentElement.children].some((child) => child.localName === "p")) {
-      boxes.push(box);
-      box = box.parentElement;
-    }
-    if (!box.parentElement) continue;
-    for (const el of [...boxes, box]) {
-      for (const attribute of ["class", "id"]) {
-        const value = el.getAttribute(attribute);
-        if (!value || !/media/i.test(value)) continue;
-        const rest = value.replace(/media/gi, "").replace(/\s+/g, " ").trim();
-        if (rest) el.setAttribute(attribute, rest);
-        else el.removeAttribute(attribute);
+function keepMediaAmongParagraphs(document: Doc) {
+  const flows = new Set<El>();
+  for (const paragraph of document.querySelectorAll("p")) if (paragraph.parentElement) flows.add(paragraph.parentElement);
+  const seen = new Set<El>();
+  for (const flow of flows) {
+    for (const box of flow.children) {
+      for (const el of [box, ...box.querySelectorAll("[class], [id]")]) {
+        if (seen.has(el)) continue;
+        seen.add(el);
+        for (const attribute of ["class", "id"]) {
+          const value = el.getAttribute(attribute);
+          if (!value || !/media/i.test(value)) continue;
+          const rest = value.replace(/media/gi, "").replace(/\s+/g, " ").trim();
+          if (rest) el.setAttribute(attribute, rest);
+          else el.removeAttribute(attribute);
+        }
       }
     }
   }
@@ -482,7 +484,7 @@ export function readableDocument(document: Doc, url: string, rules: PageRules = 
   preserveWidgets(document, rules.preserve ?? []);
   describeFigureDrawings(document);
   keepAsidesAmongParagraphs(document);
-  keepPicturesAmongParagraphs(document);
+  keepMediaAmongParagraphs(document);
   dropLayoutClasses(document);
   // A document theme is not an article candidate: names such as "header-dark" can discard the root.
   document.documentElement.removeAttribute("class");

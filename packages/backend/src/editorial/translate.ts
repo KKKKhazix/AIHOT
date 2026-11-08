@@ -16,7 +16,7 @@ import { rebaseTranslation } from "../content/presentation.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt, failureKind, ProviderRejectedError, rejectReceivedResponse } from "../providers/receipts.ts";
 import { collapseWhitespace, isChineseText } from "../lib/text.ts";
-import { isEmptyOrLinkOnly } from "../content/posts.ts";
+import { isEmptyOrLinkOnly, xArticleBody } from "../content/posts.ts";
 import { sha256 } from "../lib/ids.ts";
 import { modelFor } from "./models.ts";
 import { shutdownSignal } from "../jobs/queue.ts";
@@ -176,7 +176,7 @@ export function unshield(translated: string, s: Shielded): string | null {
 }
 
 export async function translateArticle(articleId: string): Promise<TranslateResult> {
-  const [row] = await sql<{ revision: number; channel: string; language: string | null; body_html: string | null; body_text: string | null; x_post: { text?: string } | null; x_article: { text?: string } | null; title: string; selected: boolean; body_mode: string; visibility: string }[]>`
+  const [row] = await sql<{ revision: number; channel: string; language: string | null; body_html: string | null; body_text: string | null; x_post: { text?: string } | null; x_article: { text?: string; html?: string } | null; title: string; selected: boolean; body_mode: string; visibility: string }[]>`
     SELECT a.revision, p.channel, a.language, a.body_html, a.body_text, a.x_post, a.x_article, p.title, p.selected, p.body_mode, p.visibility
     FROM publications p JOIN articles a ON a.id = p.article_id WHERE p.article_id = ${articleId}`;
   if (!row) return { articleId, status: "skipped", reason: "not published" };
@@ -188,9 +188,12 @@ export async function translateArticle(articleId: string): Promise<TranslateResu
   };
   if (!row.selected || row.visibility !== "public" || row.body_mode !== "full") return result({ status: "skipped", reason: "not a selected full-text item" });
 
-  if (row.channel === "x") {
-    // Pages keep the complete long article in its original language; a post-only translation is unused.
-    if (row.x_article?.text) return result({ status: "skipped", reason: "saved long article shown in original" });
+  // A post with a saved long article reads as an article (publication/detail.ts), so it is translated as an
+  // article's body is: the post's own words and the article as laid out (xArticleBody), never the post's
+  // introduction alone, which would stand in for the whole article.
+  const article = row.channel === "x" && row.x_article?.text ? row.x_article : null;
+  if (article && !article.html) return result({ status: "skipped", reason: "saved long article without its layout" });
+  if (row.channel === "x" && !article) {
     const text = String(row.x_post?.text ?? row.body_text ?? "").trim();
     if (isEmptyOrLinkOnly(text)) return result({ status: "skipped", reason: "no text to translate" });
     const meaningful = collapseWhitespace(text.replace(/https?:\/\/\S+/g, ""));
@@ -203,8 +206,9 @@ export async function translateArticle(articleId: string): Promise<TranslateResu
     return result({ status: "translated", segments: 1 });
   }
 
-  if (!row.body_html || isChineseText(row.body_text ?? "", row.language)) return result({ status: "skipped", reason: "no foreign-language body" });
-  const $ = cheerio.load(row.body_html, null, false);
+  const source = article ? xArticleBody(String(row.x_post?.text ?? ""), article.html!) : row.body_html;
+  if (!source || isChineseText(article ? article.text! : row.body_text ?? "", row.language)) return result({ status: "skipped", reason: "no foreign-language body" });
+  const $ = cheerio.load(source, null, false);
   const blocks = segmentsOf($);
   if (!blocks.length) return result({ status: "skipped", reason: "no translatable text" });
   // Beyond the cap, only the leading blocks are translated; the rest keep the original text.
@@ -241,7 +245,8 @@ export async function translateArticle(articleId: string): Promise<TranslateResu
   if (!done) return unusable(receiptIds, "no batch translated");
   const complete = done === blocks.length;
   const html = sanitizeBody($.html());
-  await store(articleId, row.revision, row.title, html, cheerio.load(html, null, false).root().text().trim(), complete, receiptIds, row.body_html);
+  // An article's translation follows a refreshed layout of its body; a long X article's body is not articles.body_html.
+  await store(articleId, row.revision, row.title, html, cheerio.load(html, null, false).root().text().trim(), complete, receiptIds, article ? undefined : row.body_html!);
   return result({ status: complete ? "translated" : "partial", segments: done });
 }
 
@@ -298,7 +303,9 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
   const rows = await sql<{ tweet_id: string; text: string; text_hash: string | null; own_zh: string | null }[]>`
     SELECT DISTINCT ON (q.tweet_id) q.tweet_id, a.x_post->'quoted'->>'text' AS text, qt.text_hash,
       (SELECT tr.body_text FROM articles o JOIN translations tr ON tr.article_id = o.id AND tr.lang = 'zh' AND tr.revision >= o.revision
-       WHERE o.identity_key = 'x:' || q.tweet_id AND tr.complete AND coalesce(tr.body_text, '') <> '') AS own_zh
+       WHERE o.identity_key = 'x:' || q.tweet_id AND tr.complete AND coalesce(tr.body_text, '') <> ''
+         -- A post with a saved long article is translated as that article: its translation is not the post's words.
+         AND coalesce(o.x_article->>'text', '') = '') AS own_zh
     FROM publications p JOIN articles a ON a.id = p.article_id
     CROSS JOIN LATERAL (SELECT substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') AS tweet_id) q
     LEFT JOIN quote_translations qt ON qt.tweet_id = q.tweet_id
@@ -363,12 +370,11 @@ export async function translatePending(opts: { limit?: number; budgetMs?: number
   const started = Date.now();
   const pending = await sql<{ article_id: string; language: string | null; text: string | null }[]>`
     SELECT p.article_id,a.language,
-      CASE WHEN p.channel='x' THEN coalesce(a.x_post->>'text',a.body_text) ELSE a.body_text END AS text
+      CASE WHEN p.channel='x' THEN coalesce(nullif(a.x_article->>'text',''),a.x_post->>'text',a.body_text) ELSE a.body_text END AS text
     FROM publications p JOIN articles a ON a.id = p.article_id
     LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh'
     WHERE p.selected AND p.visibility = 'public' AND p.body_mode = 'full'
       AND (p.channel='x' OR a.body_html IS NOT NULL)
-      AND (p.channel <> 'x' OR coalesce(a.x_article->>'text', '') = '')
       AND (p.discovered_at > now() - interval '3 days'
            OR EXISTS (SELECT 1 FROM article_revisions r WHERE r.article_id = a.id AND r.revision = a.revision AND r.revision > 1
                       AND r.created_at > now() - interval '3 days'))

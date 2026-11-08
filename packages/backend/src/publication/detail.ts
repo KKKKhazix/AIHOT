@@ -6,7 +6,7 @@ import { sql } from "../db.ts";
 import { isChineseText, stripTagMarkup } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { textToHtml } from "../content/sanitize.ts";
-import { postWords } from "../content/posts.ts";
+import { xArticleBody } from "../content/posts.ts";
 import { exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, thinPageCondition, toItemSummary, xView, type ItemRow } from "./items.ts";
 import { evidenceCondition, listedCondition } from "./scope.ts";
 import { itemUrl, siteUrl } from "./links.ts";
@@ -126,11 +126,11 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
     const post = xView(row, false, true);
     if (row.x_article_html) {
       // A long X Article reads as an article: what the post says besides its link, then the article as
-      // its author laid it out, with pictures and an outline.
-      const words = postWords(String(row.x_post?.text ?? ""));
-      const html = (words ? textToHtml(words) : "") + row.x_article_html;
+      // its author laid it out, with pictures and an outline; selected, it is in Chinese as an article is.
+      const html = xArticleBody(String(row.x_post?.text ?? ""), row.x_article_html);
       const chinese = isChineseText(row.x_article?.text ?? "", row.language);
-      reading = readingBody(language, chinese ? { html, kind: "original" } : null, chinese ? null : html, true, (shown) => withOutline(proxyBodyImages(shown)));
+      const zh = chinese ? { html, kind: "original" as const } : row.tr_html ? { html: row.tr_html, kind: "translation" as const } : null;
+      reading = readingBody(language, zh, chinese ? null : html, chinese ? true : row.tr_complete ?? false, (shown) => withOutline(proxyBodyImages(shown)));
     } else {
       const text = post?.text ?? String(row.x_post?.text ?? row.body_text ?? "");
       // A post's text is sent as written: its headings make the outline, without anchors. One written in
@@ -223,9 +223,13 @@ export async function exportMarkdown(id: string): Promise<{ filename: string; bo
   if (row.selected && row.seat && row.reason) lines.push(`## ${ITEM_COPY.reasonLabel}`, "", row.reason, "");
   if (showsPost(row) && row.x_post) {
     const post = xView(row);
-    const words = postWords(String(row.x_post.text ?? ""));
-    if (row.x_article_html) lines.push("## 正文", "", ...(words ? [words, ""] : []), bodyToMarkdown(row.x_article_html, row.url), "");
-    else if (post?.text) lines.push("## 正文", "", post.text, "");
+    if (row.x_article_html) {
+      // As an article's body is exported: a complete translation first, then the article as its page reads it.
+      const written = { language: row.language, body_text: row.x_article?.text ?? "" };
+      const translation = exportTranslation({ ...written, tr_html: row.tr_html, tr_complete: row.tr_complete });
+      if (translation) lines.push("## 正文 · 中文译文", "", bodyToMarkdown(translation, row.url), "");
+      lines.push(isChineseBody(written) ? "## 正文" : "## 正文 · 原文", "", bodyToMarkdown(xArticleBody(String(row.x_post.text ?? ""), row.x_article_html), row.url), "");
+    } else if (post?.text) lines.push("## 正文", "", post.text, "");
     if (post?.translation) lines.push("## 中文译文", "", post.translation, "");
     for (const media of post?.media ?? []) {
       const url = media.url.startsWith("/") ? siteUrl(media.url) : media.url;

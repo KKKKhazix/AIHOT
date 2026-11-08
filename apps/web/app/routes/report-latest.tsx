@@ -4,12 +4,12 @@ import { REPORT_NAMES, reportDateLabel, type ReportLatestPage } from "@aihot/con
 import { REPORTS, SEO_TITLES, subjectAfter, withSubject } from "@aihot/site";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { pageMeta, reportLd } from "../lib/seo";
+import { pageMeta, reportDescription, reportLd } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
 import { EmptyState } from "../components/ui/Page";
 import { ReportLayout } from "../features/report/ReportLayout";
 import { ReportPaper, reportOutline } from "../features/report/ReportPaper";
-import { feedLink, kindFromPath } from "../features/report/format";
+import { KIND_PATH, feedLink, kindFromPath } from "../features/report/format";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "daily", name: "日报" };
@@ -22,19 +22,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   return cachedPage(600, { kind, report, index, today: beijingDate(Date.now()) });
 }
 
-export function meta({ loaderData, location }: Route.MetaArgs) {
+export function meta({ loaderData }: Route.MetaArgs) {
   const kind = loaderData?.kind ?? "daily";
   const report = loaderData?.report;
   // What this issue says, so a search result shows today's date and news rather than what the page is.
-  const lead = report?.lead?.leadParagraph ?? report?.overview?.slice(0, 150);
-  const description = report && lead ? `${reportDateLabel(kind, report.key)} ${withSubject("资讯")}：${lead}` : `${REPORTS.descriptions[kind]}。`;
+  const description = (report && reportDescription(report)) ?? `${REPORTS.descriptions[kind]}。`;
+  // One address however it was written (/daily/, a different case): the router matches them all.
+  const path = KIND_PATH[kind];
   return [...pageMeta({
     title: report ? SEO_TITLES.latestReport(kind, reportDateLabel(kind, report.key)) : withSubject(REPORT_NAMES[kind]),
     description,
-    path: location.pathname,
+    path,
     image: `/og/pages/${kind}.png`,
     // The latest issue, described at this page's own address (its canonical).
-    jsonLd: report ? reportLd(report, location.pathname, lead ?? description) : undefined,
+    jsonLd: report ? reportLd(report, path, description) : undefined,
   }), feedLink(kind)];
 }
 

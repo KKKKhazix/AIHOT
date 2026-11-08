@@ -72,7 +72,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
     noindex: !item.indexable,
     googleNoindex: item.googleNoindex,
     jsonLd: [
-      articleLd({ path: `/items/${item.id}`, headline: item.title, description: item.summary, publishedAt: item.publishedAt, image: `/og/items/${item.id}.png`, basedOn: item.links.original }),
+      articleLd({ path: `/items/${item.id}`, headline: item.title, description: item.summary, publishedAt: item.publishedAt ?? item.discoveredAt, image: `/og/items/${item.id}.png`, basedOn: item.links.original }),
       breadcrumbLd([
         { name: SITE.name, path: "/" },
         { name: item.selected ? "精选" : "全部动态", path: item.selected ? "/" : "/all" },

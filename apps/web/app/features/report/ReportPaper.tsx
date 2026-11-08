@@ -9,7 +9,7 @@ import { IntentLink } from "../../components/ui/IntentLink";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { REPORT_NAMES, type ReportCitation, type ReportDetail, type ReportNavigationEntry } from "@aihot/contracts/site";
-import { REPORTS, SITE, subjectAfter, withSubject } from "@aihot/site";
+import { REPORTS, SEO_TITLES, SITE, subjectAfter, withSubject } from "@aihot/site";
 import { linkMentions, type MentionRun } from "@aihot/contracts/mentions";
 import { MentionText } from "../../components/ui/MentionText";
 import { Badge } from "../../components/ui/Badge";
@@ -46,7 +46,8 @@ function Masthead({ report, index, quiet }: { report: ReportDetail; index: Repor
         <div className="flex min-w-0 flex-col justify-center">
           <h1 id="report-start" className="scroll-mt-[calc(var(--bar-h)+1.5rem)]">
             <span className="sr-only">
-              {before(withSubject(label), label)}{label} · {dateLine(report.kind, report.key)}
+              {/* What the issue is searched by, as its title says, with its full date. */}
+              {SEO_TITLES.latestReport(report.kind, dateLine(report.kind, report.key))}
             </span>
             <Nameplate which={report.kind} className="block h-[44px] w-auto @[520px]:h-[58px] @[880px]:h-[74px] @[1040px]:h-[84px]" />
           </h1>

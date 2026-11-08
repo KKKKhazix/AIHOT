@@ -2,7 +2,9 @@
 // marks it for extraction, extraction fetches the article by the post's own id and stores it as a new
 // revision, and the judging steps read the article. A post whose article cannot be fetched is flagged
 // to the model instead of passing for a complete body. Reading the post again is no new revision. A source
-// a module reads has its posts' articles fetched too while they are news.
+// a module reads has its posts' articles fetched too while they are news. Pages get the article as its
+// author laid it out: cover, pictures (a video's still), bold, links, tables, code and embedded posts, with
+// styles placed by character (X counts code points, so UTF-16 offsets slip after an emoji).
 import { stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -15,8 +17,8 @@ import { renderContext } from "@aihot/backend/editorial/writing";
 import { queueProcessing } from "@aihot/backend/jobs/content";
 import { QUEUES, stopBoss } from "@aihot/backend/jobs/queue";
 import { collectXShard } from "@aihot/backend/sources/collect";
-import { tweetToCandidate } from "@aihot/backend/sources/x";
-import type { SdTweet } from "@aihot/backend/providers/socialdata";
+import { tweetToCandidate, xArticleHtml } from "@aihot/backend/sources/x";
+import type { SdArticle, SdTweet } from "@aihot/backend/providers/socialdata";
 
 const T = tag();
 const HANDLE = `xa${T}`;
@@ -71,12 +73,13 @@ test("a post that links an X Article waits for extraction, which brings the arti
 
   assert.equal(await extractArticleBody(id), "ok");
   assert.deepEqual(articleCalls.filter((c) => c === WITH_ARTICLE), [WITH_ARTICLE], "looked up by the post's own id, not the link's number");
-  const [a] = await sql<{ title: string; body_text: string; body_status: string; revision: number; x_article: { title: string; text: string } }[]>`
+  const [a] = await sql<{ title: string; body_text: string; body_status: string; revision: number; x_article: { title: string; text: string; html: string } }[]>`
     SELECT title, body_text, body_status, revision, x_article FROM articles WHERE id = ${id}`;
   assert.equal(a!.title, "To Seek a Newer World", "a bare link takes the article's title");
   assert.equal(a!.body_status, "ok");
   assert.equal(a!.revision, 2);
   assert.equal(a!.x_article.text, "World Labs is joining AMD.\n\n## Why\n\n> Come, my friends");
+  assert.equal(a!.x_article.html, "<p>World Labs is joining AMD.</p><h3>Why</h3><blockquote><p>Come, my friends</p></blockquote>", "pages get the article as laid out");
   assert.match(a!.body_text, /^https:\/\/x\.com\/i\/article\/777\n\n# To Seek a Newer World\n\nWorld Labs is joining AMD\./);
 
   const input = (await loadAnalyzeInput(id))!;
@@ -123,4 +126,67 @@ test("a post a module reads (sources.uses) has its X Article fetched while it is
   };
   assert.equal(await queuedFor(used, String(BASE + 10n)), QUEUES.extractBody);
   assert.equal(await queuedFor(unused, String(BASE + 11n)), QUEUES.group);
+});
+
+const block = (type: string, text: string, extra: Record<string, unknown> = {}) => ({ type, text, inlineStyleRanges: [], entityRanges: [], ...extra });
+const atomic = (key: number) => block("atomic", " ", { entityRanges: [{ key, offset: 0, length: 1 }] });
+const LAID_OUT: SdArticle = {
+  title: "标题",
+  cover_url: "https://pbs.twimg.com/media/cover.jpg",
+  media_entities: [
+    { media_id: "11", media_info: { __typename: "ApiImage", original_img_url: "https://pbs.twimg.com/media/a.jpg", original_img_width: 1080, original_img_height: 609 } },
+    { media_id: "12", media_info: { __typename: "ApiVideo", preview_image: { original_img_url: "https://pbs.twimg.com/media/v.jpg", original_img_width: 1280, original_img_height: 720 } } },
+  ],
+  content_state: {
+    blocks: [
+      block("unstyled", "👉 兑换码：MDLDM", { inlineStyleRanges: [{ style: "Bold", offset: 6, length: 5 }] }),
+      block("header-one", "第一部分"),
+      block("unstyled", "1. 股票代码ANT", { inlineStyleRanges: [{ style: "Bold", offset: 0, length: 10 }] }),
+      atomic(0),
+      block("unordered-list-item", "甲"),
+      block("unordered-list-item", "乙"),
+      block("ordered-list-item", "一"),
+      block("ordered-list-item", "二"),
+      block("blockquote", "引言 *不是* 强调"),
+      atomic(1),
+      atomic(2),
+      atomic(3),
+      block("unstyled", "详见课程链接和@someone", { entityRanges: [{ key: 4, offset: 2, length: 4 }], inlineStyleRanges: [{ style: "Italic", offset: 0, length: 2 }] }),
+      atomic(5),
+      atomic(6),
+      block("unstyled", " "),
+    ],
+    entityMap: [
+      { key: "0", value: { type: "MEDIA", data: { mediaItems: [{ mediaId: "11" }] } } },
+      { key: "1", value: { type: "DIVIDER", data: [] } },
+      { key: "2", value: { type: "MARKDOWN", data: { markdown: "| 项 | 值 |\n| --- | --- |\n| a | 1 |" } } },
+      { key: "3", value: { type: "TWEET", data: { tweetId: "2114377706603429899" } } },
+      { key: "4", value: { type: "LINK", data: { url: "https://example.com/course" } } },
+      { key: "5", value: { type: "MEDIA", data: { mediaItems: [{ mediaId: "12" }] } } },
+      { key: "6", value: { type: "MARKDOWN", data: { markdown: "```bash\necho hi\n```" } } },
+    ],
+  },
+};
+const POST_URL = "https://x.com/someone/status/2114878401190506902";
+
+test("the page gets the article as laid out: cover, headings, emphasis, lists, quotes and pictures", () => {
+  const html = xArticleHtml(LAID_OUT, POST_URL)!;
+  assert.ok(html.startsWith('<figure><img src="https://pbs.twimg.com/media/cover.jpg"'), html.slice(0, 80));
+  assert.match(html, /<p>👉 兑换码：<strong>MDLDM<\/strong><\/p>/);
+  assert.match(html, /<h2>第一部分<\/h2>/);
+  assert.match(html, /<p><strong>1\. 股票代码ANT<\/strong><\/p>/);
+  assert.match(html, /<figure><img src="https:\/\/pbs\.twimg\.com\/media\/a\.jpg" width="1080" height="609" alt=""><\/figure>/);
+  assert.match(html, /<ul><li>甲<\/li><li>乙<\/li><\/ul><ol><li>一<\/li><li>二<\/li><\/ol>/);
+  assert.match(html, /<blockquote><p>引言 \*不是\* 强调<\/p><\/blockquote>/);
+  assert.match(html, /<hr>/);
+  assert.equal(xArticleHtml({ title: "t" }, POST_URL), null, "an article without blocks has no body");
+});
+
+test("the laid-out article keeps links, embedded posts, tables, code and video stills", () => {
+  const html = xArticleHtml(LAID_OUT, POST_URL)!;
+  assert.match(html, /<p><em>详见<\/em><a href="https:\/\/example\.com\/course">课程链接<\/a>和@someone<\/p>/);
+  assert.match(html, /<a href="https:\/\/x\.com\/i\/status\/2114377706603429899">x\.com\/i\/status\/21143777066034…<\/a>/);
+  assert.match(html, /<table>[\s\S]*<th>项<\/th>[\s\S]*<td>1<\/td>[\s\S]*<\/table>/);
+  assert.match(html, /<pre><code class="language-bash">echo hi\n<\/code><\/pre>/);
+  assert.match(html, /<figure><a href="https:\/\/x\.com\/someone\/status\/2114878401190506902"><img src="https:\/\/pbs\.twimg\.com\/media\/v\.jpg" width="1280" height="720" alt=""><\/a><\/figure>/);
 });

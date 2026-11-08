@@ -3,9 +3,10 @@ import type { OutlineEntry, SiteItemDetail, StoryRef } from "@aihot/contracts/si
 import { ITEM_COPY, SITE } from "@aihot/site";
 import { bodyToMarkdown } from "../content/markdown.ts";
 import { sql } from "../db.ts";
-import { stripTagMarkup } from "../lib/text.ts";
+import { isChineseText, stripTagMarkup } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { textToHtml } from "../content/sanitize.ts";
+import { postWords } from "../content/posts.ts";
 import { exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, thinPageCondition, toItemSummary, xView, type ItemRow } from "./items.ts";
 import { evidenceCondition, listedCondition } from "./scope.ts";
 import { itemUrl, siteUrl } from "./links.ts";
@@ -14,6 +15,8 @@ import { topicLinks, topicMembership } from "./topics.ts";
 import { mentionsIn } from "./mentions.ts";
 
 interface DetailRow extends ItemRow {
+  /** A post's long X Article as its page shows it (xArticleHtml); lists leave it out. */
+  x_article_html: string | null;
   body_html: string | null;
   body_text: string | null;
   body_status: string;
@@ -43,7 +46,8 @@ function withOutline(html: string): { html: string; outline: OutlineEntry[] } {
 
 async function loadRow(id: string): Promise<DetailRow | null> {
   const [row] = await sql<DetailRow[]>`
-    SELECT ${ITEM_COLUMNS}, a.body_html, a.body_text, a.body_status, tr.body_html AS tr_html, tr.complete AS tr_complete,
+    SELECT ${ITEM_COLUMNS}, CASE WHEN p.body_mode = 'full' THEN a.x_article->>'html' END AS x_article_html,
+      a.body_html, a.body_text, a.body_status, tr.body_html AS tr_html, tr.complete AS tr_complete,
       ${topicMembership()} AS topics, ${thinPageCondition()} AS thin
     ${ITEM_FROM}
     WHERE p.article_id = ${id}`;
@@ -120,10 +124,24 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
   let reading: Pick<SiteItemDetail, "body" | "outline" | "hasTranslation" | "bodyLanguage"> = { body: null, outline: [], hasTranslation: false, bodyLanguage: "original" };
   if (showsPost(row)) {
     const post = xView(row, false, true);
-    const text = post?.text ?? String(row.x_post?.text ?? row.body_text ?? "");
-    // A post's text is sent as written: its headings make the outline, without anchors.
-    if (post?.translation || text.trim()) reading = readingBody(language, post?.translation ? { html: textToHtml(post.translation), kind: "translation" } : null, text.trim() ? textToHtml(text) : null, true,
-      (html) => ({ html, outline: withOutline(html).outline }));
+    if (row.x_article_html) {
+      // A long X Article reads as an article: what the post says besides its link, then the article as
+      // its author laid it out, with pictures and an outline.
+      const words = postWords(String(row.x_post?.text ?? ""));
+      const html = (words ? textToHtml(words) : "") + row.x_article_html;
+      const chinese = isChineseText(row.x_article?.text ?? "", row.language);
+      reading = readingBody(language, chinese ? { html, kind: "original" } : null, chinese ? null : html, true, (shown) => withOutline(proxyBodyImages(shown)));
+    } else {
+      const text = post?.text ?? String(row.x_post?.text ?? row.body_text ?? "");
+      // A post's text is sent as written: its headings make the outline, without anchors. One written in
+      // Chinese is the Chinese text, as an article's own Chinese body is.
+      const own = text.trim() ? textToHtml(text) : null;
+      // Judged on what the author wrote, not on the 【X 长文】 mark joined to it.
+      const written = row.x_article?.text ?? String(row.x_post?.text ?? row.body_text ?? "");
+      const chinese = !post?.translation && !!own && isChineseText(written, row.language);
+      if (post?.translation || own) reading = readingBody(language, post?.translation ? { html: textToHtml(post.translation), kind: "translation" } : chinese ? { html: own!, kind: "original" } : null, chinese ? null : own, true,
+        (html) => ({ html, outline: withOutline(html).outline }));
+    }
     if (post) {
       const { text: _text, translation: _translation, ...shown } = post;
       x = shown;
@@ -199,7 +217,9 @@ export async function exportMarkdown(id: string): Promise<{ filename: string; bo
   if (row.selected && row.seat && row.reason) lines.push(`## ${ITEM_COPY.reasonLabel}`, "", row.reason, "");
   if (showsPost(row) && row.x_post) {
     const post = xView(row);
-    if (post?.text) lines.push("## 正文", "", post.text, "");
+    const words = postWords(String(row.x_post.text ?? ""));
+    if (row.x_article_html) lines.push("## 正文", "", ...(words ? [words, ""] : []), bodyToMarkdown(row.x_article_html, row.url), "");
+    else if (post?.text) lines.push("## 正文", "", post.text, "");
     if (post?.translation) lines.push("## 中文译文", "", post.translation, "");
     for (const media of post?.media ?? []) {
       const url = media.url.startsWith("/") ? siteUrl(media.url) : media.url;

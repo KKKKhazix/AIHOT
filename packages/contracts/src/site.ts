@@ -39,6 +39,8 @@ export interface XPostView {
   /** translation: Chinese translation of the quoted post, when it is in another language. */
   quoted: { authorName: string; handle: string; text: string; url: string; translation: string | null } | null;
   media: MediaView[];
+  /** The post publishes a long X Article: its page reads like an article, under a headline. */
+  article: boolean;
 }
 
 export interface StoryRef {
@@ -68,7 +70,7 @@ export interface ItemSummary {
 
 /** The fields rendered by a site feed card; full original text lives in the item detail. */
 export interface FeedItemSummary extends Pick<ItemSummary, "id" | "title" | "summary" | "reason" | "source" | "publishedAt" | "timelineAt" | "category" | "tags" | "score" | "selected" | "channel"> {
-  x: (Pick<XPostView, "authorName" | "handle" | "avatarUrl" | "avatarSrcSet" | "media"> & {
+  x: (Pick<XPostView, "authorName" | "handle" | "avatarUrl" | "avatarSrcSet" | "media" | "article"> & {
     quoted: Omit<NonNullable<XPostView["quoted"]>, "url"> | null;
   }) | null;
   /**

@@ -1,6 +1,8 @@
 // What readers see of a group and a search: a folded card stands for the fact its representative
 // reports (not an earlier fact with no selected report), and a query naming a company finds the
-// articles about it that never write that name.
+// articles about it that never write that name. And of a post's text: lists people type (a lead-in with
+// "- " lines under it, items a blank line apart) are lists, a numbered section title or a switch between
+// numbered and bulleted lines is not merged into one, and bare addresses read short and stay safe links.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -84,9 +86,30 @@ test("a query that names a company also finds the articles about it", async () =
   assert.ok(!(await search(`claude ${T}-nothing`)).includes(about));
 });
 
-test("bare addresses in post text become safe links", () => {
-  const html = textToHtml("see https://arxiv.org/abs/2502.11089. <b>x</b>\n\n1. one\n2. two");
-  assert.match(html, /<a href="https:\/\/arxiv\.org\/abs\/2502\.11089" target="_blank" rel="noopener noreferrer nofollow">https:\/\/arxiv\.org\/abs\/2502\.11089<\/a>\./);
+test("bare addresses in post text become safe links that read short, as X shows them", () => {
+  const html = textToHtml("see https://arxiv.org/abs/2502.11089. <b>x</b> https://x.com/RunwayMLDevs/status/2118911299040292943?a=Don6pEhOTdeTcqtIwsg&s=20 和 http://tibo.dog's site, https://www.example.com/");
+  assert.match(html, /<a href="https:\/\/arxiv\.org\/abs\/2502\.11089" target="_blank" rel="noopener noreferrer nofollow">arxiv\.org\/abs\/2502\.11089<\/a>\./);
   assert.match(html, /&lt;b&gt;x&lt;\/b&gt;/);
-  assert.match(html, /<ol><li>one<\/li><li>two<\/li><\/ol>/);
+  assert.match(html, /<a href="https:\/\/x\.com\/RunwayMLDevs\/status\/2118911299040292943\?a=Don6pEhOTdeTcqtIwsg&amp;s=20" [^>]*>x\.com\/RunwayMLDevs\/status\/211…<\/a>/);
+  assert.match(html, /<a href="http:\/\/tibo\.dog" [^>]*>tibo\.dog<\/a>'s site/);
+  assert.match(html, /<a href="https:\/\/www\.example\.com\/" [^>]*>example\.com<\/a>/);
+});
+
+test("lists in post text: under a lead-in, a blank line apart, numbered from where they start", () => {
+  assert.equal(textToHtml("1. one\n2. two"), "<ol><li>one</li><li>two</li></ol>");
+  assert.equal(textToHtml("亮点：\n- 排名第一\n- 成本低 10 倍\n祝贺团队！"), "<p>亮点：</p><ul><li>排名第一</li><li>成本低 10 倍</li></ul><p>祝贺团队！</p>");
+  assert.equal(textToHtml("要点：\n\n- 甲\n\n- 乙\n\n- 丙"), "<p>要点：</p><ul><li>甲</li><li>乙</li><li>丙</li></ul>");
+  assert.equal(textToHtml("3. 第三\n4. 第四"), '<ol start="3"><li>第三</li><li>第四</li></ol>');
+  for (const mark of ["•", "·", "➤", "*"]) assert.equal(textToHtml(`${mark} a\n${mark} b`), "<ul><li>a</li><li>b</li></ul>");
+  assert.equal(textToHtml("1、甲\n2、乙"), "<ol><li>甲</li><li>乙</li></ol>");
+});
+
+test("what only looks like a list stays text", () => {
+  assert.equal(textToHtml("先说结论\n- 只有一条"), "<p>先说结论<br>- 只有一条</p>");
+  // An article's numbered section titles between paragraphs.
+  assert.equal(textToHtml("1. 股票代码ANT\n\nAnthropic 申请在纳斯达克上市。\n\n2. 夸张的增速"), "<p>1. 股票代码ANT</p><p>Anthropic 申请在纳斯达克上市。</p><p>2. 夸张的增速</p>");
+  // Numbered steps with a command between them keep their own numbers.
+  assert.equal(textToHtml("1. 安装依赖\n\n- npm install\n\n2. 启动服务"), "<p>1. 安装依赖</p><p>- npm install</p><p>2. 启动服务</p>");
+  assert.equal(textToHtml("1. 安装依赖\n- npm install\n2. 启动服务"), "<p>1. 安装依赖<br>- npm install<br>2. 启动服务</p>");
+  assert.equal(textToHtml("1. a\n2. b\n- c\n- d"), "<ol><li>a</li><li>b</li></ol><ul><li>c</li><li>d</li></ul>");
 });

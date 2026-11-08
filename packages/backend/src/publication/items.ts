@@ -36,8 +36,8 @@ export interface ItemRow {
   /** Participation mode of the source now (editorial, hot_signal, isolated). */
   source_mode: string;
   x_post: Record<string, any> | null;
-  /** Saved long article, projected only where the publication allows full text. */
-  x_article: { title?: string; text?: string } | null;
+  /** Saved long article, projected only where the publication allows full text; lists leave out its page HTML. */
+  x_article: { title?: string; text?: string; html?: string | null } | null;
   /** Current source icon only when that account is this post's author. */
   author_avatar_url?: string | null;
   author: string | null;
@@ -54,7 +54,7 @@ export const ITEM_COLUMNS = sql`
   p.article_id AS id, p.title, p.original_title, p.summary, p.reason, p.category, p.tags, p.score,
   p.selected, p.seat, p.channel, p.url, p.published_at, p.discovered_at, p.timeline_at, p.visibility,
   p.body_mode, p.indexable, p.fact_id, s.name AS source_name, s.participation_mode AS source_mode,
-  a.x_post, CASE WHEN p.body_mode = 'full' THEN a.x_article END AS x_article, a.author, a.language,
+  a.x_post, CASE WHEN p.body_mode = 'full' THEN a.x_article - 'html' END AS x_article, a.author, a.language,
   CASE WHEN s.kind = 'x_search' AND ${sourceOwnsPost(sql`s.config`, sql`a.x_post->>'handle'`)} THEN s.icon_url END AS author_avatar_url,
   st.public_id::text AS story_public_id, st.title AS story_title,
   CASE WHEN p.channel = 'x' THEN tr.body_text END AS zh_text, qt.text_zh AS quoted_zh`;
@@ -138,6 +138,7 @@ export function xView(row: Pick<ItemRow, "x_post" | "zh_text"> & Partial<Pick<It
     // Stored X translations cover the post alone. Never label that introduction as the whole long article.
     translation: !row.x_article?.text && !isEmptyOrLinkOnly(String(x.text ?? "")) && row.zh_text && row.zh_text.trim() !== String(x.text ?? "").trim() ? row.zh_text : null,
     quoted,
+    article: !!row.x_article?.text,
     // A multi-image list grid is 112 CSS px wide; one image can be 240 px. Keep 3x pixels for both.
     // Detail retains full media for the lightbox; srcSet bounds the displayed image.
     media: media.map(({ raw, view }) => compact && media.length > 1 ? mediaView(raw, "card", responsive)! : view),
@@ -205,7 +206,7 @@ export function toFeedItemSummary(row: ItemRow): FeedItemSummary {
     category: item.category, tags: item.tags, score: item.score, selected: item.selected, channel: item.channel,
     x: x ? {
       authorName: x.authorName, handle: x.handle, avatarUrl: x.avatarUrl,
-      ...(x.avatarSrcSet ? { avatarSrcSet: x.avatarSrcSet } : {}), media: x.media,
+      ...(x.avatarSrcSet ? { avatarSrcSet: x.avatarSrcSet } : {}), media: x.media, article: x.article,
       quoted: x.quoted ? { authorName: x.quoted.authorName, handle: x.quoted.handle, text: x.quoted.text, translation: x.quoted.translation } : null,
     } : null,
   };

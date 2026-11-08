@@ -130,10 +130,31 @@ export function tweetMedia(t: SdTweet) {
   }));
 }
 
-/** An X Article: its title and body as DraftJS blocks (header-two, blockquote, list items, atomic media…). */
+/** A picture in an X Article; a video or GIF has only its still here. */
+interface SdArticleImage {
+  original_img_url?: string;
+  original_img_width?: number;
+  original_img_height?: number;
+}
+
+/**
+ * An X Article: its title, cover and body as DraftJS blocks (header-two, blockquote, list items, atomic
+ * media…). Style and entity ranges count characters (code points), not UTF-16 units. Entities: MEDIA
+ * (pictures by media id), LINK, TWEET (an embedded post), DIVIDER and MARKDOWN (tables and code).
+ */
 export interface SdArticle {
   title?: string;
-  content_state?: { blocks?: Array<{ type?: string; text?: string }> };
+  cover_url?: string;
+  media_entities?: Array<{ media_id?: string; media_info?: SdArticleImage & { __typename?: string; preview_image?: SdArticleImage } }>;
+  content_state?: {
+    blocks?: Array<{
+      type?: string;
+      text?: string;
+      inlineStyleRanges?: Array<{ style?: string; offset: number; length: number }>;
+      entityRanges?: Array<{ key: number | string; offset: number; length: number }>;
+    }>;
+    entityMap?: Array<{ key: string; value: { type?: string; data?: unknown } }> | Record<string, { type?: string; data?: unknown }>;
+  };
 }
 
 /**

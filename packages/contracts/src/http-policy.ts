@@ -28,7 +28,8 @@ export const PUBLIC_INTERFACE_VERSION = SITE.interfaceVersion;
 export const NO_STORE = "no-store";
 
 export interface RedirectRule {
-  match: "exact" | "regex" | "prefix";
+  match: "exact" | "regex" | "prefix" | "canonical";
+  /** For canonical, the fixed lowercase address, whose aliases redirect to this path. */
   path: string;
   status: 301 | 302 | 307 | 308 | 404 | 410;
   /** Relative Location. `$1`… refer to regex groups; `*` appends the remainder for prefix rules. */
@@ -69,10 +70,25 @@ export interface RedirectDecision {
   headers: Record<string, string>;
 }
 
+/** Match static aliases before routing, decoding unreserved bytes without turning escaped separators into paths. */
+function normalizedPublicPath(pathname: string): string {
+  if (!pathname.startsWith("/") || !/[%A-Z\\]|\/(?:\/|\.{1,2}(?:\/|$)|$)/.test(pathname)) return pathname;
+  // An origin-form path starting with // still belongs to this host. URL handles dot segments.
+  const path = new URL("http://redirect.local" + pathname).pathname;
+  return path.replace(/%([a-f0-9]{2})/gi, (encoded, hex: string) => {
+    const char = String.fromCharCode(Number.parseInt(hex, 16));
+    return /^[a-z0-9._~-]$/i.test(char) ? char : encoded;
+  }).toLowerCase().replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/";
+}
+
 export function resolveRedirect(pathname: string, search: string): RedirectDecision | null {
+  let normalized: string | undefined;
   for (const rule of tables().redirects) {
     let location: string | null = null;
-    if (rule.match === "exact") {
+    if (rule.match === "canonical") {
+      if (pathname === rule.path || (normalized ??= normalizedPublicPath(pathname)) !== rule.path) continue;
+      location = rule.path;
+    } else if (rule.match === "exact") {
       if (pathname !== rule.path) continue;
       location = rule.location ?? null;
     } else if (rule.match === "prefix") {

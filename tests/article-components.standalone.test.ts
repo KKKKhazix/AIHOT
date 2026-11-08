@@ -2,9 +2,11 @@
 // CSS disappears and leaves unrelated labels/values; normalization exposes hidden content or scripts.
 // The widgets are the source's to declare (config.detail.preserve), and a rule it cannot run is refused
 // instead of silently changing nothing; the engine knows no site's classes.
-// Two kinds of markup lose text on any site: Readability removes every aside, so an update note set among
+// Kinds of markup lose content on any site: Readability removes every aside, so an update note set among
 // the paragraphs vanished, and it reads utility classes such as "overflow-hidden" as hidden, so a box of
-// the author's text was dropped (a reader compared a page with its original and found both gone).
+// the author's text was dropped (a reader compared a page with its original and found both gone). It reads
+// "media" in a name as a social-media widget, so every figure in a box named for the picture it holds
+// went with its caption (anthropic.com research posts, 2026-11-08: 16 pictures on the page, none stored).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as cheerio from "cheerio";
@@ -93,6 +95,17 @@ test("a box of the author's text survives classes that only set overflow or scro
   assert.match(body.text, /as a person saw it/);
   const junk = '<div class="comments overflow-hidden"><div><span>Reader A</span> said nice post</div></div><div class="sidebar-widget overflow-y-auto"><div>Popular posts this week</div></div>';
   assert.doesNotMatch(extract(junk).text, /nice post|Popular posts/);
+});
+
+test("a picture box among the article's paragraphs keeps its picture and caption when its name says media; other words still count", () => {
+  const figure = (box: string, caption = "Claude can use dreaming to organize memory.") => `<div class="${box}" data-type="image"><figure class="Duq99q_e-imageWithCaption"><img alt="Diagram of a memory hierarchy" width="3840" height="1754" src="/_next/image?url=https%3A%2F%2Fcdn.publisher.example%2Fimages%2Fmemory.png&amp;w=3840&amp;q=75"><figcaption><div>${caption}</div></figcaption></figure></div>`;
+  for (const box of ["PA4F1q_media-column", "article-media", "media"]) {
+    const body = extract(figure(box));
+    assert.match(cheerio.load(body.html)("img").attr("src") ?? "", /memory\.png/, box);
+    assert.match(body.text, /Claude can use dreaming to organize memory/, box);
+  }
+  assert.doesNotMatch(extract(figure("sponsor-media", "Brought to you by our partner")).text, /our partner/);
+  assert.doesNotMatch(extract(figure("social-media", "Follow us for more")).text, /Follow us/);
 });
 
 test("document theme classes do not remove the article's plain text paragraphs", () => {

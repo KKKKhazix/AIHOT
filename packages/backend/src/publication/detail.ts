@@ -8,7 +8,7 @@ import { isChineseText, stripTagMarkup } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { textToHtml } from "../content/sanitize.ts";
 import { xArticleBody } from "../content/posts.ts";
-import { exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, thinPageCondition, toItemSummary, xView, type ItemRow } from "./items.ts";
+import { eventPageCondition, exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, thinPageCondition, toItemSummary, xView, type ItemRow } from "./items.ts";
 import { evidenceCondition, listedCondition } from "./scope.ts";
 import { itemUrl, siteUrl } from "./links.ts";
 import { hasItemPage, publicSourceName } from "./rules.ts";
@@ -26,6 +26,8 @@ interface DetailRow extends ItemRow {
   tr_complete: boolean | null;
   topics: string[];
   thin: boolean;
+  /** Its event page stands for it in search (eventPageCondition). */
+  event_page: boolean;
 }
 
 export type DetailResult =
@@ -46,11 +48,11 @@ function withOutline(html: string): { html: string; outline: OutlineEntry[] } {
   return { html: out, outline };
 }
 
-async function loadRow(id: string): Promise<DetailRow | null> {
+async function loadRow(id: string, now = new Date()): Promise<DetailRow | null> {
   const [row] = await sql<DetailRow[]>`
     SELECT ${ITEM_COLUMNS}, CASE WHEN p.body_mode = 'full' THEN a.x_article->>'html' END AS x_article_html,
       a.body_html, a.body_text, a.body_status, a.cover, tr.body_html AS tr_html, tr.complete AS tr_complete,
-      ${topicMembership()} AS topics, ${thinPageCondition()} AS thin
+      ${topicMembership()} AS topics, ${thinPageCondition()} AS thin, ${eventPageCondition(now)} AS event_page
     ${ITEM_FROM}
     WHERE p.article_id = ${id}`;
   return row ?? null;
@@ -85,7 +87,7 @@ function readingBody(
  * withdrawn and hot_signal items are a 404.
  */
 export async function loadItemDetail(id: string, language: "zh" | "original" = "zh", now = new Date()): Promise<DetailResult> {
-  const row = await loadRow(id);
+  const row = await loadRow(id, now);
   if (!row || !hasItemPage({ visibility: row.visibility, sourceMode: row.source_mode })) return { kind: "not_found" };
 
   const summary = toItemSummary(row);
@@ -190,7 +192,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
     relatedStories: related,
     topics: topicLinks(row.topics),
     indexable: row.indexable,
-    googleNoindex: row.indexable && row.thin,
+    googleNoindex: row.indexable && (row.thin || row.event_page),
     markdownAvailable: markdownAvailable(row),
     group,
     hasTranslation: reading.hasTranslation,

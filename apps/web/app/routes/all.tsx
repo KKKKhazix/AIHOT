@@ -44,8 +44,11 @@ export function meta({ loaderData }: Route.MetaArgs) {
   const q = f?.q;
   const page = loaderData?.data.page ?? 1;
   const path = listPath("/all", { ...(f && filterParams(f)), q, tab: q && f?.tab === "relevance" ? "relevance" : null, page: page > 1 ? page : null });
-  const noindex = !!q || hasFeedFilters(f);
-  const title = `${q ? `搜索：${q}` : noindex ? ALL_TITLE : SEO_TITLES.all}${page > 1 ? ` · 第 ${page} 页` : ""}`;
+  const filtered = !!q || hasFeedFilters(f);
+  const title = `${q ? `搜索：${q}` : filtered ? ALL_TITLE : SEO_TITLES.all}${page > 1 ? ` · 第 ${page} 页` : ""}`;
+  // The first page stands in search for the whole list; later pages only shift its reports along, and
+  // their links stay followed so every report is still reached.
+  const noindex = filtered || page > 1;
   return pageMeta({
     title,
     description: `${SITE.name} 收录的${subjectAfter("全部", "相关动态")}，可按频道、类别与标签筛选，支持中英文搜索。`,

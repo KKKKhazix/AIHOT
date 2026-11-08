@@ -1,7 +1,7 @@
 // Public read layer, item level. Every exit (site API, v1, RSS, MCP, sitemap) reads
 // items through these columns and views; which rows are public is decided by scope.ts.
 import { CATEGORY_KEYS, toPublicApiCategory, type CategoryKey, type ChannelKey, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
-import type { FeedItemSummary, ItemSummary, MediaView, XPostView } from "@aihot/contracts/site";
+import { STORY_INDEX_MIN_REPORTS, type FeedItemSummary, type ItemSummary, type MediaView, type XPostView } from "@aihot/contracts/site";
 import { POLICY } from "@aihot/site";
 import { sql, type Db } from "../db.ts";
 import { isChineseText } from "../lib/text.ts";
@@ -9,7 +9,7 @@ import { isEmptyOrLinkOnly, withXArticle } from "../content/posts.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { sourceOwnsPost } from "../sources/account.ts";
 import { displayTags, publicSourceName } from "./rules.ts";
-import { foldableSelectionCondition, seatedCondition } from "./scope.ts";
+import { foldableSelectionCondition, seatedCondition, storyReportCondition } from "./scope.ts";
 
 export interface ItemRow {
   id: string;
@@ -172,6 +172,20 @@ export function thinPageCondition() {
       + CASE WHEN p.body_mode = 'full' THEN char_length(coalesce(a.x_article->>'text', '')) ELSE 0 END
     WHEN p.body_mode = 'full' AND a.body_html IS NOT NULL THEN char_length(coalesce(a.body_text, ''))
     ELSE 0 END < ${THIN_PAGE_CHARS})`;
+}
+
+/**
+ * The article's own event (`st`, over ITEM_FROM) gathers STORY_INDEX_MIN_REPORTS public reports or more, so the
+ * event page stands for them in search. As with a thin page, Google is asked not to index the article
+ * (googlebot noindex) and the sitemap leaves it out; every other engine indexes it as `indexable` says, and
+ * change notifications keep it. A page an editor marked for indexing stays. The reports are counted as the
+ * event page counts them; inside the count, `p` and `s` are the event's reports, not the article.
+ */
+export function eventPageCondition(now: Date) {
+  return sql`(p.seo_indexed_at IS NULL AND st.id IS NOT NULL AND (
+    SELECT count(DISTINCT p.article_id) FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id
+    JOIN publications p ON p.article_id = fa.article_id JOIN sources s ON s.id = p.source_id
+    WHERE f.story_id = st.id AND ${storyReportCondition(now)}) >= ${STORY_INDEX_MIN_REPORTS})`;
 }
 
 /** The shared public article; its X post is added as each answer shows it. */

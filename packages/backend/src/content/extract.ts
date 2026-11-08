@@ -1,7 +1,7 @@
 // Article body extraction: readable text from the article page, or "unconfirmed" — never a wrong body.
 // Jina Reader is the budgeted fallback for pages that only render in a browser.
 import { Readability } from "@mozilla/readability";
-import type { parseHTML } from "linkedom";
+import { parseHTML } from "linkedom";
 import { sql } from "../db.ts";
 import { guardedFetch, languageHeaders } from "../lib/http-fetch.ts";
 import { assertPageContent, contentDocument, UnavailablePageError } from "../lib/page-content.ts";
@@ -338,6 +338,16 @@ function hiddenIn(el: El, figure: El): boolean {
   return false;
 }
 
+/** Left out by Readability for readers: hidden by an attribute, from assistive technology, or by an inline style. */
+function unseen(el: El): boolean {
+  return el.hasAttribute("hidden") || el.getAttribute("aria-hidden") === "true" || /(?:^|;)(?:display:none|visibility:hidden)(?:;|$)/.test(el.getAttribute("style") ?? "");
+}
+
+function unseenWithin(el: El, root: El): boolean {
+  for (let node: El | null = el; node && node !== root; node = node.parentElement) if (unseen(node)) return true;
+  return false;
+}
+
 /** A [role="img"] holder that has nothing besides its svgs: no text, image or video of its own. */
 function onlyDrawings(holder: El): boolean {
   const copy = holder.cloneNode(true) as El;
@@ -404,6 +414,163 @@ function describeFigureDrawings(document: Doc) {
     drawing.replaceWith(p);
     earlier?.remove();
     seen.texts.set(text, p);
+  }
+}
+
+/**
+ * Words a link keeps for screen readers only, under the class names sites give them (sr-only, visually-hidden,
+ * screen-reader-text), say what the page shows another way: "(opens in new tab)", a heading anchor's "Link to
+ * this section", the dots of a gallery. They were stored and translated as text; readers never see them. They are
+ * marked here and taken out of Readability's result, so its judgment of a box by its links is unchanged: cards of
+ * other stories and a site's logo carry their names that way. A link to the picture it shows only opens it full
+ * size, and its words ("View full-size image: …") go now: counted as link text they made the figure's box read as
+ * a box of links (ideogram.ai: every figure set beside its prompt). Outside links, such words can stand for what a
+ * body cannot show (a chart's table of values, a drawing's description) and stay.
+ */
+const SCREEN_READER_ONLY = /^(?!not-)(?:[\w-]+[-_])?(?:sr-only|visually-hidden|visuallyhidden|screen-reader-text|screen-reader-only)$/i;
+const SCREEN_READER_MARK = "data-screen-reader-only";
+function markScreenReaderLinkText(document: Doc) {
+  for (const el of document.querySelectorAll("a [class]")) {
+    if (!(el.getAttribute("class") ?? "").split(/\s+/).some((name: string) => SCREEN_READER_ONLY.test(name))) continue;
+    const link = el.closest("a")!;
+    const href = link.getAttribute("href");
+    if (href && [...link.querySelectorAll("img")].some((img) => img.getAttribute("src") === href)) el.remove();
+    else el.setAttribute(SCREEN_READER_MARK, "");
+  }
+}
+function withoutScreenReaderLinkText(html: string): string {
+  if (!html.includes(SCREEN_READER_MARK)) return html;
+  const { document } = parseHTML(`<!doctype html><html><body>${html}</body></html>`);
+  for (const el of document.querySelectorAll(`[${SCREEN_READER_MARK}]`)) el.remove();
+  return document.body.innerHTML;
+}
+
+/** An image with an address of its own, not a placeholder: a src that is not empty or a data: URI. */
+function addressed(img: El): boolean {
+  const src = img.getAttribute("src")?.trim() ?? "";
+  return !!src && !/^data:/i.test(src);
+}
+
+/** The addresses of an image named by the given attributes (each entry of a srcset), without data: placeholders. */
+function addressesIn(el: El, names: string[]): string[] {
+  const images = el.localName === "img" ? [el] : [...el.querySelectorAll("img, source")];
+  return images.flatMap((img) => names.flatMap((name) => {
+    const value = img.getAttribute(name)?.trim() ?? "";
+    // A data: URI holds commas of its own; only a srcset lists addresses separated by them.
+    return name.endsWith("srcset") ? value.split(",").map((entry: string) => entry.trim().split(/\s+/)[0] ?? "") : [value];
+  })).filter((address) => address && !/^data:/i.test(address));
+}
+/** Every address an image shows, or loads once a script runs. */
+const shownAddresses = (el: El) => addressesIn(el, ["src", "data-src", "data-original", "data-lazy-src", "srcset", "data-srcset"]);
+/** The addresses a stored body keeps for an image: its src, or the lazy address sanitizeBody puts there; a srcset is not kept. */
+const keptAddresses = (el: El) => addressesIn(el.localName === "img" ? el : el.querySelector("img") ?? el, ["src", "data-src", "data-original"]);
+
+/**
+ * Readability puts a noscript picture in its placeholder's place only when the noscript holds a single img right
+ * after that placeholder, and removes every other noscript: a picture written with its sources (<picture>), or
+ * one written before its lazy placeholder, went with it (allenai.org, wiz.io: every picture of a page). A noscript
+ * holding only pictures, one with an address, stands in for its placeholders: the images with no address a body
+ * keeps, right before it, else right after it. An image beside it showing the same picture with an address a body
+ * keeps is that picture, left to Readability, which keeps one of the two; one that names it only in a srcset is
+ * not kept and is a placeholder too.
+ */
+function showNoscriptPictures(document: Doc) {
+  for (const noscript of document.querySelectorAll("noscript")) {
+    const held = [...noscript.children];
+    if (!held.length || collapsed(noscript.textContent) || held.some((el) => el.localName !== "img" && el.localName !== "picture")) continue;
+    if (!held.some((el) => (el.localName === "img" ? [el] : [...el.querySelectorAll("img")]).some(addressed))) continue;
+    const own = new Set(held.flatMap(shownAddresses));
+    const neighbours = [noscript.previousElementSibling, noscript.nextElementSibling].filter((el): el is El => !!el && (el.localName === "img" || el.localName === "picture"));
+    const same = neighbours.filter((el) => shownAddresses(el).some((address) => own.has(address)));
+    if (same.some((el) => keptAddresses(el).length)) continue;
+    for (const el of same) el.remove();
+    const run = (step: (el: El) => El | null) => {
+      const found: El[] = [];
+      for (let el = step(noscript); el?.localName === "img" && !keptAddresses(el).length; el = step(el)) found.push(el);
+      return found;
+    };
+    const before = run((el) => el.previousElementSibling);
+    for (const placeholder of before.length ? before : run((el) => el.nextElementSibling)) placeholder.remove();
+    noscript.replaceWith(...noscript.childNodes);
+  }
+}
+
+/** The words of a button that only says what a click on its picture does. */
+const ZOOM_LABEL = /^(?:(?:zoom|in|expand|enlarge|view|open|full|size|image|photo|picture|\d+)\s*)+$/i;
+
+/**
+ * Readability removes every button, and a picture the page opens larger on a click sits in one: the button went
+ * with its picture (reflection.ai, linear.app, mastra.ai: every picture of a page). A button holding a picture,
+ * the only button among its siblings, with no words of its own but such a label, is replaced by its figures,
+ * else by the pictures it shows; wide and narrow crops of one picture (the same description) are kept once. A row
+ * of picture buttons (tabs, thumbnails to choose from, reactions) and a button that says something are controls.
+ */
+function unwrapPictureButtons(document: Doc) {
+  for (const button of document.querySelectorAll("button")) {
+    const parent = button.parentElement;
+    if (!parent || unseen(button) || [...parent.children].some((el) => el !== button && el.localName === "button")) continue;
+    const outermost = (el: El, name: string) => {
+      const outer = el.parentElement?.closest(name);
+      return !outer || !button.contains(outer);
+    };
+    const figures = [...button.querySelectorAll("figure")].filter((figure) => outermost(figure, "figure") && !unseenWithin(figure, button));
+    const shown = figures.length ? figures
+      : [...button.querySelectorAll("picture, img")].filter((el) => outermost(el, "picture") && !unseenWithin(el, button));
+    if (!shown.length) continue;
+    const rest = button.cloneNode(true) as El;
+    for (const el of rest.querySelectorAll('figure, picture, img, svg, style, script, [aria-hidden="true"]')) el.remove();
+    const label = collapsed(rest.textContent);
+    if (label && !ZOOM_LABEL.test(label)) continue;
+    const descriptions = new Set<string>();
+    button.replaceWith(...shown.filter((el) => {
+      const description = collapsed((el.localName === "img" ? el : el.querySelector("img"))?.getAttribute("alt"));
+      if (!description) return true;
+      if (descriptions.has(description)) return false;
+      descriptions.add(description);
+      return true;
+    }));
+  }
+}
+
+/**
+ * Readability's names and roles for what is beside an article, which remove a box before its content counts
+ * (_grabArticle, _getClassWeight).
+ */
+const READABILITY = Readability.prototype as unknown as {
+  REGEXPS: Record<"unlikelyCandidates" | "okMaybeItsACandidate" | "positive" | "negative", RegExp>;
+  UNLIKELY_ROLES: string[];
+};
+const READABILITY_NAMES = READABILITY.REGEXPS;
+function namedBeside(el: El): boolean {
+  if (READABILITY.UNLIKELY_ROLES.includes(el.getAttribute("role") ?? "")) return true;
+  const names = [el.getAttribute("class") ?? "", el.getAttribute("id") ?? ""];
+  const both = names.join(" ");
+  if (READABILITY_NAMES.unlikelyCandidates.test(both) && !READABILITY_NAMES.okMaybeItsACandidate.test(both)) return true;
+  const weight = (name: string) => (READABILITY_NAMES.positive.test(name) ? 25 : 0) - (READABILITY_NAMES.negative.test(name) ? 25 : 0);
+  return names.reduce((sum, name) => sum + (name ? weight(name) : 0), 0) < 0;
+}
+
+/**
+ * Readability judges the boxes around a figure by measures meant for link lists and galleries: a caption crediting
+ * its source with a link, or the picture's own link, reads as a box of links, and two figures side by side without
+ * a paragraph as a gallery, so the box went with its figures (Substack's captioned images, WordPress columns, image
+ * pairs: every such figure of a page). A box whose words all lie in its figures, holding a figure with a picture,
+ * only lays them out: it is replaced by what it holds, until the figures stand where no such measure reaches them.
+ * So is one whose other words are a caption line, a paragraph without links (WordPress's group of figures under
+ * "Figure 1. …"). A box with other words (titles linking to other stories, controls, a menu), a hidden box, and one
+ * Readability's names set beside the article (related, promo, sidebar) are left to it.
+ */
+function unwrapFigureBoxes(document: Doc) {
+  // Innermost first: a box of boxes of figures (columns of figures) is judged once its own boxes are gone.
+  for (const box of [...document.querySelectorAll("div")].reverse()) {
+    if (unseen(box) || namedBeside(box) || !box.querySelector("figure img, figure picture, figure video")) continue;
+    const rest = box.cloneNode(true) as El;
+    for (const figure of rest.querySelectorAll("figure")) figure.remove();
+    const words = collapsed(rest.textContent);
+    const lines = rest.querySelectorAll("p");
+    const caption = lines.length === 1 && !lines[0]!.querySelector("a") && collapsed(lines[0]!.textContent) === words;
+    if (words && !caption) continue;
+    box.replaceWith(...box.childNodes);
   }
 }
 
@@ -491,9 +658,10 @@ function keepMediaAmongParagraphs(document: Doc) {
 /**
  * Readability scores class names, and utility classes that only set overflow, scrolling or snapping read to
  * it as "hidden" or "scroll" ("overflow-hidden", "scroll-mt-24"): a box of the author's text with such a class
- * was dropped. They say nothing about what the box holds, so they are taken off before scoring.
+ * was dropped, and so was a figure's picture under Tailwind's tw- prefix ("tw-overflow-hidden"). They say nothing
+ * about what the box holds, so they are taken off before scoring.
  */
-const LAYOUT_CLASS = /^(?:[\w-]+:)*(?:overflow|overscroll|scroll|snap)-[\w-]+$/;
+const LAYOUT_CLASS = /^(?:[\w-]+:)*(?:tw-)?(?:overflow|overscroll|scroll|snap)-[\w-]+$/;
 function dropLayoutClasses(document: Doc) {
   for (const el of document.querySelectorAll("[class]")) {
     const classes: string[] = (el.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
@@ -520,15 +688,20 @@ export function readableDocument(document: Doc, url: string, rules: PageRules = 
   settleInlineVisibility(document);
   preserveWidgets(document, rules.preserve ?? []);
   describeFigureDrawings(document);
+  markScreenReaderLinkText(document);
+  showNoscriptPictures(document);
+  unwrapPictureButtons(document);
   keepAsidesAmongParagraphs(document);
   dropAuthorCards(document);
   keepMediaAmongParagraphs(document);
   dropLayoutClasses(document);
+  // After the names that only say "media" or set overflow are gone, which would count against a box of figures.
+  unwrapFigureBoxes(document);
   // A document theme is not an article candidate: names such as "header-dark" can discard the root.
   document.documentElement.removeAttribute("class");
   const article = new Readability(document as unknown as ConstructorParameters<typeof Readability>[0], { charThreshold: MIN_BODY_CHARS, keepClasses: false }).parse();
   if (!article?.content) return null;
-  const clean = trimTrailingChrome(sanitizeBody(article.content, url));
+  const clean = trimTrailingChrome(sanitizeBody(withoutScreenReaderLinkText(article.content), url));
   const text = stripTags(clean);
   if (text.length < MIN_BODY_CHARS) return null;
   try { assertPageContent(article.title ?? "", text); }

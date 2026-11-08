@@ -99,6 +99,10 @@ docker compose run --rm setup && docker compose up -d
 
 下面按时间从新到旧列出每次更新要注意的事。
 
+#### 百度主动推送（2026 年 11 月 8 日）
+
+没有迁移。新增两个可选的环境变量 `BAIDU_PUSH_ENABLED` 和 `BAIDU_PUSH_TOKEN`：站点在百度搜索资源平台验证后，把「普通收录 · API提交」推送地址末尾的 token 填进 `BAIDU_PUSH_TOKEN`，开关设成 `true`，worker 每小时把新出现的页面推给百度。第一次只记下已有页面、不推送（它们靠站点地图），之后每个地址只推一次，不超过百度当天给的配额；连续失败一天会出现在每天的跟进清单里。不用就不填，什么都不会发出去。
+
 #### 站长平台的网站验证（2026 年 11 月 8 日）
 
 没有迁移，没有新的环境变量。`site/site.ts` 新增 `SITE.siteVerification`：百度、必应、360、搜狗、神马、头条等站长平台给的 HTML 标签验证码按“meta 名 → 验证码”填进去，就会出现在首页的 head 里；验证通过后也要留着。自己维护 `site/site.ts` 的站，合并时加上这一行，用不到就写 `siteVerification: {}`；不加的话构建会报找不到 `siteVerification`。

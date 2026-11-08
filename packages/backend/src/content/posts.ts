@@ -1,5 +1,6 @@
 // Textless and link-only posts keep their own text and media instead of model-written copy.
 import { collapseWhitespace } from "../lib/text.ts";
+import { textToHtml } from "./sanitize.ts";
 
 export const isEmptyOrLinkOnly = (text: string) => !text.replace(/https?:\/\/\S+/giu, "").trim();
 
@@ -7,7 +8,16 @@ export const isEmptyOrLinkOnly = (text: string) => !text.replace(/https?:\/\/\S+
 export const X_ARTICLE_LINK = /https?:\/\/(?:www\.)?(?:x|twitter)\.com\/i\/article\/\d+/gi;
 
 /** What a post says besides the link to the long article it publishes (the page shows that article itself). */
-export const postWords = (text: string) => text.replace(X_ARTICLE_LINK, "").trim();
+const postWords = (text: string) => text.replace(X_ARTICLE_LINK, "").trim();
+
+/**
+ * The body of a post with a saved long article, as every exit reads it (page, Markdown, full RSS) and as it
+ * is translated: what the post says besides its link, then the article as its author laid it out.
+ */
+export function xArticleBody(postText: string, articleHtml: string): string {
+  const words = postWords(postText);
+  return (words ? textToHtml(words) : "") + articleHtml;
+}
 
 /** The post and its already fetched long article are one text for writing (and for readers where no page HTML was kept). */
 export function withXArticle(xPost: Record<string, any> | null, article: { title?: string; text?: string } | null): Record<string, any> | null {

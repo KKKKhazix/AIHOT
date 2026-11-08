@@ -10,7 +10,7 @@ import { escapeXml } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { feedIssues, type FeedIssue, type ReportKind } from "./reports.ts";
 import { textToHtml } from "../content/sanitize.ts";
-import { postWords } from "../content/posts.ts";
+import { xArticleBody } from "../content/posts.ts";
 import { publicCategoryCondition, exportTranslation, xView, type ItemRow } from "./items.ts";
 import { publicSourceName } from "./rules.ts";
 import { SELECTION } from "@aihot/industry/selection";
@@ -96,10 +96,12 @@ function fullContent(r: FeedRow, aihot: string): string | null {
   let html: string | null = null;
   const x = r.channel === "x" ? xView({ x_post: r.x_post ?? null, x_article: r.x_article ?? null, zh_text: r.zh_text ?? null, quoted_zh: r.quoted_zh ?? null }) : null;
   if (x) {
-    // A long X Article as its page shows it, after what the post says besides its link.
+    // A long X Article as its page shows it (after what the post says besides its link), in Chinese when
+    // its translation is complete, as an article's body is.
     const article = r.x_article?.html;
-    const words = article ? postWords(String(r.x_post?.text ?? "")) : "";
-    html = article ? (words ? textToHtml(words) : "") + article : textToHtml(x.translation ?? x.text);
+    html = article
+      ? exportTranslation({ language: r.language, body_text: r.x_article?.text ?? "", tr_html: r.tr_html, tr_complete: r.tr_complete }) ?? xArticleBody(String(r.x_post?.text ?? ""), article)
+      : textToHtml(x.translation ?? x.text);
     if (x.quoted?.text) {
       html += `<blockquote><p>引用 @${escapeXml(x.quoted.handle)}：</p>${textToHtml(x.quoted.translation ?? x.quoted.text)}${x.quoted.url ? `<p><a href="${escapeXml(x.quoted.url)}">${escapeXml(x.quoted.url)}</a></p>` : ""}</blockquote>`;
     }

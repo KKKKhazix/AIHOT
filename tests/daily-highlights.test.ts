@@ -5,7 +5,8 @@
 //   the window or from a source that is not editorial, or a selected one the next issue carries (released at
 //   or after the cutoff);
 // - a report filled in becomes the lead, counts among the issue's events or sources, or differs between the
-//   page, v1 and the Agent answer; a withdrawn one keeps its link;
+//   page, v1 and the Agent answer; a withdrawn one keeps its link; its own page does not name the daily that
+//   lists it;
 // - an issue with three highlights of its own, or a quiet day, is given reports it did not carry;
 // - what the highlights showed keeps a later selection (one confirmed after the cutoff, an official post on the
 //   same news) out of the next issue's body, or comes back in the highlights of the week's next issues, also
@@ -18,7 +19,7 @@ import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
-import { loadReport, v1Daily } from "@aihot/backend/publication/reports";
+import { firstDaily, loadReport, v1Daily } from "@aihot/backend/publication/reports";
 import { composeDaily } from "@aihot/backend/reports/compose";
 import { mergeStoryInto } from "@aihot/backend/events/merge";
 import { buildApp } from "../apps/api/src/app.ts";
@@ -103,6 +104,7 @@ test("a thin issue fills its highlights with the window's best reports it left o
   for (const id of [runnerUp, sameAsLead, below, followUp, outside, signal, nextIssues]) assert.ok(!c.highlights.includes(id), id);
   assert.equal(c.metrics.totalEvents, 1, "a highlight filled in is not one of the issue's events");
   assert.equal(c.metrics.sourcesCount, 1);
+  assert.deepEqual(await firstDaily(best), { key: day, lead: false }, "its page names the daily that lists it, never as its lead");
 
   // Withdrawn after the issue: struck through on the page, gone from v1 and the Agent answer.
   await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${second}`;

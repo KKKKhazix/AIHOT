@@ -418,9 +418,10 @@ export async function loadReport(kind: ReportKind, key: string): Promise<ReportD
 }
 
 /**
- * The first daily whose page lists an article, as an entry, a flash or a development listed under an entry
- * still public, while the article itself is (an issue strikes through what it no longer lists); `lead`: that
- * issue leads with it. Both as the issue's page shows them (issueAsShown).
+ * The first daily whose page lists an article, as an entry, a flash, a development listed under an entry
+ * still public or one of the highlights a thin issue was filled with, while the article itself is (an issue
+ * strikes through what it no longer lists); `lead`: that issue leads with it. Both as the issue's page shows
+ * them (issueAsShown).
  */
 export async function firstDaily(itemId: string): Promise<{ key: string; lead: boolean } | null> {
   // Every daily citing it anywhere, oldest first. strict: in lax mode `.**` reaches every array member a second time.
@@ -430,7 +431,7 @@ export async function firstDaily(itemId: string): Promise<{ key: string; lead: b
     ORDER BY key`;
   for (const { key, content } of issues) {
     const shown = issueAsShown("daily", content, await issueAvailability(content));
-    const listed = [...shown.all.flatMap((e) => [e, ...(e.related ?? [])]), ...shown.flashes];
+    const listed = [...shown.all.flatMap((e) => [e, ...(e.related ?? [])]), ...shown.flashes, ...shown.highlights];
     if (listed.some((c) => c.itemId === itemId && c.available)) return { key, lead: shown.leadItemId === itemId };
   }
   return null;

@@ -64,6 +64,14 @@ test("a text links at most `perText` names; a name it has no room for links at i
   ]);
 });
 
+test("an address in the text is one link, short as X shows it, and no name inside it links", () => {
+  const withZai = [...targets, { href: "/models/glm", names: ["Z.ai"] }];
+  assert.deepEqual(show(linkMentions(["过去 6 个月，https://Z.ai 的用量增长 20 倍，Z.ai 领先。", "见 https://www.anthropic.com/research/components-of-agent-memory。"], withZai)), [
+    "过去 6 个月，[Z.ai→https://Z.ai] 的用量增长 20 倍，[Z.ai→/models/glm] 领先。",
+    "见 [anthropic.com/research/compon…→https://www.anthropic.com/research/components-of-agent-memory]。",
+  ]);
+});
+
 test("missing texts keep their place", () => {
   assert.deepEqual(show(linkMentions([null, "OpenAI", undefined], targets)), ["", "[OpenAI→/topics/openai]", ""]);
 });

@@ -3,6 +3,7 @@ import type { Route } from "./+types/hot";
 import { IntentLink } from "../components/ui/IntentLink";
 import type { HotEntryView, HotResponse } from "@aihot/contracts/site";
 import { beijingDate } from "@aihot/contracts/time";
+import { shortAddresses } from "@aihot/contracts/addresses";
 import { SEO_TITLES, subjectAfter, withSubject } from "@aihot/site";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
@@ -130,7 +131,7 @@ function Lead({ e }: { e: HotEntryView }) {
           <h2 className="text-[21px] font-bold leading-[1.4] tracking-[-0.01em] text-ink sm:text-[23px] lg:text-[25px] lg:leading-[1.38]">
             <StoryLink e={e} className="group-hover:text-accent" />
           </h2>
-          {e.summary && <p className="mt-3 line-clamp-3 text-[14px] leading-[1.75] text-ink-3">{e.summary}</p>}
+          {e.summary && <p className="mt-3 line-clamp-3 text-[14px] leading-[1.75] text-ink-3">{shortAddresses(e.summary)}</p>}
         </div>
         {e.cover ? (
           <div className="order-first overflow-hidden well rounded-panel xl:order-none">
@@ -180,7 +181,7 @@ function Runner({ e }: { e: HotEntryView }) {
       <h2 className="mt-2.5 line-clamp-2 text-[16px] font-[650] leading-[1.5] text-ink">
         <StoryLink e={e} className="group-hover:text-accent" />
       </h2>
-      {e.summary && <p className="mt-1.5 line-clamp-2 text-[13px] leading-[1.7] text-ink-3 lg:line-clamp-1">{e.summary}</p>}
+      {e.summary && <p className="mt-1.5 line-clamp-2 text-[13px] leading-[1.7] text-ink-3 lg:line-clamp-1">{shortAddresses(e.summary)}</p>}
       <div className="mt-auto flex flex-wrap items-end justify-between gap-x-4 gap-y-2 pt-3">
         <div className="flex min-w-0 flex-col gap-1.5">
           <Faces participants={e.participants} total={e.participantCount} size={20} />
@@ -214,7 +215,7 @@ function Row({ e }: { e: HotEntryView }) {
             </span>
           )}
         </h3>
-        {e.summary && <p className="mt-0.5 line-clamp-2 text-[13px] leading-[1.65] text-ink-4 wide:line-clamp-1">{e.summary}</p>}
+        {e.summary && <p className="mt-0.5 line-clamp-2 text-[13px] leading-[1.65] text-ink-4 wide:line-clamp-1">{shortAddresses(e.summary)}</p>}
         <div className="mt-2 flex items-center gap-2.5 wide:hidden">
           <Faces participants={e.participants} total={e.participantCount} size={20} />
           <span className="text-[12px] text-ink-4">

@@ -143,8 +143,14 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
         (html) => ({ html, outline: withOutline(html).outline }));
     }
     if (post) {
-      const { text: _text, translation: _translation, ...shown } = post;
-      x = shown;
+      const { text: _text, translation: _translation, quoted, ...shown } = post;
+      x = {
+        ...shown,
+        quoted: quoted && {
+          authorName: quoted.authorName, handle: quoted.handle, url: quoted.url,
+          html: textToHtml(quoted.text), translationHtml: quoted.translation ? textToHtml(quoted.translation) : null,
+        },
+      };
     }
   } else if (row.body_mode === "full" && row.body_html) {
     const chinese = isChineseBody(row);

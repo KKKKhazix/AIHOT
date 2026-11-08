@@ -29,6 +29,18 @@ export function avifCandidates(srcSet: string): string {
   return srcSet.replace(/([?&]mode=[a-z0-9-]+)(?=&)/g, `$1${AVIF_MODE_SUFFIX}`);
 }
 
+/**
+ * The post an item quotes, as its page shows it: its words and their translation as HTML from the same
+ * renderer as the post's own text and the full RSS (paragraphs, lists, addresses as short links).
+ */
+export interface QuotedPostView {
+  authorName: string;
+  handle: string;
+  url: string;
+  html: string;
+  translationHtml: string | null;
+}
+
 export interface XPostView {
   authorName: string;
   handle: string;
@@ -146,8 +158,8 @@ export interface OutlineEntry {
  * unless …/original asks for the original. Only the body shown is sent, with its outline.
  */
 export interface SiteItemDetail extends ItemSummary {
-  /** The post with all its media; its text is the body. */
-  x: Omit<XPostView, "text" | "translation"> | null;
+  /** The post with all its media; its text is the body, and the post it quotes is set as that body is. */
+  x: (Omit<XPostView, "text" | "translation" | "quoted"> & { quoted: QuotedPostView | null }) | null;
   /** Selected, but its fact's seat is held by this report: marked 同事件, without a reason of its own. */
   sameEvent?: { id: string; title: string } | null;
   readingMode: "full" | "summary-only";

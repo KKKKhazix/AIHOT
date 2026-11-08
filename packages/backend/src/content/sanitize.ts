@@ -2,6 +2,7 @@
 // External HTML is never executed; images keep their original src and are signed at read time.
 import * as cheerio from "cheerio";
 import sanitizeHtml from "sanitize-html";
+import { addressRuns } from "@aihot/contracts/addresses";
 import { isNonArticleImage } from "../lib/image-url.ts";
 import { normalizeVideos } from "./video.ts";
 
@@ -192,41 +193,15 @@ function resolveUrl(href: string, base?: string): string {
 
 export const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-// A bare address ends at whitespace, CJK text, full-width punctuation or emoji; trailing sentence
-// punctuation belongs to the sentence, not the link.
-const BARE_URL = /https?:\/\/[^\s<>"^`{|}　-〿㐀-䶿一-鿿＀-￯぀-ヿ가-힯☀-➿️‍\u{1f300}-\u{1faff}]+/gu;
-const TRAILING_PUNCT = /[.,;:!?*'"”’»…、。，；：！？）\]】}」』》]+$/;
 const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\))/g;
-
-/** An address without a closing bracket it never opened ("(see https://a.b/c)" keeps its ")"). */
-function balanced(url: string): string {
-  let u = url;
-  while (u.endsWith(")") && (u.match(/\(/g)?.length ?? 0) < (u.match(/\)/g)?.length ?? 0)) u = u.slice(0, -1);
-  return u;
-}
 
 function link(href: string, text: string): string {
   return `<a href="${escHtml(href)}" target="_blank" rel="noopener noreferrer nofollow">${escHtml(text)}</a>`;
 }
 
-/** How a bare address reads in the text: no scheme, www. or lone trailing slash, and cut short as X shows links. */
-export function shownAddress(url: string): string {
-  const bare = Array.from(url.replace(/^https?:\/\/(?:www\.)?/i, "").replace(/^([^/]+)\/$/, "$1"));
-  return bare.length > 30 ? `${bare.slice(0, 29).join("")}…` : bare.join("");
-}
-
-/** Escaped text with its bare addresses made into links. */
+/** Escaped text with its bare addresses made into links, read as the pages read them (addresses.ts). */
 function linkify(text: string): string {
-  let out = "";
-  let last = 0;
-  for (const m of text.matchAll(BARE_URL)) {
-    // "tibo.dog's site": the possessive belongs to the sentence.
-    const url = balanced(m[0].replace(TRAILING_PUNCT, "").replace(/['’]s$/, ""));
-    if (!/^https?:\/\/[^/]+\.[^/]/.test(url)) continue;
-    out += escHtml(text.slice(last, m.index)) + link(url, shownAddress(url));
-    last = m.index + url.length;
-  }
-  return out + escHtml(text.slice(last));
+  return addressRuns(text).map((run) => (typeof run === "string" ? escHtml(run) : link(run.href, run.text))).join("");
 }
 
 /** Inline code, **bold** and [text](url), then bare addresses; everything else escaped. */

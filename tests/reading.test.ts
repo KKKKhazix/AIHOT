@@ -12,6 +12,7 @@ import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
 import { textToHtml } from "@aihot/backend/content/sanitize";
+import { addressRuns, shortAddresses } from "@aihot/contracts/addresses";
 import { buildApp } from "../apps/api/src/app.ts";
 
 const T = tag();
@@ -93,6 +94,18 @@ test("bare addresses in post text become safe links that read short, as X shows 
   assert.match(html, /<a href="https:\/\/x\.com\/RunwayMLDevs\/status\/2118911299040292943\?a=Don6pEhOTdeTcqtIwsg&amp;s=20" [^>]*>x\.com\/RunwayMLDevs\/status\/211…<\/a>/);
   assert.match(html, /<a href="http:\/\/tibo\.dog" [^>]*>tibo\.dog<\/a>'s site/);
   assert.match(html, /<a href="https:\/\/www\.example\.com\/" [^>]*>example\.com<\/a>/);
+});
+
+test("where a page draws a post's words itself, its addresses read as they do in the post: short, linked where a link can sit", () => {
+  const text = "see https://arxiv.org/abs/2502.11089. and https://x.com/RunwayMLDevs/status/2118911299040292943?a=Don6pEhOTdeTcqtIwsg&s=20 和 http://tibo.dog's site";
+  // A card is a link as a whole: there the address is short text.
+  assert.equal(shortAddresses(text), "see arxiv.org/abs/2502.11089. and x.com/RunwayMLDevs/status/211… 和 tibo.dog's site");
+  assert.deepEqual(addressRuns(text), [
+    "see ", { text: "arxiv.org/abs/2502.11089", href: "https://arxiv.org/abs/2502.11089" }, ". and ",
+    { text: "x.com/RunwayMLDevs/status/211…", href: "https://x.com/RunwayMLDevs/status/2118911299040292943?a=Don6pEhOTdeTcqtIwsg&s=20" },
+    " 和 ", { text: "tibo.dog", href: "http://tibo.dog" }, "'s site",
+  ]);
+  assert.deepEqual(addressRuns("没有地址"), ["没有地址"]);
 });
 
 test("lists in post text: under a lead-in, a blank line apart, numbered from where they start", () => {

@@ -9,6 +9,7 @@ import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { analyzeArticle } from "@aihot/backend/editorial/analyze";
 import { publishArticle } from "@aihot/backend/publication/publish";
+import { textToHtml } from "@aihot/backend/content/sanitize";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { POLICY } from "@aihot/site";
 import { buildApp } from "../apps/api/src/app.ts";
@@ -34,11 +35,11 @@ before(async () => {
 after(async () => { await app.close(); await provider.close(); await stopBoss(); await closeDb(); });
 
 /** A post found and published a minute ago (released by `released`): a rolling window that ends at the reader's clock holds it. */
-async function post(name: string, text: string, sourceId = source) {
+async function post(name: string, text: string, sourceId = source, quoted?: { authorName: string; handle: string; url: string; text: string }) {
   const url = `https://x.com/fixture/status/${name}-${source}`;
   const minuteAgo = new Date(Date.now() - 60_000);
   const material = await upsertMaterial({ sourceId, url, title: text, bodyText: text, bodyStatus: "ok", via: "fetch", publishedAt: minuteAgo, discoveredAt: minuteAgo,
-    xPost: { tweetId: name, authorName: "Fixture", handle: "fixture", text,
+    xPost: { tweetId: name, authorName: "Fixture", handle: "fixture", text, ...(quoted ? { quoted } : {}),
       media: [{ kind: "image", url: "https://example.org/screenshot.png", width: 757, height: 549 }] } });
   return { id: material.articleId, url };
 }
@@ -168,6 +169,20 @@ test("a saved X Article with its layout reads as an article in every exit", asyn
   assert.ok((await app.inject({ method: "GET", url: "/feed/full.xml" })).body.includes("<h2>First part</h2><p><strong>LAID_OUT_EVIDENCE</strong>"));
 });
 
+
+test("a quoted post reads on its item page as the post itself does, and as the full RSS gives it", async () => {
+  const quoted = { authorName: "Quoted", handle: "quoted", url: "https://x.com/quoted/status/77",
+    text: "First paragraph.\n\nCode: https://github.com/browser-use/jev-ultrafast-reference-implementation\n- one\n- two" };
+  const { id } = await post("quote-reads", "QUOTE_READS worth reading", source, quoted);
+  await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,title_zh,summary_zh,score,selected)
+    VALUES(${id},1,'model','pass','值得一读','值得一读',${SELECTING_SCORE},true)`;
+  await publishArticle(id, released());
+  const html = textToHtml(quoted.text);
+  assert.match(html, /<p>Code: <a href="https:\/\/github\.com\/browser-use\/jev-ultrafast-reference-implementation" [^>]*>github\.com\/browser-use\/jev-ul…<\/a><\/p><ul>/);
+  const detail = (await app.inject({ method: "GET", url: `/api/site/items/${id}` })).json();
+  assert.deepEqual(detail.x.quoted, { authorName: "Quoted", handle: "quoted", url: quoted.url, html, translationHtml: null });
+  assert.ok((await app.inject({ method: "GET", url: "/feed/full.xml" })).body.includes(html));
+});
 
 test("saved long articles remain private when only the X post itself may be shown", async () => {
   const restricted = `${source}-restricted`;

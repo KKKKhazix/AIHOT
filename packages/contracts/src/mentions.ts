@@ -1,6 +1,7 @@
 // Names in the site's own text (an article's summary, an event's overview, a report's paragraphs) that
 // lead to the page about them, such as a model's page or a company's topic. The api finds which pages a
 // page's texts name; the page links them as it draws the texts, so both read names the same way.
+import { bareAddresses, shownAddress } from "./addresses.ts";
 
 /**
  * A page that names in the site's own text can link to, and the names it goes by. A null `href` gathers
@@ -11,7 +12,7 @@ export interface MentionTarget {
   names: string[];
 }
 
-/** A stretch of text: plain, or a name linking to its page. */
+/** A stretch of text: plain, a name linking to its page, or a web address linking to itself. */
 export type MentionRun = string | { text: string; href: string };
 
 // Spaces and hyphens inside a name may be written either way ("V4.1 Flash", "V4.1-Flash"). Dashes used as
@@ -111,24 +112,33 @@ function spans(text: string, names: readonly Name[]): Span[] {
 
 /**
  * A page's texts in reading order, each split into runs. Each target links at its first mention on the
- * page, and a text links at most `perText` names; a mention it has no room for stays plain.
+ * page, and a text links at most `perText` names; a mention it has no room for stays plain. A web address
+ * in the text is one link, shown short (addresses.ts): a name inside it ("Z.ai" in https://Z.ai) is part of
+ * the address, not a mention.
  */
 export function linkMentions(texts: ReadonlyArray<string | null | undefined>, targets: readonly MentionTarget[], perText = 3): MentionRun[][] {
   const names = namesOf(targets);
   const linked = new Set<string>();
   return texts.map((text) => {
     if (!text) return [];
-    const runs: MentionRun[] = [];
-    let at = 0;
+    const marks: Array<{ start: number; end: number; run: MentionRun }> = [];
+    for (const { at, url } of bareAddresses(text)) marks.push({ start: at, end: at + url.length, run: { text: shownAddress(url), href: url } });
+    const inAddress = (s: Span) => marks.some((m) => s.start < m.end && s.end > m.start);
     let count = 0;
     for (const s of spans(text, names)) {
       const href = s.name.href;
-      if (s.held || href === null || linked.has(href) || count >= perText) continue;
-      if (s.start > at) runs.push(text.slice(at, s.start));
-      runs.push({ text: text.slice(s.start, s.end), href });
+      if (s.held || href === null || linked.has(href) || count >= perText || inAddress(s)) continue;
+      marks.push({ start: s.start, end: s.end, run: { text: text.slice(s.start, s.end), href } });
       linked.add(href);
       count++;
-      at = s.end;
+    }
+    marks.sort((a, b) => a.start - b.start);
+    const runs: MentionRun[] = [];
+    let at = 0;
+    for (const m of marks) {
+      if (m.start > at) runs.push(text.slice(at, m.start));
+      runs.push(m.run);
+      at = m.end;
     }
     if (at < text.length) runs.push(text.slice(at));
     return runs;

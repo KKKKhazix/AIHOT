@@ -254,8 +254,8 @@ test("the post a selected X post quotes is translated once and shown with the it
   const [q] = await sql<{ text_zh: string; origin: string }[]>`SELECT text_zh, origin FROM quote_translations WHERE tweet_id = ${tweetId}`;
   assert.deepEqual({ ...q }, { text_zh: "隆重推出 Sonnet 5.5。", origin: "model" });
   const res = await app.inject({ method: "GET", url: `/api/site/items/${id}` });
-  const item = JSON.parse(res.body) as { x: { quoted: { text: string; translation: string | null } } };
-  assert.deepEqual([item.x.quoted.text, item.x.quoted.translation], [`Introducing Claude Sonnet 5.5 ${T}`, "隆重推出 Sonnet 5.5。"]);
+  const item = JSON.parse(res.body) as { x: { quoted: { html: string; translationHtml: string | null } } };
+  assert.deepEqual([item.x.quoted.html, item.x.quoted.translationHtml], [`<p>Introducing Claude Sonnet 5.5 ${T}</p>`, "<p>隆重推出 Sonnet 5.5。</p>"]);
   await translatePending({ limit: 1 });
   const receipts = await sql<{ status: string }[]>`SELECT status FROM receipts WHERE purpose = 'translate_quoted' AND subject = ${`quote:${tweetId}`}`;
   assert.equal(receipts.length, 1, "translated once");

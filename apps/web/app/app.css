@@ -578,6 +578,12 @@
 .prose th { background: var(--bg-sunk); font-weight: 600; }
 .prose hr { border: 0; border-top: 1px solid var(--line); margin: 2em 0; }
 
+/* A quoted post's words, set as the post's own text is (QuotedPost), at the quote box's size: its
+   original language under 原文 smaller and quieter. */
+.prose.prose-quote { font-size: 15px; line-height: 1.75; letter-spacing: 0; color: var(--ink-2); }
+.prose.prose-quote-original { font-size: 14px; line-height: 1.7; letter-spacing: 0; color: var(--ink-3); }
+.prose:is(.prose-quote, .prose-quote-original) > * + * { margin-top: 0.75em; }
+
 /* Policy pages read smaller and quieter than article bodies, with numbered sections set apart. */
 .prose-compact {
   font-size: 15px;

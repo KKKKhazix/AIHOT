@@ -204,8 +204,8 @@ for (const kind of ["x_search", "rss"] as const) {
         assert.ok(original.body.original.includes(f.main));
         assert.equal(original.body.zh, null);
         if (kind === "x_search") {
-          assert.equal(normal.x.quoted.text, f.quoted);
-          assert.equal(normal.x.quoted.translation, f.quotedZh);
+          assert.ok(normal.x.quoted.html.includes(f.quoted));
+          assert.ok(normal.x.quoted.translationHtml.includes(f.quotedZh));
           assert.equal(normal.x.media.length, 2);
           assert.ok(normal.x.media[0].url.includes(f.media));
           assert.ok(normal.x.media[0].srcSet.includes(f.media));
@@ -252,7 +252,7 @@ for (const translation of ["missing", "stale", "same"] as const) {
     assert.equal(detail.hasTranslation, false);
     assert.equal(detail.body.zh, null);
     assert.ok(detail.body.original.includes(f.main));
-    if (translation === "same") assert.equal(detail.x.quoted.translation, null);
+    if (translation === "same") assert.equal(detail.x.quoted.translationHtml, null);
     const md = (await get(`/items/${f.id}/markdown`, 200, /text\/markdown/)).body;
     if (translation === "missing" || translation === "stale") assert.ok(!md.includes(f.zh));
     await revoke(f, { site_fulltext: false });

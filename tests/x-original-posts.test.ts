@@ -144,6 +144,30 @@ test("a saved X Article reaches public readers and full-text exports without buy
   assert.equal(provider.hits(), before, "reading already stored content cannot buy another response");
 });
 
+test("a saved X Article with its layout reads as an article in every exit", async () => {
+  const { id } = await post("laid-out-article", "https://x.com/i/article/987656");
+  const text = "LAID_OUT_EVIDENCE: the long article's own words.";
+  const html = '<figure><img src="https://pbs.twimg.com/media/cover.jpg" alt=""></figure><h2>First part</h2><p><strong>LAID_OUT_EVIDENCE</strong>: the long article\'s own words.</p>';
+  await sql`UPDATE articles SET x_article=${sql.json({ title: "Laid out article", text, html })},
+    body_text=${`https://x.com/i/article/987656\n\n# Laid out article\n\n${text}`} WHERE id=${id}`;
+  await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,title_zh,summary_zh,score,selected)
+    VALUES(${id},1,'model','pass','排好版的长文','排好版的长文摘要',${SELECTING_SCORE},true)`;
+  await publishArticle(id, released());
+  const detail = (await app.inject({ method: "GET", url: `/api/site/items/${id}` })).json();
+  const body: string = detail.body.original ?? detail.body.zh;
+  assert.equal(detail.x.article, true, "the page reads like an article, under its headline");
+  assert.match(body, /<h2 id="sec-1">First part<\/h2>/);
+  assert.match(body, /<strong>LAID_OUT_EVIDENCE<\/strong>/);
+  assert.match(body, /<img [^>]*src="[^"]*cover\.jpg/, "the cover comes along");
+  assert.ok(!body.includes("x.com/i/article") && !body.includes("【X 长文】"), "neither the link the article stands for nor our mark");
+  assert.deepEqual(detail.outline.map((o: { text: string }) => o.text), ["First part"]);
+  const markdown = (await app.inject({ method: "GET", url: `/items/${id}/markdown` })).body;
+  assert.match(markdown, /\n## First part\n/);
+  assert.match(markdown, /\*\*LAID\\_OUT\\_EVIDENCE\*\*/);
+  assert.ok(!markdown.includes("【X 长文】"));
+  assert.ok((await app.inject({ method: "GET", url: "/feed/full.xml" })).body.includes("<h2>First part</h2><p><strong>LAID_OUT_EVIDENCE</strong>"));
+});
+
 
 test("saved long articles remain private when only the X post itself may be shown", async () => {
   const restricted = `${source}-restricted`;

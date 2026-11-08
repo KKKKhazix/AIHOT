@@ -571,7 +571,7 @@ async function markUnconfirmed(articleId: string, revision: number): Promise<"un
  */
 async function extractXArticle(articleId: string, tweetId: string, revision: number): Promise<"ok" | "unconfirmed" | "skipped"> {
   const found = await getArticle(tweetId, { purpose: "x_article", subject: `article:${articleId}` });
-  const got = found ? xArticleText(found) : null;
+  const got = found ? xArticleText(found, `https://x.com/i/status/${tweetId}`) : null;
   if (!got) {
     return markUnconfirmed(articleId, revision);
   }

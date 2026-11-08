@@ -39,7 +39,7 @@ const api = fakeApi((url) => {
       kind, key: keys[kind], issueNumber: 1, title: "报告宽度", generatedAt: "2026-10-15T00:00:00Z",
       lead: { title: "今日头条", leadParagraph: longText }, leadItemId: "fixture", overview: longText,
       highlights: [], sections: [{ label: "动态", summary: null, items: [{ itemId: "fixture", title: "今日头条", summary: longText, sourceName: "Fixture", sourceUrl: "https://example.org/article", sourceIconUrl: null, firstParty: true, publishedAt: null, available: true }] }],
-      flashes: [], cover: null, metrics: {}, readingMinutes: 1, prev: null, next: null,
+      flashes: [], cover: null, metrics: {}, readingMinutes: 1, prev: null, next: null, mentions: [],
     };
     return { index: [{ key: report.key, issueNumber: 1 }], report };
   }

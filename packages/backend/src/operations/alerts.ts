@@ -68,6 +68,7 @@ const CHECKS: Check[] = [
   moduleAlerts,
   // Follow-ups
   sourceFollowUps,
+  baiduPushFailing,
   unknownOutcomes,
   agentTransportFindings,
   waitingQueues,
@@ -257,6 +258,27 @@ async function backupAge(now: number): Promise<Finding[]> {
     return [{ key: "backup.stale", level: "later", title: "数据库备份超过一天没成功", detail: b ? `最近一次 ${beijingStamp(b.value.at)}${state ? `（${state}）` : ""}；看 ops.backup` : "还没有成功的备份记录" }];
   }
   return [];
+}
+
+/**
+ * Baidu's push (operations/baidu-push.ts) failing for a whole day: a revoked token or a site that lost its
+ * verification does not heal, while Baidu answering "please retry later" for an hour does. Readers see
+ * nothing; new pages reach Baidu later, so it is a follow-up.
+ */
+async function baiduPushFailing(now: number): Promise<Finding[]> {
+  const [r] = await sql<{ since: Date | null; error: string | null }[]>`
+    WITH last_ok AS (SELECT max(started_at) AS at FROM job_runs WHERE job = 'seo.baidu-push' AND status = 'ok')
+    SELECT min(f.started_at) AS since, (array_agg(f.error ORDER BY f.started_at DESC))[1] AS error
+    FROM job_runs f, last_ok
+    WHERE f.job = 'seo.baidu-push' AND f.status = 'failed' AND f.started_at > coalesce(last_ok.at, '-infinity') AND f.started_at <= ${new Date(now)}`;
+  if (!r?.since || now - r.since.getTime() < DAY_MS) return [];
+  return [{
+    key: "seo.baidu-push",
+    level: "later",
+    title: "百度主动推送一天没成功",
+    detail: `从 ${beijingStamp(r.since)} 起 seo.baidu-push 一直失败，最近一次：${(r.error ?? "").slice(0, 200)}；401 是令牌失效（百度搜索资源平台 · 普通收录 · API提交 重新取，写进生产 backend.env 的 BAIDU_PUSH_TOKEN），400 site error 是站点掉了验证（首页的 baidu-site-verification 标签）`,
+    since: r.since,
+  }];
 }
 
 /** What the site's modules find. */

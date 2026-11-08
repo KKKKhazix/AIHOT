@@ -120,7 +120,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
   // Thin pages stay out of the sitemap but not out of notifications: other engines index them.
   const items = await sql<{ id: string; revision: string; released: Date | null }[]>`
     SELECT p.article_id AS id,
-      md5(concat_ws('|', p.revision::text, a.content_hash, tr.title, tr.body_html, tr.body_text, tr.complete::text, qt.text_zh,
+      md5(concat_ws('|', p.revision::text, a.content_hash, a.cover::text, tr.title, tr.body_html, tr.body_text, tr.complete::text, qt.text_zh,
         s.name, s.icon_url, st.public_id::text, st.title)) AS revision,
       CASE WHEN p.selected THEN p.visible_after END AS released
     ${ITEM_FROM}

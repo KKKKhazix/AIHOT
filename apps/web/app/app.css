@@ -218,6 +218,16 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
+    /* Headlines and text reach the page from sources, models and authors, some typed with a space between
+       Chinese and Latin letters or digits ("Meta 在 Muse"), some without ("Meta在Muse"), and side by side
+       they read as two styles. Spacing between scripts is the layout's job (W3C CLREQ), so the browser adds
+       an eighth of an em wherever none was typed, on every page and whoever wrote the text; typed spaces
+       stay as they are. Browsers without the property show the text as written. */
+    text-autospace: normal;
+  }
+  /* What a reader types, code and the filing numbers keep the exact spacing of their characters. */
+  input, textarea, code, pre, kbd, samp {
+    text-autospace: no-autospace;
   }
   body {
     background: var(--bg);

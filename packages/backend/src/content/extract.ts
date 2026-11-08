@@ -424,6 +424,36 @@ function keepAsidesAmongParagraphs(document: Doc) {
 }
 
 /**
+ * Whether a class or id has one of the words by which Readability recognizes a byline, as a word of its own:
+ * "post-author", "PostAuthor" and "author_box" do, "authorization" does not.
+ */
+function namesAuthor(el: El): boolean {
+  const name = `${el.getAttribute("class") ?? ""} ${el.getAttribute("id") ?? ""}`.replace(/([a-z])([A-Z])/g, "$1 $2");
+  return name.toLowerCase().split(/[^a-z0-9]+/).some((word) => /^(?:authors?|byline|dateline|writtenby)$/.test(word));
+}
+
+/** An author's card is a photo with a few lines (name, title, bio); the longest seen ran to about 430 characters. */
+const AUTHOR_CARD_CHARS = 1000;
+
+/**
+ * A box among the article's paragraphs that names its author and holds a picture and a few lines is the
+ * author's card, not the article. Readability takes a byline only when its text is short, so the photo, name,
+ * title, bio and contact lines of a card set after the text were stored as the article's end (techcrunch.com,
+ * every article). The card goes before scoring; an author list or a contributions section without a picture,
+ * and a longer box whatever its name, stay.
+ */
+function dropAuthorCards(document: Doc) {
+  const flows = new Set<El>();
+  for (const paragraph of document.querySelectorAll("p")) if (paragraph.parentElement) flows.add(paragraph.parentElement);
+  for (const flow of flows) {
+    for (const box of [...flow.children]) {
+      if (box.localName === "p" || !namesAuthor(box) || !box.querySelector("img, picture")) continue;
+      if (collapsed(box.textContent).length < AUTHOR_CARD_CHARS) box.remove();
+    }
+  }
+}
+
+/**
  * Readability reads "media" in a class or id as a social-media widget and drops the box. A box among the
  * article's paragraphs is often named for what it embeds ("media-column", "article-media": a figure, a chart,
  * a carousel of quotes), and every such box of a page went with its picture, caption or text. In the
@@ -484,6 +514,7 @@ export function readableDocument(document: Doc, url: string, rules: PageRules = 
   preserveWidgets(document, rules.preserve ?? []);
   describeFigureDrawings(document);
   keepAsidesAmongParagraphs(document);
+  dropAuthorCards(document);
   keepMediaAmongParagraphs(document);
   dropLayoutClasses(document);
   // A document theme is not an article candidate: names such as "header-dark" can discard the root.

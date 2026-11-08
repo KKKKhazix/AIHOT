@@ -110,6 +110,22 @@ test("a box among the article's paragraphs keeps what it embeds when its name sa
   assert.doesNotMatch(extract(figure("social-media", "Follow us for more")).text, /Follow us/);
 });
 
+test("an author's card among the article's paragraphs is not the article; an author list or contributions section without a picture stays", () => {
+  const card = '<p>When you purchase through links in our articles, we may earn a small commission.</p><div class="has-odd-items wp-block-techcrunch-post-authors"><div class="is-style-post-authors wp-block-tc23-author-card"><div class="wp-block-group wp-block-tc23-author-card__user-media"><div class="wp-block-tc23-author-card-image"><img src="https://publisher.example/uploads/reporter.jpg?w=150" alt="Jane Reporter" loading="lazy"></div><div class="wp-block-group wp-block-tc23-author-card__user-info"><div class="wp-block-tc23-author-card-name">Jane Reporter</div><div class="wp-block-tc23-author-card-title"><p><span>Reporter, Venture</span></p></div></div></div><div class="wp-block-tc23-author-card-bio"><div><p>Jane Reporter is a venture capital and startups reporter at the publication.</p><p>You can contact or verify outreach from Jane by emailing her or via encrypted message on Signal.</p></div></div><div class="wp-block-button is-style-link"><a href="https://publisher.example/author/jane-reporter/">View Bio</a></div></div></div>';
+  const body = extract(card);
+  assert.doesNotMatch(body.html, /reporter\.jpg/, "the author's photo");
+  assert.doesNotMatch(body.text, /Reporter, Venture|startups reporter at the publication|verify outreach|View Bio/);
+  assert.match(body.text, /we may earn a small commission/, "the paragraph beside the card is the page's own");
+  const credits = '<div class="author-contributions"><h4>Author contributions</h4><p>Both authors designed the experiments and wrote the analysis code for every model they compared.</p></div>';
+  assert.match(extract(credits).text, /Author contributions[\s\S]*Both authors designed the experiments/);
+  const section = (name: string, sentences: number) => `<section ${name}><h3>Granting access</h3><img src="https://publisher.example/uploads/consent-screen.png" alt="The consent screen"><p>${"The service asks for consent before an app may read the calendar, and lists every scope it requests. ".repeat(sentences)}</p></section>`;
+  for (const [name, sentences] of [['id="authorization"', 3], ['class="author-walkthrough"', 12]] as const) {
+    const kept = extract(section(name, sentences));
+    assert.match(kept.html, /consent-screen\.png/, name);
+    assert.match(kept.text, /asks for consent before an app may read the calendar/, name);
+  }
+});
+
 test("document theme classes do not remove the article's plain text paragraphs", () => {
   const introduction = "The update adds new languages and personal context to the assistant. ".repeat(6);
   const availability = "Available in supported countries and languages. ".repeat(8);

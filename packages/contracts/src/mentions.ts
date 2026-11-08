@@ -16,7 +16,8 @@ export type MentionRun = string | { text: string; href: string };
 
 // Spaces and hyphens inside a name may be written either way ("V4.1 Flash", "V4.1-Flash"). Dashes used as
 // punctuation (——) are not among them.
-const SEPARATOR = /[\s\-_\u2010-\u2013]/;
+const HYPHENS = "_\u2010\u2011\u2012\u2013-";
+const SEPARATOR = new RegExp(`[\\s${HYPHENS}]`);
 const WORD = /[A-Za-z0-9]/;
 const JOINER = /[-_./]/;
 
@@ -35,6 +36,15 @@ function skeleton(text: string): { text: string; at: number[] } {
 }
 
 const stripped = (s: string) => [...s].filter((c) => !SEPARATOR.test(c)).join("");
+
+/**
+ * What a lowercased text whose whitespace runs are single spaces (the site's search text) holds where it
+ * mentions `name`: `key`, once `separators` are taken out. Holding it is not yet a mention; `linkMentions`
+ * reads the edges and the case.
+ */
+export function mentionSearch(name: string): { key: string; separators: string } {
+  return { key: skeleton(name).text, separators: ` ${HYPHENS}` };
+}
 
 interface Name {
   text: string;

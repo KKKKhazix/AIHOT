@@ -15,7 +15,8 @@
 // - the latest daily's search snippet repeats its lead article's, so two pages read alike; its heading never
 //   says what readers search it by; or /daily/ stands as a page of its own (2026-11-08);
 // - 全部动态's later pages and an event page of a single report compete in search with the pages that stand
-//   for them, the first page and that report's own page, while their links stop being followed (2026-11-09).
+//   for them, the first page and that report's own page, while their links stop being followed (2026-11-09);
+// - a daily whose lead was withdrawn is headed in search by a report its highlights were only filled with (2026-11-09).
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { after, before, test } from "node:test";
@@ -28,7 +29,7 @@ import { startWebServer, type WebServer } from "../apps/web/tests/web-server.ts"
 
 const at = "2026-10-04T08:00:00.000Z";
 const item: FeedItemSummary = { id: "metadata-fixture", title: "可核实的测试报道", summary: "报道摘要", reason: null, source: { name: "Fixture" }, publishedAt: at, timelineAt: at, category: "ai-models", tags: [], score: 80, selected: true, channel: "news", x: null };
-const detail: SiteItemDetail = { ...item, x: null, originalTitle: null, links: { original: "https://example.org/report" }, discoveredAt: at, story: null, readingMode: "full", author: null, body: { zh: "<p>可核实的测试正文。</p>", original: null, zhKind: "original", complete: true }, outline: [], relatedStories: [], topics: [], indexable: true, googleNoindex: false, markdownAvailable: true, group: null, hasTranslation: false, bodyLanguage: "zh", mentions: [] };
+const detail: SiteItemDetail = { ...item, x: null, originalTitle: null, links: { original: "https://example.org/report" }, discoveredAt: at, story: null, readingMode: "full", author: null, body: { zh: "<p>可核实的测试正文。</p>", original: null, zhKind: "original", complete: true }, outline: [], relatedStories: [], topics: [], tagTopics: {}, daily: null, indexable: true, googleNoindex: false, markdownAvailable: true, group: null, hasTranslation: false, bodyLanguage: "zh", mentions: [] };
 /** Article pages by id: the fixture, one kept from Google only, one kept from every engine. */
 const details: Record<string, SiteItemDetail> = {
   [item.id]: detail,
@@ -37,6 +38,9 @@ const details: Record<string, SiteItemDetail> = {
   "metadata-undated": { ...detail, id: "metadata-undated", publishedAt: null, discoveredAt: "2026-10-04T07:30:00.000Z" },
 };
 const citation = (available: boolean): ReportCitation => ({ itemId: available ? item.id : "withdrawn", title: available ? item.title : "已撤下的旧头条", summary: item.summary, sourceName: item.source.name, sourceUrl: detail.links.original, sourceIconUrl: null, firstParty: true, publishedAt: at, available });
+/** A daily whose one entry was withdrawn: its highlights are only the reports a thin issue is filled with. */
+const leadless = (): ReportDetail => ({ ...report("daily"), key: "2026-10-05", lead: null, leadItemId: null,
+  sections: [{ label: "模型", summary: null, items: [citation(false)] }], highlights: [{ ...citation(true), itemId: "metadata-pick", title: "同一时段值得一看的报道" }] });
 const report = (kind: ReportKind): ReportDetail => ({ kind, key: kind === "daily" ? "2026-10-04" : kind === "weekly" ? "2026-W40" : "2026-10", issueNumber: 1, title: `${SITE.name} 测试刊物`, generatedAt: at, lead: { title: "本期已验证的重要变化", leadParagraph: "本期的导读与依据。" }, leadItemId: item.id, overview: null, highlights: [citation(true)], sections: [], flashes: [], cover: null, metrics: {}, readingMinutes: 1, prev: null, next: null, mentions: [] });
 const story: StoryDetail = { publicId: "metadata-story", title: "测试事件的最新进展", status: "settled", reportCount: 1, sourceCount: 1, firstReportAt: at, latestAt: at, digest: "当前可核实的事件综述。", digestUpdatedAt: "2026-10-04T09:00:00.000Z", summary: null, excerpt: null, latest: null, latestReport: null, whyHot: { participants48h: 0, newParticipants6h: 0, recentReports24h: 0, observationComplete: true, rank: null }, developments: [], officialReports: [], timeline: [{ id: item.id, title: item.title, summary: item.summary, source: { name: item.source.name, firstParty: true }, publishedAt: at, selected: true }], heat: [], related: [], topics: [], mentions: [] };
 /** The same event once a second report joined it. */
@@ -61,6 +65,7 @@ const api = createServer((req, res) => {
     if (match[2] === "latest-page") return send({ report: r, index });
     if (match[2]?.startsWith("navigation/")) return send({ items: index });
     if (match[2] === r.key) return send(r);
+    if (match[1] === "daily" && match[2] === leadless().key) return send(leadless());
   }
   res.statusCode = 404;
   send({ code: "not_found" });
@@ -140,6 +145,13 @@ for (const [kind, label, date] of [["daily", "日报", "10月4日"], ["weekly", 
   });
 }
 
+test("a daily without a lead is not headed by a report its highlights were only filled with", async () => {
+  const $ = await page(`/daily/${leadless().key}`);
+  const title = `${withSubject("日报")}｜10月5日`;
+  assert.equal($("title").text(), `${title} · ${SITE.name}`);
+  assert.equal(structured($).find((entry) => entry["@type"] === "NewsArticle")!.headline, title);
+});
+
 test("the latest issue is one page however its address is written", async () => {
   for (const path of ["/daily/", "/weekly/"]) {
     const $ = await page(path);
@@ -155,7 +167,8 @@ test("an issue's date reads as Chinese readers write it, across months and years
 });
 
 test("a report without an edited lead uses only a still-public visible highlight", () => {
-  const r = { ...report("weekly"), lead: null, highlights: [citation(false), citation(true)] };
+  // An issue's highlights are among its entries; the ones a thin daily is filled with never head it (above).
+  const r = { ...report("weekly"), lead: null, highlights: [citation(false), citation(true)], sections: [{ label: "模型", summary: null, items: [citation(false), citation(true)] }] };
   assert.match(reportLd(r, "/weekly/2026-W40", "导读").headline, new RegExp(item.title));
   assert.doesNotMatch(reportLd(r, "/weekly/2026-W40", "导读").headline, /已撤下/);
 });

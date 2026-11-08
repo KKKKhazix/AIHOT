@@ -10,7 +10,7 @@ import { MentionText } from "../components/ui/MentionText";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { breadcrumbLd, pageMeta, storyLd, titled } from "../lib/seo";
-import { beijingTime } from "@aihot/contracts/time";
+import { beijingDate, beijingTime } from "@aihot/contracts/time";
 import { byBeijingDay, monthDay, monthDayTime, relativeTime } from "../lib/format";
 import { useCurrentSection } from "../lib/motion";
 import { HeatChart } from "../features/story/HeatChart";
@@ -19,7 +19,7 @@ import { isReload } from "../lib/restore";
 import { Badge, SelectedBadge } from "../components/ui/Badge";
 import { PillTabs } from "../components/ui/Tabs";
 import { Select } from "../components/ui/Controls";
-import { IconArrowLeft, IconChevronRight, IconClock, IconDoc, IconUsers } from "../components/icons";
+import { IconArrowLeft, IconCalendar, IconChevronRight, IconClock, IconDoc, IconUsers } from "../components/icons";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import { inNav, navUp } from "../components/shell/nav";
 import type { Screen } from "../components/shell/screens";
@@ -213,6 +213,15 @@ export default function StoryPage() {
             <IconUsers size={15} className="text-ink-4" />
             <b className="num font-semibold text-ink">{story.sourceCount}</b> 个报道来源
           </span>
+          {story.firstReportAt && (
+            <span className="inline-flex items-center gap-1.5">
+              <IconCalendar size={15} className="text-ink-4" />
+              <b className="num font-semibold text-ink">
+                <time dateTime={story.firstReportAt}>{monthDay(beijingDate(story.firstReportAt))}</time>
+              </b>
+              首报
+            </span>
+          )}
           {story.latestAt && (
             <span className="inline-flex items-center gap-1.5" suppressHydrationWarning>
               <IconClock size={15} className="text-ink-4" />

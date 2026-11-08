@@ -159,6 +159,8 @@ export interface DailyReport {
   lead: { title: string; leadParagraph: string } | null;
   sections: { label: string; items: { title: string; summary: string; source: { name: string }; links: Links }[] }[];
   flashes: { title: string; publishedAt: string; source: { name: string }; links: Links }[];
+  /** 今日看点 as the page lists them after the lead; a thin issue's include reports outside its sections. */
+  highlights?: { title: string; summary: string; source: { name: string }; links: Links }[];
 }
 
 /** A daily entry's note: other sources, the daily it follows, and the event's other developments. */
@@ -184,6 +186,12 @@ export function dailyAnswer(r: DailyReport, via: Via, notes: Map<string, DailyNo
     });
     data.push("");
   }
+  // Highlights that are entries are listed above already; the rest are what a thin issue was filled with.
+  const listed = new Set(r.sections.flatMap((s) => s.items.map((it) => it.links.aihot ?? it.links.original)));
+  const more = (r.highlights ?? []).filter((h) => !listed.has(h.links.aihot ?? h.links.original));
+  if (more.length) {
+    data.push("【今日看点】", ...more.flatMap((h) => [`- [${linkText(h.title)}](${h.links.aihot ?? h.links.original}) · ${publicSourceName(h.source.name)}`, ...(h.summary ? [`  ${h.summary}`] : [])]), "");
+  }
   if (r.flashes.length) {
     data.push("【快讯】", ...r.flashes.map((f) => `- ${stamp(f.publishedAt)} · [${linkText(f.title)}](${f.links.aihot ?? f.links.original}) · ${publicSourceName(f.source.name)}`), "");
   }
@@ -194,6 +202,7 @@ export function dailyAnswer(r: DailyReport, via: Via, notes: Map<string, DailyNo
     ...(data.length ? [] : ["这一期暂时没有可以展示的条目。"]),
   ], data.length ? data : null, [
     "先讲头条，再按栏目挑重点；用户要全文再全部列出。每条是一件事，「相关」是同一件事的其他进展或同一场发布的其他内容。",
+    ...(more.length ? ["「今日看点」是正文之外、同一时段值得一看的报道，不算这一期的大事。"] : []),
     `日报是${EDITION_WHEN.daily} 发布的固定成品，不等于“过去 24 小时”的滚动列表。`,
     via === "http"
       ? `要其它日期的日报，请求 ${agentUrl("/daily/YYYY-MM-DD")}（真实日期）；没有就如实说，不要换一天冒充。`

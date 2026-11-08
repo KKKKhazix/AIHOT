@@ -116,7 +116,7 @@ function Original({ c, className = "" }: { c: ReportCitation; className?: string
 function Related({ items, className = "" }: { items: ReportCitation[]; className?: string }) {
   return (
     <ul className={`space-y-1.5 ${className}`}>
-      {items.slice(0, 4).map((r) => (
+      {items.map((r) => (
         <li key={keyOf(r)} className="flex gap-2.5 text-[13.5px] leading-[1.65]">
           <span className="mt-[9px] size-1 shrink-0 rounded-full bg-ink-4" aria-hidden="true" />
           <span className="min-w-0">

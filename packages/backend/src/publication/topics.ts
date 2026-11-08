@@ -78,6 +78,20 @@ export function topicLinks(slugs: string[]): TopicLink[] {
   return slugs.map((s) => findTopic(s)).filter((t): t is Topic => !!t).map((t) => ({ slug: t.slug, name: t.name }));
 }
 
+/** The tags readers see that are a topic's own: a direction's or a form's, and the tag cards show for a company (never its subject tag). */
+const TAG_TOPIC = new Map(TOPICS.flatMap((t) => {
+  const shown = t.entityId ? [ENTITIES[t.entityId]?.displayTag ?? null] : t.tags;
+  return shown.flatMap((tag) => (tag ? [[tag, t.slug] as const] : []));
+}));
+
+/** Of `tags`, each that is a topic's own, with that topic's slug: the topic's page covers what the tag names. */
+export function tagTopics(tags: string[]): Record<string, string> {
+  return Object.fromEntries(tags.flatMap((tag) => {
+    const slug = TAG_TOPIC.get(tag);
+    return slug ? [[tag, slug]] : [];
+  }));
+}
+
 /** Stable browse links in the same order as the topic directory, without its counts or modules. */
 export function topicBrowseLinks() {
   return TOPICS.map(({ slug, name, group }) => ({ slug, name, group }));

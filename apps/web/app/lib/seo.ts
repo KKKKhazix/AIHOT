@@ -251,7 +251,10 @@ export function archiveLd(path: string, name: string, entries: Array<{ path: str
 
 /** An issue's Chinese date and actual editorial lead, falling back only to a still-public visible highlight. */
 export function reportTitle(report: ReportDetail): string {
-  const lead = report.lead?.title.trim() || report.highlights.find((item) => item.available)?.title.trim();
+  // Without a lead, the first highlight the issue carries as an entry heads it; the reports a thin daily's
+  // highlights were filled with are not its news.
+  const entries = new Set(report.sections.flatMap((s) => s.items.map((i) => i.itemId)));
+  const lead = report.lead?.title.trim() || report.highlights.find((item) => item.available && entries.has(item.itemId))?.title.trim();
   const name = `${withSubject(REPORT_NAMES[report.kind])}｜${reportDateLabel(report.kind, report.key)}`;
   return lead ? `${name}：${lead}` : name;
 }

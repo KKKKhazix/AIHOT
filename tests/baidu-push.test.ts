@@ -6,6 +6,8 @@
 //   failure after an accepted request forgets it, so a retry submits it again;
 // - with a quota of a few URLs a day, single articles crowd out the day's report and stories, or an
 //   old story crowds out a new one;
+// - a new model-board page or topic, which answers searches for months and comes a few a week, waits behind
+//   each day's news and never goes;
 // - failures (a revoked token, an unverified site, Baidu down) pass as ordinary runs (the follow-up for a
 //   day of them is in alerts.test.ts).
 import './setup.ts';
@@ -166,9 +168,12 @@ async function material(id: string, at: string) {
     VALUES (${id},'baidu-editorial','公开报道','公开摘要',${`https://example.org/${id}`},${at},${at},${at},true,true,true,${at},${at},'news','ai-models')`;
 }
 
-test('reports and stories go before single articles, newer before older', async () => {
+test('the report goes first, then pages that answer lasting searches, then stories and single articles, newer before older', async () => {
   const { requests } = baidu(100);
+  let lasting: string[] = [];
+  pages(() => lasting);
   await submitBaiduPush(DAY1);
+  lasting = ['/about-new', '/topics/baidu-topic', '/leaderboard/prices'];
   await material('baidu-older', '2026-10-09T02:10:00Z');
   await material('baidu-newer', '2026-10-09T02:20:00Z');
   // Public ids sort against their age, so only the stories' own order puts the newer first.
@@ -188,8 +193,11 @@ test('reports and stories go before single articles, newer before older', async 
   const sent = requests.flat().map(url => new URL(url).pathname);
   const at = (path: string) => sent.indexOf(path);
   assert.equal(sent[0], '/daily/2026-10-09', 'the one URL that learns the quota is the most valuable one');
+  assert.ok(at('/leaderboard/prices') > 0 && at('/leaderboard/prices') < at('/topics/baidu-topic'));
+  assert.ok(at('/topics/baidu-topic') < at(`/story/${publicId}`), 'pages for lasting searches before the day\'s news');
   assert.ok(at(`/story/${publicId}`) > 0);
   assert.ok(at(`/story/${publicId}`) < at(`/story/${olderStory}`), 'the newer story first');
   assert.ok(at(`/story/${olderStory}`) < at('/items/baidu-newer'));
   assert.ok(at('/items/baidu-newer') < at('/items/baidu-older'));
+  assert.ok(at('/items/baidu-older') < at('/about-new'), 'any other page last');
 });

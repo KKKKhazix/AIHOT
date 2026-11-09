@@ -2248,25 +2248,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-google-bfc6512d1f",
-      "name": "Google · News",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/google/news/Top%20stories/hl=en-US&gl=US&ceid=US:en",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-google-e8ea99a5eb",
       "name": "Google · Play Store Update",
       "kind": "rss",

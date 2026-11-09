@@ -108,7 +108,7 @@
 
 ## 跑起来
 
-想创建自己的独立站点，可以先点 [Use this template](https://github.com/KKKKhazix/AIHOT/generate)，再克隆你生成的仓库。想持续合并上游更新或贡献代码，建议先 Fork。下面的命令适合直接试用。
+想创建自己的独立站点，可以先点 [Use this template](https://github.com/KKKKhazix/AIHOT/generate)，再克隆你生成的仓库。想持续合并上游更新或贡献代码，建议先 Fork。下面的命令适合直接试用。本仓库的默认 Compose 配置用于 EduHOT；独立试用需要显式指定 `docker-compose.standalone.yml`。
 
 需要 [Docker](https://docs.docker.com/get-started/get-docker/)、[Node.js 24](https://nodejs.org/en/download)（运行 `init-env` 生成配置要用），和一个 OpenAI 兼容的模型 API Key（DeepSeek、千问、智谱都可以）。
 
@@ -118,7 +118,7 @@
 git clone https://github.com/KKKKhazix/AIHOT.git myhot
 cd myhot
 node scripts/init-env.ts --llm-key <你的模型 API Key>
-docker compose up -d --build
+docker compose -f docker-compose.standalone.yml up -d --build
 ```
 
 打开 <http://localhost:3000>。后台在 `/admin`，管理员密码在 `.env` 的 `ADMIN_PASSWORD` 里。一两分钟后开始有内容，第一次导入的资料大约半小时处理完。

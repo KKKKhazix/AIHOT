@@ -1,0 +1,88 @@
+# docker compose up -d --build     → http://localhost:3000   (the admin is at /admin)
+name: aihot
+
+x-app: &app
+  build: .
+  image: aihot-app
+  restart: unless-stopped
+
+x-backend: &backend
+  <<: *app
+  env_file: .env
+  environment: &backend-env
+    NODE_ENV: production
+    DATABASE_URL: postgres://aihot:${POSTGRES_PASSWORD:-aihot}@db:5432/aihot
+    AIHOT_DATA_DIR: /data
+    API_BASE_URL: http://api:3001
+    # No proxy in front limits pushes to /api/ingest/items: the api does (per client and minute; 0 turns it off).
+    INGEST_RATE_LIMIT: ${INGEST_RATE_LIMIT:-10}
+  volumes:
+    - data:/data
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aihot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aihot}
+      POSTGRES_DB: aihot
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aihot -d aihot"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Applies the database migrations and seeds the demo sources, then exits.
+  setup:
+    <<: *backend
+    restart: "no"
+    command: ["sh", "-c", "node scripts/migrate.ts && node scripts/seed.ts"]
+
+  api:
+    <<: *backend
+    command: ["node", "apps/api/src/main.ts"]
+    environment:
+      <<: *backend-env
+      API_HOST: 0.0.0.0
+      API_PORT: "3001"
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *backend
+    command: ["node", "apps/worker/src/main.ts"]
+    # Let the worker drain backups and paid calls (STOP_TIMEOUT_MS, 470 s), then close its database.
+    # Docker sends SIGTERM to the worker first; after this window it kills the remaining processes.
+    stop_grace_period: 515s
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
+  web:
+    <<: *app
+    command: ["node", "apps/web/server.ts"]
+    # SSR reads the API over HTTP; backend credentials and stored files stay in api/worker.
+    environment:
+      NODE_ENV: production
+      API_BASE_URL: http://api:3001
+      SITE_URL: ${SITE_URL:-http://localhost:3000}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      AIHOT_RELEASE: ${AIHOT_RELEASE:-}
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: "3000"
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  db: {}
+  data: {}

@@ -108,16 +108,16 @@ jobs:
           # The smoke check reaches the site by its compose service name.
           echo "MCP_ALLOWED_HOSTS=web" >> .env
       - name: Build and start with docker compose
-        run: docker compose up -d --build
+        run: docker compose -f docker-compose.standalone.yml up -d --build
       - name: Smoke check
         run: |
           for i in $(seq 1 90); do curl -fsS -o /dev/null http://127.0.0.1:3000/api/health 2>/dev/null && break; sleep 2; done
-          docker compose ps
-          docker compose run --rm --no-deps --entrypoint node setup scripts/smoke.ts --base http://web:3000
-          docker compose exec -T db psql -U aihot -d aihot -Atc "select count(*) from sources" | grep -qx "$(node -p "require('./industry/sources.json').sources.length")"
+          docker compose -f docker-compose.standalone.yml ps
+          docker compose -f docker-compose.standalone.yml run --rm --no-deps --entrypoint node setup scripts/smoke.ts --base http://web:3000
+          docker compose -f docker-compose.standalone.yml exec -T db psql -U aihot -d aihot -Atc "select count(*) from sources" | grep -qx "$(node -p "require('./industry/sources.json').sources.length")"
       - name: Logs
         if: failure()
-        run: docker compose logs --tail 80
+        run: docker compose -f docker-compose.standalone.yml logs --tail 80
       - name: Stop
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.standalone.yml down -v

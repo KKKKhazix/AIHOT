@@ -1,5 +1,7 @@
 # 部署
 
+本仓库默认 Compose 配置为 EduHOT，使用现有的外部 PostgreSQL 和 `postgres-backend` 网络。EduHOT 更新请在服务器执行 `bash scripts/deploy-eduhot.sh`。下文为独立试用配置，所有命令显式使用 `docker-compose.standalone.yml`。
+
 ## 用 Docker（推荐）
 
 需要一台装了 Docker（带 Compose）的机器。云服务器建议至少 2 核、4 GB 内存，构建镜像时要用到。
@@ -23,7 +25,7 @@ RSS、分享链接、站点地图和 Agent Markdown 中的绝对链接都使用�
 配置完成后启动：
 
 ```bash
-docker compose up -d --build
+docker compose -f docker-compose.standalone.yml up -d --build
 ```
 
 启动后打开 `http://服务器地址:3000`，后台在 `/admin`，用管理员密码登录。第一次启动会导入示范信源，一两分钟后开始出现内容；第一次导入的一百多条资料大约半小时处理完（每条都要预筛、评分、结构化、写标题摘要，再归组）。
@@ -32,7 +34,7 @@ docker compose up -d --build
 
 ### 在中国大陆的服务器上
 
-- 构建时 npm 走国内镜像：`docker compose build --build-arg NPM_REGISTRY=https://registry.npmmirror.com`，然后 `docker compose up -d`。
+- 构建时 npm 走国内镜像：`docker compose -f docker-compose.standalone.yml build --build-arg NPM_REGISTRY=https://registry.npmmirror.com`，然后 `docker compose -f docker-compose.standalone.yml up -d`。
 - 拉取 Docker 镜像慢，先给 Docker 配置镜像加速。
 - 海外信源抓不到时，在 `.env` 里设置 `EGRESS_PROXY_URL`：抓信源和图片时走这个代理，调用模型接口不走。
 - 对外提供网站服务需要先完成 ICP 备案，备案号填在 `site/site.ts` 的 `icp`。
@@ -51,7 +53,7 @@ TRUST_PROXY=true           # 访客地址从 Caddy 转来的请求头里读
 再用带 HTTPS 的方式启动，Caddy 会自动申请和续期证书：
 
 ```bash
-docker compose --profile https up -d --build
+docker compose -f docker-compose.standalone.yml --profile https up -d --build
 ```
 
 已经有 Nginx 的话，不用 Caddy，把站点反向代理到 `http://127.0.0.1:3000`，带上 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`，并在 `.env` 里设 `TRUST_PROXY=true`。`SITE_URL` 一定要写成读者实际访问的地址：生成的链接、RSS、分享图和 MCP 都用它。
@@ -77,9 +79,9 @@ MCP 默认接受 `SITE_URL` 的主机以及 `localhost`、`127.0.0.1`、`[::1]`�
 
 ```bash
 git pull
-docker compose build
-docker compose stop api worker web
-docker compose run --rm setup && docker compose up -d
+docker compose -f docker-compose.standalone.yml build
+docker compose -f docker-compose.standalone.yml stop api worker web
+docker compose -f docker-compose.standalone.yml run --rm setup && docker compose -f docker-compose.standalone.yml up -d
 ```
 
 迁移成功后再启动服务；迁移失败时先查看错误，不要继续启动。使用 HTTPS 配置的站点继续保留 `--profile https`。旧的 API 和 worker 要在迁移前停下：迁移可能删表删列，旧代码还在跑会出错；正常关闭 worker 会等进行中的付费调用收尾（最长三分多钟）。非 Docker 部署也按“备份、构建、停止 API/worker/web、迁移（`scripts/migrate.ts`）、种子数据（`scripts/seed.ts`）、启动”的顺序更新。
@@ -222,15 +224,15 @@ MCP 的 `subscriptions/listen` 现在立即返回 HTTP 404 和 JSON-RPC `-32601 
 下面的手动导出只包含数据库，不包含上述附件目录：
 
 ```bash
-docker compose exec -T db pg_dump -U aihot aihot | gzip > myhot-$(date +%F).sql.gz
+docker compose -f docker-compose.standalone.yml exec -T db pg_dump -U aihot aihot | gzip > myhot-$(date +%F).sql.gz
 ```
 
-数据都在三个 Docker 卷里：`db`（数据库）、`data`（上传的图片、图片缓存、本地备份）、`caddy`（证书）。`docker compose down` 不会删除它们；`docker compose down -v` 会。
+数据都在三个 Docker 卷里：`db`（数据库）、`data`（上传的图片、图片缓存、本地备份）、`caddy`（证书）。`docker compose -f docker-compose.standalone.yml down` 不会删除它们；`docker compose -f docker-compose.standalone.yml down -v` 会。
 
 ### 看日志
 
 ```bash
-docker compose logs -f --tail 100 api worker web
+docker compose -f docker-compose.standalone.yml logs -f --tail 100 api worker web
 ```
 
 后台的“运行”页能看到每个定时任务最近的结果，“信源”页能看到每个信源的抓取状况。

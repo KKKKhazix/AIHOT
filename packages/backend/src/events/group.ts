@@ -647,12 +647,13 @@ async function rematch(result: GroupResult, articleId: string, text: string, fac
 async function groupSignal(a: ArticleRow, source: { id: string; signal_group_id: string | null }, observedAt: Date, regroup: boolean): Promise<GroupResult> {
   const text = signalText(a);
   // Discussion evidence obeys the same article lock and last-minute manual check as reports. The
-  // evidence and decision commit together; a retry cannot leave half of a signal attached.
+  // Previous evidence is replaced with the new decision in the same transaction.
   const write = async (target: { factId: number; storyId: number } | null, verdict: "signal" | "signal-native" | "signal-unmatched", candidates: DecisionCandidate[], receiptId: number | null = null): Promise<GroupResult> => {
     const result: GroupResult = await sql.begin(async (tx) => {
       await lockCurrentRevision(tx, a.id, a.revision);
       const manual = await manualDecision(tx, a.id);
       if (!manual) {
+        await tx`DELETE FROM story_signals WHERE article_id = ${a.id}`;
         if (target) await recordSignal(tx, target.storyId, a.id, source, "signal", observedAt);
         await recordDecision(tx, a.id, target?.factId ?? null, target?.storyId ?? null, verdict, candidates, receiptId);
       }
@@ -668,7 +669,7 @@ async function groupSignal(a: ArticleRow, source: { id: string; signal_group_id:
     const target = referenced[0]!;
     return write({ factId: target.fact_id, storyId: target.story_id }, "signal-native", [{ id: target.fact_id, score: 1, relation: "SAME_STORY", confidence: 1 }]);
   }
-  if (!embeddingsAvailable()) return { verdict: "signal-unmatched" };
+  if (!embeddingsAvailable()) return write(null, "signal-unmatched", []);
   const asCandidates = (recalled: Recalled[], verdicts?: Map<number, Verdict>): DecisionCandidate[] =>
     recalled.map((r) => ({ id: r.factId, score: Math.round(r.score * 1000) / 1000, relation: verdicts?.get(r.factId)?.relation, confidence: verdicts?.get(r.factId)?.confidence }));
   const answered = new Set(regroup ? [] : (await sql<{ id: number }[]>`SELECT unnest(${answeredFacts(sql`${a.id}`)}) AS id`).map((r) => r.id));
@@ -684,7 +685,7 @@ async function groupSignal(a: ArticleRow, source: { id: string; signal_group_id:
     return write(null, "signal-unmatched", []);
   }
   const cands = await candidateViews(recalled);
-  if (cands.length === 0) return { verdict: "signal-unmatched" };
+  if (cands.length === 0) return write(null, "signal-unmatched", []);
   const query: ReportView = { title: a.title, source: a.source_name, firstParty: false, at: a.published_at, publicationTime: a.publication_time, summary: a.body_text?.slice(0, 300) ?? null };
   const { verdicts, receiptId } = await judgeSignal(a.id, query, cands);
   const target = signalTarget(cands, verdicts);

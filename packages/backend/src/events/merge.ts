@@ -5,7 +5,7 @@
 import { sql, type Tx } from "../db.ts";
 import { audit } from "../audit.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
-import { publishArticle, republishTx } from "../publication/publish.ts";
+import { republishTx } from "../publication/publish.ts";
 
 /** The moves of a story merge, in the caller's transaction. Null when missing/already merged, or when grouping would change an editor-confirmed identity. */
 async function mergeStoryTx(tx: Tx, fromId: number, intoId: number, actor: string): Promise<true | null> {
@@ -31,15 +31,14 @@ async function mergeStoryTx(tx: Tx, fromId: number, intoId: number, actor: strin
 /** Null when missing/already merged, or when grouping would change an editor-confirmed identity. */
 export async function mergeStoryInto(fromId: number, intoId: number, reason: string, actor: string): Promise<{ moved: number } | null> {
   if (fromId === intoId) throw new Error("cannot merge a story into itself");
-  const articles = await sql.begin(async (tx) => {
+  return sql.begin(async (tx) => {
     if (!(await mergeStoryTx(tx, fromId, intoId, actor))) return null;
-    return tx<{ article_id: string }[]>`SELECT DISTINCT fa.article_id FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id WHERE f.story_id = ${intoId}`;
+    const articles = await tx<{ article_id: string }[]>`SELECT DISTINCT fa.article_id FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id WHERE f.story_id = ${intoId}`;
+    for (const a of articles) await republishTx(tx, a.article_id);
+    await enqueue(QUEUES.digest, { storyId: intoId }, { singletonKey: `story:${intoId}` }, tx);
+    await audit(actor, "story.merge", `story:${fromId}`, reason, null, { into: intoId }, { db: tx });
+    return { moved: articles.length };
   });
-  if (!articles) return null;
-  for (const a of articles) await publishArticle(a.article_id);
-  await enqueue(QUEUES.digest, { storyId: intoId }, { singletonKey: `story:${intoId}` });
-  await audit(actor, "story.merge", `story:${fromId}`, reason, null, { into: intoId });
-  return { moved: articles.length };
 }
 
 /**

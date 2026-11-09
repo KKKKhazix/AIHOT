@@ -63,14 +63,14 @@ async function judgeStories(capability: "group" | "groupReview", a: StoryRoot, b
 }
 
 export async function liveStory(id: number): Promise<number | null> {
-  let current = id;
-  for (let hops = 0; hops < 20; hops++) {
-    const [st] = await sql<{ merged_into: number | null }[]>`SELECT merged_into FROM stories WHERE id = ${current}`;
-    if (!st) return null;
-    if (st.merged_into === null) return current;
-    current = Number(st.merged_into);
-  }
-  return null;
+  const [story] = await sql<{ id: number }[]>`
+    WITH RECURSIVE chain AS (
+      SELECT id, merged_into FROM stories WHERE id = ${id}
+      UNION ALL
+      SELECT s.id, s.merged_into FROM stories s JOIN chain c ON s.id = c.merged_into
+    )
+    SELECT id FROM chain WHERE merged_into IS NULL`;
+  return story ? Number(story.id) : null;
 }
 
 export interface Consolidation {

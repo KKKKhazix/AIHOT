@@ -55,6 +55,20 @@ for (const oldLength of [2, 8]) test(`a stored vector of ${oldLength} dimensions
   assert.deepEqual(await persisted(it.id), [1, 0, 0, 0]);
 });
 
+test("a cold read loads more than 65535 stored vectors without making a provider request", async () => {
+  const text = `${T} large recall pool`;
+  const count = 65_536;
+  await sql`INSERT INTO embeddings (kind, ref_id, model, text_hash, vector)
+    SELECT 'article', ${T} || '-pool-' || i, ${EMBEDDING_MODEL}, ${sha256(text)}, ARRAY[1, 0, 0, 0]::real[]
+    FROM generate_series(1, ${count}) i`;
+  const items = Array.from({ length: count }, (_, i) => ({ id: `${T}-pool-${i + 1}`, text }));
+  const before = requests.length;
+  const vectors = await ensureEmbeddings(items);
+  assert.equal(vectors.size, count);
+  for (const { id } of items) assert.deepEqual(vectors.get(id), [1, 0, 0, 0]);
+  assert.equal(requests.length, before, "stored vectors are reused after a process starts with an empty recall cache");
+});
+
 test("a restarted process with other dimensions pays for a request of its own", async () => {
   const it = item();
   const before = requests.length;

@@ -9,12 +9,13 @@ import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { detachFromFact, requestRegroup } from "@aihot/backend/events/corrections";
 import { upsertMaterial } from "@aihot/backend/content/materials";
-import { consolidate, linkRelatedStories } from "@aihot/backend/events/consolidate";
+import { consolidate, linkRelatedStories, liveStory } from "@aihot/backend/events/consolidate";
 import { groupArticle } from "@aihot/backend/events/group";
 import { mergeFactInto, mergeStoryInto } from "@aihot/backend/events/merge";
 import { candidateViews } from "@aihot/backend/events/recall";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
+import { resolveStory } from "@aihot/backend/publication/stories";
 
 const T = tag();
 const SOURCE = `test-events-${T}`;
@@ -221,6 +222,53 @@ test("a merge that fails part-way leaves everything where it was, and can run ag
   assert.deepEqual(await mergeFactInto(from.fact, into.fact, "test", "grouping"), { moved: 1 });
   const [published] = await sql<{ fact_id: number }[]>`SELECT fact_id FROM publications WHERE article_id = ${moved}`;
   assert.equal(Number(published!.fact_id), into.fact);
+});
+
+test("a story merge rolls back membership, heat and public projections when republication fails, then can retry", async () => {
+  const from = await newFact();
+  const into = await newFact();
+  const moved = await member(from.fact);
+  await signalIn(from.story, moved);
+  await publishArticle(moved);
+  await sql.unsafe(`CREATE FUNCTION test_fail_story_publication() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'publication failed'; END $$ LANGUAGE plpgsql`);
+  await sql.unsafe(`CREATE TRIGGER test_fail_story_publication BEFORE UPDATE ON publications FOR EACH ROW WHEN (OLD.article_id = '${moved}') EXECUTE FUNCTION test_fail_story_publication()`);
+  const location = async () => {
+    const [row] = await sql`SELECT f.story_id AS membership, p.story_id AS publication, s.merged_into,
+      (SELECT story_id FROM story_signals WHERE article_id = ${moved}) AS heat
+      FROM facts f JOIN publications p ON p.article_id = ${moved} JOIN stories s ON s.id = ${from.story} WHERE f.id = ${from.fact}`;
+    return { ...row };
+  };
+  try {
+    await assert.rejects(mergeStoryInto(from.story, into.story, "test", "grouping"), /publication failed/);
+    assert.deepEqual(await location(), { membership: from.story, publication: from.story, merged_into: null, heat: from.story });
+    assert.equal((await sql`SELECT 1 FROM story_aliases WHERE story_id = ${into.story}`).length, 0);
+  } finally {
+    await sql.unsafe(`DROP TRIGGER test_fail_story_publication ON publications`);
+    await sql.unsafe(`DROP FUNCTION test_fail_story_publication`);
+  }
+  assert.deepEqual(await mergeStoryInto(from.story, into.story, "test", "grouping"), { moved: 1 });
+  assert.deepEqual(await location(), { membership: into.story, publication: into.story, merged_into: into.story, heat: into.story });
+});
+
+test("old story addresses and grouping targets reach the survivor after a long sequence of merges", async () => {
+  const first = await newFact();
+  const moved = await member(first.fact);
+  await publishArticle(moved);
+  const [original] = await sql<{ public_id: string }[]>`SELECT public_id FROM stories WHERE id = ${first.story}`;
+  const alias = randomUUID();
+  await sql`INSERT INTO story_aliases (public_id, story_id) VALUES (${alias}, ${first.story})`;
+  let last = first;
+  for (let i = 0; i < 24; i++) {
+    const next = await newFact();
+    assert.deepEqual(await mergeStoryInto(last.story, next.story, "test", "test-editor"), { moved: 1 });
+    last = next;
+  }
+  const [survivor] = await sql<{ public_id: string }[]>`SELECT public_id FROM stories WHERE id = ${last.story}`;
+  for (const publicId of [original!.public_id, alias]) assert.deepEqual(await resolveStory(publicId), { kind: "merged", target: survivor!.public_id });
+  assert.deepEqual(await resolveStory(survivor!.public_id), { kind: "found", storyId: last.story, publicId: survivor!.public_id });
+  assert.equal(await liveStory(first.story), last.story);
+  const [publication] = await sql`SELECT story_id FROM publications WHERE article_id = ${moved}`;
+  assert.equal(publication!.story_id, last.story);
 });
 
 test("explicitly insufficient original material cannot found an event or retain an automatic fact", async () => {

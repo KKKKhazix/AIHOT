@@ -10,6 +10,7 @@ import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { mergeStories, moveToFact, requestRegroup } from "@aihot/backend/events/corrections";
 import { groupArticle } from "@aihot/backend/events/group";
+import { heatRows } from "@aihot/backend/events/hot";
 import { queueProcessing, settleNonEditorial } from "@aihot/backend/jobs/content";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
@@ -116,6 +117,33 @@ test("a discussion post that came before any report is grouped again when a repo
   const again = await groupArticle(postId, { signalOnly: true });
   assert.equal(again.verdict, "signal");
   assert.equal(again.storyId, founded.storyId);
+});
+
+test("a revised discussion post replaces its old story's heat and removes it when no story matches", async () => {
+  const markers = [`VA${T}`, `VB${T}`, `VC${T}`];
+  markers.forEach((m, i) => VECTORS.set(m, direction(80 + i, [1])));
+  const first = await groupArticle(await report("revision-first", { title: `Launch ${markers[0]}` }));
+  const second = await groupArticle(await report("revision-second", { title: `Security issue ${markers[1]}` }));
+  const at = new Date();
+  const material = (marker: string) => ({ sourceId: SIGNAL, url: `https://example.com/sig-${T}-revision`, title: `Discussion ${marker}`, bodyText: `Discussion ${marker}`, bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: at });
+  const { articleId } = await upsertMaterial(material(markers[0]!));
+  await settleNonEditorial(articleId);
+  assert.equal((await groupArticle(articleId, { signalOnly: true })).storyId, first.storyId);
+  const participants = async () => {
+    const rows = await heatRows(new Date(), [], [first.storyId!, second.storyId!]);
+    return [first, second].map((s) => Number(rows.find((r) => Number(r.story_id) === s.storyId)?.participants ?? 0));
+  };
+  assert.deepEqual(await participants(), [2, 1]);
+  assert.equal((await upsertMaterial(material(markers[1]!))).revised, true);
+  await settleNonEditorial(articleId);
+  assert.equal((await groupArticle(articleId, { signalOnly: true })).storyId, second.storyId);
+  assert.deepEqual((await sql`SELECT story_id FROM story_signals WHERE article_id = ${articleId}`).map((r) => Number(r.story_id)), [second.storyId]);
+  assert.deepEqual(await participants(), [1, 2]);
+  assert.equal((await upsertMaterial(material(markers[2]!))).revised, true);
+  await settleNonEditorial(articleId);
+  assert.equal((await groupArticle(articleId, { signalOnly: true })).verdict, "signal-unmatched");
+  assert.equal((await sql`SELECT 1 FROM story_signals WHERE article_id = ${articleId}`).length, 0);
+  assert.deepEqual(await participants(), [1, 1]);
 });
 
 test("history waits behind live work and founds no event; a new source's post from today is news", async () => {

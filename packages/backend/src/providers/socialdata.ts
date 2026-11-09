@@ -116,7 +116,8 @@ export function tweetText(t: SdTweet): string {
   let text = decodeTweetEntities(t.full_text ?? t.text ?? "");
   // Expand t.co links and drop trailing media links.
   for (const u of t.entities?.urls ?? []) text = text.replaceAll(u.url, u.expanded_url);
-  for (const m of t.extended_entities?.media ?? t.entities?.media ?? []) text = text.replace(/\s*https:\/\/t\.co\/\w+\s*$/, "");
+  const mediaCount = (t.extended_entities?.media ?? t.entities?.media)?.length ?? 0;
+  for (let i = 0; i < mediaCount; i++) text = text.replace(/\s*https:\/\/t\.co\/\w+\s*$/, "");
   return text.trim();
 }
 

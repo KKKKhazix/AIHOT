@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { enqueue, QUEUES } from "@aihot/backend/jobs/queue";
 import { failureSeconds, ImageBudgetExceeded, produceAvif, produceImage } from "@aihot/backend/media/images";
 import { AVIF_MODE_SUFFIX } from "@aihot/contracts/site";
-import { LONGEST_CACHE_SECONDS, verifyProxyRequest } from "@aihot/backend/media/imgproxy";
+import { LONGEST_CACHE_SECONDS, X_VIDEO_MODE, verifyProxyRequest } from "@aihot/backend/media/imgproxy";
 import { etagMatches, looseQuery } from "../http/respond.ts";
 
 function imageCacheControl(exp: string, limit: number): string {
@@ -52,6 +52,19 @@ export function registerMedia(app: FastifyInstance) {
         .header("X-Content-Type-Options", "nosniff")
         .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
       if (etagMatches(req.headers["if-none-match"], etag)) return reply.code(304).send();
+      if (verdict.mode === X_VIDEO_MODE) {
+        reply.header("Accept-Ranges", "bytes");
+        // Safari probes the first two bytes before requesting the media. Serve single ranges from
+        // the same cached representation, so seeks don't fetch the upstream MP4 again.
+        const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
+        const ifRange = req.headers["if-range"];
+        if (range && (range[1] || range[2]) && (!ifRange || ifRange === etag)) {
+          const start = range[1] ? Number(range[1]) : Math.max(0, body.length - Number(range[2]));
+          const end = range[1] && range[2] ? Math.min(body.length - 1, Number(range[2])) : body.length - 1;
+          if (start > end) return reply.code(416).header("Cache-Control", "no-store").header("Content-Range", `bytes */${body.length}`).send();
+          return reply.code(206).header("Content-Range", `bytes ${start}-${end}/${body.length}`).send(body.subarray(start, end + 1));
+        }
+      }
       return reply.send(body);
     } catch (error) {
       if (error instanceof ImageBudgetExceeded) {

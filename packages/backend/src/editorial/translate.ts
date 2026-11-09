@@ -245,20 +245,22 @@ export async function translateArticle(articleId: string): Promise<TranslateResu
   if (!done) return unusable(receiptIds, "no batch translated");
   const complete = done === blocks.length;
   const html = sanitizeBody($.html());
-  // An article's translation follows a refreshed layout of its body; a long X article's body is not articles.body_html.
-  await store(articleId, row.revision, row.title, html, cheerio.load(html, null, false).root().text().trim(), complete, receiptIds, article ? undefined : row.body_html!);
+  await store(articleId, row.revision, row.title, html, cheerio.load(html, null, false).root().text().trim(), complete, receiptIds,
+    { html: source, xArticle: !!article });
   return result({ status: complete ? "translated" : "partial", segments: done });
 }
 
-async function store(articleId: string, revision: number, title: string, html: string, text: string, complete: boolean, receiptIds: number[], sourceHtml?: string, exactSource = false) {
+async function store(articleId: string, revision: number, title: string, html: string, text: string, complete: boolean, receiptIds: number[], source?: { html: string; xArticle?: boolean; exact?: boolean }) {
   // Never over a translation of a later revision (a slow run finishing after a newer one).
   await sql.begin(async (tx) => {
     // A layout refresh can finish while the model is answering the same semantic revision.
     // Serialize with material writes and attach the answer to the current presentation.
-    const [current] = await tx<{ revision: number; body_html: string | null }[]>`SELECT revision,body_html FROM articles WHERE id=${articleId} FOR UPDATE`;
-    if (exactSource && (!current || current.revision !== revision || current.body_html !== sourceHtml)) throw new Error("Translation source changed; import rejected");
-    if (sourceHtml !== undefined && current?.revision === revision && current.body_html !== sourceHtml) {
-      html = rebaseTranslation(sourceHtml, current.body_html ?? "", html);
+    const [current] = await tx<{ revision: number; body_html: string | null; x_html: string | null; x_text: string | null }[]>`
+      SELECT revision,body_html,x_article->>'html' AS x_html,x_post->>'text' AS x_text FROM articles WHERE id=${articleId} FOR UPDATE`;
+    const currentHtml = source?.xArticle && current?.x_html ? xArticleBody(current.x_text ?? "", current.x_html) : current?.body_html ?? "";
+    if (source?.exact && (current?.revision !== revision || currentHtml !== source.html)) throw new Error("Translation source changed; import rejected");
+    if (source && current?.revision === revision && currentHtml !== source.html) {
+      html = rebaseTranslation(source.html, currentHtml, html);
     }
     const changed = await tx`
       INSERT INTO translations (article_id, lang, revision, title, body_html, body_text, complete, origin)
@@ -284,7 +286,7 @@ export async function importBodyTranslation(input: { articleId: string; sourceHt
   const clean = sanitizeBody(input.html);
   const text = cheerio.load(clean, null, false).root().text().trim();
   if (!clean || !text) throw new Error("Empty translation");
-  await store(input.articleId, row.revision, input.title, clean, text, input.complete, [], input.sourceHtml, true);
+  await store(input.articleId, row.revision, input.title, clean, text, input.complete, [], { html: input.sourceHtml, exact: true });
 }
 
 /** A quoted post worth translating: at least a few letters beyond its links, and not already Chinese. */

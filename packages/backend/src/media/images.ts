@@ -9,6 +9,8 @@ import { config } from "../config.ts";
 import { guardedFetch, type GuardedResponse } from "../lib/http-fetch.ts";
 import { AVIF_MODE_SUFFIX } from "@aihot/contracts/site";
 import { IMAGE_WIDTHS } from "./renditions.ts";
+import { X_VIDEO_MODE } from "./imgproxy.ts";
+import { isXVideoUrl } from "../lib/video-url.ts";
 import { luma, ssim } from "./similarity.ts";
 import { recordUpstream, upstreamAllowed } from "./upstream.ts";
 
@@ -103,8 +105,11 @@ function original(url: string): Promise<GuardedResponse> {
 async function fetchOriginal(url: string): Promise<GuardedResponse> {
   const allowed = upstreamAllowed();
   if (!allowed.ok) throw new ImageBudgetExceeded(allowed.reason);
+  const video = isXVideoUrl(url);
   const res = await guardedFetch(url, {
-    timeoutMs: 20_000, maxBytes: 15 * 1024 * 1024, headers: { accept: "image/avif,image/webp,image/*,*/*;q=0.8" },
+    timeoutMs: 20_000, maxBytes: 15 * 1024 * 1024,
+    headers: { accept: video ? "video/mp4" : "image/avif,image/webp,image/*,*/*;q=0.8" },
+    ...(video ? { redirectPolicy: "same-origin" as const } : {}),
   });
   recordUpstream(res.body.length);
   if (res.status !== 200) throw new UpstreamStatus(res.status);
@@ -208,7 +213,11 @@ async function produce(url: string, mode: string): Promise<PreparedImage> {
     // not cached
   }
   const res = await original(url);
-  const image = await resizeImage(res.body, res.headers.get("content-type") ?? "", mode);
+  const suppliedType = res.headers.get("content-type") ?? "";
+  if (mode === X_VIDEO_MODE && (suppliedType.split(";")[0] !== "video/mp4" || res.body.toString("ascii", 4, 8) !== "ftyp")) {
+    throw new Error("upstream did not serve an MP4");
+  }
+  const image = mode === X_VIDEO_MODE ? { body: res.body, type: "video/mp4" } : await resizeImage(res.body, suppliedType, mode);
   await mkdir(path.dirname(file), { recursive: true });
   await saveImage(file, image);
   if (image.type === "image/svg+xml" && image.body.length > SVG_PASSTHROUGH_MAX_BYTES) await writeFile(`${file}.prepared`, "original");

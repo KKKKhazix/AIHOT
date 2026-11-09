@@ -8,6 +8,7 @@ import { publishArticleTx } from "../publication/publish.ts";
 import { groupingReset, reconcileMaterialSource } from "./provenance.ts";
 import { emit } from "../modules.ts";
 import { rebaseTranslation } from "./presentation.ts";
+import { xArticleBody } from "./posts.ts";
 
 export interface MediaItem {
   kind: "image" | "video";
@@ -374,23 +375,29 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
 }
 
 /** Caller holds the material lock. A presentation update preserves all semantic processing state. */
-export async function updatePresentation(db: Db, articleId: string, next: { html?: string | null; media?: MediaItem[] }): Promise<boolean> {
-  const [a] = await db<{ revision: number; body_html: string | null; media: MediaItem[] }[]>`
-    SELECT revision,body_html,media FROM articles WHERE id=${articleId} FOR UPDATE`;
+export async function updatePresentation(db: Db, articleId: string, next: { html?: string | null; media?: MediaItem[]; xArticleHtml?: string }): Promise<boolean> {
+  const [a] = await db<{ revision: number; body_html: string | null; media: MediaItem[]; x_html: string | null; x_text: string | null }[]>`
+    SELECT revision,body_html,media,x_article->>'html' AS x_html,x_post->>'text' AS x_text FROM articles WHERE id=${articleId} FOR UPDATE`;
   if (!a) return false;
   const html = next.html ?? a.body_html;
   const media = next.media ?? a.media;
-  if (html === a.body_html && stableJson(media) === stableJson(a.media)) return false;
-  if (html !== a.body_html) {
+  const xHtml = next.xArticleHtml ?? a.x_html;
+  if (html === a.body_html && xHtml === a.x_html && stableJson(media) === stableJson(a.media)) return false;
+  if (html !== a.body_html || xHtml !== a.x_html) {
     const [tr] = await db<{ body_html: string; origin: string }[]>`
       SELECT body_html,origin FROM translations WHERE article_id=${articleId} AND lang='zh' AND revision=${a.revision} FOR UPDATE`;
     // A publisher's translation is independently supplied, so only model translations share the source layout.
     if (tr?.origin === "model" && tr.body_html) {
-      const translated = rebaseTranslation(a.body_html ?? "", html ?? "", tr.body_html);
+      const previous = a.x_html ? xArticleBody(a.x_text ?? "", a.x_html) : a.body_html ?? "";
+      const current = xHtml ? xArticleBody(a.x_text ?? "", xHtml) : html ?? "";
+      const translated = rebaseTranslation(previous, current, tr.body_html);
       await db`UPDATE translations SET body_html=${translated} WHERE article_id=${articleId} AND lang='zh'`;
     }
   }
-  await db`UPDATE articles SET body_html=${html},media=${db.json(media as never)},updated_at=now() WHERE id=${articleId}`;
+  await db`UPDATE articles SET body_html=${html},media=${db.json(media as never)},updated_at=now(),
+    x_article=CASE WHEN ${xHtml}::text IS DISTINCT FROM x_article->>'html'
+      THEN jsonb_set(x_article, '{html}', to_jsonb(${xHtml}::text)) ELSE x_article END
+    WHERE id=${articleId}`;
   await emit("articleChanged", { id: articleId, kind: "body", reason: "body presentation" }, db);
   return true;
 }

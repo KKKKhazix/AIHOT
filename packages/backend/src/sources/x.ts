@@ -1,13 +1,14 @@
 // X accounts via SocialData search, newest first. Verified publishers include their own thread
 // continuations; other replies stay excluded. Plain accounts share length-bounded search shards.
 import { marked } from "marked";
-import { searchTweets, tweetMedia, tweetText, type SdArticle, type SdTweet } from "../providers/socialdata.ts";
+import { searchTweets, tweetMedia, tweetText, type SdArticle, type SdArticleImage, type SdTweet } from "../providers/socialdata.ts";
 import { shownAddress } from "@aihot/contracts/addresses";
 import { escHtml, sanitizeBody } from "../content/sanitize.ts";
 import { X_ARTICLE_LINK } from "../content/posts.ts";
 import { ProviderRejectedError } from "../providers/receipts.ts";
 import type { XPostData } from "../content/materials.ts";
 import { sha256 } from "../lib/ids.ts";
+import { isXVideoUrl } from "../lib/video-url.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
 import { xHandle } from "./account.ts";
 
@@ -62,7 +63,6 @@ export function xArticleText(article: SdArticle, postUrl: string): { title: stri
 
 type ArticleBlock = NonNullable<NonNullable<SdArticle["content_state"]>["blocks"]>[number];
 type ArticleEntity = { type?: string; data?: any };
-type ArticleImage = { original_img_url?: string; original_img_width?: number; original_img_height?: number };
 
 const STYLE_TAGS: Record<string, string> = { Bold: "strong", Italic: "em", Strikethrough: "del" };
 const HEADING_TAGS: Record<string, string> = { "header-one": "h2", "header-two": "h3", "header-three": "h4" };
@@ -107,21 +107,20 @@ function articleInline(block: ArticleBlock, entities: Map<string, ArticleEntity>
 /**
  * An X Article as its page shows it, from the blocks X sent: the cover, headings, paragraphs with their
  * emphasis and links, lists, quotes, pictures, dividers, tables and code (MARKDOWN blocks), and embedded
- * posts as links. A video or GIF is only a still here, linked to the post. Sanitised like any body.
+ * posts as links. Inline videos keep a playable X rendition when supplied, with the original post as a fallback.
  */
 export function xArticleHtml(article: SdArticle, postUrl: string): string | null {
   const blocks = article.content_state?.blocks ?? [];
   const map = article.content_state?.entityMap ?? [];
   const entities = new Map<string, ArticleEntity>(Array.isArray(map) ? map.map((e) => [String(e.key), e.value]) : Object.entries(map));
   const media = new Map((article.media_entities ?? []).map((m) => [String(m.media_id), m.media_info]));
-  const picture = (image: ArticleImage | undefined, href?: string) => {
-    if (!image?.original_img_url) return "";
-    const size = image.original_img_width && image.original_img_height ? ` width="${image.original_img_width}" height="${image.original_img_height}"` : "";
-    const img = `<img src="${escHtml(image.original_img_url)}"${size} alt="">`;
-    return `<figure>${href ? `<a href="${escHtml(href)}">${img}</a>` : img}</figure>`;
-  };
+  const size = (image: SdArticleImage | undefined) => image?.original_img_width && image.original_img_height
+    ? ` width="${image.original_img_width}" height="${image.original_img_height}"` : "";
+  const picture = (image: SdArticleImage | undefined) => image?.original_img_url
+    ? `<img src="${escHtml(image.original_img_url)}"${size(image)} alt="">` : "";
+  const original = escHtml(postUrl);
   const parts: string[] = [];
-  if (article.cover_url) parts.push(picture({ original_img_url: article.cover_url }));
+  if (article.cover_url) parts.push(`<figure>${picture({ original_img_url: article.cover_url })}</figure>`);
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]!;
     const type = block.type ?? "unstyled";
@@ -137,7 +136,20 @@ export function xArticleHtml(article: SdArticle, postUrl: string): string | null
         if (entity?.type === "MEDIA") {
           for (const item of entity.data?.mediaItems ?? []) {
             const info = media.get(String(item?.mediaId));
-            parts.push(info?.original_img_url ? picture(info) : picture(info?.preview_image, postUrl));
+            if (info?.original_img_url) {
+              parts.push(`<figure>${picture(info)}</figure>`);
+            } else if (info?.preview_image || info?.variants?.length) {
+              // The 832 kb/s rendition of the reported demos was 724px wide, close to the reading column.
+              const mp4 = (info.variants ?? []).filter((v) => v.content_type === "video/mp4" && typeof v.url === "string" && isXVideoUrl(v.url))
+                .sort((a, b) => (a.bit_rate ?? 0) - (b.bit_rate ?? 0));
+              const src = (mp4.findLast((v) => (v.bit_rate ?? 0) <= 832_000) ?? mp4[0])?.url;
+              const preview = info.preview_image;
+              const poster = preview?.original_img_url ? ` poster="${escHtml(preview.original_img_url)}"` : "";
+              const label = "在 X 查看原视频";
+              parts.push(src
+                ? `<figure><video src="${escHtml(src)}"${poster}${size(preview)}></video><a href="${original}">${label}</a></figure>`
+                : `<figure><a href="${original}">${picture(preview)}${label}</a></figure>`);
+            }
           }
         } else if (entity?.type === "DIVIDER") {
           parts.push("<hr>");

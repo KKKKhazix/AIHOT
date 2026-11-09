@@ -130,8 +130,8 @@ export function tweetMedia(t: SdTweet) {
   }));
 }
 
-/** A picture in an X Article; a video or GIF has only its still here. */
-interface SdArticleImage {
+/** A picture or a video's preview in an X Article. */
+export interface SdArticleImage {
   original_img_url?: string;
   original_img_width?: number;
   original_img_height?: number;
@@ -145,7 +145,11 @@ interface SdArticleImage {
 export interface SdArticle {
   title?: string;
   cover_url?: string;
-  media_entities?: Array<{ media_id?: string; media_info?: SdArticleImage & { __typename?: string; preview_image?: SdArticleImage } }>;
+  media_entities?: Array<{ media_id?: string; media_info?: SdArticleImage & {
+    __typename?: string;
+    preview_image?: SdArticleImage;
+    variants?: Array<{ url?: string; content_type?: string; bit_rate?: number }>;
+  } }>;
   content_state?: {
     blocks?: Array<{
       type?: string;

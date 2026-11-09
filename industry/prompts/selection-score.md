@@ -25,14 +25,14 @@
 
 | 类型 | sig | nov | cred | reson | act |
 |---|---:|---:|---:|---:|---:|
-| policy_change | 3 | 0 | 2 | 4 | 1 |
-| education_event | 2 | 1 | 2 | 4 | 1 |
-| research_finding | 2 | 1 | 3 | 3 | 1 |
-| health_safety_event | 3 | 0 | 3 | 3 | 1 |
-| family_issue | 2 | 1 | 2 | 4 | 1 |
-| technology_change | 2 | 1 | 2 | 3 | 2 |
-| practical_guide | 1 | 0 | 2 | 3 | 4 |
-| opinion_analysis | 1 | 1 | 2 | 4 | 2 |
+| policy_change | 3 | 1 | 2 | 3 | 1 |
+| education_event | 2 | 2 | 1 | 4 | 1 |
+| research_finding | 2 | 2 | 2 | 3 | 1 |
+| health_safety_event | 3 | 1 | 2 | 3 | 1 |
+| family_issue | 2 | 2 | 1 | 4 | 1 |
+| technology_change | 1 | 3 | 1 | 4 | 1 |
+| practical_guide | 1 | 2 | 1 | 5 | 1 |
+| opinion_analysis | 1 | 3 | 1 | 4 | 1 |
 
 ## 评价原则
 

@@ -5,7 +5,7 @@ import { SCORE_WEIGHTS } from "@aihot/industry/selection";
 
 test("score dimensions are validated and weighted by the model's content type", () => {
   const result = ScoreSchema.parse({ itemType: "opinion_analysis", sig: 4, nov: 6, cred: 3, reson: 8, act: 6 });
-  assert.deepEqual(calculateScore(result), { ...result, weights: { sig: 1, nov: 1, cred: 2, reson: 4, act: 2 }, total: 60 });
+  assert.deepEqual(calculateScore(result), { ...result, weights: { sig: 1, nov: 3, cred: 1, reson: 4, act: 1 }, total: 63 });
   assert.equal(ScoreSchema.safeParse({ ...result, act: 11 }).success, false);
   assert.equal(ScoreSchema.safeParse({ ...result, itemType: "other" }).success, false);
   assert.equal(ScoreSchema.safeParse({ attentionScore: 58 }).success, false);

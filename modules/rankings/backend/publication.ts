@@ -20,9 +20,9 @@ export async function loadFamilyRanking(hours: number, now: Date): Promise<Entry
 export async function loadRankings(now = new Date()): Promise<Ranking[]> {
   const [rows, ...familyItems] = await Promise.all([
     sql<Ranking[]>`SELECT id,name,source,url,items,source_updated AS "sourceUpdated",fetched_at AS "fetchedAt",failed FROM external_rankings ORDER BY CASE WHEN id='tunbang:all' THEN 0 ELSE 1 END,name`,
-    ...[48, 72, 168].map(hours => loadFamilyRanking(hours, now)),
+    ...[2, 48, 72, 168].map(hours => loadFamilyRanking(hours, now)),
   ]);
-  const family: Ranking[] = ["48小时", "3天", "7天"].map((name, index) => ({ id: `family:${[48,72,168][index]}`, name, source: "家友榜", url: "/all", items: familyItems[index], sourceUpdated: null, fetchedAt: now.toISOString(), failed: false }));
+  const family: Ranking[] = ["2小时", "48小时", "3天", "7天"].map((name, index) => ({ id: `family:${[2,48,72,168][index]}`, name, source: "家友榜", url: "/all", items: familyItems[index], sourceUpdated: null, fetchedAt: now.toISOString(), failed: false }));
   const known = rows.some(b => b.id === total.id) ? rows : [{ ...total, items: [], sourceUpdated: null, fetchedAt: null, failed: false }, ...rows];
   const external = [...known, ...[...otherBoards, ...topBoards].filter(board => !known.some(b => b.id === board.id)).map(board => ({ ...board, items: [], sourceUpdated: null, fetchedAt: null, failed: false }))];
   const order = ["微小榜", "豚榜", "今日热榜"];

@@ -29,6 +29,7 @@ test("family rankings use publication time for the rolling window and score ties
     await add('future-publication', 1, 100, 'public', true, false, null, -1);
     await add('not-released', 1, 100, 'public', true, true, new Date(now.getTime() + 60000));
     await sql`UPDATE publications SET timeline_at = ${new Date(now.getTime() - 10 * 3600000)} WHERE article_id = 'tie-new'`;
+    assert.deepEqual((await loadFamilyRanking(2, now)).map(x => x.title), ['tie-new', 'recent']);
     const recent = await loadFamilyRanking(48, now);
     assert.deepEqual(recent.map(x => x.title), ['tie-new', 'tie-old', 'recent']);
     assert.equal(recent[0].url, '/items/tie-new');
@@ -36,7 +37,7 @@ test("family rankings use publication time for the rolling window and score ties
     assert.deepEqual((await loadFamilyRanking(72, now)).map(x => x.title), ['three-days', 'tie-new', 'tie-old', 'recent']);
     assert.equal((await loadFamilyRanking(168, now))[1].title, 'seven-days');
     const boards = await loadRankings(now);
-    assert.deepEqual(boards.slice(0, 3).map(b => b.name), ['48小时', '3天', '7天']);
+    assert.deepEqual(boards.slice(0, 4).map(b => b.name), ['2小时', '48小时', '3天', '7天']);
     assert.ok(boards.findIndex(b => b.source === '微小榜') < boards.findIndex(b => b.source === '豚榜'));
     for (let i = 0; i < 103; i++) await add(`bulk-${i}`, 1, 80);
     assert.equal((await loadFamilyRanking(48, now)).length, 100);

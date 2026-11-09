@@ -65,7 +65,7 @@ export function sanitizeBody(html: string, baseUrl?: string): string {
     transformTags: {
       h1: "h2",
       h6: "h5",
-      div: (tagName, attribs) => ({ tagName: "p", attribs }),
+      div: "p",
       section: "p",
       article: "p",
       a: (tagName, attribs) => ({

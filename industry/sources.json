@@ -1450,25 +1450,6 @@
       "enabled": false
     },
     {
-      "id": "rsshub-cneb-7b4adf3e19",
-      "name": "中国国家应急广播 · 预警信息",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "http://43.133.78.61:8080/cneb/yjxx",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [],
-      "site_fulltext": false,
-      "syndicate_fulltext": false,
-      "enabled": false
-    },
-    {
       "id": "rsshub-cohere-abad8302ac",
       "name": "Cohere · Blog",
       "kind": "rss",

@@ -76,7 +76,7 @@ export async function ensureEmbeddings(items: Array<{ id: string; text: string }
   if (items.length === 0) return out;
   const hashes = new Map(items.map((item) => [item.id, sha256(item.text)]));
   const rows = await sql<{ ref_id: string; text_hash: string; vector: Buffer }[]>`
-    SELECT ref_id, text_hash, array_send(vector) AS vector FROM embeddings WHERE kind = 'article' AND model = ${EMBEDDING_MODEL} AND ref_id IN ${sql(items.map((i) => i.id))}`;
+    SELECT ref_id, text_hash, array_send(vector) AS vector FROM embeddings WHERE kind = 'article' AND model = ${EMBEDDING_MODEL} AND ref_id = ANY(${items.map((i) => i.id)}::text[])`;
   const have = new Map(rows.map((r) => [r.ref_id, r]));
   const missing = items.filter((i) => {
     const h = have.get(i.id);

@@ -137,8 +137,11 @@ export interface WebModule {
   /**
    * The feedback page opened from one of its buttons, a link carrying `state: { feedbackFor: <its name> }`: the
    * heading, the line under it, the example in the box and the tips beside the form, in place of the site's.
+   * The link may also carry `content`, what the reader has already typed there: the page's box starts with it.
    */
   feedbackGuide?: { title: string; lead: string; example: string; tips: string[] };
+  /** A press a page reports for the site's own counts (lib/clicks.ts): what was pressed, nothing about the reader. */
+  onClick?: (target: string) => void;
   /** The terms page's footer: links after the engine's (routes/terms.tsx). */
   termsLinks?: Array<{ to: string; label: string }>;
   /** Its ways into the agent page (AgentPart.tracks) by their short names: the 我的 page's row names the first three (routes/more.tsx). */

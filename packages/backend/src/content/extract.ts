@@ -462,8 +462,43 @@ function addressesIn(el: El, names: string[]): string[] {
 }
 /** Every address an image shows, or loads once a script runs. */
 const shownAddresses = (el: El) => addressesIn(el, ["src", "data-src", "data-original", "data-lazy-src", "srcset", "data-srcset"]);
-/** The addresses a stored body keeps for an image: its src, or the lazy address sanitizeBody puts there; a srcset is not kept. */
-const keptAddresses = (el: El) => addressesIn(el.localName === "img" ? el : el.querySelector("img") ?? el, ["src", "data-src", "data-original"]);
+/**
+ * The address Readability's lazy-image repair writes into an image's src (_fixLazyImages, Readability 0.6), under
+ * its own conditions: an SVG base64 src is left alone; a short base64 src beside another image address is dropped
+ * first; then only an image without src or srcset, or one whose class says lazy, takes an attribute naming an
+ * image file (one naming several with their widths becomes a srcset, which a body does not keep).
+ */
+function repairedAddress(img: El): string | null {
+  const attributes = Array.from(img.attributes as ArrayLike<{ name: string; value: string }>);
+  let src = img.getAttribute("src") ?? "";
+  const base64 = /^data:\s*([^\s;,]+)\s*;\s*base64\s*,/i.exec(src);
+  if (base64) {
+    if (base64[1] === "image/svg+xml") return null;
+    const elsewhere = attributes.some(({ name, value }) => name !== "src" && /\.(jpg|jpeg|png|webp)/i.test(value));
+    if (elsewhere && src.length - base64[0].length < 133) src = "";
+  }
+  const srcset = img.getAttribute("srcset");
+  if ((src || (srcset && srcset !== "null")) && !(img.getAttribute("class") ?? "").toLowerCase().includes("lazy")) return null;
+  let repaired: string | null = null;
+  for (const { name, value } of attributes) {
+    if (name === "src" || name === "srcset" || name === "alt" || /\.(jpg|jpeg|png|webp)\s+\d/.test(value)) continue;
+    if (/^\s*\S+\.(jpg|jpeg|png|webp)\S*\s*$/.test(value)) repaired = value.trim();
+  }
+  return repaired;
+}
+
+/**
+ * The addresses a stored body keeps for an image: the lazy address sanitizeBody puts in src (data-src,
+ * data-original), its src, or the one Readability's lazy-image repair gives it. A srcset is not kept.
+ */
+function keptAddresses(el: El): string[] {
+  const img = el.localName === "img" ? el : el.querySelector("img");
+  if (!img) return [];
+  const kept = addressesIn(img, ["data-src", "data-original", "src"]);
+  if (kept.length) return kept;
+  const repaired = repairedAddress(img);
+  return repaired ? [repaired] : [];
+}
 
 /**
  * Readability puts a noscript picture in its placeholder's place only when the noscript holds a single img right
@@ -502,7 +537,8 @@ const ZOOM_LABEL = /^(?:(?:zoom|in|expand|enlarge|view|open|full|size|image|phot
  * Readability removes every button, and a picture the page opens larger on a click sits in one: the button went
  * with its picture (reflection.ai, linear.app, mastra.ai: every picture of a page). A button holding a picture,
  * the only button among its siblings, with no words of its own but such a label, is replaced by its figures,
- * else by the pictures it shows; wide and narrow crops of one picture (the same description) are kept once. A row
+ * else by the pictures it shows (not a blurred placeholder without an address a body keeps); wide and narrow crops
+ * of one picture (the same description) are kept once. A row
  * of picture buttons (tabs, thumbnails to choose from, reactions) and a button that says something are controls.
  */
 function unwrapPictureButtons(document: Doc) {
@@ -515,7 +551,7 @@ function unwrapPictureButtons(document: Doc) {
     };
     const figures = [...button.querySelectorAll("figure")].filter((figure) => outermost(figure, "figure") && !unseenWithin(figure, button));
     const shown = figures.length ? figures
-      : [...button.querySelectorAll("picture, img")].filter((el) => outermost(el, "picture") && !unseenWithin(el, button));
+      : [...button.querySelectorAll("picture, img")].filter((el) => outermost(el, "picture") && !unseenWithin(el, button) && keptAddresses(el).length);
     if (!shown.length) continue;
     const rest = button.cloneNode(true) as El;
     for (const el of rest.querySelectorAll('figure, picture, img, svg, style, script, [aria-hidden="true"]')) el.remove();
@@ -529,6 +565,44 @@ function unwrapPictureButtons(document: Doc) {
       descriptions.add(description);
       return true;
     }));
+  }
+}
+
+/** The words of an element's class and id: "verge-theme-image__dark" and "darkMode" both have "dark". */
+const nameWords = (el: El): string[] => `${el.getAttribute("class") ?? ""} ${el.getAttribute("id") ?? ""}`
+  .replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/);
+
+/**
+ * A figure can hold one picture twice, a version for each colour theme of the page, the dark one hidden while the
+ * light one shows (theverge.com's charts): kept now that the box around it stays, both showed. Among a figure's
+ * sibling pictures with the same description, one named for the dark theme beside one named for the light, shown
+ * and with an address a body keeps, is that picture's dark version and goes; a light version the page hides
+ * leaves the dark one as the picture. Different pictures can share a description (examples of one class), so a
+ * description alone decides nothing.
+ */
+function dropDarkThemeVersions(document: Doc) {
+  for (const figure of document.querySelectorAll("figure")) {
+    const groups = new Map<El, Map<string, El[]>>();
+    for (const picture of figure.querySelectorAll("img, picture")) {
+      const parent = picture.parentElement;
+      if (!parent || (picture.localName === "img" && parent.localName === "picture")) continue;
+      const description = collapsed((picture.localName === "img" ? picture : picture.querySelector("img"))?.getAttribute("alt"));
+      if (!description) continue;
+      const byDescription = groups.get(parent) ?? new Map<string, El[]>();
+      byDescription.set(description, [...(byDescription.get(description) ?? []), picture]);
+      groups.set(parent, byDescription);
+    }
+    for (const byDescription of groups.values()) {
+      for (const versions of byDescription.values()) {
+        const named = (word: string) => versions.filter((el) => nameWords(el).includes(word));
+        const light = named("light").filter((el) => {
+          // Seen from the image that gives the picture its address, a <picture>'s own img included.
+          const img = el.localName === "img" ? el : el.querySelector("img");
+          return !!img && !unseenWithin(img, figure) && keptAddresses(img).length > 0;
+        });
+        if (light.length) for (const el of named("dark")) if (!light.includes(el)) el.remove();
+      }
+    }
   }
 }
 
@@ -691,6 +765,7 @@ export function readableDocument(document: Doc, url: string, rules: PageRules = 
   markScreenReaderLinkText(document);
   showNoscriptPictures(document);
   unwrapPictureButtons(document);
+  dropDarkThemeVersions(document);
   keepAsidesAmongParagraphs(document);
   dropAuthorCards(document);
   keepMediaAmongParagraphs(document);

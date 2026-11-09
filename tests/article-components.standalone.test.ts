@@ -155,6 +155,19 @@ test("a figure in a box among the paragraphs stays with its caption: a caption c
   const linked = '<div class="wp-block-query is-layout-flow"><figure><a href="/three"><img src="https://cdn.publisher.example/three.jpg" alt=""></a></figure><figure><a href="/four"><img src="https://cdn.publisher.example/four.jpg" alt=""></a></figure><p><a href="/policy">More from Government &amp; Policy</a></p></div>';
   const hidden = '<div hidden><figure><img src="https://cdn.publisher.example/unseen-1.jpg" alt=""></figure><figure><img src="https://cdn.publisher.example/unseen-2.jpg" alt=""></figure></div>';
   const roles = ["navigation", "dialog"].map((role) => `<div role="${role}"><figure><a href="/${role}-story"><img src="https://cdn.publisher.example/${role}-thumb.jpg" alt=""></a><figcaption>Another story about maintenance</figcaption></figure></div>`).join("");
+  // A figure's light and dark versions of one chart (theverge.com): one picture; different pictures sharing a description stay.
+  const themed = extract('<div class="duet--article--article-body-component"><figure class="verge-theme-image"><img class="verge-theme-image__light" src="https://cdn.publisher.example/mentions_LIGHT-MODE.png" alt="Bar graph showing mentions of AI in earnings calls."><img class="verge-theme-image__dark" src="https://cdn.publisher.example/mentions_DARK-MODE.png" alt="Bar graph showing mentions of AI in earnings calls."></figure></div><figure><div class="examples"><img src="https://cdn.publisher.example/car-1.webp" alt="sports car"><img src="https://cdn.publisher.example/car-3.webp" alt="sports car"></div><figcaption>Images the neuron responds to.</figcaption></figure>').html;
+  assert.equal(count(pictures(themed), "mentions_LIGHT-MODE.png"), 1);
+  assert.equal(count(pictures(themed), "mentions_DARK-MODE.png"), 0, "the dark theme's version");
+  for (const file of ["car-1.webp", "car-3.webp"]) assert.equal(count(pictures(themed), file), 1, file);
+  // A light version the page does not show leaves the dark one as the picture.
+  for (const unseen of ["hidden", 'aria-hidden="true"', 'style="display: none"']) {
+    const darkOnly = extract(`<div class="chart-box"><figure><img class="chart__light" ${unseen} src="https://cdn.publisher.example/usage-light.png" alt="Weekly usage by region."><img class="chart__dark" src="https://cdn.publisher.example/usage-dark.png" alt="Weekly usage by region."></figure></div>`).html;
+    assert.equal(count(pictures(darkOnly), "usage-dark.png"), 1, unseen);
+  }
+  // The same with the theme named on a <picture> and the light image inside it hidden.
+  const pictureDark = extract('<div class="chart-box"><figure><picture class="chart__light"><img hidden src="https://cdn.publisher.example/cost-light.png" alt="Cost per million tokens."></picture><picture class="chart__dark"><img src="https://cdn.publisher.example/cost-dark.png" alt="Cost per million tokens."></picture></figure></div>').html;
+  assert.equal(count(pictures(pictureDark), "cost-dark.png"), 1);
   const others = extract(related + linked + hidden + roles);
   assert.deepEqual(pictures(others.html), []);
   assert.doesNotMatch(others.text, /story about maintenance|Government/);
@@ -175,9 +188,14 @@ test("a picture in a button that opens it larger stays; a row of picture buttons
   const linear = '<figure data-wide="true"><button type="button" tabindex="0" aria-label="Zoom image" class="o2aWCW_wrapper S36ykG_root"><div class="hide-mobile"><img src="https://cdn.publisher.example/notification-wide.png" alt=" Notification on phone home screen." width="3904" height="1800" loading="lazy"></div><div class="show-mobile"><img src="https://cdn.publisher.example/notification-narrow.png" alt=" Notification on phone home screen." width="2352" height="1480" loading="lazy"></div></button></figure>';
   const tessl = '<figure class="css-fng5s2"><div class="css-asu0hi"><button data-part="trigger" aria-haspopup="dialog" type="button" class="chakra-dialog__trigger css-12fn3vm"><img alt="Review is not the bottleneck" height="638" width="1182" src="https://cdn.publisher.example/review-risk.png"><style>.css-ohnvri{display:flex}</style><div class="chakra-stack css-ohnvri"><svg></svg>Zoom</div></button></div></figure>';
   const mastra = '<p><button class="cursor-zoom-in block w-full text-left"><img src="https://cdn.publisher.example/workflow.png" width="800" height="400" alt="The workflow graph"></button></p>';
-  const body = extract(`${reflection}<p>${prose}</p>${linear}<p>${prose}</p>${tessl}<p>${prose}</p>${mastra}`);
+  const blurred = '<figure><button type="button" aria-label="Zoom image"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" alt="A marketplace map prototype"><img src="https://cdn.publisher.example/map-prototype.png" alt="A marketplace map prototype"></button></figure>';
+  const body = extract(`${reflection}<p>${prose}</p>${linear}<p>${prose}</p>${tessl}<p>${prose}</p>${mastra}<p>${prose}</p>${blurred}`);
   const srcs = pictures(body.html);
-  for (const file of ["safety-results.png", "notification-wide.png", "review-risk.png", "workflow.png"]) assert.equal(count(srcs, file), 1, file);
+  for (const file of ["safety-results.png", "notification-wide.png", "review-risk.png", "workflow.png", "map-prototype.png"]) assert.equal(count(srcs, file), 1, file);
+  assert.equal(srcs.filter((src) => src.startsWith("data:")).length, 0, "a blurred placeholder is no picture of the button's");
+  // A lazy picture Readability gives its address back to (an attribute naming the image file, no src yet).
+  const lazy = '<figure><button type="button" aria-label="Zoom image"><img data-lazy-src="https://cdn.publisher.example/lazy-chart.png" alt="A lazily loaded chart"></button></figure>';
+  assert.equal(count(pictures(extract(lazy).html), "lazy-chart.png"), 1);
   assert.equal(count(srcs, "zoom-in.svg"), 0, "the zoom icon the page hides from screen readers");
   assert.equal(count(srcs, "notification-narrow.png"), 0, "the narrow crop of the same picture");
   assert.doesNotMatch(body.text, /Zoom/);
@@ -217,6 +235,10 @@ test("a picture the page writes only for readers without scripts stands in for t
   const commas = "<div class=\"lazy-holder\"><img class=\"lazy-image\" src=\"data:image/svg+xml,%3C%3Fxml version='1.0' encoding='UTF-8'%3F%3E%3Csvg xmlns='http://www.w3.org/2000/svg' width='1' height='1'/%3E\" alt=\"Traders on the exchange floor\"><noscript><img class=\"no-script\" src=\"https://cdn.publisher.example/exchange.jpg?width=600\" alt=\"Traders on the exchange floor\"></noscript></div>";
   const shared = extract(`${lazy("first-lazy")}<p>${prose}</p>${lazy("second-lazy")}<p>${prose}</p>${placeholded("first-dato")}${placeholded("second-dato")}<p>${prose}</p>${srcsetOnly}<p>${prose}</p>${commas}`).html;
   for (const file of ["first-lazy.png", "second-lazy.png", "first-dato.jpg", "second-dato.jpg", "srcset-only.jpg", "exchange.jpg"]) assert.equal(count(pictures(shared), file), 1, file);
+  // A lazy placeholder Readability does not repair (an SVG data: src, no lazy class): the noscript before it stands in.
+  const unrepaired = extract('<a href="https://cdn.publisher.example/svg-lazy.png"><noscript><img src="https://cdn.publisher.example/svg-lazy.png" alt="Throughput by batch size"></noscript><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=" data-lazy-src="https://cdn.publisher.example/svg-lazy.png" alt="Throughput by batch size"></a>').html;
+  assert.equal(count(pictures(unrepaired), "svg-lazy.png"), 1);
+  assert.equal(pictures(unrepaired).filter((src) => src.startsWith("data:")).length, 0, "no placeholder");
   assert.equal(pictures(shared).filter((src) => src.startsWith("data:")).length, 0, "no placeholder");
 });
 

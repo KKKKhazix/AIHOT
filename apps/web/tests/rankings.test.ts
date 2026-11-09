@@ -3,6 +3,7 @@ import { chromium, expect, type Browser } from "@playwright/test";
 import { fakeApi, startWebServer, visit, type WebServer } from "./web-server.ts";
 const common = { items: [], sourceUpdated: null, fetchedAt: null, failed: false };
 const boards = [
+  { ...common, id: "family:48", name: "48小时", source: "家友榜", url: "/all", items: [{ rank: 1, title: "家友动态", url: "/items/example", heat: "90 分", origin: "来源" }] },
   { ...common, id: "tunbang:all", name: "全网热搜总榜", source: "豚榜", url: "https://tunbang.com/hot/", items: [{ rank: 1, title: "测试热点", url: "https://example.org/", heat: "10万", origin: "微博" }] },
   { ...common, id: "wxrank:article", name: "热门文章", source: "微小榜", url: "https://wxrank.com/rank/article", unavailable: "榜单接口需要登录或授权，暂未接入。" },
 ];
@@ -13,7 +14,10 @@ for (const width of [393, 1200]) test(`rankings search and selection at ${width}
   const page = await browser.newPage({ viewport: { width, height: 850 } });
   try {
     await visit(page, `${web.origin}/rankings`);
-    await expect(page.getByRole("link", { name: "测试热点 ↗" })).toBeVisible();
+    const article = page.getByRole("link", { name: "家友动态", exact: true });
+    await expect(article).toBeVisible();
+    await expect(article).toHaveAttribute("href", "/items/example");
+    await expect(page.getByText("90 分")).toBeVisible();
     if (width < 961) await page.getByRole("button", { name: /选择榜单/ }).click();
     await page.getByRole("searchbox", { name: "搜索榜单或来源" }).fill("微小榜");
     await page.getByRole("button", { name: "热门文章" }).click();

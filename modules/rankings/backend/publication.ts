@@ -6,14 +6,14 @@ import { topBoards } from "./tophub.ts";
 
 export interface Ranking { id: string; name: string; source: string; url: string; items: Entry[]; sourceUpdated: string | null; fetchedAt: string | null; failed: boolean; unavailable?: string }
 
-/** All publicly listed scored articles in a rolling window, without collapsing different reports. */
+/** Publicly listed scored articles by publication time in a rolling window, without collapsing different reports. */
 export async function loadFamilyRanking(hours: number, now: Date): Promise<Entry[]> {
   const from = new Date(now.getTime() - hours * 60 * 60 * 1000);
   const rows = await sql<{ id: string; title: string; score: number; source_name: string }[]>`
     SELECT p.article_id AS id, p.title, p.score, s.name AS source_name
     FROM publications p JOIN sources s ON s.id = p.source_id
-    WHERE ${listedCondition(now)} AND p.score IS NOT NULL AND p.timeline_at >= ${from} AND p.timeline_at <= ${now}
-    ORDER BY p.score DESC, p.timeline_at DESC, p.article_id DESC LIMIT 100`;
+    WHERE ${listedCondition(now)} AND p.score IS NOT NULL AND p.published_at >= ${from} AND p.published_at <= ${now}
+    ORDER BY p.score DESC, p.published_at DESC, p.article_id DESC LIMIT 100`;
   return rows.map((row, index) => ({ rank: index + 1, title: row.title, url: `/items/${encodeURIComponent(row.id)}`, heat: `${row.score} 分`, origin: publicSourceName(row.source_name) }));
 }
 

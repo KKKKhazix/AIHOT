@@ -4,14 +4,15 @@ import { sql } from "@aihot/backend/db";
 import { loadFamilyRanking, loadRankings } from "../backend/publication.ts";
 
 const now = new Date("2026-11-09T12:00:00Z");
-test("family rankings use public scored articles within each rolling window", async () => {
+test("family rankings use publication time for the rolling window and score ties", async () => {
   try {
     await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES ('family-test','测试来源','rss','T2','editorial')`;
-    const add = async (id: string, hours: number, score: number | null, visibility = "public", eligible = true, selected = false, visibleAfter: Date | null = null) => {
+    const add = async (id: string, hours: number, score: number | null, visibility = "public", eligible = true, selected = false, visibleAfter: Date | null = null, publishedHours: number | null = hours) => {
       const at = new Date(now.getTime() - hours * 3600000);
+      const published = publishedHours === null ? null : new Date(now.getTime() - publishedHours * 3600000);
       await sql`INSERT INTO articles (id,source_id,identity_key,url,title,discovered_at,timeline_at) VALUES (${id},'family-test',${id},${`https://example.org/${id}`},${id},${at},${at})`;
-      await sql`INSERT INTO publications (article_id,source_id,title,url,channel,score,visibility,eligible,selected,visible_after,discovered_at,timeline_at,sort_at)
-        VALUES (${id},'family-test',${id},${`https://example.org/${id}`},'news',${score},${visibility},${eligible},${selected},${visibleAfter},${at},${at},${at})`;
+      await sql`INSERT INTO publications (article_id,source_id,title,url,channel,score,visibility,eligible,selected,visible_after,published_at,discovered_at,timeline_at,sort_at)
+        VALUES (${id},'family-test',${id},${`https://example.org/${id}`},'news',${score},${visibility},${eligible},${selected},${visibleAfter},${published},${at},${at},${at})`;
     };
     await add('recent', 1, 85);
     await add('tie-new', 2, 90);
@@ -23,7 +24,11 @@ test("family rankings use public scored articles within each rolling window", as
     await add('withdrawn', 1, 100, 'withdrawn');
     await add('ineligible', 1, 100, 'public', false);
     await add('unscored', 1, null);
+    await add('old-publication', 1, 100, 'public', true, false, null, 169);
+    await add('missing-publication', 1, 100, 'public', true, false, null, null);
+    await add('future-publication', 1, 100, 'public', true, false, null, -1);
     await add('not-released', 1, 100, 'public', true, true, new Date(now.getTime() + 60000));
+    await sql`UPDATE publications SET timeline_at = ${new Date(now.getTime() - 10 * 3600000)} WHERE article_id = 'tie-new'`;
     const recent = await loadFamilyRanking(48, now);
     assert.deepEqual(recent.map(x => x.title), ['tie-new', 'tie-old', 'recent']);
     assert.equal(recent[0].url, '/items/tie-new');

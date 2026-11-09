@@ -3412,6 +3412,7 @@
       "kind": "rss",
       "config": {
         "feedUrl": "http://43.133.78.61:8080/juejin/aicoding",
+        "summaryIsBody": true,
         "_aihot": {
           "initialBackfillLimit": 8
         }

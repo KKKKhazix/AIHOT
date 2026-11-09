@@ -4,9 +4,11 @@
 // Reader warnings must remain usable; rejecting a paid page must retain and reuse its receipt.
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
+import { parseHTML } from "linkedom";
 import http from "node:http";
 import { after, before, test } from "node:test";
 import { config } from "@aihot/backend/config";
+import { DEPLOYMENT } from "@aihot/site";
 import { closeDb, sql } from "@aihot/backend/db";
 import { extractArticleBody, extractFromUrl, isSignInRedirect, isSignInUrl, readable } from "@aihot/backend/content/extract";
 import { upsertMaterial } from "@aihot/backend/content/materials";
@@ -39,6 +41,18 @@ const server = http.createServer((req, res) => {
   if (req.url?.startsWith("/reader/")) {
     readerHits++;
     // Like the real reader: what the request names to leave out never reaches the answer.
+    if (req.url.endsWith("/split-article")) {
+      const { document } = parseHTML(`<html><body><a href="#main" class="reader-chrome">Skip to content</a>
+        <main id="main"><article><header><h1 class="reader-chrome">Publisher headline</h1>
+          <div><a href="/photo"><img src="/photo.jpg"></a><p>Lead photo credit</p></div>
+        </header><div class="reader-chrome">Text settings</div>
+        <div><p>The opening paragraph. ${prose}</p></div>
+        <div class="reader-chrome">Advertisement</div>
+        <div><p>The ending paragraph. ${prose}</p>
+          <div class="reader-chrome">Log in to comment</div></div></article><div class="reader-chrome">Prev story</div></main></body></html>`);
+      for (const el of document.querySelectorAll(String(req.headers["x-remove-selector"]))) el.remove();
+      return void res.end(`Title: Publisher headline\n\nMarkdown Content:\n${document.body.innerHTML}`);
+    }
     if (req.url.endsWith("/with-chrome")) {
       const banner = req.headers["x-remove-selector"]?.toString().includes("[role=alertdialog]") ? "" : `${consent}\n\n`;
       return void res.end(`Title: A page behind a consent banner\n\nMarkdown Content:\n${banner}${prose}`);
@@ -147,4 +161,27 @@ test("the sign-in paths common sites use are sign-in paths; pages that only carr
   assert.equal(isSignInRedirect("https://x.com/post/1", "https://x.com/member/login.php"), true);
   for (const path of ["/authorized-retailer", "/authors", "/sso-products", "/login.company"]) assert.equal(isSignInUrl(`https://x.com${path}`), false, path);
   assert.equal(isSignInRedirect("https://x.com/users/sign_in", "https://x.com/users/sign_in/"), false);
+});
+
+
+test("a rendered article uses only its host's extra chrome selector and keeps the article's sections and photo", async () => {
+  const edition = DEPLOYMENT as { renderedArticleRemoveSelectors?: Record<string, string> };
+  const previous = edition.renderedArticleRemoveSelectors;
+  try {
+    const url = `${base}/${T}/split-article`;
+    const subject = `probe:${T}:split-article`;
+    edition.renderedArticleRemoveSelectors = { "other.example": ".reader-chrome" };
+    const unmatched = await extractFromUrl(url, subject);
+    assert.match(unmatched!.text, /Prev story/, "another host's rule does not apply");
+    edition.renderedArticleRemoveSelectors = { "127.0.0.1": ".reader-chrome" };
+    const got = await extractFromUrl(url, subject);
+    assert.equal(got?.via, "jina");
+    assert.match(got!.text, /The opening paragraph/);
+    assert.match(got!.text, /The ending paragraph/);
+    assert.match(got!.text, /Lead photo credit/);
+    assert.match(got!.html, /photo\.jpg/);
+    assert.doesNotMatch(got!.text, /Publisher headline|Skip to content|Text settings|Advertisement|Log in|Prev story/);
+  } finally {
+    edition.renderedArticleRemoveSelectors = previous;
+  }
 });

@@ -2,6 +2,7 @@
 // Jina Reader is the budgeted fallback for pages that only render in a browser.
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
+import { DEPLOYMENT } from "@aihot/site";
 import { sql } from "../db.ts";
 import { guardedFetch, languageHeaders } from "../lib/http-fetch.ts";
 import { assertPageContent, contentDocument, UnavailablePageError } from "../lib/page-content.ts";
@@ -822,7 +823,8 @@ export async function extractFromUrl(url: string, subject: string, rules: PageRu
   if (opts.paidFallback === false) return null;
   try {
     // The rendered text carries none of the page's metadata, so a body read this way has no cover.
-    const page = await jinaRead(target.href, { purpose: "body_fallback", subject, removeSelector: PAGE_CHROME });
+    const extra = (DEPLOYMENT as { renderedArticleRemoveSelectors?: Record<string, string> }).renderedArticleRemoveSelectors?.[target.hostname];
+    const page = await jinaRead(target.href, { purpose: "body_fallback", subject, removeSelector: extra ? `${PAGE_CHROME},${extra}` : PAGE_CHROME });
     const html = markdownBody(page.markdown, url);
     const text = stripTags(html);
     if (text.length < MIN_BODY_CHARS) return null;

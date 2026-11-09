@@ -9,3 +9,5 @@ apps/web/.react-router
 .git
 .github
 *.log
+
+backups

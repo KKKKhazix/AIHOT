@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { IntentLink } from "../ui/IntentLink";
+import { useContainedScroll } from "../ui/Page";
 import { SITE } from "@aihot/site";
 import { RingMark, Wordmark } from "@aihot/site/brand/Logo.tsx";
 import { useChangelogSeen } from "../../lib/local-state";
@@ -46,8 +47,9 @@ function SideLink({ item, dot, active }: { item: NavItem; dot: boolean; active: 
 function Rail({ dot }: { dot: boolean }) {
   const { pathname } = useLocation();
   const { tab, home } = useScreen();
+  const [railRef, railOverscroll] = useContainedScroll<HTMLElement>();
   return (
-    <aside className="scrollbar-thin sticky top-0 hidden h-dvh w-16 shrink-0 flex-col items-center border-r border-line bg-sidebar px-1.5 pb-[max(14px,env(safe-area-inset-bottom))] pt-5 lg:flex wide:hidden short:overflow-y-auto short:pt-3">
+    <aside ref={railRef} className={`scrollbar-thin sticky top-0 hidden h-dvh w-16 shrink-0 flex-col items-center border-r border-line bg-sidebar px-1.5 pb-[max(14px,env(safe-area-inset-bottom))] pt-5 lg:flex wide:hidden short:overflow-y-auto short:pt-3 ${railOverscroll}`}>
       <Link to="/" className="mb-3 flex size-11 shrink-0 items-center justify-center text-accent short:mb-1" aria-label={`${SITE.name} 首页`}>
         <RingMark className="size-7" />
       </Link>
@@ -80,16 +82,18 @@ function Rail({ dot }: { dot: boolean }) {
 export function Sidebar({ changelogVersion }: { changelogVersion: string | null }) {
   const dot = useChangelogDot(changelogVersion);
   const { pathname } = useLocation();
+  const [columnRef, columnOverscroll] = useContainedScroll<HTMLElement>();
+  const [navRef, navOverscroll] = useContainedScroll<HTMLElement>();
   // The links scroll between the wordmark and the footer; in a short window the footer would leave them
   // only a few rows, so the whole column scrolls instead.
   return (
     <>
       <Rail dot={dot} />
-      <aside className="scrollbar-thin sticky top-0 hidden h-dvh w-[180px] shrink-0 flex-col border-r border-line bg-sidebar px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-6 wide:flex short:overflow-y-auto">
+      <aside ref={columnRef} className={`scrollbar-thin sticky top-0 hidden h-dvh w-[180px] shrink-0 flex-col border-r border-line bg-sidebar px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-6 wide:flex short:overflow-y-auto ${columnOverscroll}`}>
         <Link to="/" className="mb-4 flex h-[50px] shrink-0 items-center px-1 text-ink" aria-label={`${SITE.name} 首页`}>
           <Wordmark size={26} />
         </Link>
-        <nav className="scrollbar-thin -mx-1 flex-1 overflow-y-auto px-1 short:flex-none short:overflow-visible" aria-label="主导航">
+        <nav ref={navRef} className={`scrollbar-thin -mx-1 flex-1 overflow-y-auto px-1 short:flex-none short:overflow-visible ${navOverscroll}`} aria-label="主导航">
           {sidebar().map((section) => {
             // Only the most specific entry of a section is lit, so a detail page does not light the list above it too.
             const lit = activeSidebarItem(section.items, pathname);

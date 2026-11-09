@@ -237,6 +237,11 @@ export interface ServerModule {
   notices?: Partial<RequestNotices>;
   /** More keys a feedback sender is known by; a ban under any of them holds (operations/feedback.ts). */
   feedbackKeys?: (ip: string) => string[];
+  /**
+   * Its pages, by path ("/free-tokens"), whose reports it handles itself (operations/feedback.ts): they stay out
+   * of the internal chat, and only their screenshots go to Feishu. It wakes whoever handles them (`alerts`).
+   */
+  feedbackPages?: readonly string[];
 }
 
 export function defineServerModule(module: ServerModule): ServerModule {

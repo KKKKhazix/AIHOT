@@ -1,5 +1,6 @@
 import { sql } from "@aihot/backend/db";
-import { parseBoard, parseDirectory, total, type Board } from "./tunbang.ts";
+import { parseBoard, parseDirectory, total, type Board, type Entry } from "./tunbang.ts";
+import { parseWxBoard, wxBoards, wxUrl } from "./wxrank.ts";
 
 async function read(url: string): Promise<string> {
   const response = await fetch(url, { signal: AbortSignal.timeout(15000), redirect: "error", headers: { "user-agent": "EduHOT rankings/1.0" } });
@@ -8,8 +9,7 @@ async function read(url: string): Promise<string> {
   if (html.length > 2_000_000) throw new Error("response too large");
   return html;
 }
-async function save(board: Board, html: string) {
-  const { items, sourceUpdated } = parseBoard(html);
+async function save(board: Board, { items, sourceUpdated }: { items: Entry[]; sourceUpdated: string | null }) {
   await sql`INSERT INTO external_rankings (id,name,source,url,items,source_updated,fetched_at,attempted_at,failed)
     VALUES (${board.id},${board.name},${board.source},${board.url},${sql.json(items as never)},${sourceUpdated},now(),now(),false)
     ON CONFLICT (id) DO UPDATE SET name=excluded.name, source=excluded.source, url=excluded.url, items=excluded.items, source_updated=excluded.source_updated, fetched_at=now(), attempted_at=now(), failed=false`;
@@ -24,7 +24,7 @@ export async function collectRankings() {
   }
   let failed = 0;
   for (const board of boards) {
-    try { await save(board, board.id === total.id ? html : await read(board.url)); }
+    try { await save(board, parseBoard(board.id === total.id ? html : await read(board.url))); }
     catch (error) {
       failed++;
       await sql`INSERT INTO external_rankings (id,name,source,url,attempted_at,failed) VALUES (${board.id},${board.name},${board.source},${board.url},now(),true)
@@ -33,4 +33,18 @@ export async function collectRankings() {
     }
   }
   return { boards: boards.length, failed };
+}
+
+export async function collectWxRankings() {
+  let failed = 0;
+  for (const board of wxBoards) {
+    try { await save(board, parseWxBoard(board, JSON.parse(await read(wxUrl(board))))); }
+    catch (error) {
+      failed++;
+      await sql`INSERT INTO external_rankings (id,name,source,url,attempted_at,failed) VALUES (${board.id},${board.name},${board.source},${board.url},now(),true)
+        ON CONFLICT (id) DO UPDATE SET attempted_at=now(), failed=true`;
+      console.error("wxrank collection failed", board.id, error);
+    }
+  }
+  return { boards: wxBoards.length, failed };
 }

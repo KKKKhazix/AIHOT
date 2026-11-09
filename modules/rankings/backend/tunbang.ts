@@ -1,7 +1,7 @@
 import { load } from "cheerio";
 
 export interface Board { id: string; name: string; source: string; url: string }
-export interface Entry { rank: number; title: string; url: string | null; heat: string; origin: string }
+export interface Entry { rank: number; title: string; url: string | null; heat: string; origin: string; metrics?: string }
 export const total: Board = { id: "tunbang:all", name: "全网热搜总榜", source: "豚榜", url: "https://tunbang.com/hot/" };
 export const otherBoards: Board[] = [
   { id: "wxrank:account", name: "热门公众号", source: "微小榜", url: "https://wxrank.com/rank/account" },

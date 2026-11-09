@@ -15,6 +15,8 @@ export interface NavItem {
   end?: boolean;
   /** Shows the unread dot while the changelog has news. */
   changelog?: boolean;
+  /** Place a module entry after an existing item in the same section. */
+  after?: string;
 }
 
 const SECTIONS: Array<{ title: string; items: NavItem[] }> = [
@@ -69,7 +71,13 @@ export function sidebar(): Array<{ title: string; items: NavItem[] }> {
   for (const m of webModules()) {
     if (!m.sidebar) continue;
     const section = sections.find((s) => s.title === m.sidebar!.section);
-    if (section) section.items.push(...m.sidebar.items);
+    if (section) {
+      for (const item of m.sidebar.items) {
+        const index = item.after ? section.items.findIndex((i) => i.to === item.after) : -1;
+        if (index >= 0) section.items.splice(index + 1, 0, item);
+        else section.items.push(item);
+      }
+    }
     else sections.push({ title: m.sidebar.section, items: [...m.sidebar.items] });
   }
   return [...sections, more];

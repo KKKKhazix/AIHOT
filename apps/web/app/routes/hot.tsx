@@ -282,6 +282,8 @@ export default function HotPage() {
         )}
       </header>
 
+      <div className="mb-4 lg:hidden"><IntentLink to="/rankings" className="block rounded-card border border-line bg-surface px-4 py-3 text-sm font-semibold text-accent">浏览榜单大全 →</IntentLink></div>
+
       {!lead ? (
         <div className="card rounded-sheet">
           <EmptyState title="暂时没有热点">还没有足够多来源共同讨论的事件。</EmptyState>

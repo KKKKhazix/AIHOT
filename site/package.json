@@ -11,5 +11,8 @@
     "./modules/web": "./modules/web.ts",
     "./pages/*": "./pages/*",
     "./brand/*": "./brand/*"
+  },
+  "dependencies": {
+    "@aihot/rankings": "*"
   }
 }

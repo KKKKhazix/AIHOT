@@ -1,0 +1,1 @@
+{"name":"@aihot/rankings","private":true,"type":"module","exports":{"./module":"./module.ts","./server":"./server.ts","./web":"./web.tsx"},"dependencies":{"cheerio":"1.2.0"}}

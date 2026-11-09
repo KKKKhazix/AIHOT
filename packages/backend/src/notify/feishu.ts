@@ -50,6 +50,13 @@ async function uploadImage(data: Buffer, filename: string): Promise<string> {
   return json.data.image_key;
 }
 
+/** A picture this app uploaded, read back by its key (Feishu gives an app only its own uploads). */
+export async function downloadImage(imageKey: string): Promise<Buffer> {
+  const res = await fetch(`${API}/im/v1/images/${encodeURIComponent(imageKey)}`, { headers: { authorization: `Bearer ${await tenantToken()}` }, signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`feishu image: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
 async function sendToChat(chatId: string, msgType: "text" | "post" | "interactive", content: unknown): Promise<string> {
   const res = await fetch(`${API}/im/v1/messages?receive_id_type=chat_id`, {
     method: "POST",
@@ -277,8 +284,9 @@ async function screenshotFor(fb: { id: number; screenshot_key: string | null; cr
 /**
  * Forwards one feedback to the internal chat, with its screenshot. Until that succeeds the feedback keeps
  * the reason in forward_error, and the forwarding sweep (operations/feedback.ts) tries it again.
+ * `tell` false: the chat is not told, and only the screenshot goes to Feishu ("kept").
  */
-export async function forwardFeedbackToFeishu(id: number): Promise<"sent" | "disabled"> {
+export async function forwardFeedbackToFeishu(id: number, tell = true): Promise<"sent" | "kept" | "disabled"> {
   if (!feishuInternalEnabled()) return "disabled";
   const chat = credential("integrations", "FEISHU_INTERNAL_CHAT_ID");
   if (!chat) return "disabled";
@@ -287,6 +295,10 @@ export async function forwardFeedbackToFeishu(id: number): Promise<"sent" | "dis
   if (!fb) return "disabled";
   try {
     const shot = await screenshotFor(fb);
+    if (!tell) {
+      await sql`UPDATE feedback SET forward_error = NULL WHERE id = ${id}`;
+      return "kept";
+    }
     const paragraphs: unknown[][] = [
       [{ tag: "text", text: fb.content }],
       [{ tag: "text", text: `页面：${fb.page_url ?? "—"}` }],

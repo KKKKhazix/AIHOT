@@ -8,6 +8,8 @@
 // idea: handling names a suggestion after the names in it, and one missing would get a second name.
 // Before a report is pushed a cheap model reads it: one with nothing in it is marked spam and not pushed,
 // and a model that cannot answer never holds a report back.
+// A report from a page a module takes itself stays out of the chat; its screenshot still goes to Feishu, and
+// whoever handles a report reads the screenshot back from wherever it is.
 import { pointModels, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
@@ -15,12 +17,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import sharp from "sharp";
-import { listFeedback, updateFeedback } from "@aihot/backend/admin/feedback";
+import { listFeedback, readFeedbackScreenshot, updateFeedback } from "@aihot/backend/admin/feedback";
 import { Conflict } from "@aihot/backend/audit";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { forwardFeedbackToFeishu } from "@aihot/backend/notify/feishu";
-import { forwardPendingFeedback, submitFeedback } from "@aihot/backend/operations/feedback";
+import { defineServerModule, installModules } from "@aihot/backend/modules";
+import { forwardPendingFeedback, sniffImageType, submitFeedback } from "@aihot/backend/operations/feedback";
 import { dailyRetention } from "@aihot/backend/operations/retention";
 
 const T = tag();
@@ -30,7 +33,7 @@ process.env.FEISHU_APP_SECRET = "test-secret";
 process.env.FEISHU_INTERNAL_CHAT_ID = "oc_test";
 
 // Feishu's message app, answered here: uploads and sends fail while the switches say so.
-const feishu = { uploadFails: false, uploadRefused: false, uploads: 0, sendFails: false, sent: [] as Array<{ title: string; content: unknown[][] }> };
+const feishu = { uploadFails: false, uploadRefused: false, uploads: 0, uploaded: null as Buffer | null, sendFails: false, sent: [] as Array<{ title: string; content: unknown[][] }> };
 const MODEL_URL = "https://model.test/v1";
 const model = { noise: false, fails: false, calls: 0 };
 const realFetch = globalThis.fetch;
@@ -46,8 +49,11 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (url.endsWith("/im/v1/images")) {
     feishu.uploads += 1;
     if (feishu.uploadRefused) return Response.json({ code: 234011, msg: "Can't regonise the image format." }, { status: 400 });
-    return Response.json(feishu.uploadFails ? { code: 99, msg: "upload broken" } : { code: 0, data: { image_key: `img_${T}` } });
+    if (feishu.uploadFails) return Response.json({ code: 99, msg: "upload broken" });
+    feishu.uploaded = Buffer.from(await ((init!.body as FormData).get("image") as Blob).arrayBuffer());
+    return Response.json({ code: 0, data: { image_key: `img_${T}` } });
   }
+  if (url.endsWith(`/im/v1/images/img_${T}`)) return new Response(new Uint8Array(feishu.uploaded!), { headers: { "content-type": "image/png" } });
   if (url.includes("/im/v1/messages")) {
     if (feishu.sendFails) return Response.json({ code: 99, msg: "send broken" });
     const content = JSON.parse(JSON.parse(String(init?.body)).content).zh_cn;
@@ -225,6 +231,49 @@ test("a report the model reads as empty is marked spam and not pushed; a real on
     assert.ok(asked.some((text) => text.includes("这里不对") && text.includes('"has_screenshot":true')), "the model knows a picture came with the words");
   } finally {
     config.modelCallsEnabled = false;
+  }
+});
+
+test("a report from a page a module takes itself stays out of the chat; its screenshot still goes to Feishu and is read back from there", async () => {
+  installModules([defineServerModule({ name: "deals", feedbackPages: ["/deals"] })]);
+  try {
+    const from = async (pageUrl: string) => {
+      delete process.env.FEISHU_INTERNAL_ENABLED;
+      const shot = await sharp({ create: { width: 4, height: 4, channels: 3, background: { r: ++n, g: 200, b: 9 } } }).jpeg().toBuffer();
+      const { id } = await submitFeedback({ content: `从页面提的反馈 ${T}-${n}`, pageUrl, screenshot: { mime: "image/jpeg", data: shot }, ip: `198.51.100.${n}`, userAgent: "Firefox" });
+      process.env.FEISHU_INTERNAL_ENABLED = "true";
+      await olderBy(id, "10 minutes");
+      const [row] = await sql<{ screenshot_key: string }[]>`SELECT screenshot_key FROM feedback WHERE id = ${id}`;
+      return { id, file: path.join(config.dataDir, "feedback-screenshots", row!.screenshot_key.slice("local:".length)) };
+    };
+    const read = async (id: number) => {
+      const png = await readFeedbackScreenshot(id);
+      return png && { type: sniffImageType(png), width: (await sharp(png).metadata()).width };
+    };
+
+    feishu.uploadFails = true;
+    const taken = await from(`${config.siteUrl}/deals?tab=daily`);
+    await forwardPendingFeedback();
+    assert.ok((await state(taken.id)).forward_error, "the screenshot still waits for Feishu");
+    assert.deepEqual(await read(taken.id), { type: "image/png", width: 4 }, "read from the file while it waits here");
+    feishu.uploadFails = false;
+
+    const elsewhere = await from(`${config.siteUrl}/deals/more`);
+    await forwardPendingFeedback();
+    assert.equal(sentFor(taken.id), undefined, "the owner's chat is not told");
+    assert.deepEqual(await state(taken.id), { forwarded: false, forward_error: null, screenshot_key: `feishu:img_${T}` });
+    assert.equal(existsSync(taken.file), false, "only the Feishu image key is kept");
+    assert.deepEqual(await read(taken.id), { type: "image/png", width: 4 }, "read back from Feishu by its key");
+    assert.ok(sentFor(elsewhere.id), "another page's report goes to the chat as before");
+
+    const [sent, uploads] = [feishu.sent.length, feishu.uploads];
+    await forwardPendingFeedback();
+    assert.deepEqual([feishu.sent.length, feishu.uploads], [sent, uploads], "settled: the sweep leaves it alone");
+
+    const { id: plain } = await submitFeedback({ content: `没带截图的反馈 ${T}`, ip: "198.51.100.250", userAgent: "Firefox" });
+    assert.equal(await readFeedbackScreenshot(plain), null);
+  } finally {
+    installModules([]);
   }
 });
 

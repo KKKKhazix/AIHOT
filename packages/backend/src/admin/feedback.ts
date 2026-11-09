@@ -1,11 +1,13 @@
 // Feedback handling: list, status, kind and note, the pool of suggested ideas, per-source bans, and
 // deletion on request (privacy notice: feedback material is removed once handling ends or when the sender asks).
 import type { AdminFeedback, BeforeJson } from "@aihot/contracts/admin";
-import { unlink } from "node:fs/promises";
+import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import { config } from "../config.ts";
 import { sql } from "../db.ts";
 import { audit, Conflict } from "../audit.ts";
+import { downloadImage } from "../notify/feishu.ts";
 import { feedbackEmailKey, resetFeedbackSubmissionState } from "../operations/feedback.ts";
 
 export const FEEDBACK_STATUSES = ["new", "triaged", "replied", "resolved", "spam"] as const;
@@ -124,6 +126,18 @@ function screenshotPath(key: string | null): string | null {
 export async function feedbackScreenshot(id: number): Promise<string | null> {
   const [row] = await sql<{ screenshot_key: string | null }[]>`SELECT screenshot_key FROM feedback WHERE id = ${id}`;
   return screenshotPath(row?.screenshot_key ?? null);
+}
+
+/**
+ * The screenshot itself as a PNG, for whoever handles the report: Feishu's copy by its image key, or the file
+ * still waiting here. Null when the report has none, or it is gone.
+ */
+export async function readFeedbackScreenshot(id: number): Promise<Buffer | null> {
+  const [row] = await sql<{ screenshot_key: string | null }[]>`SELECT screenshot_key FROM feedback WHERE id = ${id}`;
+  const key = row?.screenshot_key ?? null;
+  const file = screenshotPath(key);
+  const data = key?.startsWith("feishu:") ? await downloadImage(key.slice("feishu:".length)) : file ? await readFile(file).catch(() => null) : null;
+  return data && sharp(data, { limitInputPixels: 60_000_000 }).png().toBuffer();
 }
 
 /** Removes the sender's material (text, email, page, screenshot) and keeps only the handling record. */

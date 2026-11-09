@@ -18,3 +18,15 @@ export const SELECTION = {
    */
   understandFloor: 50,
 } as const;
+
+// 各内容类型的五项权重，程序按此计算分数；修改时同步评分提示词和评测。
+export const SCORE_WEIGHTS = {
+  policy_change: { sig: 3, nov: 0, cred: 2, reson: 4, act: 1 },
+  education_event: { sig: 2, nov: 1, cred: 2, reson: 4, act: 1 },
+  research_finding: { sig: 2, nov: 1, cred: 3, reson: 3, act: 1 },
+  health_safety_event: { sig: 3, nov: 0, cred: 3, reson: 3, act: 1 },
+  family_issue: { sig: 2, nov: 1, cred: 2, reson: 4, act: 1 },
+  technology_change: { sig: 2, nov: 1, cred: 2, reson: 3, act: 2 },
+  practical_guide: { sig: 1, nov: 0, cred: 2, reson: 3, act: 4 },
+  opinion_analysis: { sig: 1, nov: 1, cred: 2, reson: 4, act: 2 },
+} as const;

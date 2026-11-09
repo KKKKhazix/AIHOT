@@ -1,6 +1,6 @@
 // Failure cases: a successful old response completes newer input; a failed business commit leaves
 // an analysis or completed receipts behind; retry buys responses already saved before that failure.
-import { gate, pointModels, stub, tag } from "./setup.ts";
+import { scoreFixture, gate, pointModels, stub, tag } from "./setup.ts";
 import { analysisStep, SELECTING_SCORE } from "./analysis-steps.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -8,6 +8,7 @@ import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { processArticle } from "@aihot/backend/jobs/content";
 import { stopBoss } from "@aihot/backend/jobs/queue";
+import { contentChain } from "@aihot/backend/admin/content";
 
 const sourceId = `analysis-consistency-${tag()}`;
 let hold: { entered: ReturnType<typeof gate<void>>; release: ReturnType<typeof gate<void>> } | null = null;
@@ -19,9 +20,9 @@ const provider = await stub(async (_hit, request) => {
     await waiting.release.promise;
   }
   const content = step === "prefilter" ? { label: "PASS", reason: "local fixture" }
-    : step === "score" ? { attentionScore: SELECTING_SCORE }
+    : step === "score" ? scoreFixture(SELECTING_SCORE)
     : step === "structure" ? { category: "ai-models", tags: [], subjects: [], scope: "single", fact: null }
-    : { itemType: "model_release", authorRole: "principal", tags: ["模型发布"], editorialJudgment: "模型能力提升", titleZh: "实验室发布新模型", summaryZh: "实验室发布新模型，并公布了评测结果与价格。" };
+    : { itemType: "education_event", authorRole: "principal", tags: ["模型发布"], editorialJudgment: "模型能力提升", titleZh: "实验室发布新模型", summaryZh: "实验室发布新模型，并公布了评测结果与价格。" };
   return { choices: [{ message: { content: JSON.stringify(content) } }] };
 });
 pointModels(provider.url);
@@ -83,6 +84,9 @@ test("a failed analysis commit rolls back its judgement and receipt completion; 
   assert.equal((await processArticle(articleId)).state, "pass");
   assert.equal(provider.hits(), hits, "retry commits the persisted responses without buying them again");
   assert.equal((await sql`SELECT 1 FROM analyses WHERE article_id=${articleId}`).length, 1);
+  const chain = await contentChain(articleId);
+  assert.deepEqual(chain!.analyses[0]!.score_details?.map(d => d.total), [SELECTING_SCORE, SELECTING_SCORE]);
+  assert.equal(chain!.analyses[0]!.score_details?.[0]?.weights.reson, 4);
   const completed = await sql`SELECT id,status FROM receipts WHERE subject=${subject} ORDER BY id`;
   assert.deepEqual(completed.map(r => r.id), received.map(r => r.id));
   assert.ok(completed.every(r => r.status === "completed"));

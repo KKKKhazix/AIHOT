@@ -10,6 +10,11 @@ import { bj, money } from "../../features/admin/format";
 import { KIND_LABEL, MODE_LABEL, VISIBILITY_LABEL } from "../../features/admin/labels";
 import { AdminPage, Badge, Button, Card, Empty, Field, Input, Json, KV, ReasonDialog, Select, Textarea } from "../../features/admin/ui";
 
+const SCORE_TYPE_LABELS: Record<string, string> = {
+  policy_change: "政策与公共服务", education_event: "学校与教育事件", research_finding: "研究与调查",
+  health_safety_event: "健康、安全与权益", family_issue: "家庭与社会议题", technology_change: "科技变化",
+  practical_guide: "实用指南与资源", opinion_analysis: "观点与分析",
+};
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   return adminGet<AdminContentChain>(request, `/api/admin/content/${encodeURIComponent(params.id)}`);
@@ -156,6 +161,16 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
                       </div>
                       {an.title_zh && <div className="mt-2 font-medium text-ink">{an.title_zh}</div>}
                       {an.reason_zh && <div className="mt-1 text-[12.5px] leading-relaxed text-ink-3">{an.reason_zh}</div>}
+                      {an.score_details?.length ? (
+                        <div className="mt-2 space-y-1 text-[12px] text-ink-3">
+                          {an.score_details.map((d, index) => (
+                            <div key={index}>
+                              第 {index + 1} 次 · {SCORE_TYPE_LABELS[d.itemType] ?? d.itemType} · {([['现实影响', 'sig'], ['信息增量', 'nov'], ['证据强度', 'cred'], ['家庭价值', 'reson'], ['可使用性', 'act']] as const).map(([label, key]) => `${label} ${d[key]}×${d.weights[key]}`).join(' + ')} = {d.total}
+                            </div>
+                          ))}
+                          <div>{an.score_details.length === 2 ? "最终分数为两次总分的平均值（展示时向下取整）。" : "评分未完成，尚无最终分数。"}</div>
+                        </div>
+                      ) : an.score !== null ? <div className="mt-2 text-[12px] text-ink-4">该次判断未保存维度分数</div> : null}
                       {an.receipts.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5 text-[11.5px]">
                           {an.receipts.map((r) => (

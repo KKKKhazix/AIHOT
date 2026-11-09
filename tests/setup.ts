@@ -33,6 +33,17 @@ const STEP_MODELS: Record<string, [env: string, model: string]> = {
 };
 for (const [step, [env, model]] of Object.entries(STEP_MODELS)) if (!DEFAULTS[step]) process.env[env] ??= model;
 
+/** A score response whose weighted dimensions add up to the requested test score. */
+export function scoreFixture(score: number) {
+  for (let sig = 0; sig <= 10; sig++) for (let nov = 0; nov <= 10; nov++) for (let reson = 0; reson <= 10; reson++) {
+    const remaining = score - sig - nov - reson * 4;
+    if (remaining < 0 || remaining > 40 || remaining % 2) continue;
+    const cred = Math.min(10, remaining / 2), act = remaining / 2 - cred;
+    return { itemType: "opinion_analysis", sig, nov, cred, reson, act };
+  }
+  throw new Error(`Cannot represent test score ${score}`);
+}
+
 /**
  * Sends the calls of the named model presets to a stub: sets each one's address and key variables, which
  * the site's presets name. By default the providers of the article analysis (DashScope, GLM, DeepSeek).

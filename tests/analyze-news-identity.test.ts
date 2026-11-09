@@ -1,7 +1,7 @@
 // A failed structure, which leaves the current identity unresolved, must still block the next paid
 // step: no separate writing request starts. The stub answers each step; semantic extraction is
 // checked on real samples.
-import { pointModels, stub, tag } from "./setup.ts";
+import { scoreFixture, pointModels, stub, tag } from "./setup.ts";
 import { analysisStep, SELECTING_SCORE } from "./analysis-steps.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
@@ -12,7 +12,7 @@ const steps: string[] = [];
 const provider = await stub((_hit, request) => {
   const step = analysisStep(request.body);
   steps.push(step);
-  const result = step === "prefilter" ? { label: "PASS", reason: "fixture" } : step === "score" ? { attentionScore: SELECTING_SCORE } : "invalid output";
+  const result = step === "prefilter" ? { label: "PASS", reason: "fixture" } : step === "score" ? scoreFixture(SELECTING_SCORE) : "invalid output";
   return { choices: [{ message: { content: typeof result === "string" ? result : JSON.stringify(result) } }] };
 });
 pointModels(provider.url);

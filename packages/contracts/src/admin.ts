@@ -219,6 +219,7 @@ export interface AdminContentChain {
   analyses: Array<{
     id: number; origin: string; model: string | null; prompt_version: string | null; input_revision: number; relevance: string | null; category: string | null;
     score: number | null; selected: boolean | null; title_zh: string | null; reason_zh: string | null; created_at: Timestamp;
+    score_details: Array<{ itemType: string; sig: number; nov: number; cred: number; reson: number; act: number; weights: { sig: number; nov: number; cred: number; reson: number; act: number }; total: number }> | null;
     receipts: Array<{ id: number; status: string; service: string; model: string | null; cost: number | null; at: Timestamp }>;
   }>;
   publication: AdminPublication | null;

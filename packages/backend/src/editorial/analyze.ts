@@ -12,9 +12,10 @@ import { describePublicationTime } from "../sources/dates.ts";
 //      copy that uses a word the site keeps from readers (industry/wording.ts) goes back once to change only those.
 // Material with only a title or a feed summary has its article page fetched before it is judged.
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { CATEGORIES } from "@aihot/industry/taxonomy";
-import { SELECTION } from "@aihot/industry/selection";
+import { SELECTION, SCORE_WEIGHTS } from "@aihot/industry/selection";
 import { ITEM_COPY } from "@aihot/site";
 import { sql } from "../db.ts";
 import { chatJson, MODELS, type ContentPart } from "../providers/llm.ts";
@@ -38,7 +39,7 @@ export { buildMaterial, loadAnalyzeInput, type AnalyzeInputArticle };
 
 export const PROMPT_VERSIONS = {
   prefilter: promptVersion("prefilter"),
-  score: promptVersion("selection-score"),
+  score: `${promptVersion("selection-score")}-weights@${createHash("sha256").update(JSON.stringify(SCORE_WEIGHTS)).digest("hex").slice(0, 10)}`,
   understand: promptVersion("understand"),
   summarize: promptVersion("summarize-article", "summarize-article-empty", "summarize-short-post", "summarize-short-post-quoted", "summarize-long-post", "summarize-long-post-quoted", "identity-context"),
   structure: promptVersion("structure"),
@@ -70,7 +71,13 @@ const scoreCall = (model: string) => MODELS[model]?.scoreCall ?? { temperature: 
 /** The score prompt: the industry's taste (industry/prompts/selection-score.md). */
 export const SCORE_SYSTEM = promptText("selection-score");
 
-export const ScoreSchema = z.object({ attentionScore: z.coerce.number().int().min(0).max(100) });
+const dimension = z.number().int().min(0).max(10);
+export const ScoreSchema = z.object({ itemType: z.enum(Object.keys(SCORE_WEIGHTS) as [keyof typeof SCORE_WEIGHTS, ...(keyof typeof SCORE_WEIGHTS)[]]), sig: dimension, nov: dimension, cred: dimension, reson: dimension, act: dimension });
+export function calculateScore(result: z.infer<typeof ScoreSchema>) {
+  const weights = SCORE_WEIGHTS[result.itemType];
+  const total = result.sig * weights.sig + result.nov * weights.nov + result.cred * weights.cred + result.reson * weights.reson + result.act * weights.act;
+  return { ...result, weights: { ...weights }, total };
+}
 
 const SCORE_TIME = new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
@@ -97,7 +104,7 @@ export function buildScoreInput(a: AnalyzeInputArticle): string {
   if (!body) body = a.title;
   const at = a.publishedAt;
   return [
-    "请按系统规则评估以下单篇材料所代表的事件。只输出 attentionScore。",
+    "请按系统规则评估以下单篇材料，只输出内容类型和五个维度的 JSON。",
     `【发布时间（北京时间）】\n${at ? a.publicationTime === undefined || a.publicationTime?.includes("T") ? scoreInputTime(at) : describePublicationTime(at, a.publicationTime) : "未知（收录时间不代表发布时间）"}`,
     `【标题】\n${a.title.trim()}`,
     `【完整正文】\n${body.length > MAX_BODY_CHARS ? body.slice(0, MAX_BODY_CHARS) : body}`,
@@ -195,7 +202,7 @@ export interface AnalysisRun {
    * The independent score calls and the tier threshold they are held against; absent when the material
    * is not scored. `refused`: the model's content filter declined it, so it is not selected.
    */
-  scores: { model: string; threshold: number; values: number[]; receiptIds: number[]; reused: boolean; refused?: boolean } | null;
+  scores: { model: string; threshold: number; values: number[]; details?: ReturnType<typeof calculateScore>[]; receiptIds: number[]; reused: boolean; refused?: boolean } | null;
   /** The reader-facing copy: `understand` (selected, near-selected), `summarize`, `verbatim` (a Chinese short post), `none`. */
   writing: {
     kind: "understand" | "summarize" | "verbatim" | "none";
@@ -275,6 +282,7 @@ async function runScores(
   const call = scoreCall(model);
   const input = buildScoreInput(a);
   const values: number[] = [];
+  const details: ReturnType<typeof calculateScore>[] = [];
   const receiptIds: number[] = [];
   let reused = true;
   // One after the other: the second call reuses the provider's cached prompt.
@@ -288,18 +296,20 @@ async function runScores(
         attemptTag: tagged(opts.attemptTag, `score-${i + 1}`),
       });
       onReceipt?.(res.receiptId);
-      values.push(res.data.attentionScore);
+      const detail = calculateScore(res.data);
+      details.push(detail);
+      values.push(detail.total);
       receiptIds.push(res.receiptId);
       reused &&= res.reused;
     } catch (error) {
       const receiptId = failedReceiptId(error);
       if (receiptId !== null) onReceipt?.(receiptId);
       // The model's content filter declines the material (Zhipu 1301): not scored, so not selected.
-      if (isContentFilter(error)) return { model, threshold, values, receiptIds, reused: false, refused: true };
+      if (isContentFilter(error)) return { model, threshold, values, details, receiptIds, reused: false, refused: true };
       throw error;
     }
   }
-  return { model, threshold, values, receiptIds, reused };
+  return { model, threshold, values, details, receiptIds, reused };
 }
 
 /** The production score step; its threshold stays case-specific even when an evaluator shares model output. */
@@ -564,7 +574,7 @@ export async function analyzeArticle(articleId: string, opts: StepOpts = {}): Pr
   const w = run.writing;
   const detail = {
     prefilter: run.prefilter && { label: run.prefilter.label, reason: run.prefilter.reason },
-    scores: out.scores, scoreModel: out.scoreModel, threshold: out.threshold, ...(out.scoreRefused ? { scoreRefused: true } : {}),
+    scores: out.scores, scoreDetails: run.scores?.details ?? null, scoreModel: out.scoreModel, threshold: out.threshold, ...(out.scoreRefused ? { scoreRefused: true } : {}),
     ...(w ? { writer: w.kind, writerModel: w.model, itemType: w.itemType ?? null, authorRole: w.authorRole ?? null } : {}),
     ...(w?.identityGuard?.outcome === "fallback" ? { identityGuard: w.identityGuard } : {}),
     scope: out.scope, fact: out.fact,

@@ -106,7 +106,62 @@ export function resolveRedirect(pathname: string, search: string): RedirectDecis
     if (location && rule.fragment) location += `#${rule.fragment}`;
     return { status: rule.status, location, headers: rule.headers ?? {} };
   }
+  const page = pastedPage(pathname);
+  // The Location repeats the reader's query, so it never enters shared caches.
+  if (page && !isApiOwned(pathname)) return { status: 301, location: page + search, headers: { "Cache-Control": "private, no-store" } };
   return null;
+}
+
+/** ASCII punctuation that no page address holds and that prose puts right after a link: quotes, brackets, Markdown. */
+const TAIL_ASCII = new Set("\"'()*+,;<>[\\]^`{|}!");
+
+/**
+ * Whether a character starts the text a pasted link swallowed: a space or control, the ASCII punctuation above,
+ * general punctuation (dashes, curly quotes, zero-width marks) or CJK and full-width punctuation. Letters of any
+ * script do not: a site's slugs may be written in them.
+ */
+function startsTail(char: string): boolean {
+  const c = char.codePointAt(0)!;
+  return c <= 0x20 || c === 0x7f || TAIL_ASCII.has(char) || (c >= 0x2000 && c <= 0x206f)
+    || (c >= 0x3000 && c <= 0x3004) || (c >= 0x3008 && c <= 0x3020)
+    || (c >= 0xff01 && c <= 0xff0f) || (c >= 0xff1a && c <= 0xff20) || (c >= 0xff3b && c <= 0xff40) || (c >= 0xff5b && c <= 0xff65);
+}
+
+/**
+ * A link pasted into prose often takes the text after it along: "…/agent。", "…/agent**", "…/daily）", "…/daily."
+ * (each a 404 for the reader who opens it). A page path is cut where that text starts, with a sentence's closing dots,
+ * and the reader goes to the page the link meant; api paths answer as they are. The tail is found in the decoded path,
+ * but the Location keeps the request's own spelling: escaped letters and separators (%23) stay escaped. The cut stays
+ * on this site: repeated slashes collapse, and a dot segment, or a character the request carried unescaped beyond
+ * visible ASCII, is left to the page's own answer.
+ */
+function pastedPage(pathname: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+  // Each character with its spelling in the request: itself, or the escapes of its UTF-8 bytes (decodeURIComponent
+  // accepted them, so there are exactly that many).
+  const units: Array<{ char: string; spelling: string }> = [];
+  let at = 0;
+  for (const char of decoded) {
+    const c = char.codePointAt(0)!;
+    const length = pathname[at] === "%" ? 3 * (c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4) : char.length;
+    units.push({ char, spelling: pathname.slice(at, at + length) });
+    at += length;
+  }
+  const cut = units.findIndex((u) => startsTail(u.char));
+  let end = cut < 0 ? units.length : cut;
+  let dots = end;
+  while (dots > 0 && units[dots - 1]!.char === ".") dots--;
+  if (dots < end && dots > 0 && /^[A-Za-z0-9]$/.test(units[dots - 1]!.char)) end = dots;
+  if (end === units.length) return null;
+  const kept = units.slice(0, end);
+  const path = kept.map((u) => u.char).join("").replace(/\/{2,}/g, "/");
+  const location = kept.map((u) => u.spelling).join("").replace(/\/{2,}/g, "/") || "/";
+  return /(?:^|\/)\.{1,2}(?:\/|$)/.test(path) || /[^\x21-\x7e]/.test(location) ? null : location;
 }
 
 /** OAuth discovery probes from MCP clients: a cheap 404, never a rendered page. */

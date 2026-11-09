@@ -3,7 +3,7 @@
 // revision, and the judging steps read the article. A post whose article cannot be fetched is flagged
 // to the model instead of passing for a complete body. Reading the post again is no new revision. A source
 // a module reads has its posts' articles fetched too while they are news. Pages get the article as its
-// author laid it out: cover, pictures (a video's still), bold, links, tables, code and embedded posts, with
+// author laid it out: cover, pictures, videos, bold, links, tables, code and embedded posts, with
 // styles placed by character (X counts code points, so UTF-16 offsets slip after an emoji).
 import { stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
@@ -188,5 +188,21 @@ test("the laid-out article keeps links, embedded posts, tables, code and video s
   assert.match(html, /<a href="https:\/\/x\.com\/i\/status\/2114377706603429899">x\.com\/i\/status\/21143777066034…<\/a>/);
   assert.match(html, /<table>[\s\S]*<th>项<\/th>[\s\S]*<td>1<\/td>[\s\S]*<\/table>/);
   assert.match(html, /<pre><code class="language-bash">echo hi\n<\/code><\/pre>/);
-  assert.match(html, /<figure><a href="https:\/\/x\.com\/someone\/status\/2114878401190506902"><img src="https:\/\/pbs\.twimg\.com\/media\/v\.jpg" width="1280" height="720" alt=""><\/a><\/figure>/);
+  assert.match(html, /<figure><a href="https:\/\/x\.com\/someone\/status\/2114878401190506902"><img src="https:\/\/pbs\.twimg\.com\/media\/v\.jpg" width="1280" height="720" alt="">在 X 查看原视频<\/a><\/figure>/);
+});
+
+test("a long X article keeps the playable rendition of an inline video and a link to the original", () => {
+  const article = structuredClone(LAID_OUT);
+  article.media_entities![1]!.media_info = {
+    ...article.media_entities![1]!.media_info,
+    variants: [
+      { url: "https://video.twimg.com/amplify_video/12/pl/v.m3u8", content_type: "application/x-mpegURL" },
+      { url: "https://video.twimg.com.evil.example/amplify_video/12/vid/v.mp4", content_type: "video/mp4", bit_rate: 832000 },
+      { url: "https://video.twimg.com/amplify_video/12/vid/v.mp4?tag=29", content_type: "video/mp4", bit_rate: 832000 },
+    ],
+  };
+  const html = xArticleHtml(article, POST_URL)!;
+  assert.match(html, /<video[^>]*src="https:\/\/video\.twimg\.com\/amplify_video\/12\/vid\/v\.mp4\?tag=29"[^>]*controls[^>]*preload="none"/);
+  assert.match(html, /<\/video><a href="https:\/\/x\.com\/someone\/status\/2114878401190506902">在 X 查看原视频<\/a>/);
+  assert.doesNotMatch(html, /evil\.example|\.m3u8/);
 });

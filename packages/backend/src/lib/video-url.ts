@@ -1,3 +1,10 @@
+// Only MP4 files from X's video CDN can be signed for inline X playback.
+export function isXVideoUrl(input: string): boolean {
+  const url = URL.parse(input);
+  return url?.origin === "https://video.twimg.com" && !url.username && !url.password && !url.hash
+    && /^\/(?:amplify_video|ext_tw_video|tweet_video)\/.+\.mp4$/i.test(url.pathname);
+}
+
 // Video watch/share/embed addresses name players, whose controls and recommendations are not articles.
 export function isVideoPageUrl(input: string): boolean {
   let url: URL;

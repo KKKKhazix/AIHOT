@@ -898,7 +898,7 @@ async function extractXArticle(articleId: string, tweetId: string, revision: num
     return markUnconfirmed(articleId, revision);
   }
   return sql.begin(async (tx) => {
-    const [row] = await tx<{ title: string; excerpt: string | null; body_text: string | null; x_post: { text?: string } | null; x_article: { title?: string | null; text?: string } | null }[]>`
+    const [row] = await tx<{ title: string; excerpt: string | null; body_text: string | null; x_post: { text?: string } | null; x_article: { title?: string | null; text?: string; html?: string | null } | null }[]>`
       SELECT title, excerpt, body_text, x_post, x_article FROM articles
       WHERE id = ${articleId} AND revision = ${revision} AND body_status <> 'ok' FOR UPDATE`;
     if (!row) return "skipped";
@@ -911,7 +911,10 @@ async function extractXArticle(articleId: string, tweetId: string, revision: num
     const title = got.title && onlyXArticleLink(row.x_post?.text) ? got.title : row.title;
     const bodyText = [base, block(got)].filter(Boolean).join("\n\n");
     if (bodyText === row.body_text && title === row.title) {
-      // The same article again: nothing new, no new revision.
+      // The same words can have new media. Update their presentation without a new semantic revision.
+      if (row.x_article?.html && got.html) {
+        await updatePresentation(tx, articleId, { xArticleHtml: got.html });
+      }
       await tx`UPDATE articles SET body_status = 'ok', x_article = ${tx.json(got as never)}, updated_at = now() WHERE id = ${articleId}`;
       return "ok";
     }

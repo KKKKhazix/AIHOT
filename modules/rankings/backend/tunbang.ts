@@ -7,7 +7,6 @@ export const otherBoards: Board[] = [
   { id: "wxrank:account", name: "热门公众号", source: "微小榜", url: "https://wxrank.com/rank/account" },
   { id: "wxrank:article", name: "热门文章", source: "微小榜", url: "https://wxrank.com/rank/article" },
   { id: "wxrank:viral", name: "低粉爆文", source: "微小榜", url: "https://wxrank.com/rank/viral" },
-  { id: "tophub:home", name: "今日热榜", source: "今日热榜", url: "https://tophub.today/" },
 ];
 function safeUrl(href: string | undefined, base: string): string | null {
   try { const u = new URL(href ?? "", base); return href && ["http:", "https:"].includes(u.protocol) ? u.href : null; } catch { return null; }

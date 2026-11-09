@@ -1,6 +1,7 @@
 import { sql } from "@aihot/backend/db";
 import { parseBoard, parseDirectory, total, type Board, type Entry } from "./tunbang.ts";
 import { parseWxBoard, wxBoards, wxUrl } from "./wxrank.ts";
+import { parseTopBoard, topBoards, topUrl } from "./tophub.ts";
 
 async function read(url: string): Promise<string> {
   const response = await fetch(url, { signal: AbortSignal.timeout(15000), redirect: "error", headers: { "user-agent": "EduHOT rankings/1.0" } });
@@ -47,4 +48,16 @@ export async function collectWxRankings() {
     }
   }
   return { boards: wxBoards.length, failed };
+}
+
+export async function collectTopRankings() {
+  const board = topBoards[0];
+  try {
+    await save(board, parseTopBoard(board, JSON.parse(await read(topUrl(board)))));
+    return { boards: 1, failed: 0 };
+  } catch (error) {
+    await sql`INSERT INTO external_rankings (id,name,source,url,attempted_at,failed) VALUES (${board.id},${board.name},${board.source},${board.url},now(),true)
+      ON CONFLICT (id) DO UPDATE SET attempted_at=now(), failed=true`;
+    throw error;
+  }
 }

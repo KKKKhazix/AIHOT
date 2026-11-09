@@ -143,7 +143,7 @@ export default function TopicRoute() {
           <EmptyState title="这个主题暂时还没有精选内容" />
         </div>
       ) : (
-        <DayList items={items} headerAside={<span className="num whitespace-nowrap">第 {first}–{last} 条<span className="hidden sm:inline"> · 共 {topic.total.toLocaleString("zh-CN")} 条</span></span>} />
+        <DayList items={items} showAllTags headerAside={<span className="num whitespace-nowrap">第 {first}–{last} 条<span className="hidden sm:inline"> · 共 {topic.total.toLocaleString("zh-CN")} 条</span></span>} />
       )}
       <Pagination page={page} pageCount={pageCount} href={href} />
     </div>

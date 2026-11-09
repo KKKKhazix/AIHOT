@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { SITE } from "@aihot/site";
 import { Presence } from "../components/ui/Presence";
 import { edgeTtl } from "../lib/api.server";
@@ -63,6 +63,12 @@ function guideFor(state: unknown): Guide | null {
   return webModules().find((m) => m.name === name)?.feedbackGuide ?? null;
 }
 
+/** What the reader had already typed where the button was (the link's `state.content`), if anything. */
+function carriedText(state: unknown): string | null {
+  const text = state && typeof state === "object" ? (state as { content?: unknown }).content : null;
+  return typeof text === "string" && text.trim() ? text : null;
+}
+
 function FeedbackAside({ tips }: { tips: string[] }) {
   return (
     <>
@@ -104,7 +110,8 @@ export default function FeedbackPage() {
   const [params] = useSearchParams();
   // The guide comes with the button's navigation, which the server never sees: a page the server drew starts with
   // the site's own words, and turns to the guide once hydrated.
-  const { state: navigation } = useLocation();
+  const { state: navigation, pathname, search } = useLocation();
+  const navigate = useNavigate();
   const [hydrated, setHydrated] = useState(isHydrated);
   useEffect(() => setHydrated(true), []);
   const guide = hydrated ? guideFor(navigation) : null;
@@ -120,7 +127,13 @@ export default function FeedbackPage() {
     // a document the browser opened fresh falls back to its referrer.
     const before = params.get("from") ? null : (lastPage() ?? (document.referrer.startsWith(location.origin) ? document.referrer : null));
     const from = before ? new URL(before, location.origin).href : null;
-    if (saved) setDraft((d) => ({ ...saved, pageUrl: d.pageUrl || from || saved.pageUrl }));
+    // What was just typed comes before an older draft; the email kept with that draft stays. It is taken once:
+    // from here it is this page's draft, and a reload brings back what the reader has written since.
+    const carried = carriedText(navigation);
+    if (carried) {
+      setDraft((d) => ({ content: carried, email: saved?.email ?? "", pageUrl: d.pageUrl || from || saved?.pageUrl || "" }));
+      navigate(pathname + search, { replace: true, state: { ...(navigation as object), content: undefined } });
+    } else if (saved) setDraft((d) => ({ ...saved, pageUrl: d.pageUrl || from || saved.pageUrl }));
     else if (from) setDraft((d) => ({ ...d, pageUrl: from }));
   }, []);
   useEffect(() => {

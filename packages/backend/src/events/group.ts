@@ -677,7 +677,11 @@ async function groupSignal(a: ArticleRow, source: { id: string; signal_group_id:
   if (!embeddingsAvailable()) return { verdict: "signal-unmatched" };
   const asCandidates = (recalled: Recalled[], verdicts?: Map<number, Verdict>): DecisionCandidate[] =>
     recalled.map((r) => ({ id: r.factId, score: Math.round(r.score * 1000) / 1000, relation: verdicts?.get(r.factId)?.relation, confidence: verdicts?.get(r.factId)?.confidence }));
-  const answered = new Set(regroup ? [] : (await sql<{ id: number }[]>`SELECT unnest(${answeredFacts(sql`${a.id}`)}) AS id`).map((r) => r.id));
+  // The facts of the story the post counts for are judged again: an earlier "no" to one of them must
+  // not withdraw an attachment made since.
+  const answered = new Set(regroup ? [] : (await sql<{ id: number }[]>`
+    SELECT unnest(${answeredFacts(sql`${a.id}`)}) AS id
+    EXCEPT SELECT f.id FROM facts f JOIN story_signals ss ON ss.story_id = f.story_id WHERE ss.article_id = ${a.id}`).map((r) => r.id));
   const open = (recalled: Recalled[]) => recalled.filter((r) => !answered.has(r.factId));
   const byReports = open(await recallFacts(a.id, text, SIGNAL_MIN_COSINE, Infinity));
   if (byReports[0] && byReports[0].score >= SIGNAL_AUTO_COSINE) {

@@ -14,6 +14,7 @@ import { ProviderRejectedError } from "@aihot/backend/providers/receipts";
 const DAY = 86400_000;
 const PRIVATE_MESSAGE = "Forbidden: Requested resource cannot be viewed due to user's privacy settings";
 let privateResponse = { status: 403, message: PRIVATE_MESSAGE };
+let unknownLookup: string | undefined;
 /** Every stored post the provider knows: who wrote it now (null when it is gone), or "private". */
 const authors = new Map<string, string | null>();
 /** Posts made after a rename, by their new handle. */
@@ -25,6 +26,7 @@ const socialdata = await stub((_hit, req) => {
   const lookup = /^\/twitter\/tweets\/(\d+)$/.exec(url.pathname);
   if (lookup) {
     lookups.push(lookup[1]!);
+    if (lookup[1] === unknownLookup) return new Reply(200, undefined);
     const author = authors.get(lookup[1]!);
     if (author === "private") return new Reply(privateResponse.status, { status: "error", message: privateResponse.message });
     if (!author) return new Reply(404, { status: "error", message: "Tweet not found" });
@@ -158,6 +160,24 @@ test("a quiet account is looked up again the next day, not answered from the day
   assert.equal(looked(), 1, "the same day reuses the answer");
   await followXRenames({ now: Date.now() + DAY, pauseMs: 0 });
   assert.equal(looked(), 2);
+});
+
+test("a lost lookup is reported without trying another post or stopping other accounts", async () => {
+  const { all, id, h, tid, source, newest } = await accounts();
+  unknownLookup = newest("aa_private");
+  const from = lookups.length;
+  try {
+    const result = await followXRenames({ pauseMs: 0 });
+    const [receipt] = await sql<{ id: number; status: string; attempts: number }[]>`
+      SELECT id, status, attempts FROM receipts WHERE purpose = 'x_rename_check' AND subject = ${`source:${id("aa_private")}`}`;
+    assert.ok(receipt);
+    assert.deepEqual([receipt.status, receipt.attempts], ["unknown", 1]);
+    assert.deepEqual(result.unknownLookups, [{ sourceId: id("aa_private"), receiptId: receipt.id }]);
+    assert.deepEqual(result.privateAccounts, []);
+    assert.equal((await source("aa_private")).config.query, all.aa_private.query);
+    assert.ok(!lookups.slice(from).includes(tid(55)), "an unknown outcome is not retried with an older post");
+    assert.equal((await source("renamed")).config.query, `from:${h("newa")} -filter:replies`);
+  } finally { unknownLookup = undefined; }
 });
 
 test("other permission refusals and provider failures still fail the rename check", async () => {

@@ -1,7 +1,7 @@
 // Collection picks up where it stopped: an X search longer than one run continues in later runs until
 // it meets the old watermark (no post in between is skipped, no page is bought twice). The watermark
 // alone bounds it: posts made weeks before the account was added are kept too.
-import { stub, tag } from "./setup.ts";
+import { gate, Reply, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { config } from "@aihot/backend/config";
@@ -20,7 +20,9 @@ const tweet = (id: bigint) => ({
   id_str: String(id), tweet_created_at: new Date(Date.now() - Number(BASE + 145n - id) * 12 * 3_600_000).toISOString(),
   full_text: `Post ${id} ${T}`, lang: "en", user: { name: "Test account", screen_name: `acct${T}` },
 });
-const socialdata = await stub((_hit, req) => {
+let heldResponse: (() => Promise<unknown>) | null = null;
+const socialdata = await stub(async (_hit, req) => {
+  if (heldResponse) return heldResponse();
   const u = new URL(req.url, "http://stub");
   const since = BigInt(/since_id:(\d+)/.exec(u.searchParams.get("query") ?? "")?.[1] ?? "0");
   const page = Number(u.searchParams.get("cursor") ?? 0);
@@ -80,4 +82,20 @@ test("a stretch left over for days is given up instead of bought again", async (
   assert.equal(paid.length, 0, "the old stretch's page is not requested again");
   const [run] = await sql<{ detail: { dropped: number } }[]>`SELECT detail FROM fetch_runs WHERE source_id = ${X_SOURCE} ORDER BY id DESC LIMIT 1`;
   assert.equal(run!.detail.dropped, 1, "the admin sees the stretch given up");
+});
+
+test("finishing an in-flight collection cannot overwrite a source's paused state", async () => {
+  for(const failed of [false,true]) {
+    const id=`paused-${failed}-${T}`,entered=gate(),release=gate();
+    await sql`INSERT INTO sources(id,name,kind,config) VALUES(${id},${id},'x_search',${sql.json({query:`from:paused${failed}${T}`})})`;
+    heldResponse=async()=>{entered.open();await release.promise;return failed?new Reply(400,{error:"refused source"}):{tweets:[]};};
+    try {
+      const collecting=collectSource(id,{force:true});
+      await entered.promise;
+      await sql`UPDATE sources SET enabled=false,health='paused' WHERE id=${id}`;
+      release.open();
+      assert.equal((await collecting).status,failed?'failed':'ok');
+      assert.equal((await sql`SELECT health FROM sources WHERE id=${id}`)[0]!.health,'paused');
+    } finally {release.open();heldResponse=null;}
+  }
 });

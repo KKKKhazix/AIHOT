@@ -170,20 +170,21 @@ export async function resolveDelivery(id: number, input: { outcome: "sent" | "dr
   const [before] = await sql<{ status: string; version: string }[]>`SELECT status, updated_at::text AS version FROM deliveries WHERE id = ${id}`;
   if (!before) return null;
   if (before.status !== "unknown" && before.status !== "failed") throw new Conflict("这条投递不需要处理");
-  let status: string;
-  if (input.outcome === "sent") {
-    const changed = await sql`UPDATE deliveries SET status = 'sent', sent_at = coalesce(sent_at, now()), response = ${`人工确认已送达：${input.note}`}, updated_at = now()
-      WHERE id = ${id} AND status IN ('unknown', 'failed') AND updated_at::text = ${before.version}`;
-    if (!changed.count) throw new Conflict("这条投递已被其他操作处理，请刷新后重试");
-    status = "sent";
-  } else if (input.outcome === "drop") {
-    const changed = await sql`UPDATE deliveries SET status = 'failed', response = ${`人工放弃：${input.note}`}, updated_at = now()
-      WHERE id = ${id} AND status IN ('unknown', 'failed') AND updated_at::text = ${before.version}`;
-    if (!changed.count) throw new Conflict("这条投递已被其他操作处理，请刷新后重试");
-    status = "failed";
-  } else {
-    status = (await resendDelivery(id, before.version)).status;
+  if (input.outcome !== "resend") {
+    // An explicit drop is terminal, like other skips. Failed is still actionable; encoding a drop
+    // in its audit alone left it in the recovery list and allowed it to be sent again.
+    const status = input.outcome === "sent" ? "sent" : "skipped";
+    return sql.begin(async tx => {
+      const changed = await tx`UPDATE deliveries SET status = ${status},
+        sent_at = CASE WHEN ${status} = 'sent' THEN coalesce(sent_at, now()) ELSE sent_at END,
+        response = ${`${input.outcome === "sent" ? "人工确认已送达" : "人工放弃"}：${input.note}`}, updated_at = now()
+        WHERE id = ${id} AND status IN ('unknown', 'failed') AND updated_at::text = ${before.version}`;
+      if (!changed.count) throw new Conflict("这条投递已被其他操作处理，请刷新后重试");
+      await audit(actor, `delivery.${input.outcome}`, `delivery:${id}`, input.note, { status: before.status }, { status }, { db: tx });
+      return { id, status };
+    });
   }
+  const { status } = await resendDelivery(id, before.version);
   await audit(actor, `delivery.${input.outcome}`, `delivery:${id}`, input.note, { status: before.status }, { status });
   return { id, status };
 }

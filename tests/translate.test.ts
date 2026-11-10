@@ -511,3 +511,38 @@ test("external model translation import restores against the exact body and reje
   await assert.rejects(importBodyTranslation(input),/source changed/);
   assert.equal((await sql`SELECT revision FROM translations WHERE article_id=${articleId}`)[0].revision,saved.revision);
 });
+
+test("a failed old translation does not consume or overwrite the corrected revision's attempts", async () => {
+  for (const newerAttempt of [false, true]) {
+    const input = {sourceId:SOURCE,url:`${URL_}-late-failure-${newerAttempt}`,title:`Corrected translation ${T}`,
+      language:"en",bodyText:`The price is ten dollars ${T}.`,bodyHtml:`<p>The price is ten dollars ${T}.</p>`,
+      bodyStatus:"ok" as const,via:"fetch" as const,publishedAt:new Date(),discoveredAt:new Date(Date.now()+40_000_000)};
+    const {articleId:id}=await upsertMaterial(input);
+    await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
+      VALUES(${id},1,'rule','pass','ai-models','价格更正','摘要','理由',90,true)`;
+    await publishArticle(id,{releasedAt:new Date(Date.now()-60_000)});
+    const entered=gate(),release=gate();
+    const rejected=await stub(async()=>{entered.open();await release.promise;return new Reply(400,{error:"invalid old request"});});
+    process.env.DEEPSEEK_BASE_URL=`${rejected.url}/v1`;
+    try {
+      const run=translatePending({limit:1});
+      await entered.promise;
+      await upsertMaterial({...input,bodyText:`The price is twenty dollars ${T}.`,bodyHtml:`<p>The price is twenty dollars ${T}.</p>`});
+      if(newerAttempt) await sql`INSERT INTO translation_attempts(article_id,revision,attempts,outcome,reason)
+        VALUES(${id},2,2,'failed','new revision attempt')`;
+      release.open();
+      await run;
+      const [attempt]=await sql`SELECT revision,attempts,reason FROM translation_attempts WHERE article_id=${id}`;
+      assert.equal(attempt!.revision,newerAttempt?2:1,"failure belongs to the body sent to the model");
+      assert.equal(attempt!.attempts,newerAttempt?2:1,"an old completion cannot spend the new revision's attempts");
+      if(newerAttempt) assert.equal(attempt!.reason,'new revision attempt');
+    } finally {
+      release.open();process.env.DEEPSEEK_BASE_URL=`${provider.url}/v1`;await rejected.close();
+    }
+    await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
+      VALUES(${id},2,'rule','pass','ai-models','价格已更正','摘要','理由',90,true)`;
+    await publishArticle(id,{releasedAt:new Date(Date.now()-60_000)});
+    assert.equal((await translatePending({limit:1})).done.find(r=>r.articleId===id)?.status,'translated');
+    assert.match((await detail(id)).body.zh??'',/二十美元/);
+  }
+});

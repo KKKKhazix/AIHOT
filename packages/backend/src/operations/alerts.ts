@@ -603,7 +603,7 @@ export async function checkAlerts(now = Date.now()) {
       continue;
     }
     const [dropped] = key === "deliveries.failed" ? await sql`SELECT count(*)::int AS n FROM deliveries d
-      WHERE d.status='failed' AND d.updated_at>${new Date(Date.parse(open.since)-86400_000)}
+      WHERE d.status IN ('failed','skipped') AND d.updated_at>${new Date(Date.parse(open.since)-86400_000)}
         AND EXISTS(SELECT 1 FROM audit_log a WHERE a.action='delivery.drop' AND a.subject='delivery:' || d.id AND a.created_at>=d.updated_at)` : [];
     const msg = formatRecovery(open.title, new Date(open.since), now);
     if (dropped?.n) await sendAlert(`已结束跟进：${open.title}`, [`${dropped.n} 条旧通知已决定不再补发，未确认送达`]);

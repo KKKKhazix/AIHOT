@@ -23,6 +23,8 @@ export interface SourceRow {
  */
 export type Candidate = Omit<MaterialInput, "sourceId" | "via"> & {
   categories?: string[];
+  /** This listing dates the post itself, rather than the submission of an external link. */
+  listingDatesOriginal?: boolean;
 };
 
 export class FetchError extends Error {}

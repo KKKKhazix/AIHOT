@@ -175,16 +175,19 @@ export async function fetchJsonList(source: SourceRow): Promise<Candidate[]> {
     if (c.requireBoolean && getPath(item, c.requireBoolean.path) !== c.requireBoolean.equals) continue;
     if (c.minNumeric && !(Number(getPath(item, c.minNumeric.path)) >= Number(c.minNumeric.min))) continue;
     const title = firstString(item, c.titlePaths);
-    const url = (c.urlTemplate && renderTemplate(c.urlTemplate, item)) || (c.urlTemplateFallback && renderTemplate(c.urlTemplateFallback, item));
+    const linkedUrl = c.urlTemplate && renderTemplate(c.urlTemplate, item);
+    const url = linkedUrl || (c.urlTemplateFallback && renderTemplate(c.urlTemplateFallback, item));
     if (!title || !url) continue;
     const externalId = c.externalIdPath ? getPath(item, c.externalIdPath) : null;
     const summary = firstString(item, c.summaryPaths);
     const summaryIsBody = !c.detail?.bodyUrlSuffix && c.summaryIsBody === true && !!summary;
+    const date = toDate(getPath(item, c.publishedAtPath), c.publishedAtUnit, c.publishedAtUtcOffset);
     out.push({
       url,
       title: collapseWhitespace(stripTags(title)),
       author: firstString(item, c.authorPaths),
-      ...toDate(getPath(item, c.publishedAtPath), c.publishedAtUnit, c.publishedAtUtcOffset),
+      ...date,
+      ...(!linkedUrl && c.publishedAtForFallbackUrl === true && date.publishedAt ? { listingDatesOriginal: true } : {}),
       excerpt: summary ? collapseWhitespace(stripTags(summary)).slice(0, 2000) : null,
       bodyText: summaryIsBody ? stripTags(summary!) : null,
       bodyStatus: summaryIsBody ? "ok" : "pending",

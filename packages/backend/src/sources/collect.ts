@@ -84,7 +84,7 @@ export async function listingEntries(source: SourceRow, found: Candidate[]): Pro
       ?? identityKeyFor({ ...c, sourceId: source.id, via: "fetch" });
     const identityKey = requestedIdentity === identityKeyForUrl(c.url)
       ? await materialIdentityForUrl(c.url) ?? requestedIdentity : requestedIdentity;
-    if (!unique.has(identityKey)) unique.set(identityKey, { ...c, identityKey, ...(unreliableDates ? { publishedAt: null, publicationTime: null } : {}) });
+    if (!unique.has(identityKey)) unique.set(identityKey, { ...c, identityKey, ...(unreliableDates && !c.listingDatesOriginal ? { publishedAt: null, publicationTime: null } : {}) });
   }
   return [...unique.values()];
 }
@@ -157,7 +157,7 @@ function detailNeed(c: CollectionCandidate, stored: StoredDetail | undefined, so
   const d = source.config.detail!;
   const storedHeadline = !!stored && isCallToActionTitle(listingTitle) && !isCallToActionTitle(stored.title);
   const need: DetailNeed = {
-    date: d.publishedAtAuthoritative === true || !(stored?.published_at || c.publishedAt) || d.upgradeDatePrecision === true,
+    date: !c.listingDatesOriginal && (d.publishedAtAuthoritative === true || !(stored?.published_at || c.publishedAt) || d.upgradeDatePrecision === true),
     title: !!(d.titleSelector || d.titleRegex) && (d.titleAuthoritative === true || (!storedHeadline && needsTitle(c.title))),
     summary: !!d.summarySelector && !(stored?.excerpt || c.excerpt),
     body: readsWhole(source) && stored?.body_status !== "ok" && !c.bodyText && (!c.bodyStatus || c.bodyStatus === "pending"),

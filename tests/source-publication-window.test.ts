@@ -125,6 +125,29 @@ for (const kind of ["rss", "web_list", "json_list"] as const) test(`${kind} appl
   assert.equal(queued!.n, 2, "excluded history never queues extraction or paid analysis");
 });
 
+test("a JSON aggregator keeps the publication time of its own posts and reads linked dates from their publishers", async () => {
+  const id = `json-native-${T}`;
+  const path = `/json/${id}`;
+  lists.set(path, [
+    { id: "broken", date: listedEarlier },
+    { id: "linked", date: listedEarlier, link: `${base}/metadata/fresh` },
+    { id: "undated-link", date: listedEarlier, link: `${base}/plain/missing` },
+  ]);
+  const sourceConfig = {
+    url: base + path, titlePaths: ["id"], urlTemplate: "{raw:link}", urlTemplateFallback: `${base}/original/{id}`,
+    publishedAtPath: "date", publishedAtForFallbackUrl: true,
+    detail: { maxFetches: 3, publishedAtSelector: 'meta[name="original-publication"]', publishedAtAuthoritative: true },
+  };
+  await sql`INSERT INTO sources(id,name,kind,participation_mode,config,next_fetch_at)
+    VALUES(${id},${id},'json_list','editorial',${sql.json(sourceConfig)},'2100-01-01')`;
+  const expected = [["broken", listedEarlier], ["linked", dates.fresh], ["undated-link", null]];
+  const preview = await previewStoredSource(id);
+  assert.deepEqual(preview!.items.map(item => [item.title, item.publishedAt]), expected);
+  assert.equal((await collectSource(id)).created, 3);
+  const saved = await sql<{ title: string; published_at: Date | null }[]>`SELECT title,published_at FROM articles WHERE source_id=${id} ORDER BY title`;
+  assert.deepEqual(saved.map(item => [item.title, item.published_at?.toISOString() ?? null]), expected);
+});
+
 test("previews keep exactly what collection stores, under the source's URL, category and noise rules", async () => {
   const id = `rules-${T}`;
   const path = `/rss/${id}`;

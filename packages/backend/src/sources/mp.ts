@@ -2,7 +2,8 @@
 // article bodies; every enabled account is checked once per source interval.
 import { sql } from "../db.ts";
 import { materialIdentityForUrl, upsertMaterial } from "../content/materials.ts";
-import { enqueue, QUEUES } from "../jobs/queue.ts";
+import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
+import { runOwner } from "../jobs/runs.ts";
 import { queueProcessing } from "../jobs/content.ts";
 import { stripTags } from "../lib/text.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
@@ -21,6 +22,7 @@ async function fetchBody(url: string, sourceId: string, identity: string): Promi
   try {
     return { body: await mpArticle(url, { subject: sourceId, identity }), passing: null };
   } catch (error) {
+    if (shutdownSignal.signal.aborted) throw error;
     const kind = failureKind(error);
     if (kind === "budget") throw error;
     return { body: null, passing: kind === "refused" ? null : String(error instanceof Error ? error.message : error).slice(0, 200) };
@@ -42,7 +44,7 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
   if (!source.enabled && reason !== "manual") return { sourceId, status: "paused" as const };
   const ghid = source.config.ghid ?? source.config.wxid;
   if (!ghid) return { sourceId, status: "unconfigured" as const };
-  const [run] = await sql<{ id: number }[]>`INSERT INTO fetch_runs (source_id, detail) VALUES (${sourceId}, ${sql.json({ reason })}) RETURNING id`;
+  const [run] = await sql<{ id: number }[]>`INSERT INTO fetch_runs (source_id, detail) VALUES (${sourceId}, ${sql.json({ reason, owner: await runOwner() })}) RETURNING id`;
   const firstCheck = !source.cursor?.lastCheckedAt;
   let created = 0;
   try {
@@ -101,22 +103,32 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
       if (res.created || res.revised || res.processingNeeded) await queueProcessing(res.articleId);
     }
     const cursor = { ...(source.cursor ?? {}), lastCheckedAt: new Date().toISOString(), lastPostTime: posts[0]?.post_time ?? source.cursor?.lastPostTime ?? null, remainMoney: history.remainMoney };
-    await sql`
-      UPDATE sources SET last_fetch_at = now(), last_ok_at = now(), fail_count = 0, last_error = NULL, health = 'ok', cursor = ${sql.json(cursor as never)},
-        next_fetch_at = now() + make_interval(mins => interval_minutes), updated_at = now()
-      WHERE id = ${sourceId}`;
-    await sql`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${posts.length}, new_count = ${created} WHERE id = ${run!.id}`;
+    await sql.begin(async tx => {
+      const changed = await tx`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${posts.length}, new_count = ${created} WHERE id = ${run!.id} AND status = 'running'`;
+      if (!changed.count) return;
+      await tx`
+        UPDATE sources SET last_fetch_at = now(), last_ok_at = now(), fail_count = 0, last_error = NULL, health = CASE WHEN enabled THEN 'ok' ELSE 'paused' END, cursor = ${tx.json(cursor as never)},
+          next_fetch_at = now() + make_interval(mins => interval_minutes), updated_at = now()
+        WHERE id = ${sourceId}`;
+    });
     return { sourceId, status: "ok" as const, found: posts.length, created, reused: history.reused };
   } catch (error) {
+    if (shutdownSignal.signal.aborted) {
+      await sql`UPDATE fetch_runs SET status = 'skipped', finished_at = now(), new_count = ${created},
+        error = 'worker stopped before collection completed' WHERE id = ${run!.id} AND status = 'running'`;
+      throw error;
+    }
     const message = String(error instanceof Error ? error.message : error).slice(0, 500);
     const kind = failureKind(error);
     const soft = kind === "budget" || kind === "outage";
-    await sql`
-      UPDATE sources SET last_fetch_at = now(), last_error = ${message},
-        fail_count = CASE WHEN ${soft} THEN fail_count ELSE fail_count + 1 END,
-        health = CASE WHEN ${soft} THEN health WHEN fail_count + 1 >= 3 THEN 'failing' ELSE 'degraded' END, updated_at = now()
-      WHERE id = ${sourceId}`;
-    await sql`UPDATE fetch_runs SET status = 'failed', finished_at = now(), new_count = ${created}, error = ${message} WHERE id = ${run!.id}`;
+    await sql.begin(async tx => {
+      const changed = await tx`UPDATE fetch_runs SET status = 'failed', finished_at = now(), new_count = ${created}, error = ${message} WHERE id = ${run!.id} AND status = 'running'`;
+      if (changed.count) await tx`
+        UPDATE sources SET last_fetch_at = now(), last_error = ${message},
+          fail_count = CASE WHEN ${soft} THEN fail_count ELSE fail_count + 1 END,
+          health = CASE WHEN NOT enabled THEN 'paused' WHEN ${soft} THEN health WHEN fail_count + 1 >= 3 THEN 'failing' ELSE 'degraded' END, updated_at = now()
+        WHERE id = ${sourceId}`;
+    });
     if (soft) throw error; // retried by the queue
     return { sourceId, status: "failed" as const, error: message };
   }

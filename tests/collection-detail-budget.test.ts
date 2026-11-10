@@ -71,8 +71,8 @@ test("shutdown during detail work escapes collection without recording source fa
   await assert.rejects(collectSource(id), { name: "AbortError" });
   assert.equal(reads.filter(url => url.includes(id) && !url.endsWith("/listing")).length, 1);
   const [run] = await sql`SELECT status,detail FROM fetch_runs WHERE source_id=${id} ORDER BY id DESC LIMIT 1`;
-  assert.equal(run!.status, "running", "shutdown does not commit a successful listing with fake detail errors");
-  assert.equal(run!.detail, null);
+  assert.equal(run!.status, "skipped", "an interrupted run is closed without claiming success or blaming its source");
+  assert.equal(run!.detail.owner.pid, process.pid);
   const [row] = await sql`SELECT fail_count,last_ok_at FROM sources WHERE id=${id}`;
   assert.equal(row!.fail_count, 0);
   assert.equal(row!.last_ok_at, null);

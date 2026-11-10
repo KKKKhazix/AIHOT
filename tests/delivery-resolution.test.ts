@@ -8,6 +8,9 @@ import { closeDb, sql } from "@aihot/backend/db";
 import { ADMIN } from "@aihot/site";
 import { buildApp } from "../apps/api/src/app.ts";
 import { registerAdmin } from "../apps/api/src/routes/admin.ts";
+import { resolveDelivery, resendDelivery } from "@aihot/backend/notify/deliver";
+import { runsOverview } from "@aihot/backend/admin/runs";
+import { getBoss, stopBoss } from "@aihot/backend/jobs/queue";
 
 const T = tag();
 const TARGET = `test-delivery-${T}`;
@@ -17,6 +20,7 @@ if (!ADMIN) registerAdmin(app);
 let sent = 0;
 const realFetch = globalThis.fetch;
 before(async () => {
+  await getBoss();
   config.devAdmin = { displayName: T };
   process.env.TEST_DELIVERY_WEBHOOK = "https://delivery.invalid/test";
   // Any send would land here instead of the network.
@@ -29,6 +33,7 @@ after(async () => {
   globalThis.fetch = realFetch;
   config.feishuContentPushEnabled = false;
   await app.close();
+  await stopBoss();
   await closeDb();
 });
 
@@ -45,4 +50,14 @@ test("manual recovery requires an explicit valid outcome and a note before chang
     assert.equal((await sql`SELECT 1 FROM audit_log WHERE subject = ${`delivery:${row!.id}`}`).length, 0);
   }
   assert.equal(sent, 0, "nothing was sent");
+});
+
+test("giving up a delivery closes it and removes it from the unresolved queue", async () => {
+  const [row] = await sql<{ id: number }[]>`INSERT INTO deliveries (target_key,subject_kind,subject_id,dedupe_key,status)
+    VALUES (${TARGET},'test','test',${`${T}-drop`},'unknown') RETURNING id`;
+  const result = await resolveDelivery(row!.id,{outcome:"drop",note:"checked and chose not to send"},"test");
+  assert.equal(result!.status,"skipped");
+  assert.equal((await runsOverview()).deliveries.some(d=>d.id===row!.id),false);
+  await assert.rejects(resendDelivery(row!.id),/不需要处理/);
+  assert.equal(sent,0);
 });

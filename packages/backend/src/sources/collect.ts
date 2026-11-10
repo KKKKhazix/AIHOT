@@ -7,6 +7,7 @@ import { HttpStatusError } from "../lib/http-fetch.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
 import { sha256 } from "../lib/ids.ts";
 import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
+import { runOwner } from "../jobs/runs.ts";
 import { queueProcessing } from "../jobs/content.ts";
 import { BudgetExceededError, completeReceipt } from "../providers/receipts.ts";
 import { fetchRss } from "./rss.ts";
@@ -302,25 +303,27 @@ async function store(sourceId: string, kind: string, candidates: CollectionCandi
 async function recordFetch(db: Db, sourceId: string, runId: number, run: { found: number; created: number; detail: object | null } & ({ cursor: Record<string, unknown> } | { error: string; budget: boolean })): Promise<void> {
   const detail = run.detail ? db.json(run.detail as never) : null;
   if ("cursor" in run) {
+    const changed = await db`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${run.found}, new_count = ${run.created},
+      detail = nullif(coalesce(detail,'{}'::jsonb) || coalesce(${detail}::jsonb,'{}'::jsonb),'{}'::jsonb) WHERE id = ${runId} AND status = 'running'`;
+    if (!changed.count) return;
     await db`
       UPDATE sources SET last_fetch_at = now(), last_ok_at = now(), fail_count = 0, last_error = NULL,
-        health = 'ok', cursor = ${db.json(run.cursor as never)}, updated_at = now(),
+        health = CASE WHEN enabled THEN 'ok' ELSE 'paused' END, cursor = ${db.json(run.cursor as never)}, updated_at = now(),
         next_fetch_at = now() + make_interval(mins => interval_minutes)
       WHERE id = ${sourceId}`;
-    await db`UPDATE fetch_runs SET status = 'ok', finished_at = now(), found_count = ${run.found}, new_count = ${run.created},
-      detail = nullif(coalesce(detail,'{}'::jsonb) || coalesce(${detail}::jsonb,'{}'::jsonb),'{}'::jsonb) WHERE id = ${runId}`;
     return;
   }
+  const changed = await db`UPDATE fetch_runs SET status = 'failed', finished_at = now(), found_count = ${run.found}, new_count = ${run.created},
+    error = ${run.error}, detail = nullif(coalesce(detail,'{}'::jsonb) || coalesce(${detail}::jsonb,'{}'::jsonb),'{}'::jsonb) WHERE id = ${runId} AND status = 'running'`;
+  if (!changed.count) return;
   await db`
     UPDATE sources SET last_fetch_at = now(),
       fail_count = CASE WHEN ${run.budget} THEN fail_count ELSE fail_count + 1 END,
       last_error = ${run.error},
-      health = CASE WHEN ${run.budget} THEN health WHEN fail_count + 1 >= 5 THEN 'failing' ELSE 'degraded' END,
+      health = CASE WHEN NOT enabled THEN 'paused' WHEN ${run.budget} THEN health WHEN fail_count + 1 >= 5 THEN 'failing' ELSE 'degraded' END,
       next_fetch_at = now() + make_interval(mins => CASE WHEN ${run.budget} THEN 15 ELSE LEAST(interval_minutes * (fail_count + 2), 360) END),
       updated_at = now()
     WHERE id = ${sourceId}`;
-  await db`UPDATE fetch_runs SET status = 'failed', finished_at = now(), found_count = ${run.found}, new_count = ${run.created},
-              error = ${run.error}, detail = nullif(coalesce(detail,'{}'::jsonb) || coalesce(${detail}::jsonb,'{}'::jsonb),'{}'::jsonb) WHERE id = ${runId}`;
 }
 
 /** `xSince` reads an X account again from that post, without moving its watermark back. */
@@ -333,7 +336,7 @@ export async function collectSource(sourceId: string, opts: { force?: boolean; x
     return { sourceId, status: "skipped", found: 0, created: 0, revised: 0 };
   }
 
-  const [run] = await sql<{ id: number }[]>`INSERT INTO fetch_runs (source_id) VALUES (${sourceId}) RETURNING id`;
+  const [run] = await sql<{ id: number }[]>`INSERT INTO fetch_runs (source_id, detail) VALUES (${sourceId}, ${sql.json({ owner: await runOwner() })}) RETURNING id`;
   const firstImport = !source.cursor?.initializedAt;
   let created = 0;
   let revised = 0;
@@ -422,9 +425,13 @@ export async function collectSource(sourceId: string, opts: { force?: boolean; x
     });
     return { sourceId, status: "ok", found, created, revised };
   } catch (error) {
-    if (shutdownSignal.signal.aborted) throw error;
+    if (shutdownSignal.signal.aborted) {
+      await sql`UPDATE fetch_runs SET status = 'skipped', finished_at = now(), found_count = ${found}, new_count = ${created},
+        error = 'worker stopped before collection completed' WHERE id = ${run!.id} AND status = 'running'`;
+      throw error;
+    }
     const message = String(error instanceof Error ? error.message : error).slice(0, 1000);
-    await recordFetch(sql, sourceId, run!.id, { found, created, detail: null, error: message, budget: error instanceof BudgetExceededError });
+    await sql.begin(tx => recordFetch(tx, sourceId, run!.id, { found, created, detail: null, error: message, budget: error instanceof BudgetExceededError }));
     return { sourceId, status: "failed", found, created, revised, error: message };
   }
 }
@@ -461,8 +468,9 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
       FROM sources WHERE id IN ${sql(sourceIds)} ORDER BY id`
   ).filter((m) => m.enabled && shardHandle(m));
   if (members.length === 0) return { key, status: "skipped", accounts: 0, found: 0, created: 0 };
+  const owner = await runOwner();
   const runs = new Map((await sql<{ id: number; source_id: string }[]>`
-    INSERT INTO fetch_runs ${sql(members.map(m => ({ source_id: m.id })), "source_id")} RETURNING id, source_id`
+    INSERT INTO fetch_runs ${sql(members.map(m => ({ source_id: m.id, detail: sql.json({ owner }) })), "source_id", "detail")} RETURNING id, source_id`
   ).map(r => [r.source_id, r.id]));
   let found = 0;
   let created = 0;
@@ -513,12 +521,18 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
     });
     return { key, status: "ok", accounts: members.length, found, created };
   } catch (error) {
-    if (shutdownSignal.signal.aborted) throw error;
+    if (shutdownSignal.signal.aborted) {
+      await sql`UPDATE fetch_runs SET status = 'skipped', finished_at = now(), error = 'worker stopped before collection completed'
+        WHERE id IN ${sql([...runs.values()])} AND status = 'running'`;
+      throw error;
+    }
     const message = String(error instanceof Error ? error.message : error).slice(0, 1000);
     const budget = error instanceof BudgetExceededError;
-    for (const m of members) {
-      await recordFetch(sql, m.id, runs.get(m.id)!, { found: 0, created: 0, detail: { shard: key, accounts: members.length }, error: message, budget });
-    }
+    await sql.begin(async tx => {
+      for (const m of members) {
+        await recordFetch(tx, m.id, runs.get(m.id)!, { found: 0, created: 0, detail: { shard: key, accounts: members.length }, error: message, budget });
+      }
+    });
     return { key, status: "failed", accounts: members.length, found, created, error: message };
   }
 }

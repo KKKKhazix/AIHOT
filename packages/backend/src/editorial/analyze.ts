@@ -145,6 +145,10 @@ export const StructureSchema = z.object({
   scope: z.enum(["single", "composite", "unknown"]).catch("unknown"),
   category: z.enum(CATEGORY_KEYS).nullable().catch(null),
   tags: z.array(z.string()).default([]),
+  tagEvidence: z.array(z.object({
+    tag: z.string().trim().min(1).max(80),
+    quote: z.string().trim().min(1).max(240),
+  })).max(32).default([]),
   subjects: z.array(z.string()).max(6).catch([]),
   fact: FactSchema,
 });
@@ -197,9 +201,16 @@ export function normalizeStructure(data: z.infer<typeof StructureSchema>, a: Ana
   const tags = normalizeTags(data.tags);
   const activeCategory = ACTIVE_CATEGORIES.find((c) => c.key === data.category);
   const categoryTags = CATEGORY_TAGS as readonly string[];
+  // A tag is public only when the model supplied an exact quote from the source. Keep the
+  // model's ordering (the prompt asks for strongest matches first), then cap secondary tags.
+  const evidence = new Map(data.tagEvidence.map((entry) => [entry.tag, entry.quote]));
+  const supportedTags = tags
+    .filter((tag) => !categoryTags.includes(tag))
+    .filter((tag) => grounded(evidence.get(tag)))
+    .slice(0, 3);
   const publicTags = activeCategory
-    ? [activeCategory.label, ...tags.filter((tag) => !categoryTags.includes(tag))]
-    : data.category === null ? tags.filter((tag) => !categoryTags.includes(tag)) : tags;
+    ? [activeCategory.label, ...supportedTags]
+    : supportedTags;
   return {
     category: data.category, tags: publicTags,
     subjects: [...new Set(data.subjects.map((s) => s.trim().toLowerCase()).filter((s) => s in ENTITIES))],

@@ -146,6 +146,23 @@ test("a revised discussion post replaces its old story's heat and removes it whe
   assert.deepEqual(await participants(), [1, 1]);
 });
 
+test("a post revised away from its story is matched again when a report of its new subject arrives", async () => {
+  const markers = [`VR${T}`, `VS${T}`];
+  markers.forEach((m, i) => VECTORS.set(m, direction(95 + i, [1])));
+  const at = new Date(Date.now() - 60_000);
+  const first = await groupArticle(await report("rematch-first", { title: `Launch ${markers[0]}`, publishedAt: at }));
+  const material = (marker: string) => ({ sourceId: SIGNAL, url: `https://example.com/sig-${T}-rematch`, title: `Discussion ${marker}`, bodyText: `Discussion ${marker}`, bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: at });
+  const { articleId } = await upsertMaterial(material(markers[0]!));
+  await settleNonEditorial(articleId);
+  assert.equal((await groupArticle(articleId, { signalOnly: true })).storyId, first.storyId);
+  assert.equal((await upsertMaterial(material(markers[1]!))).revised, true);
+  await settleNonEditorial(articleId);
+  assert.equal((await groupArticle(articleId, { signalOnly: true })).verdict, "signal-unmatched");
+  const founded = await groupArticle(await report("rematch-second", { title: `Security issue ${markers[1]}`, publishedAt: at }));
+  assert.equal(founded.rematched, 1, "an earlier attachment no longer holds the post back");
+  assert.equal((await groupArticle(articleId, { signalOnly: true })).storyId, founded.storyId);
+});
+
 test("a late re-evaluation that finds nothing keeps a post's heat in a story recall can no longer reach", async () => {
   const markers = [`VL${T}`, `VM${T}`];
   markers.forEach((m, i) => VECTORS.set(m, direction(90 + i, [1])));

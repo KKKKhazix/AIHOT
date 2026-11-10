@@ -573,11 +573,11 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
 /** How long a discussion post waits for the post it replies to or quotes. */
 const WAIT_HOURS = 48;
 
-/** Discussion posts not yet attached to any story (a post a person placed or detached is left alone). */
+/** Discussion posts attached to no story now: no heat evidence, latest decision found nothing (a post a person placed or detached is left alone). */
 const unattachedSignal = sql`
   s.participation_mode = 'hot_signal' AND a.processing_state = 'skipped' AND ${newsCondition}
   AND NOT EXISTS (SELECT 1 FROM story_signals ss WHERE ss.article_id = a.id)
-  AND NOT EXISTS (SELECT 1 FROM grouping_decisions d WHERE d.article_id = a.id AND d.verdict <> 'signal-unmatched')
+  AND coalesce((SELECT d.verdict FROM grouping_decisions d WHERE d.article_id = a.id ORDER BY d.id DESC LIMIT 1), 'signal-unmatched') = 'signal-unmatched'
   AND NOT EXISTS (SELECT 1 FROM grouping_overrides o WHERE o.article_id = a.id)`;
 
 /**

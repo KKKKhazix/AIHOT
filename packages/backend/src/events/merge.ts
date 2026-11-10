@@ -34,6 +34,9 @@ export async function mergeStoryInto(fromId: number, intoId: number, reason: str
   return sql.begin(async (tx) => {
     if (!(await mergeStoryTx(tx, fromId, intoId, actor))) return null;
     const articles = await tx<{ article_id: string }[]>`SELECT DISTINCT fa.article_id FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id WHERE f.story_id = ${intoId}`;
+    // Every report's row lock before any republication: one holds its fact's seat lock until commit,
+    // and a single publication takes its row lock before that seat.
+    await tx`SELECT 1 FROM articles WHERE id = ANY(${articles.map((a) => a.article_id)}) ORDER BY id FOR UPDATE`;
     for (const a of articles) await republishTx(tx, a.article_id);
     await enqueue(QUEUES.digest, { storyId: intoId }, { singletonKey: `story:${intoId}` }, tx);
     await audit(actor, "story.merge", `story:${fromId}`, reason, null, { into: intoId }, { db: tx });

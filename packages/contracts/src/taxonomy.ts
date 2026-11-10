@@ -1,13 +1,14 @@
 // Public vocabularies shared by the website, the API and the worker. The categories themselves belong to
 // the industry pack (industry/taxonomy.ts); their keys are external identities (URLs, API, RSS) and never change.
 // How the public API, RSS and MCP differ from the website is the site's (site/site.ts PUBLIC_CATEGORIES).
-import { CATEGORIES } from "@aihot/industry/taxonomy";
+import { ACTIVE_CATEGORIES, CATEGORIES } from "@aihot/industry/taxonomy";
 import { PUBLIC_CATEGORIES } from "@aihot/site";
 
 type Category = (typeof CATEGORIES)[number];
 
 export type CategoryKey = Category["key"];
 export const CATEGORY_KEYS = CATEGORIES.map((c) => c.key) as unknown as readonly [CategoryKey, ...CategoryKey[]];
+export const ACTIVE_CATEGORY_KEYS: readonly CategoryKey[] = ACTIVE_CATEGORIES.map((c) => c.key);
 
 /** Website tab labels. */
 export const CATEGORY_LABELS = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.label])) as Record<CategoryKey, string>;

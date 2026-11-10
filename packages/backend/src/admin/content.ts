@@ -175,14 +175,15 @@ export async function correctPublicationDate(id: string, input: { version: numbe
   });
 }
 
-export async function searchContent(q: string): Promise<BeforeJson<AdminContentRow>[]> {
+export async function searchContent(q: string, editorialCases = false): Promise<BeforeJson<AdminContentRow>[]> {
   const term = q.trim();
-  if (!term) return [];
   const read = (where: ReturnType<typeof sql>) => sql<BeforeJson<AdminContentRow>[]>`
     SELECT a.id, coalesce(p.title, a.title) AS title, a.url, s.name AS source, a.discovered_at, a.processing_state,
            p.visibility, p.selected, p.score
     FROM articles a JOIN sources s ON s.id = a.source_id LEFT JOIN publications p ON p.article_id = a.id
     WHERE ${where} ORDER BY a.discovered_at DESC, a.id LIMIT 50`;
+  if (editorialCases) return read(sql`p.tags && ${["内容工作流", "创作者案例拆解", "内容运营方法"]}::text[]`);
+  if (!term) return [];
   // Exact lookups use the identity indexes; a title search must not force a full-table join for an ID.
   if (ARTICLE_ID_PATTERN.test(term)) {
     const found = await read(sql`a.id = ${term}`);
@@ -291,7 +292,7 @@ const FieldsSchema = z
     summary: z.string().max(2000),
     reason: z.string().max(1000),
     category: z.enum(CATEGORY_KEYS as unknown as [string, ...string[]]),
-    tags: z.array(z.string().max(60)).max(20),
+    tags: z.array(z.string().max(60)),
     score: z.number().min(0).max(100).nullable(),
     selected: z.boolean(),
     silent: z.boolean(),

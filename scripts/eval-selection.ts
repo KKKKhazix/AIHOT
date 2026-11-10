@@ -18,6 +18,8 @@ import {
   buildScoreInput,
   runSelectionPrefilter,
   runSelectionScores,
+  runStructure,
+  scoreForCategory,
   scoresSelect,
   shownScore,
   tierThreshold,
@@ -123,8 +125,11 @@ for (const model of models) {
       const shared = await request;
       receiptIds.push(...shared.receiptIds);
       if (shared.error) return outcome(null, null, shared.error);
+      const structure = await runStructure(input);
+      receiptIds.push(structure.receiptId);
+      const details = shared.scores?.details?.map((detail) => scoreForCategory(detail, structure.category));
       // Model output is independent of source tier; the decision threshold is not.
-      return outcome("pass", shared.scores ? { ...shared.scores, threshold } : null);
+      return outcome("pass", shared.scores ? { ...shared.scores, threshold, ...(details ? { details, values: details.map((d) => d.total) } : {}) } : null);
     } catch (error) {
       return outcome(null, null, String(error).slice(0, 200));
     }

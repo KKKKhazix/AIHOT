@@ -8,26 +8,31 @@ import { AdminPage, Badge, Button, Card, DataTable, Empty, Input, Time } from ".
 
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const q = new URL(request.url).searchParams.get("q")?.trim() ?? "";
-  if (!q) return { q, rows: [] as AdminContentRow[] };
-  const { rows } = await adminGet<AdminContentSearch>(request, `/api/admin/content?q=${encodeURIComponent(q)}`);
-  return { q, rows };
+  const params = new URL(request.url).searchParams;
+  const q = params.get("q")?.trim() ?? "";
+  const editorialCases = params.get("view") === "editorial-cases";
+  if (!q && !editorialCases) return { q, editorialCases, rows: [] as AdminContentRow[] };
+  const query = editorialCases ? "view=editorial-cases" : `q=${encodeURIComponent(q)}`;
+  const { rows } = await adminGet<AdminContentSearch>(request, `/api/admin/content?${query}`);
+  return { q, editorialCases, rows };
 }
 
 export const meta: Route.MetaFunction = () => [{ title: `内容诊断 · ${SITE.name} 后台` }];
 
 export default function Content({ loaderData }: Route.ComponentProps) {
-  const { q, rows } = loaderData;
+  const { q, rows, editorialCases } = loaderData;
   const [sp] = useSearchParams();
   const navigate = useNavigate();
   return (
     <AdminPage title="内容诊断" subtitle="按 ID、原文链接或标题找到任何一条内容，看它从信源到公开出口的完整链路；下架、仅摘要、人工修正和重处理都在详情页。">
+      <p className="mb-4"><Link className="text-accent hover:underline" to={editorialCases ? "/admin/content" : "/admin/content?view=editorial-cases"}>{editorialCases ? "返回内容搜索" : "创作与运营案例（内部研究）"}</Link></p>
+      {editorialCases && <p className="mb-4 text-sm">创作与运营案例：最近 50 条匹配内容工作流、创作者案例拆解或内容运营方法的资料。</p>}
       <Form method="get" className="mb-5 flex max-w-2xl gap-2">
         <Input name="q" defaultValue={sp.get("q") ?? ""} placeholder="内容 ID、URL 或标题关键词" aria-label="搜索内容" autoFocus />
         <Button type="submit" tone="primary">查找</Button>
       </Form>
-      {q && (
-        <Card pad={false} title={`“${q}” 的结果`} right={<span>{rows.length === 50 ? "仅显示最近 50 条" : `${rows.length} 条`}</span>}>
+      {(q || editorialCases) && (
+        <Card pad={false} title={editorialCases ? "创作与运营案例" : `“${q}” 的结果`} right={<span>{rows.length === 50 ? "仅显示最近 50 条" : `${rows.length} 条`}</span>}>
           <DataTable
             rows={rows}
             rowKey={(r) => r.id}
@@ -62,7 +67,7 @@ export default function Content({ loaderData }: Route.ComponentProps) {
           />
         </Card>
       )}
-      {!q && <Empty>输入 ID、链接或标题开始查找。</Empty>}
+      {!q && !editorialCases && <Empty>输入 ID、链接或标题开始查找。</Empty>}
     </AdminPage>
   );
 }

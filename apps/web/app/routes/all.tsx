@@ -81,6 +81,14 @@ export default function AllPage() {
     else sp.delete("tab");
     return `/all?${sp}`;
   };
+  const contentTabHref = (evergreen: boolean) => {
+    const sp = new URLSearchParams(params);
+    sp.delete("page");
+    if (evergreen) sp.set("tag", "常青内容");
+    else if (sp.get("tag") === "常青内容") sp.delete("tag");
+    const query = sp.toString();
+    return query ? `/all?${query}` : "/all";
+  };
   const title = f.q ? `搜索“${f.q}”` : f.tag === "source:wechat-share" ? "我 AI 我家" : f.tag ? `#${f.tag}` : null;
   const updated = beijingTime(data.freshness);
   // Searches are remembered in this browser for the phone search (listed in the privacy notice).
@@ -109,6 +117,18 @@ export default function AllPage() {
         <FeedBar base="/all" category={f.category} channel={f.channel} tag={f.tag} />
       )}
       <ActiveFilters base="/all" category={f.category} channel={f.channel} tag={f.tag} />
+
+      <PillTabs
+        className="mb-4"
+        size="sm"
+        layoutId="all-content-kind"
+        label="内容类型"
+        active={f.tag === "常青内容" ? "evergreen" : "all"}
+        items={[
+          { key: "all", label: "全部内容", to: contentTabHref(false) },
+          { key: "evergreen", label: "常青内容", to: contentTabHref(true) },
+        ]}
+      />
 
       {/* Desktop, as on 精选: the title, then one filter row with the search field aligned on the right. */}
       <div className="hidden lg:block">

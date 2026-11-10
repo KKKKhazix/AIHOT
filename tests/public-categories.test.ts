@@ -19,7 +19,8 @@ const T = tag();
 const SOURCE = `categories-${T}`;
 const now = new Date();
 const at = new Date(now.getTime() - 3600_000);
-const title = (category: string) => `${T} ${category}`;
+// Delimit the key so "research" is not mistaken for "research-trends" in Agent text.
+const title = (category: string) => `${T} ${category} !`;
 const app = await buildApp();
 const client = new Client({ name: 'category-check', version: '1.0.0' });
 

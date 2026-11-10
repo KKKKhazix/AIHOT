@@ -90,6 +90,14 @@ async function members(slug: string): Promise<string[]> {
   return out;
 }
 
+test("family topics match their specific tags rather than broad security tags", async () => {
+  const matching = await report({ at: hoursAgo(2), title: `家庭信息保护 ${T}`, category: "news", tags: ["家庭个人信息保护"] });
+  const broad = await report({ at: hoursAgo(3), title: `一般网络安全 ${T}`, category: "news", tags: ["网络安全"] });
+  const result = await members("family-priority-5");
+  assert.ok(result.includes(matching));
+  assert.ok(!result.includes(broad));
+});
+
 test("a company topic takes the articles about it, not the ones that only mention it", async () => {
   const about = await report({ at: hoursAgo(30), title: `Claude Code 推出插件 ${T}`, subjects: ["anthropic"] });
   const product = await report({ at: hoursAgo(31), title: `Sonnet 新版上线 ${T}`, subjects: ["anthropic"] });

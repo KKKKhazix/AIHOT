@@ -21,6 +21,13 @@ export const SELECTION = {
 
 // 各内容类型的五项权重，程序按此计算分数；修改时同步评分提示词和评测。
 export const SCORE_WEIGHTS = {
+  news: { sig: 2, nov: 2, cred: 1, reson: 4, act: 1 },
+  policy: { sig: 3, nov: 1, cred: 2, reson: 3, act: 1 },
+  product: { sig: 1, nov: 3, cred: 1, reson: 4, act: 1 },
+  research: { sig: 2, nov: 2, cred: 2, reson: 3, act: 1 },
+  method: { sig: 1, nov: 2, cred: 1, reson: 5, act: 1 },
+  resource: { sig: 1, nov: 2, cred: 1, reson: 5, act: 1 },
+  opinion: { sig: 1, nov: 3, cred: 1, reson: 4, act: 1 },
   policy_change: { sig: 3, nov: 1, cred: 2, reson: 3, act: 1 },
   education_event: { sig: 2, nov: 2, cred: 1, reson: 4, act: 1 },
   research_finding: { sig: 2, nov: 2, cred: 2, reson: 3, act: 1 },

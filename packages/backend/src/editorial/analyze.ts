@@ -14,7 +14,7 @@ import { describePublicationTime } from "../sources/dates.ts";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
-import { CATEGORIES } from "@aihot/industry/taxonomy";
+import { ACTIVE_CATEGORIES } from "@aihot/industry/taxonomy";
 import { SELECTION, SCORE_WEIGHTS } from "@aihot/industry/selection";
 import { ITEM_COPY } from "@aihot/site";
 import { sql } from "../db.ts";
@@ -79,6 +79,12 @@ export function calculateScore(result: z.infer<typeof ScoreSchema>) {
   return { ...result, weights: { ...weights }, total };
 }
 
+/** Apply the public category's weights while retaining the scorer's independently proposed type. */
+export function scoreForCategory(result: z.infer<typeof ScoreSchema>, category: string | null) {
+  if (!ACTIVE_CATEGORIES.some((c) => c.key === category)) return { ...calculateScore(result), scoredAs: result.itemType };
+  return { ...calculateScore({ ...result, itemType: category as keyof typeof SCORE_WEIGHTS }), scoredAs: result.itemType };
+}
+
 const SCORE_TIME = new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
 });
@@ -138,7 +144,7 @@ const FactSchema = z
 export const StructureSchema = z.object({
   scope: z.enum(["single", "composite", "unknown"]).catch("unknown"),
   category: z.enum(CATEGORY_KEYS).nullable().catch(null),
-  tags: z.array(z.string()).max(12).catch([]),
+  tags: z.array(z.string()).default([]),
   subjects: z.array(z.string()).max(6).catch([]),
   fact: FactSchema,
 });
@@ -147,7 +153,7 @@ const UnderstandSchema = z.object({
   itemType: z.enum(ITEM_TYPES),
   authorRole: z.enum(["principal", "observer", "relayer"]).catch("relayer"),
   // The understanding prompt asks for tags; the public ones come from the structure step.
-  tags: z.array(z.string()).max(12).catch([]),
+  tags: z.array(z.string()).default([]),
   editorialJudgment: z.string().max(400).catch(""),
   titleZh: z.string().trim().min(1).max(200),
   summaryZh: z.string().trim().min(1).max(4000),
@@ -159,9 +165,9 @@ const ZH_COUNT = ["零", "一", "二", "三", "四", "五", "六", "七", "八",
 
 /** The structure step owns the public category and tags, as well as grouping evidence (filled from the pack's vocabulary). */
 export const STRUCTURE_SYSTEM = promptText("structure", {
-  categoryCount: ZH_COUNT[CATEGORIES.length] ?? String(CATEGORIES.length),
+  categoryCount: ZH_COUNT[ACTIVE_CATEGORIES.length] ?? String(ACTIVE_CATEGORIES.length),
   categoryGuide: CATEGORY_GUIDE,
-  categoryTags: CATEGORY_TAGS.join("、"),
+  categoryTags: ACTIVE_CATEGORIES.map((c) => c.label).join("、"),
   topicTags: TOPIC_TAGS.join("、"),
   entityTags: ENTITY_TAGS.join("、"),
   entities: Object.entries(ENTITIES).map(([id, e]) => `${id}（${e.aliases.slice(0, 3).join("/")}）`).join("，"),
@@ -188,8 +194,14 @@ export function normalizeStructure(data: z.infer<typeof StructureSchema>, a: Ana
       return quote ? [{ text: c.text ?? quote, quote }] : [];
     }).slice(0, 4),
   };
+  const tags = normalizeTags(data.tags);
+  const activeCategory = ACTIVE_CATEGORIES.find((c) => c.key === data.category);
+  const categoryTags = CATEGORY_TAGS as readonly string[];
+  const publicTags = activeCategory
+    ? [activeCategory.label, ...tags.filter((tag) => !categoryTags.includes(tag))]
+    : data.category === null ? tags.filter((tag) => !categoryTags.includes(tag)) : tags;
   return {
-    category: data.category, tags: normalizeTags(data.tags),
+    category: data.category, tags: publicTags,
     subjects: [...new Set(data.subjects.map((s) => s.trim().toLowerCase()).filter((s) => s in ENTITIES))],
     scope, fact,
   };
@@ -334,7 +346,7 @@ export async function runStructure(a: AnalyzeInputArticle, opts: StepOpts = {}):
     user: buildMaterial(a),
     schema: StructureSchema,
     temperature: 0.2,
-    maxTokens: 1200,
+    maxTokens: 4096,
     attemptTag: tagged(opts.attemptTag, "structure"),
   });
   return { ...normalizeStructure(res.data, a), model: res.model, receiptId: res.receiptId, reused: res.reused };
@@ -495,10 +507,17 @@ export async function runAnalysis(a: AnalyzeInputArticle, opts: StepOpts = {}): 
   const structure = runStructure(a, opts).then((value) => ({ value }), (error: unknown) => ({ error }));
   try {
     const scores = await runSelectionScores(a, opts);
-    const sum = scoreSum(scores);
-    const near = scoresSelect(scores) || (sum !== null && sum > UNDERSTAND_FLOOR * SCORE_CALLS);
     const s = await structure;
     if ("error" in s) throw s.error;
+    // Structure owns the public category. When it is known, use that same category's weights for
+    // both score calls; retain the scorer's own type so disagreements remain auditable.
+    const category = s.value.category;
+    if (scores?.details && category && ACTIVE_CATEGORIES.some((c) => c.key === category)) {
+      scores.details = scores.details.map((detail) => scoreForCategory(detail, category));
+      scores.values = scores.details.map((detail) => detail.total);
+    }
+    const sum = scoreSum(scores);
+    const near = scoresSelect(scores) || (sum !== null && sum > UNDERSTAND_FLOOR * SCORE_CALLS);
     const writing: NonNullable<AnalysisRun["writing"]> = original
       ? { kind: "verbatim", model: null, titleZh: original.title, summaryZh: original.summary ?? "", reasonZh: null, receiptIds: [], reused: true }
       : await mendWording(a, (near ? await runUnderstand(a, opts) : null) ?? (await runSummarize(a, opts)), opts);

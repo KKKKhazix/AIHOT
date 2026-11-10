@@ -2,7 +2,7 @@
 // button on phones), the phone bar of 精选 and 全部, and search.
 import { useEffect, useRef, useState } from "react";
 import { Form, Link, useNavigation, useSearchParams } from "react-router";
-import { CATEGORY_KEYS, CATEGORY_LABELS, CHANNEL_LABELS, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
+import { ACTIVE_CATEGORY_KEYS, CATEGORY_LABELS, CHANNEL_LABELS, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
 import { SITE } from "@aihot/site";
 import { IconClose, IconFilter, IconSearch } from "../../components/icons";
 import { PillTabs } from "../../components/ui/Tabs";
@@ -37,7 +37,7 @@ function filterOptions(base: string, params: URLSearchParams, noneLabel: string)
   return [
     { key: "all", label: noneLabel, to: hrefWith(base, params, { category: null, channel: null, ...clearSourceFilter }) },
     { key: "firstParty", label: CHANNEL_LABELS.firstParty, to: hrefWith(base, params, { category: null, channel: "firstParty", ...clearSourceFilter }) },
-    ...CATEGORY_KEYS.map((k) => ({ key: k, label: CATEGORY_LABELS[k], to: hrefWith(base, params, { category: k, channel: null, ...clearSourceFilter }) })),
+    ...ACTIVE_CATEGORY_KEYS.map((k) => ({ key: k, label: CATEGORY_LABELS[k], to: hrefWith(base, params, { category: k, channel: null, ...clearSourceFilter }) })),
     { key: WECHAT_SOURCE_FILTER, label: WECHAT_SOURCE_LABEL, to: hrefWith(base, params, { category: null, channel: null, tag: WECHAT_SOURCE_FILTER }) },
   ];
 }

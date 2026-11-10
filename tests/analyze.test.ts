@@ -8,16 +8,30 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
-import { analyzeArticle, buildMaterial, loadAnalyzeInput, normalizeStructure, StructureSchema, tierThreshold, UNDERSTAND_FLOOR } from "@aihot/backend/editorial/analyze";
+import { analyzeArticle, buildMaterial, loadAnalyzeInput, normalizeStructure, scoreForCategory, StructureSchema, tierThreshold, UNDERSTAND_FLOOR } from "@aihot/backend/editorial/analyze";
 import { queueProcessing } from "@aihot/backend/jobs/content";
 import { QUEUES, stopBoss } from "@aihot/backend/jobs/queue";
 import { compactAnswerFirstSummary, enforceIdentity, MAX_BODY_CHARS, parseTranslateOutput } from "@aihot/backend/editorial/writing";
 import { READER_WORDING } from "@aihot/industry/wording";
-import { ITEM_TYPES } from "@aihot/industry/taxonomy";
+import { CATEGORY_TAGS, ITEM_TYPES, TOPIC_TAGS } from "@aihot/industry/taxonomy";
+import { normalizeTags } from "@aihot/backend/editorial/vocabulary";
 
 const T = tag();
 const SOURCE = `test-analyze-${T}`;
 const X_SOURCE = `test-analyze-x-${T}`;
+
+test("structure preserves supported tags beyond the former limits", () => {
+  const tags = [CATEGORY_TAGS[0], ...TOPIC_TAGS];
+  assert.ok(tags.length > 12);
+  assert.deepEqual(normalizeTags(StructureSchema.parse({ tags }).tags), tags);
+});
+
+test("score uses the structured category weights and records the scorer's own type", () => {
+  const score = scoreForCategory({ itemType: "news", sig: 9, nov: 2, cred: 4, reson: 6, act: 3 }, "policy");
+  assert.equal(score.itemType, "policy");
+  assert.equal(score.scoredAs, "news");
+  assert.equal(score.total, 58);
+});
 
 interface Req { step: AnalysisStep; marker: string; user: string }
 const requests: Req[] = [];
@@ -153,6 +167,10 @@ test("structure retains grounded conditions, rejects invented or unseen quotes, 
     { text: "不在模型输入里的句子", quote: "This late detail was not sent." },
   ] };
   const base = { category: "ai-models", tags: [], subjects: [], fact: frame };
+  const classified = normalizeStructure(StructureSchema.parse({ ...base, category: "research", tags: ["资讯", "学习方法", "常青内容"] }), input);
+  assert.deepEqual(classified.tags, ["研究", "学习方法", "常青内容"], "the primary classification agrees with the structured category");
+  const unclassified = normalizeStructure(StructureSchema.parse({ ...base, category: null, tags: ["资讯", "常青内容"] }), input);
+  assert.deepEqual(unclassified.tags, ["常青内容"], "an unknown category is not replaced by a guessed category label");
   const out = normalizeStructure(StructureSchema.parse(base), input);
   assert.ok(buildMaterial(input).includes("Only available in the US."), "a condition after the old 7000-character cutoff reaches the model");
   assert.ok(buildMaterial(input).includes("后文未提供"));

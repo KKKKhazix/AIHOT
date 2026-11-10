@@ -1,23 +1,721 @@
 {
   "groups": [
-    { "key": "life-stage", "name": "成长与关系", "blurb": "按孩子成长、亲子关系和家长能力浏览" },
-    { "key": "family-issues", "name": "家庭议题", "blurb": "按教育、健康、安全、消费与公共服务浏览" },
-    { "key": "growth-opportunities", "name": "能力与机会", "blurb": "按AI能力、兴趣发展、创作项目和家庭资源浏览" },
-    { "key": "evidence-resources", "name": "研究与方法", "blurb": "查找研究调查、实用指南和可用资源" }
+    {
+      "key": "life-stage",
+      "name": "成长与关系",
+      "blurb": "按孩子成长、亲子关系和家长能力浏览"
+    },
+    {
+      "key": "family-issues",
+      "name": "家庭议题",
+      "blurb": "按教育、健康、安全、消费与公共服务浏览"
+    },
+    {
+      "key": "growth-opportunities",
+      "name": "能力与机会",
+      "blurb": "按AI能力、兴趣发展、创作项目和家庭资源浏览"
+    },
+    {
+      "key": "evidence-resources",
+      "name": "研究与方法",
+      "blurb": "查找研究调查、实用指南和可用资源"
+    },
+    {
+      "key": "priority",
+      "name": "优先关注",
+      "blurb": "按相关议题浏览"
+    },
+    {
+      "key": "youth-growth",
+      "name": "青少年成长",
+      "blurb": "按相关议题浏览"
+    },
+    {
+      "key": "learning-education",
+      "name": "学习与教育",
+      "blurb": "按相关议题浏览"
+    },
+    {
+      "key": "family-relations",
+      "name": "家庭与关系",
+      "blurb": "按相关议题浏览"
+    },
+    {
+      "key": "creative-living",
+      "name": "创作生活消费",
+      "blurb": "按相关议题浏览"
+    },
+    {
+      "key": "product-safety",
+      "name": "产品技术安全",
+      "blurb": "按相关议题浏览"
+    },
+    {
+      "key": "society-culture",
+      "name": "社会文化人物",
+      "blurb": "按相关议题浏览"
+    }
   ],
   "topics": [
-    { "slug": "adolescence", "name": "青春期", "group": "life-stage", "tags": ["青春期"], "definition": "青春期身心变化、家庭沟通和同伴关系。" },
-    { "slug": "parent-child", "name": "亲子沟通", "group": "life-stage", "tags": ["亲子沟通"], "definition": "家长与儿童青少年的沟通、冲突和关系建设。" },
-    { "slug": "parent-ai-skills", "name": "家长 AI 与数字能力", "group": "life-stage", "tags": ["人工智能", "家长AI能力", "数字素养"], "definition": "帮助家长理解、选择和安全使用 AI 与数字工具；不把工具宣传当作效果证据。" },
-    { "slug": "school", "name": "学校与考试", "group": "family-issues", "tags": ["校园", "考试招生"], "definition": "学校管理、教育政策、课程和考试招生信息；注明适用地区、对象和实施阶段。" },
-    { "slug": "mental-health", "name": "心理健康与成长", "group": "family-issues", "tags": ["心理健康", "儿童健康"], "definition": "儿童青少年及家庭成员的心理健康、成长研究和公共服务。" },
-    { "slug": "online-safety", "name": "网络安全与权益", "group": "family-issues", "tags": ["网络安全", "未成年人保护"], "definition": "未成年人和家庭使用网络、平台与数字服务时的安全、隐私和权益。" },
-    { "slug": "family-costs", "name": "家庭消费与实惠资源", "group": "family-issues", "tags": ["家庭消费", "家庭资源"], "definition": "影响家庭开支、消费选择和可获得资源的信息；标清价格、适用条件、数据来源与商业关系。" },
-    { "slug": "family-services", "name": "家庭服务与公共权益", "group": "family-issues", "tags": ["家庭服务", "公共服务", "家庭权益"], "definition": "家庭可使用的公共服务、福利、保障与权益信息，区分政策公布和实际可办理状态。" },
-    { "slug": "creative-projects", "name": "亲子创作与家庭项目", "group": "growth-opportunities", "tags": ["家庭项目", "创作方法", "兴趣发展"], "definition": "可供家长和孩子学习、共同创作或改编实践的方法；需要有材料中可说明的具体转化路径。" },
-    { "slug": "culture-interests", "name": "兴趣、文化与科技趋势", "group": "growth-opportunities", "tags": ["兴趣发展", "学习方法"], "definition": "帮助家庭拓展视野、发现兴趣与新机会的文化和社会观察；不因热度或关键词自动纳入。" },
-    { "slug": "ai-and-children", "name": "AI 对孩子与家庭", "group": "growth-opportunities", "tags": ["人工智能", "数字素养"], "definition": "AI 对孩子学习、成长、家庭生活、家长能力和未成年人权益的具体影响。" },
-    { "slug": "research", "name": "研究与调查", "group": "evidence-resources", "tags": ["研究调查"], "definition": "家庭、教育、儿童发展、消费和社会议题的研究、调查及数据解读；保留样本、方法与限制。" },
-    { "slug": "practical-guides", "name": "家长实用指南与资源", "group": "evidence-resources", "tags": ["实用指南", "家庭资源"], "definition": "可执行的家庭指南、公开学习资源、工具比较和服务信息；说明依据、成本、适用条件与商业关系。" }
+    {
+      "slug": "adolescence",
+      "name": "青春期",
+      "group": "life-stage",
+      "tags": [
+        "青春期"
+      ],
+      "definition": "青春期身心变化、家庭沟通和同伴关系。"
+    },
+    {
+      "slug": "parent-child",
+      "name": "亲子沟通",
+      "group": "life-stage",
+      "tags": [
+        "亲子沟通"
+      ],
+      "definition": "家长与儿童青少年的沟通、冲突和关系建设。"
+    },
+    {
+      "slug": "parent-ai-skills",
+      "name": "家长 AI 与数字能力",
+      "group": "life-stage",
+      "tags": [
+        "人工智能",
+        "家长AI能力",
+        "数字素养"
+      ],
+      "definition": "帮助家长理解、选择和安全使用 AI 与数字工具；不把工具宣传当作效果证据。"
+    },
+    {
+      "slug": "school",
+      "name": "学校与考试",
+      "group": "family-issues",
+      "tags": [
+        "校园",
+        "考试招生"
+      ],
+      "definition": "学校管理、教育政策、课程和考试招生信息；注明适用地区、对象和实施阶段。"
+    },
+    {
+      "slug": "mental-health",
+      "name": "心理健康与成长",
+      "group": "family-issues",
+      "tags": [
+        "心理健康",
+        "儿童健康"
+      ],
+      "definition": "儿童青少年及家庭成员的心理健康、成长研究和公共服务。"
+    },
+    {
+      "slug": "online-safety",
+      "name": "网络安全与权益",
+      "group": "family-issues",
+      "tags": [
+        "网络安全",
+        "未成年人保护"
+      ],
+      "definition": "未成年人和家庭使用网络、平台与数字服务时的安全、隐私和权益。"
+    },
+    {
+      "slug": "family-costs",
+      "name": "家庭消费与实惠资源",
+      "group": "family-issues",
+      "tags": [
+        "家庭消费",
+        "家庭资源"
+      ],
+      "definition": "影响家庭开支、消费选择和可获得资源的信息；标清价格、适用条件、数据来源与商业关系。"
+    },
+    {
+      "slug": "family-services",
+      "name": "家庭服务与公共权益",
+      "group": "family-issues",
+      "tags": [
+        "家庭服务",
+        "公共服务",
+        "家庭权益"
+      ],
+      "definition": "家庭可使用的公共服务、福利、保障与权益信息，区分政策公布和实际可办理状态。"
+    },
+    {
+      "slug": "creative-projects",
+      "name": "亲子创作与家庭项目",
+      "group": "growth-opportunities",
+      "tags": [
+        "家庭项目",
+        "创作方法",
+        "兴趣发展"
+      ],
+      "definition": "可供家长和孩子学习、共同创作或改编实践的方法；需要有材料中可说明的具体转化路径。"
+    },
+    {
+      "slug": "culture-interests",
+      "name": "兴趣、文化与科技趋势",
+      "group": "growth-opportunities",
+      "tags": [
+        "兴趣发展",
+        "学习方法"
+      ],
+      "definition": "帮助家庭拓展视野、发现兴趣与新机会的文化和社会观察；不因热度或关键词自动纳入。"
+    },
+    {
+      "slug": "ai-and-children",
+      "name": "AI 对孩子与家庭",
+      "group": "growth-opportunities",
+      "tags": [
+        "人工智能",
+        "数字素养"
+      ],
+      "definition": "AI 对孩子学习、成长、家庭生活、家长能力和未成年人权益的具体影响。"
+    },
+    {
+      "slug": "research",
+      "name": "研究与调查",
+      "group": "evidence-resources",
+      "tags": [
+        "研究调查"
+      ],
+      "definition": "家庭、教育、儿童发展、消费和社会议题的研究、调查及数据解读；保留样本、方法与限制。"
+    },
+    {
+      "slug": "practical-guides",
+      "name": "家长实用指南与资源",
+      "group": "evidence-resources",
+      "tags": [
+        "实用指南",
+        "家庭资源"
+      ],
+      "definition": "可执行的家庭指南、公开学习资源、工具比较和服务信息；说明依据、成本、适用条件与商业关系。"
+    },
+    {
+      "slug": "family-priority-1",
+      "name": "家长AI能力与工具",
+      "group": "priority",
+      "tags": [
+        "家长学AI",
+        "家长AI应用"
+      ],
+      "definition": "家长学AI、家长AI应用相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-priority-2",
+      "name": "孩子使用AI与AI素养",
+      "group": "priority",
+      "tags": [
+        "青少年AI使用",
+        "青少年AI认知",
+        "青少年AI素养"
+      ],
+      "definition": "青少年AI使用、青少年AI认知、青少年AI素养相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-priority-3",
+      "name": "AI陪伴与家庭关系",
+      "group": "priority",
+      "tags": [
+        "AI陪伴",
+        "AI与家庭关系"
+      ],
+      "definition": "AI陪伴、AI与家庭关系相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-priority-4",
+      "name": "AI与学校及学习",
+      "group": "priority",
+      "tags": [
+        "学校AI实践",
+        "学校AI规则",
+        "AI辅助学习",
+        "AI与教育评价",
+        "教师AI成长",
+        "AI教育资源"
+      ],
+      "definition": "学校AI实践、学校AI规则、AI辅助学习、AI与教育评价、教师AI成长、AI教育资源相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-priority-5",
+      "name": "家庭数字安全与权益",
+      "group": "priority",
+      "tags": [
+        "家庭个人信息保护",
+        "未成年人AI内容风险",
+        "家庭AI诈骗冒充",
+        "未成年人网络保护",
+        "家庭数字消费风险"
+      ],
+      "definition": "家庭个人信息保护、未成年人AI内容风险、家庭AI诈骗冒充、未成年人网络保护、家庭数字消费风险相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-priority-6",
+      "name": "家庭科技消费与实用服务",
+      "group": "priority",
+      "tags": [
+        "家庭AI选购",
+        "家庭AI优惠资源",
+        "家庭数字消费风险",
+        "AI学习产品测评",
+        "校外AI培训",
+        "家庭AI应用",
+        "家庭AI健康",
+        "长辈数字照护"
+      ],
+      "definition": "家庭AI选购、家庭AI优惠资源、家庭数字消费风险、AI学习产品测评、校外AI培训、家庭AI应用、家庭AI健康、长辈数字照护相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-priority-7",
+      "name": "亲子创作与兴趣项目",
+      "group": "priority",
+      "tags": [
+        "亲子数字共创",
+        "家庭科技项目",
+        "亲子AI兴趣"
+      ],
+      "definition": "亲子数字共创、家庭科技项目、亲子AI兴趣相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-priority-8",
+      "name": "科技文化与新机会",
+      "group": "priority",
+      "tags": [
+        "AI社会文化变化",
+        "AI升学职业规划",
+        "家庭科技机会"
+      ],
+      "definition": "AI社会文化变化、AI升学职业规划、家庭科技机会相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-youth-growth-01",
+      "name": "AI 内容接触",
+      "group": "youth-growth",
+      "tags": [
+        "青少年接触AI内容",
+        "未成年人AI内容风险"
+      ],
+      "definition": "青少年接触AI内容、未成年人AI内容风险相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-youth-growth-02",
+      "name": "青少年创作",
+      "group": "youth-growth",
+      "tags": [
+        "青少年AI创作"
+      ],
+      "definition": "青少年AI创作相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-youth-growth-03",
+      "name": "兴趣探索",
+      "group": "youth-growth",
+      "tags": [
+        "青少年AI兴趣"
+      ],
+      "definition": "青少年AI兴趣相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-youth-growth-04",
+      "name": "同伴文化",
+      "group": "youth-growth",
+      "tags": [
+        "青少年AI同伴文化"
+      ],
+      "definition": "青少年AI同伴文化相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-youth-growth-05",
+      "name": "青春期",
+      "group": "youth-growth",
+      "tags": [
+        "青春期与AI"
+      ],
+      "definition": "青春期与AI相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-youth-growth-06",
+      "name": "青年声音",
+      "group": "youth-growth",
+      "tags": [
+        "青年谈AI"
+      ],
+      "definition": "青年谈AI相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-learning-education-01",
+      "name": "AI 教育",
+      "group": "learning-education",
+      "tags": [
+        "学校AI实践"
+      ],
+      "definition": "学校AI实践相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-learning-education-02",
+      "name": "AI 素养",
+      "group": "learning-education",
+      "tags": [
+        "青少年AI素养",
+        "公众AI素养"
+      ],
+      "definition": "青少年AI素养、公众AI素养相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-learning-education-03",
+      "name": "学习工具（待定）",
+      "group": "learning-education",
+      "tags": [
+        "AI学习产品测评"
+      ],
+      "definition": "AI学习产品测评相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-learning-education-04",
+      "name": "校园教育",
+      "group": "learning-education",
+      "tags": [
+        "校园AI实践",
+        "学校AI规则",
+        "教师AI成长"
+      ],
+      "definition": "校园AI实践、学校AI规则、教师AI成长相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-learning-education-05",
+      "name": "教师发展",
+      "group": "learning-education",
+      "tags": [
+        "教师AI成长"
+      ],
+      "definition": "教师AI成长相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-learning-education-06",
+      "name": "课程资源（待定）",
+      "group": "learning-education",
+      "tags": [
+        "AI教育资源"
+      ],
+      "definition": "AI教育资源相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-learning-education-07",
+      "name": "校外培训",
+      "group": "learning-education",
+      "tags": [
+        "校外AI培训"
+      ],
+      "definition": "校外AI培训相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-learning-education-08",
+      "name": "课外学习",
+      "group": "learning-education",
+      "tags": [
+        "校外AI培训",
+        "课外AI自学"
+      ],
+      "definition": "校外AI培训、课外AI自学相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-learning-education-09",
+      "name": "教育评价",
+      "group": "learning-education",
+      "tags": [
+        "AI与教育评价"
+      ],
+      "definition": "AI与教育评价相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-family-relations-01",
+      "name": "家长能力",
+      "group": "family-relations",
+      "tags": [
+        "家长学AI",
+        "家长AI应用",
+        "家长AI态度"
+      ],
+      "definition": "家长学AI、家长AI应用、家长AI态度相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-family-relations-02",
+      "name": "家庭应用",
+      "group": "family-relations",
+      "tags": [
+        "家庭AI应用",
+        "家庭AI健康",
+        "长辈数字照护"
+      ],
+      "definition": "家庭AI应用、家庭AI健康、长辈数字照护相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-family-relations-03",
+      "name": "亲子沟通",
+      "group": "family-relations",
+      "tags": [
+        "亲子AI沟通"
+      ],
+      "definition": "亲子AI沟通相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-family-relations-04",
+      "name": "家庭情感",
+      "group": "family-relations",
+      "tags": [
+        "AI与家庭关系"
+      ],
+      "definition": "AI与家庭关系相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-family-relations-05",
+      "name": "心理健康",
+      "group": "family-relations",
+      "tags": [
+        "AI与心理健康"
+      ],
+      "definition": "AI与心理健康相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-family-relations-06",
+      "name": "家庭健康",
+      "group": "family-relations",
+      "tags": [
+        "家庭AI健康"
+      ],
+      "definition": "家庭AI健康相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-family-relations-07",
+      "name": "长辈照护",
+      "group": "family-relations",
+      "tags": [
+        "长辈数字照护"
+      ],
+      "definition": "长辈数字照护相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-creative-living-01",
+      "name": "亲子创作",
+      "group": "creative-living",
+      "tags": [
+        "亲子数字共创"
+      ],
+      "definition": "亲子数字共创相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-creative-living-02",
+      "name": "家庭项目（待定）",
+      "group": "creative-living",
+      "tags": [
+        "家庭科技项目"
+      ],
+      "definition": "家庭科技项目相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-creative-living-03",
+      "name": "创作工具",
+      "group": "creative-living",
+      "tags": [
+        "AI创作实践"
+      ],
+      "definition": "AI创作实践相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-creative-living-04",
+      "name": "工具体验",
+      "group": "creative-living",
+      "tags": [
+        "AI工具实测",
+        "AI学习产品测评"
+      ],
+      "definition": "AI工具实测、AI学习产品测评相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-creative-living-05",
+      "name": "家庭消费",
+      "group": "creative-living",
+      "tags": [
+        "家庭AI选购",
+        "家庭数字消费风险"
+      ],
+      "definition": "家庭AI选购、家庭数字消费风险相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-creative-living-06",
+      "name": "生活方式",
+      "group": "creative-living",
+      "tags": [
+        "AI生活玩法"
+      ],
+      "definition": "AI生活玩法相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-creative-living-07",
+      "name": "实惠资源",
+      "group": "creative-living",
+      "tags": [
+        "家庭AI优惠资源"
+      ],
+      "definition": "家庭AI优惠资源相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-product-safety-01",
+      "name": "AI 产品（待定）",
+      "group": "product-safety",
+      "tags": [
+        "家庭教育创作AI产品"
+      ],
+      "definition": "家庭教育创作AI产品相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-product-safety-02",
+      "name": "AI 硬件",
+      "group": "product-safety",
+      "tags": [
+        "家庭教育AI硬件",
+        "AI玩具"
+      ],
+      "definition": "家庭教育AI硬件、AI玩具相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-product-safety-03",
+      "name": "智能玩具（待定）",
+      "group": "product-safety",
+      "tags": [
+        "AI玩具"
+      ],
+      "definition": "AI玩具相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-product-safety-04",
+      "name": "技术进展",
+      "group": "product-safety",
+      "tags": [
+        "AI技术应用进展"
+      ],
+      "definition": "AI技术应用进展相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-product-safety-05",
+      "name": "数字隐私",
+      "group": "product-safety",
+      "tags": [
+        "家庭个人信息保护",
+        "AI数据隐私授权",
+        "AI声音肖像保护"
+      ],
+      "definition": "家庭个人信息保护、AI数据隐私授权、AI声音肖像保护相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-product-safety-06",
+      "name": "内容安全",
+      "group": "product-safety",
+      "tags": [
+        "AI合成信息风险",
+        "未成年人AI内容风险"
+      ],
+      "definition": "AI合成信息风险、未成年人AI内容风险相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-product-safety-07",
+      "name": "技术滥用（待定）",
+      "group": "product-safety",
+      "tags": [
+        "AI诈骗冒充",
+        "AI合成信息风险"
+      ],
+      "definition": "AI诈骗冒充、AI合成信息风险相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-product-safety-08",
+      "name": "平台权益",
+      "group": "product-safety",
+      "tags": [
+        "未成年人网络保护",
+        "平台用户权益",
+        "家庭数字消费风险"
+      ],
+      "definition": "未成年人网络保护、平台用户权益、家庭数字消费风险相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-society-culture-01",
+      "name": "社会文化",
+      "group": "society-culture",
+      "tags": [
+        "AI社会文化变化"
+      ],
+      "definition": "AI社会文化变化相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-society-culture-02",
+      "name": "网络热议",
+      "group": "society-culture",
+      "tags": [
+        "AI多方讨论"
+      ],
+      "definition": "AI多方讨论相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-society-culture-03",
+      "name": "流行文化",
+      "group": "society-culture",
+      "tags": [
+        "AI流行文化"
+      ],
+      "definition": "AI流行文化相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-society-culture-04",
+      "name": "公共政策",
+      "group": "society-culture",
+      "tags": [
+        "AI公共政策"
+      ],
+      "definition": "AI公共政策相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-society-culture-05",
+      "name": "未来职业",
+      "group": "society-culture",
+      "tags": [
+        "AI职业就业变化",
+        "AI升学职业规划"
+      ],
+      "definition": "AI职业就业变化、AI升学职业规划相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-society-culture-06",
+      "name": "行业动态",
+      "group": "society-culture",
+      "tags": [
+        "家庭教育创作行业"
+      ],
+      "definition": "家庭教育创作行业相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-society-culture-07",
+      "name": "教育人物",
+      "group": "society-culture",
+      "tags": [
+        "教育者AI表达"
+      ],
+      "definition": "教育者AI表达相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-society-culture-08",
+      "name": "创作者观察",
+      "group": "society-culture",
+      "tags": [
+        "创作者案例拆解"
+      ],
+      "definition": "创作者案例拆解相关内容，以材料支持的具体事实、方法或观点为准。"
+    },
+    {
+      "slug": "family-society-culture-09",
+      "name": "家长声音",
+      "group": "society-culture",
+      "tags": [
+        "家长AI自述",
+        "家长AI态度"
+      ],
+      "definition": "家长AI自述、家长AI态度相关内容，以材料支持的具体事实、方法或观点为准。"
+    }
   ]
 }

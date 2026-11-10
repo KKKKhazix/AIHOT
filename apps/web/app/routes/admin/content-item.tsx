@@ -11,6 +11,7 @@ import { KIND_LABEL, MODE_LABEL, VISIBILITY_LABEL } from "../../features/admin/l
 import { AdminPage, Badge, Button, Card, Empty, Field, Input, Json, KV, ReasonDialog, Select, Textarea } from "../../features/admin/ui";
 
 const SCORE_TYPE_LABELS: Record<string, string> = {
+  news: "资讯", policy: "政策", product: "产品", research: "研究", method: "方法", resource: "资源", opinion: "观点",
   policy_change: "政策与公共服务", education_event: "学校与教育事件", research_finding: "研究与调查",
   health_safety_event: "健康、安全与权益", family_issue: "家庭与社会议题", technology_change: "科技变化",
   practical_guide: "实用指南与资源", opinion_analysis: "观点与分析",
@@ -165,7 +166,7 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
                         <div className="mt-2 space-y-1 text-[12px] text-ink-3">
                           {an.score_details.map((d, index) => (
                             <div key={index}>
-                              第 {index + 1} 次 · {SCORE_TYPE_LABELS[d.itemType] ?? d.itemType} · {([['现实影响', 'sig'], ['信息增量', 'nov'], ['证据强度', 'cred'], ['家庭价值', 'reson'], ['可使用性', 'act']] as const).map(([label, key]) => `${label} ${d[key]}×${d.weights[key]}`).join(' + ')} = {d.total}
+                              第 {index + 1} 次 · {SCORE_TYPE_LABELS[d.itemType] ?? d.itemType}{d.scoredAs && d.scoredAs !== d.itemType ? `（评分模型判断：${SCORE_TYPE_LABELS[d.scoredAs] ?? d.scoredAs}）` : ""} · {(Object.hasOwn({ news: 1, policy: 1, product: 1, research: 1, method: 1, resource: 1, opinion: 1 }, d.itemType) ? ([['现实影响', 'sig'], ['信息新意', 'nov'], ['证据清晰度', 'cred'], ['AI与家庭的关联和启发', 'reson'], ['对编辑的用途', 'act']] as const) : ([['现实影响', 'sig'], ['信息增量', 'nov'], ['证据强度', 'cred'], ['家庭价值', 'reson'], ['可使用性', 'act']] as const)).map(([label, key]) => `${label} ${d[key]}×${d.weights[key]}`).join(' + ')} = {d.total}
                             </div>
                           ))}
                           <div>{an.score_details.length === 2 ? "最终分数为两次总分的平均值（展示时向下取整）。" : "评分未完成，尚无最终分数。"}</div>

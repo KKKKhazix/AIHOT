@@ -34,7 +34,7 @@ import { alreadyOnCard, echoesOnCard, factHasCard, foldsUnder, ownArticleOnCard,
 import { consolidate, liveStory, type Consolidation } from "./consolidate.ts";
 import { HEAT_WINDOW_HOURS } from "./hot.ts";
 import { mergeFactInto, mergeStoryInto } from "./merge.ts";
-import { bestPerFact, candidateViews, cosine32, recallFacts, recallFactsByPosts, recallSelectedBackground, relatedPosts, vectorsFor, type Recalled, type CardRow } from "./recall.ts";
+import { bestPerFact, candidateViews, cosine32, RECALL_DAYS, recallFacts, recallFactsByPosts, recallSelectedBackground, relatedPosts, vectorsFor, type Recalled, type CardRow } from "./recall.ts";
 import {
   BATCH_SYSTEM, BATCH_PROMPT_VERSION, BatchSchema, PAIR_SYSTEM, PairSchema, RELATE_PROMPT_VERSION, SIGNAL_SYSTEM, SignalSchema, TIE_MIN_CONFIDENCE,
   batchUser, completeDecisions, firmlyTied, pairUser, reportText, sameOccurrence, signalTarget, signalText, storyForDevelopment, verdictsByFact,
@@ -647,13 +647,17 @@ async function rematch(result: GroupResult, articleId: string, text: string, fac
 async function groupSignal(a: ArticleRow, source: { id: string; signal_group_id: string | null }, observedAt: Date, regroup: boolean): Promise<GroupResult> {
   const text = signalText(a);
   // Discussion evidence obeys the same article lock and last-minute manual check as reports. The
-  // Previous evidence is replaced with the new decision in the same transaction.
+  // evidence and decision commit together, and the decision replaces the post's earlier evidence.
+  // Finding nothing only withdraws evidence from a story recall can still reach: once a story's
+  // reports have left the recall window, a late re-evaluation cannot meet it again.
   const write = async (target: { factId: number; storyId: number } | null, verdict: "signal" | "signal-native" | "signal-unmatched", candidates: DecisionCandidate[], receiptId: number | null = null): Promise<GroupResult> => {
     const result: GroupResult = await sql.begin(async (tx) => {
       await lockCurrentRevision(tx, a.id, a.revision);
       const manual = await manualDecision(tx, a.id);
       if (!manual) {
-        await tx`DELETE FROM story_signals WHERE article_id = ${a.id}`;
+        await tx`DELETE FROM story_signals ss WHERE ss.article_id = ${a.id} AND (${target !== null} OR EXISTS (
+                   SELECT 1 FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN articles r ON r.id = fa.article_id
+                   WHERE f.story_id = ss.story_id AND fa.role IN ('primary', 'report') AND r.discovered_at > now() - make_interval(days => ${RECALL_DAYS})))`;
         if (target) await recordSignal(tx, target.storyId, a.id, source, "signal", observedAt);
         await recordDecision(tx, a.id, target?.factId ?? null, target?.storyId ?? null, verdict, candidates, receiptId);
       }

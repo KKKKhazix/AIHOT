@@ -193,6 +193,10 @@ test("a late re-evaluation that finds nothing keeps a post's heat in a story rec
   const { articleId } = await upsertMaterial(material(markers[0]!));
   await settleNonEditorial(articleId);
   assert.equal((await groupArticle(articleId, { signalOnly: true })).storyId, storyId);
+  // A withdrawn report found later stays in the story but is no recall evidence.
+  const withdrawn = await report("late-withdrawn", { title: `Launch ${markers[0]} again` });
+  assert.equal((await groupArticle(withdrawn)).storyId, storyId);
+  await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = ${withdrawn}`;
   await sql`UPDATE articles SET discovered_at = now() - interval '20 days' WHERE id = ${reportId}`;
   assert.equal((await upsertMaterial(material(markers[1]!))).revised, true);
   await settleNonEditorial(articleId);

@@ -29,7 +29,7 @@ import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
 import { groupingPriority } from "../jobs/content.ts";
 import { publishArticle, publishArticleTx, republishTx } from "../publication/publish.ts";
 import { isIndependentSelectedSource } from "../publication/rules.ts";
-import { latestCompositeCondition } from "../publication/scope.ts";
+import { groupingEvidenceCondition, latestCompositeCondition } from "../publication/scope.ts";
 import { alreadyOnCard, echoesOnCard, factHasCard, foldsUnder, ownArticleOnCard, readerOf, retireCardTx, seenOnCard } from "./cards.ts";
 import { consolidate, liveStory, type Consolidation } from "./consolidate.ts";
 import { HEAT_WINDOW_HOURS } from "./hot.ts";
@@ -657,7 +657,8 @@ async function groupSignal(a: ArticleRow, source: { id: string; signal_group_id:
       if (!manual) {
         await tx`DELETE FROM story_signals ss WHERE ss.article_id = ${a.id} AND (${target !== null} OR EXISTS (
                    SELECT 1 FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN articles r ON r.id = fa.article_id
-                   WHERE f.story_id = ss.story_id AND fa.role IN ('primary', 'report') AND r.discovered_at > now() - make_interval(days => ${RECALL_DAYS})))`;
+                   WHERE f.story_id = ss.story_id AND fa.role IN ('primary', 'report') AND ${groupingEvidenceCondition(sql`r.id`)}
+                     AND r.discovered_at > now() - make_interval(days => ${RECALL_DAYS})))`;
         if (target) await recordSignal(tx, target.storyId, a.id, source, "signal", observedAt);
         await recordDecision(tx, a.id, target?.factId ?? null, target?.storyId ?? null, verdict, candidates, receiptId);
       }

@@ -163,6 +163,27 @@ test("a post revised away from its story is matched again when a report of its n
   assert.equal((await groupArticle(articleId, { signalOnly: true })).storyId, founded.storyId);
 });
 
+test("an earlier no to a fact does not withdraw the attachment to it made since", async () => {
+  const [launch, post] = [`VN${T}`, `VP${T}`];
+  VECTORS.set(launch, direction(100, [1]));
+  VECTORS.set(post, direction(100, [0.8, 0.6]));
+  const at = new Date(Date.now() - 60_000);
+  const { storyId } = await groupArticle(await report("earlier-no", { title: `Launch ${launch}`, publishedAt: at }));
+  const material = (title: string) => ({ sourceId: SIGNAL, url: `https://example.com/sig-${T}-earlier-no-post`, title, bodyText: title, bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: at });
+  const { articleId } = await upsertMaterial(material(`NOPE, first take on ${post}`));
+  await settleNonEditorial(articleId);
+  assert.equal((await groupArticle(articleId, { signalOnly: true })).verdict, "signal-unmatched");
+  const revise = async (title: string) => {
+    assert.equal((await upsertMaterial(material(title))).revised, true);
+    await settleNonEditorial(articleId);
+  };
+  await revise(`Second take on ${post}`);
+  assert.equal((await groupArticle(articleId, { signalOnly: true, regroup: true })).storyId, storyId);
+  await revise(`Third take on ${post}`);
+  assert.equal((await groupArticle(articleId, { signalOnly: true })).storyId, storyId);
+  assert.deepEqual((await sql`SELECT story_id FROM story_signals WHERE article_id = ${articleId}`).map((r) => Number(r.story_id)), [storyId]);
+});
+
 test("a late re-evaluation that finds nothing keeps a post's heat in a story recall can no longer reach", async () => {
   const markers = [`VL${T}`, `VM${T}`];
   markers.forEach((m, i) => VECTORS.set(m, direction(90 + i, [1])));

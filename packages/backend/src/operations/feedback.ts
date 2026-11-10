@@ -232,6 +232,11 @@ function sitePath(pageUrl: string | null): string | null {
   return page?.origin === config.siteUrl ? page.pathname.replace(/\/+$/, "") : null;
 }
 
+export function moduleHandlesFeedback(pageUrl: string | null): boolean {
+  const from = sitePath(pageUrl);
+  return from !== null && serverModules().some((module) => module.feedbackPages?.includes(from));
+}
+
 /** Only the words, whether a picture came with them, and a known feature page's path without its query. */
 async function readsAsNoise(fb: { id: number; content: string; screenshot_key: string | null; page_url: string | null }): Promise<boolean> {
   const pathname = sitePath(fb.page_url);
@@ -270,8 +275,7 @@ async function pushFeedback(id: number): Promise<"sent" | "kept" | "disabled" | 
     });
     if (dropped) return "dropped";
   }
-  const from = fb ? sitePath(fb.page_url) : null;
-  return forwardFeedbackToFeishu(id, !(from && serverModules().some((m) => m.feedbackPages?.includes(from))));
+  return forwardFeedbackToFeishu(id, !fb || !moduleHandlesFeedback(fb.page_url));
 }
 
 /**

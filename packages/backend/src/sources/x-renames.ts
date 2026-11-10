@@ -6,6 +6,8 @@
 import { sql } from "../db.ts";
 import { audit } from "../audit.ts";
 import { requestRepublish } from "../jobs/publication.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
+import { ReceiptUnknownError } from "../providers/receipts.ts";
 import { getTweet, privateAccountRefusal } from "../providers/socialdata.ts";
 import { collectSource } from "./collect.ts";
 import { X_HANDLE, xHandle } from "./account.ts";
@@ -21,7 +23,12 @@ export interface XRename {
 }
 
 /** `pauseMs` between lookups leaves room in the provider's per-minute budget for the searches. */
-export async function followXRenames(opts: { now?: number; pauseMs?: number } = {}): Promise<{ checked: number; renamed: XRename[]; privateAccounts: string[] }> {
+export async function followXRenames(opts: { now?: number; pauseMs?: number } = {}): Promise<{
+  checked: number;
+  renamed: XRename[];
+  privateAccounts: string[];
+  unknownLookups: { sourceId: string; receiptId: number }[];
+}> {
   const now = opts.now ?? Date.now();
   const window = new Date(now).toISOString().slice(0, 10);
   const quiet = await sql<{ id: string; name: string; query: string; tweet_ids: string[] }[]>`
@@ -35,6 +42,7 @@ export async function followXRenames(opts: { now?: number; pauseMs?: number } = 
   const pause = () => opts.pauseMs === 0 ? null : new Promise((r) => setTimeout(r, opts.pauseMs ?? 4000));
   const renamed: XRename[] = [];
   const privateAccounts: string[] = [];
+  const unknownLookups: { sourceId: string; receiptId: number }[] = [];
   let lookups = 0;
   for (const s of quiet) {
     const from = xHandle({ query: s.query })!;
@@ -44,9 +52,14 @@ export async function followXRenames(opts: { now?: number; pauseMs?: number } = 
       try {
         to = (await getTweet(tweetId, { purpose: "x_rename_check", subject: `source:${s.id}`, window }))?.user.screen_name;
       } catch (error) {
-        // The refusal stays on its receipt; the unverified account is reported and the others go on.
-        if (!privateAccountRefusal(error)) throw error;
-        privateAccounts.push(s.id);
+        if (error instanceof ReceiptUnknownError && !shutdownSignal.signal.aborted) {
+          // Leave the receipt to recovery before spending on another post from this account.
+          unknownLookups.push({ sourceId: s.id, receiptId: error.receiptId });
+        } else if (privateAccountRefusal(error)) {
+          privateAccounts.push(s.id);
+        } else {
+          throw error;
+        }
         break;
       }
       if (to) break;
@@ -65,5 +78,5 @@ export async function followXRenames(opts: { now?: number; pauseMs?: number } = 
     const read = await collectSource(s.id, { xSince: s.tweet_ids[0] });
     renamed.push({ sourceId: s.id, from, to, found: read.found });
   }
-  return { checked: quiet.length, renamed, privateAccounts };
+  return { checked: quiet.length, renamed, privateAccounts, unknownLookups };
 }

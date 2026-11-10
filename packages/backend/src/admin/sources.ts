@@ -282,7 +282,7 @@ function articleField(html: string, fields: string[]): string | null {
   const names = fields.join("|");
   const patterns = [
     new RegExp(`\\b(?:var\\s+)?(?:${names})\\s*=\\s*(["'])([^"'\\r\\n]{1,200})\\1`, "i"),
-    new RegExp(`["'](?:${names})["']\\s*:\\s*(["'])([^"'\\r\\n]{1,200})\\1`, "i"),
+    new RegExp(`(?:["'](?:${names})["']|\\b(?:${names})\\b)\\s*:\\s*(["'])([^"'\\r\\n]{1,200})\\1`, "i"),
   ];
   for (const pattern of patterns) {
     const value = pattern.exec(html)?.[2]?.trim();
@@ -303,7 +303,15 @@ async function wechatAccountFromArticle(input: unknown): Promise<{ ghid: string 
   const response = await guardedFetch(url.toString(), { timeoutMs: 12_000, maxBytes: 2 * 1024 * 1024, truncate: true, maxRedirects: 3, redirectPolicy: "same-origin" });
   if (response.status !== 200) throw Object.assign(new Error(`读取公众号文章失败（HTTP ${response.status}）`), { statusCode: 400 });
   const html = response.text();
-  const username = articleField(html, ["username", "ghid", "gh_id", "wx_user"]);
+  // selfUserName and the top-level user_name identify the article's publisher.
+  // Some articles also include biz_info.user_name for embedded ads, so prefer
+  // the explicit publisher variable before generic account fields.
+  const username = [
+    ["selfUserName"],
+    ["user_name"],
+    ["username"],
+    ["ghid", "gh_id", "wx_user"],
+  ].map((fields) => articleField(html, fields)).find(Boolean) ?? null;
   const ghid = username && /^gh_[A-Za-z0-9_-]{4,100}$/i.test(username) ? username : null;
   const name = articleField(html, ["nickname", "nick_name", "wx_name", "account_name"]);
   return { ghid, name };

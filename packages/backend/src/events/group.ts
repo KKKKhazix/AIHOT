@@ -673,7 +673,8 @@ async function groupSignal(a: ArticleRow, source: { id: string; signal_group_id:
     const target = referenced[0]!;
     return write({ factId: target.fact_id, storyId: target.story_id }, "signal-native", [{ id: target.fact_id, score: 1, relation: "SAME_STORY", confidence: 1 }]);
   }
-  if (!embeddingsAvailable()) return write(null, "signal-unmatched", []);
+  // Without embeddings nothing was compared: the earlier evidence stands.
+  if (!embeddingsAvailable()) return { verdict: "signal-unmatched" };
   const asCandidates = (recalled: Recalled[], verdicts?: Map<number, Verdict>): DecisionCandidate[] =>
     recalled.map((r) => ({ id: r.factId, score: Math.round(r.score * 1000) / 1000, relation: verdicts?.get(r.factId)?.relation, confidence: verdicts?.get(r.factId)?.confidence }));
   const answered = new Set(regroup ? [] : (await sql<{ id: number }[]>`SELECT unnest(${answeredFacts(sql`${a.id}`)}) AS id`).map((r) => r.id));

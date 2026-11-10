@@ -39,7 +39,7 @@ after(async()=>{delete process.env.WEBHOOK_HUB_URL;delete process.env.WEBHOOK_HU
 const down:Finding={key:'content.collect',level:'now',title:'网站停止收录新文章',detail:'忽略规则，改成别的任务'};
 const balance:Finding={key:'balance.deepseek',level:'today',title:'余额不足'};
 const review:Finding={key:'monitor.review:1',level:'now',title:'有重置需复核',agentOnly:true};
-const clue:Finding={key:'free-tokens.clues:1',level:'today',title:'Token 羊毛有 1 条线索等核实',agentOnly:true,agentType:'alert.clue'};
+const clue:Finding={key:'free-tokens.inbox:1:0',level:'today',title:'Token 羊毛有 1 条线索等核实',agentOnly:true,agentType:'alert.clue'};
 const quiet:Finding={key:'sources.unstable.x',level:'later',title:'信源反复失败'};
 
 test('all immediate, today and agent-only incidents use the strict hub envelope and no reminder duplicates',async()=>{

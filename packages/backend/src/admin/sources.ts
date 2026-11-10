@@ -21,7 +21,6 @@ import { FetchError, type Candidate, type SourceRow } from "../sources/types.ts"
 import { fetchWebList } from "../sources/web-list.ts";
 import { fetchXSearch } from "../sources/x.ts";
 import { xHandle } from "../sources/account.ts";
-import { mpAccountInfoByKeyword } from "../providers/wxrank.ts";
 
 
 export interface SourceListFilters {
@@ -279,41 +278,52 @@ export async function findDuplicateSource(kind: string, config: Record<string, u
 
 const WxArticleUrlSchema = z.string().trim().url().max(2048);
 
-async function bizFromWechatArticle(input: unknown): Promise<string> {
+function articleField(html: string, fields: string[]): string | null {
+  const names = fields.join("|");
+  const patterns = [
+    new RegExp(`\\b(?:var\\s+)?(?:${names})\\s*=\\s*(["'])([^"'\\r\\n]{1,200})\\1`, "i"),
+    new RegExp(`["'](?:${names})["']\\s*:\\s*(["'])([^"'\\r\\n]{1,200})\\1`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const value = pattern.exec(html)?.[2]?.trim();
+    if (value) return value.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'");
+  }
+  return null;
+}
+
+async function wechatAccountFromArticle(input: unknown): Promise<{ ghid: string | null; name: string | null }> {
   const value = WxArticleUrlSchema.parse(input);
   let url: URL;
   try { url = new URL(value); } catch { throw Object.assign(new Error("请输入有效的公众号文章链接"), { statusCode: 400 }); }
   if (url.protocol !== "https:" || url.hostname !== "mp.weixin.qq.com" || url.port || url.username || url.password || !/^\/s(?:\/|$)/.test(url.pathname)) {
     throw Object.assign(new Error("链接必须是 https://mp.weixin.qq.com/s/... 公众号文章链接"), { statusCode: 400 });
   }
-  const inUrl = url.searchParams.get("__biz");
-  if (inUrl && /^[A-Za-z0-9+/_=-]{4,256}$/.test(inUrl)) return inUrl;
 
-  // Short article links often omit __biz. Resolve only the fixed WeChat article host, with same-origin
-  // redirects and a small response cap; this lookup itself is free, unlike the following wxrank call.
+  // Resolve only the fixed WeChat article host, with same-origin redirects and a small response cap.
   const response = await guardedFetch(url.toString(), { timeoutMs: 12_000, maxBytes: 2 * 1024 * 1024, truncate: true, maxRedirects: 3, redirectPolicy: "same-origin" });
   if (response.status !== 200) throw Object.assign(new Error(`读取公众号文章失败（HTTP ${response.status}）`), { statusCode: 400 });
   const html = response.text();
-  const match = /(?:[?&]|&amp;)__biz=([A-Za-z0-9+/_=%-]{4,256})|\b(?:var\s+)?(?:biz|appuin)\s*=\s*["']([A-Za-z0-9+/_=-]{4,256})["']|["'](?:__biz|biz)["']\s*:\s*["']([A-Za-z0-9+/_=-]{4,256})["']/i.exec(html);
-  const rawBiz = match?.[1] ?? match?.[2] ?? match?.[3];
-  let biz = "";
-  try { biz = rawBiz ? decodeURIComponent(rawBiz.replace(/&amp;/g, "&").split("&")[0]!) : ""; } catch { /* report the same unsupported-link error below */ }
-  if (!/^[A-Za-z0-9+/_=-]{4,256}$/.test(biz)) throw Object.assign(new Error("无法从文章页识别公众号 Biz；请使用包含 __biz 参数的文章链接"), { statusCode: 400 });
-  return biz;
+  const username = articleField(html, ["username", "ghid", "gh_id", "wx_user"]);
+  const ghid = username && /^gh_[A-Za-z0-9_-]{4,100}$/i.test(username) ? username : null;
+  const name = articleField(html, ["nickname", "nick_name", "wx_name", "account_name"]);
+  return { ghid, name };
 }
 
-/** Resolve a WeChat article link or look up a ghid, then report an already configured account, if any. */
+/** Read a WeChat article's original ID and optional display name without calling the wxrank profile API. */
 export async function lookupMpAccount(input: unknown) {
   const value = z.string().trim().min(4).max(2048).parse(input);
-  const keyword = /^gh_/i.test(value)
-    ? z.string().regex(/^gh_[A-Za-z0-9_-]{4,100}$/).parse(value)
-    : await bizFromWechatArticle(value);
-  const result = await mpAccountInfoByKeyword(keyword, { subject: "admin:source-lookup" });
-  if (!result.account) return { ...result, duplicate: null };
-  const duplicate = result.account.ghid
-    ? await findDuplicateSource("mp_account", { ghid: result.account.ghid })
-    : null;
-  return { ...result, duplicate: duplicate ? { id: duplicate.id, name: duplicate.name } : null };
+  const identity = /^gh_/i.test(value)
+    ? { ghid: z.string().regex(/^gh_[A-Za-z0-9_-]{4,100}$/i).parse(value), name: null }
+    : await wechatAccountFromArticle(value);
+  if (!identity.ghid) return { found: false, account: null, duplicate: null };
+  const duplicate = await findDuplicateSource("mp_account", { ghid: identity.ghid });
+  return {
+    found: true,
+    account: { ghid: identity.ghid, name: identity.name },
+    duplicate: duplicate
+      ? { id: duplicate.id, name: duplicate.name }
+      : null,
+  };
 }
 
 export async function createSource(input: unknown, actor: string): Promise<BeforeJson<AdminSourceCreated>> {

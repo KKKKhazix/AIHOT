@@ -33,27 +33,6 @@ export interface MpArticle {
   receiptId: number;
 }
 
-export interface MpAccountInfo {
-  biz: string;
-  ghid: string | null;
-  name: string | null;
-  type: string | null;
-  accountType: string | null;
-  avatar: string | null;
-  articleCount: number | null;
-  originalArticleCount: number | null;
-  region: string | null;
-  verifiedPrincipal: string | null;
-  description: string | null;
-  tags: string[];
-  nameHistory: string[];
-  lastPublishedAt: number | null;
-  updatedAt: number | null;
-  stats: Record<string, unknown> | null;
-  receiptId: number;
-  reused: boolean;
-}
-
 export function wxrankConfigured(): boolean {
   return credential("collectors", "WXRANK_KEY") !== null;
 }
@@ -81,7 +60,7 @@ function parseJson(text: string, endpoint: string): Record<string, unknown> {
   return data as Record<string, unknown>;
 }
 
-async function post(endpoint: "getps" | "artinfo" | "gzhinfo", body: Record<string, string>): Promise<Record<string, unknown>> {
+async function post(endpoint: "getps" | "artinfo", body: Record<string, string>): Promise<Record<string, unknown>> {
   const res = await guardedFetch(`${BASE_URL}/${endpoint}`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
@@ -93,60 +72,6 @@ async function post(endpoint: "getps" | "artinfo" | "gzhinfo", body: Record<stri
   const text = res.text();
   assertAccepted("wxrank", res.status, text);
   return parseJson(text, endpoint);
-}
-
-function asStringOrNull(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function asNumberOrNull(value: unknown): number | null {
-  const number = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
-  return Number.isFinite(number) ? number : null;
-}
-
-/** Account profile from wxrank's local library, looked up by Biz or original ID. Successful empty lookups are billed ¥0.05. */
-export async function mpAccountInfoByKeyword(keyword: string, opts: { subject: string }): Promise<{ found: boolean; account: MpAccountInfo | null; receiptId: number; reused: boolean }> {
-  const normalizedKeyword = keyword.trim();
-  const day = new Date().toISOString().slice(0, 10);
-  const receipt = await paidRequest(
-    { service: "wxrank", purpose: "mp_account_info", subject: opts.subject, identity: { biz: normalizedKeyword, day }, requestSummary: { keyword: normalizedKeyword } },
-    async () => {
-      const response = await post("gzhinfo", { keyword: normalizedKeyword });
-      const cost = providerOutcome(response as { code?: number; msg?: string }, "gzhinfo", 0.05);
-      const data = asRecord(response.data);
-      return { response, cost, usage: { found: Object.keys(data).length > 0 } };
-    },
-  );
-  const response = asRecord(receipt.response);
-  const data = asRecord(response.data);
-  if (!Object.keys(data).length) return { found: false, account: null, receiptId: receipt.receiptId, reused: receipt.reused };
-  const tags = Array.isArray(data.tags) ? data.tags.filter((tag): tag is string => typeof tag === "string") : [];
-  const nameHistory = Array.isArray(data.name_history) ? data.name_history.filter((entry): entry is string => typeof entry === "string") : [];
-  return {
-    found: true,
-    account: {
-      biz: asStringOrNull(data.wx_biz) ?? (/^gh_/i.test(normalizedKeyword) ? "" : normalizedKeyword),
-      ghid: asStringOrNull(data.wx_user),
-      name: asStringOrNull(data.wx_name),
-      type: asStringOrNull(data.wx_type),
-      accountType: asStringOrNull(data.wx_push),
-      avatar: asStringOrNull(data.avatar),
-      articleCount: asNumberOrNull(data.art_total),
-      originalArticleCount: asNumberOrNull(data.ori_total),
-      region: asStringOrNull(data.region),
-      verifiedPrincipal: asStringOrNull(data.verify),
-      description: asStringOrNull(data.description),
-      tags,
-      nameHistory,
-      lastPublishedAt: asNumberOrNull(data.last_pub_time),
-      updatedAt: asNumberOrNull(data.update_time),
-      stats: Object.keys(asRecord(data.stats)).length ? asRecord(data.stats) : null,
-      receiptId: receipt.receiptId,
-      reused: receipt.reused,
-    },
-    receiptId: receipt.receiptId,
-    reused: receipt.reused,
-  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

@@ -6,18 +6,8 @@ import { Button, Field, Input, Textarea } from "./ui";
 
 interface WechatLookup {
   found: boolean;
-  account: {
-    biz: string;
-    ghid: string | null;
-    name: string | null;
-    type: string | null;
-    accountType: string | null;
-    description: string | null;
-    tags: string[];
-  } | null;
+  account: { ghid: string; name: string | null } | null;
   duplicate: { id: string; name: string } | null;
-  receiptId: number;
-  reused: boolean;
 }
 
 function sourceIdFor(ghid: string): string {
@@ -31,6 +21,7 @@ export function ImportWechatSource() {
   const [open, setOpen] = useState(false);
   const [identifier, setIdentifier] = useState("");
   const [lookup, setLookup] = useState<WechatLookup | null>(null);
+  const [name, setName] = useState("");
   const [tags, setTags] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +35,8 @@ export function ImportWechatSource() {
     event.preventDefault();
     setError(null);
     setLookup(null);
+    setName("");
+    setTags("");
     if (!identifier.trim()) {
       setError("请粘贴一篇公众号文章链接或输入 ghid。");
       return;
@@ -51,19 +44,18 @@ export function ImportWechatSource() {
     const result = await run<WechatLookup>("POST", "/api/admin/sources/wechat/lookup", { input: identifier.trim() }, { label: "wechat-lookup", revalidate: false });
     if (!result) return;
     setLookup(result);
-    setTags(result.account?.tags.join("，") ?? "");
+    setName(result.account?.name ?? "");
   }
 
   async function createSource() {
     const account = lookup?.account;
     const ghid = account?.ghid;
-    const name = account?.name;
-    if (!lookup || !account || !ghid || !name || lookup.duplicate) return;
+    if (!lookup || !account || !ghid || !name.trim() || lookup.duplicate) return;
     const result = await run<AdminSourceCreated>("POST", "/api/admin/sources", {
       id: sourceIdFor(ghid),
-      name,
+      name: name.trim(),
       kind: "mp_account",
-      config: { ghid, nickname: name },
+      config: { ghid, nickname: name.trim() },
       tier: "T2",
       participation_mode: "editorial",
       interval_minutes: 360,
@@ -79,54 +71,52 @@ export function ImportWechatSource() {
 
   return (
     <>
-      <Button onClick={() => { setOpen(true); setIdentifier(""); setLookup(null); setTags(""); setError(null); }}>导入公众号</Button>
+      <Button onClick={() => { setOpen(true); setIdentifier(""); setLookup(null); setName(""); setTags(""); setError(null); }}>导入公众号</Button>
       {open && (
         <div className="fixed inset-0 z-[75] flex items-end justify-center p-3 sm:items-center" onKeyDown={(event) => { if (event.key === "Escape") close(); }}>
           <button type="button" aria-label="关闭导入窗口" className="absolute inset-0 bg-ink/30 backdrop-blur-[2px]" onClick={close} />
           <section role="dialog" aria-modal="true" aria-labelledby="wechat-import-title" className="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-sheet bg-raised p-5 shadow-2xl ring-1 ring-line-strong">
             <h2 id="wechat-import-title" className="text-[16px] font-semibold text-ink">导入微信公众号信源</h2>
-            <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">粘贴一篇公众号文章链接，或输入以 gh_ 开头的公众号原始 ID。系统会查询 wxrank 资料并检查该公众号是否已添加。</p>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">粘贴一篇公众号文章链接，或输入以 gh_ 开头的公众号原始 ID。系统从文章源码提取 ghid 和可识别的名称，不调用 wxrank 账号资料接口。</p>
             <form onSubmit={lookupAccount} className="mt-4 space-y-3">
               <Field label="文章链接或公众号 ghid">
                 <Textarea rows={2} value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="https://mp.weixin.qq.com/s/... 或 gh_1234567890" />
               </Field>
-              <p className="text-[12px] text-amber-ink">wxrank 每次查询收费 ¥0.05；未收录的查询也会收费。相同 Biz 当天重复查询会复用结果。</p>
+              <p className="text-[12px] text-ink-4">直接输入 ghid 时，文章名称需手动填写。</p>
               {error && <p role="alert" className="text-[12.5px] text-hot">{error}</p>}
               <div className="flex justify-end gap-2">
                 <Button tone="ghost" onClick={close}>取消</Button>
-                <Button type="submit" tone="primary" busy={pending === "wechat-lookup"} disabled={!identifier.trim()}>查询公众号</Button>
+                <Button type="submit" tone="primary" busy={pending === "wechat-lookup"} disabled={!identifier.trim()}>解析公众号</Button>
               </div>
             </form>
 
             {lookup && (
               <div className="mt-4 rounded-card bg-bg-sunk/70 p-4 ring-1 ring-line">
                 {!lookup.found || !lookup.account ? (
-                  <p className="text-[13px] text-ink-2">wxrank 资源库暂未收录这个公众号标识。没有创建信源。</p>
+                  <p className="text-[13px] text-ink-2">没有从文章源码识别出公众号 ghid。可直接输入以 gh_ 开头的原始 ID。</p>
                 ) : (
                   <>
                     <div className="grid gap-x-4 gap-y-2 text-[13px] sm:grid-cols-[110px_1fr]">
-                      <span className="text-ink-4">公众号名称</span><strong className="font-medium text-ink">{lookup.account.name ?? "未提供"}</strong>
-                      <span className="text-ink-4">Biz</span><span className="break-all font-mono text-ink-2">{lookup.account.biz}</span>
-                      <span className="text-ink-4">原始 ID（ghid）</span><span className="break-all font-mono text-ink-2">{lookup.account.ghid ?? "未提供"}</span>
-                      <span className="text-ink-4">账号类型</span><span className="text-ink-2">{[lookup.account.type, lookup.account.accountType].filter(Boolean).join(" · ") || "未提供"}</span>
-                      {lookup.account.description && <><span className="text-ink-4">简介</span><span className="text-ink-2">{lookup.account.description}</span></>}
+                      <span className="text-ink-4">原始 ID（ghid）</span><span className="break-all font-mono text-ink-2">{lookup.account.ghid}</span>
                     </div>
                     {lookup.duplicate ? (
                       <p className="mt-4 text-[13px] text-amber-ink">这个公众号已经添加：<Link className="font-medium text-accent" to={`/admin/sources/${encodeURIComponent(lookup.duplicate.id)}`} onClick={close}>{lookup.duplicate.name}（{lookup.duplicate.id}）</Link>。没有新建。</p>
-                    ) : lookup.account.ghid && lookup.account.name ? (
+                    ) : (
                       <>
                         <div className="mt-4">
-                          <Field label="信源标签（可编辑，逗号分隔）">
-                            <Input value={tags} onChange={(event) => setTags(event.target.value)} />
+                          <Field label="公众号名称（必填）">
+                            <Input value={name} onChange={(event) => setName(event.target.value)} maxLength={200} placeholder="填写公众号名称" />
                           </Field>
-                          <p className="mt-1 text-[11.5px] text-ink-4">默认填入 wxrank 提供的标签；确认后写入信源。</p>
+                        </div>
+                        <div className="mt-3">
+                          <Field label="信源标签（可选，逗号分隔）">
+                            <Input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="自行填写标签" />
+                          </Field>
                         </div>
                         <div className="mt-4 flex justify-end">
-                          <Button tone="primary" busy={pending === `wechat-create-${lookup.account.ghid}`} onClick={createSource}>确认并添加信源</Button>
+                          <Button tone="primary" busy={pending === `wechat-create-${lookup.account.ghid}`} disabled={!name.trim()} onClick={createSource}>确认并添加信源</Button>
                         </div>
                       </>
-                    ) : (
-                      <p className="mt-4 text-[13px] text-hot">资料缺少公众号名称或 ghid，暂时无法创建信源。</p>
                     )}
                   </>
                 )}

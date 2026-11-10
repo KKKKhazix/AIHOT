@@ -12,6 +12,16 @@ test("keeps the last successful ranking after a source failure", async () => {
     assert.deepEqual(await collectRankings(), { boards: 2, failed: 0 });
     let board = (await loadRankings()).find(b => b.id === "tunbang:weibo")!;
     assert.equal(board.items[0].title, "热点");
+    assert.equal(board.screenStatus, "pending");
+    const [first] = await sql<{ id: number }[]>`SELECT id FROM external_ranking_snapshots WHERE board_id='tunbang:weibo' ORDER BY id DESC LIMIT 1`;
+    await sql`UPDATE external_ranking_snapshots SET status='complete',results=${sql.json([{rank:1,title:"热点",level:"A",reason:"线索",caution:"待核",related_ranks:[]}])} WHERE id=${first!.id}`;
+    board = (await loadRankings()).find(b => b.id === "tunbang:weibo")!;
+    assert.equal(board.judgements?.[0]?.level, "A");
+    await collectRankings();
+    board = (await loadRankings()).find(b => b.id === "tunbang:weibo")!;
+    assert.equal(board.screenStatus, "pending", "a new snapshot does not inherit the previous judgement");
+    assert.equal(board.judgements, null);
+    assert.equal((await sql`SELECT id FROM external_ranking_snapshots WHERE board_id='tunbang:weibo'`).length, 2, "older snapshot is retained");
     const fetched = board.fetchedAt;
     globalThis.fetch = async input => String(input).endsWith("/hot/") ? new Response(directory) : new Response("failed", { status: 503 });
     assert.deepEqual(await collectRankings(), { boards: 2, failed: 1 });

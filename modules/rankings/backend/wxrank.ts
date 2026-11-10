@@ -28,7 +28,7 @@ export function parseWxBoard(board: Board, payload: unknown): { items: Entry[]; 
       account ? ["WCI", display(row.wci_index)] : board.id === "wxrank:viral" ? ["爆发倍率", display(row.boost_ratio)] : ["热度分", display(row.hot_score)]]
       .filter((pair): pair is [string, string] => typeof pair[0] === "string" && typeof pair[1] === "string")
       .map(([label, value]) => `${label} ${value}`).join(" · ");
-    return [{ rank, title: title.trim(), url, heat: "", origin: account ? String(row.wx_type ?? "") : String(row.wx_name ?? ""), metrics }];
+    return [{ rank, title: title.trim(), url, heat: "", origin: account ? String(row.wx_type ?? "") : String(row.wx_name ?? ""), metrics, raw: row }];
   });
   if (!items.length) throw new Error("wxrank returned no valid rows");
   return { items, sourceUpdated: typeof response.data.stat_date === "string" ? response.data.stat_date : null };

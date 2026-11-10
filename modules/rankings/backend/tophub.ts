@@ -23,7 +23,7 @@ function topItems(rows: Record<string, unknown>[]): Entry[] {
     if (typeof row.title !== "string" || !row.title.trim()) return [];
     let url: string | null = null;
     try { const u = new URL(String(row.url ?? "")); if (["http:", "https:"].includes(u.protocol)) url = u.href; } catch { /* no safe original URL */ }
-    return [{ rank: index + 1, title: row.title.trim(), url, heat: typeof row.views === "string" ? row.views : "", origin: typeof row.sitename === "string" ? row.sitename : "" }];
+    return [{ rank: index + 1, title: row.title.trim(), url, heat: typeof row.views === "string" ? row.views : "", origin: typeof row.sitename === "string" ? row.sitename : "", raw: row }];
   });
   if (!items.length) throw new Error("今日热榜无有效条目");
   return items;

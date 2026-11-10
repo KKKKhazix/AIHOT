@@ -2,6 +2,7 @@ import { sql } from "@aihot/backend/db";
 import { parseBoard, parseDirectory, total, type Board, type Entry } from "./tunbang.ts";
 import { parseWxBoard, wxBoards, wxUrl } from "./wxrank.ts";
 import { parseTopBoard, topBoards, topUrl } from "./tophub.ts";
+import { promptText, promptVersion } from "@aihot/backend/editorial/prompts";
 
 async function read(url: string): Promise<string> {
   const response = await fetch(url, { signal: AbortSignal.timeout(15000), redirect: "error", headers: { "user-agent": "EduHOT rankings/1.0" } });
@@ -11,9 +12,16 @@ async function read(url: string): Promise<string> {
   return html;
 }
 async function save(board: Board, { items, sourceUpdated }: { items: Entry[]; sourceUpdated: string | null }) {
-  await sql`INSERT INTO external_rankings (id,name,source,url,items,source_updated,fetched_at,attempted_at,failed)
-    VALUES (${board.id},${board.name},${board.source},${board.url},${sql.json(items as never)},${sourceUpdated},now(),now(),false)
-    ON CONFLICT (id) DO UPDATE SET name=excluded.name, source=excluded.source, url=excluded.url, items=excluded.items, source_updated=excluded.source_updated, fetched_at=now(), attempted_at=now(), failed=false`;
+  const fetchedAt = new Date();
+  const publicItems = items.map(({ raw: _raw, ...item }) => item);
+  await sql.begin(async tx => {
+    await tx`INSERT INTO external_rankings (id,name,source,url,items,source_updated,fetched_at,attempted_at,failed)
+      VALUES (${board.id},${board.name},${board.source},${board.url},${tx.json(publicItems as never)},${sourceUpdated},${fetchedAt},now(),false)
+      ON CONFLICT (id) DO UPDATE SET name=excluded.name, source=excluded.source, url=excluded.url, items=excluded.items, source_updated=excluded.source_updated, fetched_at=excluded.fetched_at, attempted_at=now(), failed=false`;
+    const period = board.id === "wxrank:account" ? "30d" : board.id.startsWith("wxrank:") ? "7d" : board.id === "tophub:day" ? "1d" : null;
+    await tx`INSERT INTO external_ranking_snapshots (board_id,name,source,url,period,items,source_updated,fetched_at,rule_version,rule_prompt)
+      VALUES (${board.id},${board.name},${board.source},${board.url},${period},${tx.json(items as never)},${sourceUpdated},${fetchedAt},${promptVersion("rankings-screen")},${promptText("rankings-screen")})`;
+  });
 }
 export async function collectRankings() {
   let html: string;

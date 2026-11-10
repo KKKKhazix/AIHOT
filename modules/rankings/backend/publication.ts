@@ -3,8 +3,9 @@ import { listedCondition } from "@aihot/backend/publication/scope";
 import { publicSourceName } from "@aihot/backend/publication/rules";
 import { otherBoards, total, type Entry } from "./tunbang.ts";
 import { topBoards } from "./tophub.ts";
+import type { RankingJudgement } from "./screen.ts";
 
-export interface Ranking { id: string; name: string; source: string; url: string; items: Entry[]; sourceUpdated: string | null; fetchedAt: string | null; failed: boolean; unavailable?: string }
+export interface Ranking { id: string; name: string; source: string; url: string; items: Entry[]; sourceUpdated: string | null; fetchedAt: string | null; failed: boolean; unavailable?: string; screenStatus?: "pending" | "processing" | "complete" | "failed" | null; screenRuleVersion?: string | null; judgements?: RankingJudgement[] | null }
 
 /** Publicly listed scored articles by publication time in a rolling window, without collapsing different reports. */
 export async function loadFamilyRanking(hours: number, now: Date): Promise<Entry[]> {
@@ -19,7 +20,10 @@ export async function loadFamilyRanking(hours: number, now: Date): Promise<Entry
 
 export async function loadRankings(now = new Date()): Promise<Ranking[]> {
   const [rows, ...familyItems] = await Promise.all([
-    sql<Ranking[]>`SELECT id,name,source,url,items,source_updated AS "sourceUpdated",fetched_at AS "fetchedAt",failed FROM external_rankings ORDER BY CASE WHEN id='tunbang:all' THEN 0 ELSE 1 END,name`,
+    sql<Ranking[]>`SELECT b.id,b.name,b.source,b.url,b.items,b.source_updated AS "sourceUpdated",b.fetched_at AS "fetchedAt",b.failed,
+      CASE WHEN b.fetched_at IS NULL THEN NULL ELSE coalesce(s.status,'pending') END AS "screenStatus",s.rule_version AS "screenRuleVersion",s.results AS judgements
+      FROM external_rankings b LEFT JOIN external_ranking_snapshots s ON s.board_id=b.id AND s.fetched_at=b.fetched_at
+      ORDER BY CASE WHEN b.id='tunbang:all' THEN 0 ELSE 1 END,b.name`,
     ...[2, 48, 72, 168].map(hours => loadFamilyRanking(hours, now)),
   ]);
   const family: Ranking[] = ["2小时", "48小时", "3天", "7天"].map((name, index) => ({ id: `family:${[2,48,72,168][index]}`, name, source: "家友榜", url: "/all", items: familyItems[index], sourceUpdated: null, fetchedAt: now.toISOString(), failed: false }));

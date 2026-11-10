@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS external_ranking_snapshots (
+  id bigserial PRIMARY KEY,
+  board_id text NOT NULL,
+  name text NOT NULL,
+  source text NOT NULL,
+  url text NOT NULL,
+  period text,
+  items jsonb NOT NULL,
+  source_updated text,
+  fetched_at timestamptz NOT NULL,
+  rule_version text NOT NULL,
+  rule_prompt text NOT NULL,
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','complete','failed')),
+  results jsonb,
+  receipt_id bigint,
+  attempts integer NOT NULL DEFAULT 0,
+  attempted_at timestamptz,
+  finished_at timestamptz,
+  error text,
+  UNIQUE (board_id, fetched_at)
+);

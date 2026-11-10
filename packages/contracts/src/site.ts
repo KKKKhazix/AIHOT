@@ -134,7 +134,15 @@ export interface OutlineEntry {
  * An article page (/api/site/items/:id) in one language: Chinese (the article itself or its translation)
  * unless …/original asks for the original. Only the body shown is sent, with its outline.
  */
+export interface ScoreDetail {
+  itemType: string;
+  sig: number; nov: number; cred: number; reson: number; act: number;
+  weights: { sig: number; nov: number; cred: number; reson: number; act: number };
+  total: number;
+}
+
 export interface SiteItemDetail extends ItemSummary {
+  scoreDetails?: ScoreDetail[] | null;
   /** The post with all its media; its text is the body. */
   x: Omit<XPostView, "text" | "translation"> | null;
   /** Selected, but its fact's seat is held by this report: marked 同事件, without a reason of its own. */

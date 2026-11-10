@@ -379,9 +379,26 @@ function ItemView({ item }: { item: SiteItemDetail }) {
     </div>
   );
   const verdict = (item.selected || shownScore(item.score) !== null) && (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {item.selected && (item.sameEvent ? <SameEventBadge /> : <SelectedBadge />)}
       <ScoreLabel score={item.score} />
+      {shownScore(item.score) !== null && (
+        <details className="open:basis-full">
+          <summary aria-label="查看评分详情" className="flex h-5 w-5 cursor-pointer list-none items-center justify-center rounded-full border border-line-strong text-[12px] font-semibold text-ink-3 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">i</summary>
+          <div className="mt-2 rounded-control border border-line bg-surface p-3 text-[12px] text-ink-2">
+            <div className="mb-2 font-semibold text-ink">评分详情</div>
+            {item.scoreDetails?.length ? item.scoreDetails.map((detail, index) => (
+              <div key={index} className="mb-2 last:mb-0">
+                <div className="mb-1 text-ink-3">第 {index + 1} 次评分 · 总分 {detail.total}</div>
+                {(Object.hasOwn({ news: 1, policy: 1, product: 1, research: 1, method: 1, resource: 1, opinion: 1 }, detail.itemType) ? ([['现实影响', 'sig'], ['信息新意', 'nov'], ['证据清晰度', 'cred'], ['AI与家庭的关联和启发', 'reson'], ['对编辑的用途', 'act']] as const) : ([['现实影响', 'sig'], ['信息增量', 'nov'], ['证据强度', 'cred'], ['家庭价值', 'reson'], ['可使用性', 'act']] as const)).map(([label, key]) => (
+                  <div key={key} className="flex justify-between gap-2 py-0.5"><span>{label}</span><span className="tabular-nums">{detail[key]} × {detail.weights[key]}</span></div>
+                ))}
+              </div>
+            )) : <p>暂无维度评分详情</p>}
+            {item.scoreDetails?.length === 2 && <p className="mt-2 border-t border-line pt-2 text-ink-3">模型评分取两次总分的平均值，展示时向下取整；人工调整可能影响最终分数。</p>}
+          </div>
+        </details>
+      )}
     </div>
   );
 

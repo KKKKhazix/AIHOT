@@ -20,6 +20,7 @@ interface DetailRow extends ItemRow {
   tr_html: string | null;
   tr_complete: boolean | null;
   topics: string[];
+  score_details: SiteItemDetail["scoreDetails"];
 }
 
 export type DetailResult =
@@ -28,7 +29,7 @@ export type DetailResult =
 
 export interface V1ItemDetailResponse {
   schemaVersion: 1;
-  item: Omit<SiteItemDetail, "links" | "category" | "indexable" | "markdownAvailable"> & {
+  item: Omit<SiteItemDetail, "links" | "category" | "indexable" | "markdownAvailable" | "scoreDetails"> & {
     links: { aihot: string; original: string };
     category: PublicApiCategoryKey | null;
     attribution: { name: string; url: string };
@@ -52,7 +53,8 @@ function withOutline(html: string): { html: string; outline: OutlineEntry[] } {
 async function loadRow(id: string): Promise<DetailRow | null> {
   const [row] = await sql<DetailRow[]>`
     SELECT ${ITEM_COLUMNS}, a.body_html, a.body_text, a.body_status, tr.body_html AS tr_html, tr.complete AS tr_complete,
-      ${topicMembership()} AS topics
+      ${topicMembership()} AS topics,
+      (SELECT an.output->'scoreDetails' FROM analyses an WHERE an.id = p.analysis_id) AS score_details
     ${ITEM_FROM}
     WHERE p.article_id = ${id}`;
   return row ?? null;
@@ -160,6 +162,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
   const sameEvent = (await seatHolders([row], now)).get(row.id) ?? null;
   const item: SiteItemDetail = {
     ...summary,
+    scoreDetails: row.score_details ?? null,
     x,
     ...(sameEvent ? { reason: null, sameEvent } : {}),
     readingMode: "full",

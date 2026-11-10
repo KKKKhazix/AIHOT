@@ -7,7 +7,7 @@
 // covers it once drawn. Mark the accent part of `children` with data-accent.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { watchAppearance } from "../../lib/local-state";
-import { reducedMotion } from "../../lib/motion";
+import { reducedMotion, seededRandom } from "../../lib/motion";
 
 interface Dot {
   x: number;
@@ -26,19 +26,9 @@ function hashSeed(s: string): number {
   return h >>> 0;
 }
 
-function mulberry32(seed: number) {
-  let a = seed;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 /** Smooth value noise in [0, 1] on a seeded lattice. */
 function valueNoise(seed: number) {
-  const rnd = mulberry32(seed);
+  const rnd = seededRandom(seed);
   const size = 64;
   const grid = Float32Array.from({ length: size * size }, () => rnd());
   const at = (ix: number, iy: number) => grid[(((iy % size) + size) % size) * size + (((ix % size) + size) % size)]!;
@@ -76,7 +66,7 @@ export function Halftone({ seed, className = "", children }: { seed: string; cla
     const still = reducedMotion();
     const hover = matchMedia("(hover: hover) and (pointer: fine)").matches;
     const noise = valueNoise(hashSeed(seed));
-    const phase = mulberry32(hashSeed(seed) ^ 0x9e3779b9);
+    const phase = seededRandom(hashSeed(seed) ^ 0x9e3779b9);
     const phaseX = phase();
     const phaseY = phase();
 

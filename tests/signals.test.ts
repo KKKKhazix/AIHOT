@@ -146,6 +146,22 @@ test("a revised discussion post replaces its old story's heat and removes it whe
   assert.deepEqual(await participants(), [1, 1]);
 });
 
+test("a late re-evaluation that finds nothing keeps a post's heat in a story recall can no longer reach", async () => {
+  const markers = [`VL${T}`, `VM${T}`];
+  markers.forEach((m, i) => VECTORS.set(m, direction(90 + i, [1])));
+  const reportId = await report("late-first", { title: `Launch ${markers[0]}` });
+  const { storyId } = await groupArticle(reportId);
+  const material = (marker: string) => ({ sourceId: SIGNAL, url: `https://example.com/sig-${T}-late`, title: `Discussion ${marker}`, bodyText: `Discussion ${marker}`, bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date() });
+  const { articleId } = await upsertMaterial(material(markers[0]!));
+  await settleNonEditorial(articleId);
+  assert.equal((await groupArticle(articleId, { signalOnly: true })).storyId, storyId);
+  await sql`UPDATE articles SET discovered_at = now() - interval '20 days' WHERE id = ${reportId}`;
+  assert.equal((await upsertMaterial(material(markers[1]!))).revised, true);
+  await settleNonEditorial(articleId);
+  assert.equal((await groupArticle(articleId, { signalOnly: true })).verdict, "signal-unmatched");
+  assert.deepEqual((await sql`SELECT story_id FROM story_signals WHERE article_id = ${articleId}`).map((r) => Number(r.story_id)), [storyId]);
+});
+
 test("history waits behind live work and founds no event; a new source's post from today is news", async () => {
   const old = await report("old", { title: `旧闻 ${T}`, backfill: "first-import", publishedAt: new Date(Date.now() - 30 * 86_400_000) });
   await queueProcessing(old, { step: "analyze" });

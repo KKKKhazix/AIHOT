@@ -32,11 +32,13 @@ async function mergeStoryTx(tx: Tx, fromId: number, intoId: number, actor: strin
 export async function mergeStoryInto(fromId: number, intoId: number, reason: string, actor: string): Promise<{ moved: number } | null> {
   if (fromId === intoId) throw new Error("cannot merge a story into itself");
   return sql.begin(async (tx) => {
+    // The reports' row locks first, in id order: corrections, grouping and a single publication take
+    // an article's row lock before its story's or its fact's seat, and each republication below holds
+    // its seat until commit.
+    const ids = (await tx<{ article_id: string }[]>`SELECT DISTINCT fa.article_id FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id WHERE f.story_id IN (${fromId}, ${intoId})`).map((r) => r.article_id);
+    await tx`SELECT 1 FROM articles WHERE id = ANY(${ids}) ORDER BY id FOR UPDATE`;
     if (!(await mergeStoryTx(tx, fromId, intoId, actor))) return null;
     const articles = await tx<{ article_id: string }[]>`SELECT DISTINCT fa.article_id FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id WHERE f.story_id = ${intoId}`;
-    // Every report's row lock before any republication: one holds its fact's seat lock until commit,
-    // and a single publication takes its row lock before that seat.
-    await tx`SELECT 1 FROM articles WHERE id = ANY(${articles.map((a) => a.article_id)}) ORDER BY id FOR UPDATE`;
     for (const a of articles) await republishTx(tx, a.article_id);
     await enqueue(QUEUES.digest, { storyId: intoId }, { singletonKey: `story:${intoId}` }, tx);
     await audit(actor, "story.merge", `story:${fromId}`, reason, null, { into: intoId }, { db: tx });

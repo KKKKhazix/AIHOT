@@ -1,6 +1,15 @@
-// Moving the page for the reader: their reduced-motion preference, jumps to anchors, and which section of
-// the page they are reading.
+// Motion shared by pages: repeatable drawings, reduced-motion preference, anchor jumps and the section being read.
 import { useEffect, useRef, useState } from "react";
+
+/** Repeatable visual noise: the same source or issue keeps the same drawing. */
+export function seededRandom(seed: number) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 /** Whether the reader asked for reduced motion: still drawings, no animations, instant jumps. */
 export const reducedMotion = (): boolean => matchMedia("(prefers-reduced-motion: reduce)").matches;

@@ -10,7 +10,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { withSubject } from "@aihot/site";
 import { EDITION } from "../report/format";
 import { watchAppearance } from "../../lib/local-state";
-import { reducedMotion } from "../../lib/motion";
+import { reducedMotion, seededRandom } from "../../lib/motion";
 
 export interface RiverSource {
   name: string;
@@ -31,15 +31,6 @@ const easeInOut = (u: number) => (1 - Math.cos(Math.PI * Math.min(1, Math.max(0,
 type RGB = [number, number, number];
 const rgba = (c: RGB, a: number) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 const smooth = (u: number) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
-
-function prng(seed: number) {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 interface Strand {
   /** y at x = i * STEP. */
@@ -72,7 +63,7 @@ interface Layout {
 }
 
 function layout(w: number, h: number, sources: RiverSource[]): Layout {
-  const rand = prng(20260928 + sources.length);
+  const rand = seededRandom(20260928 + sources.length);
   const n = Math.max(40, Math.min(160, Math.round(w / 7.5)));
   const B = w >= 900 ? 9 : w >= 560 ? 7 : 5;
   const K = B >= 9 ? 3 : 2;

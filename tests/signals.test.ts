@@ -122,9 +122,9 @@ test("a discussion post that came before any report is grouped again when a repo
 test("a revised discussion post replaces its old story's heat and removes it when no story matches", async () => {
   const markers = [`VA${T}`, `VB${T}`, `VC${T}`];
   markers.forEach((m, i) => VECTORS.set(m, direction(80 + i, [1])));
-  const first = await groupArticle(await report("revision-first", { title: `Launch ${markers[0]}` }));
-  const second = await groupArticle(await report("revision-second", { title: `Security issue ${markers[1]}` }));
-  const at = new Date();
+  const at = new Date(Date.now() - 60_000);
+  const first = await groupArticle(await report("revision-first", { title: `Launch ${markers[0]}`, publishedAt: at }));
+  const second = await groupArticle(await report("revision-second", { title: `Security issue ${markers[1]}`, publishedAt: at }));
   const material = (marker: string) => ({ sourceId: SIGNAL, url: `https://example.com/sig-${T}-revision`, title: `Discussion ${marker}`, bodyText: `Discussion ${marker}`, bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: at });
   const { articleId } = await upsertMaterial(material(markers[0]!));
   await settleNonEditorial(articleId);

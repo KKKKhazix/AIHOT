@@ -29,7 +29,7 @@
 - 所有公开出口都从 `packages/backend/src/publication/` 这一个读取层读，新增公开出口也一样。
 - 读者打开页面不触发模型调用；模型只在 worker 的任务里调用。
 - 付费请求都经过回执（`providers/receipts.ts`）和预算熔断，不要绕开。
-- 安全阀只有设成 `true` 才打开。开发时保持关闭：`COLLECT_ENABLED`、`MODEL_CALLS_ENABLED`、`FEISHU_*_ENABLED`、`INDEXNOW_SUBMIT_ENABLED`、`BAIDU_PUSH_ENABLED`。测试里推送一直关着，采集和模型调用只连本地假服务，不访问任何外部服务。
+- 安全阀只有设成 `true` 才打开。开发时保持关闭：`COLLECT_ENABLED`、`MODEL_CALLS_ENABLED`、`FEISHU_*_ENABLED`、`DINGTALK_CONTENT_PUSH_ENABLED`、`INDEXNOW_SUBMIT_ENABLED`、`BAIDU_PUSH_ENABLED`。测试里推送一直关着，采集和模型调用只连本地假服务，不访问任何外部服务。
 - 信源默认只展示摘要和原文链接（`site_fulltext` 关）；只有来源明确允许时才打开全文。
 - 公开内容匿名，管理员和访客看到的一样；后台只允许管理员。
 - 停用或替换一个功能、机制时，同一个改动删掉它的代码、测试、文档和存下的状态（库表与列、定时任务、settings、环境变量和 `.env.example` 里的项）；会删掉使用者已有数据的，在 `docs/deploy.md` 的更新说明里写明。加锁、重试、兼容旧格式、开关和兜底，先要有证据：真实部署里发生过，或平台的语义决定它会发生。

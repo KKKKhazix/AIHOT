@@ -42,6 +42,7 @@ const provider = await stub(async (_hit, req) => {
       return n === 1 ? "解释 Neuroglancer 的文字 ⟦0⟧。" : '解释 <a id="L0">Neuroglancer</a> 的文字 ⟦0⟧。';
     }
     if (s.includes("never keeps")) return "丢了链接。";
+    if (s.includes("Cited paragraph")) return '引用<a id="L0">来源</a>的段落。';
     if (s.includes("Introducing")) return "隆重推出 Sonnet 5.5。";
     return s.includes("twenty") ? "价格是二十美元。" : s.includes("ten") ? "价格是十美元。" : "译文";
   });
@@ -237,6 +238,21 @@ test("links and images inside a paragraph survive the translation, or the paragr
   const receipts = await sql<{ status: string }[]>`SELECT status FROM receipts WHERE purpose = 'translate_body' AND subject LIKE ${`article:${id}@1#%`}`;
   assert.ok(receipts.length >= 2, "the initial batch and fallback/retry batches are retained");
   assert.ok(receipts.every((receipt) => receipt.status === "completed"), "every paid batch covered by the committed translation is completed");
+});
+
+test("the length cap counts what the model is sent, not the addresses of links it never sees", async () => {
+  // About 69,000 characters of paragraph markup, under 6,000 once each link is reduced to its id.
+  const href = `https://example.com/${"x".repeat(1600)}`;
+  const html = Array.from({ length: 40 }, (_v, i) => `<p>Cited paragraph ${i} with <a href="${href}">its source</a> (${T}).</p>`).join("");
+  const { articleId } = await upsertMaterial({ sourceId: SOURCE, url: `${URL_}-long-links`, title: `Long links ${T}`, language: "en",
+    bodyText: html.replace(/<[^>]+>/g, ""), bodyHtml: html, bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+  await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
+    VALUES (${articleId},1,'rule','pass','ai-models','长链接','摘要','理由',90,true)`;
+  await publishArticle(articleId, { releasedAt: new Date(Date.now() - 60_000) });
+  assert.equal((await translateArticle(articleId)).status, "translated");
+  const body = (await detail(articleId)).body;
+  assert.equal(body.complete, true);
+  assert.equal(body.zh?.match(/引用<a href="https:\/\/example\.com\/x+">来源<\/a>的段落/g)?.length, 40);
 });
 
 test("the post a selected X post quotes is translated once and shown with the item", async () => {

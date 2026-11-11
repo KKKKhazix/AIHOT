@@ -25,7 +25,7 @@ import { emit } from "../modules.ts";
 
 export const TRANSLATE_PROMPT_VERSION = promptVersion("translate-body", "translate-body-retry", "translate-post");
 const BATCH_CHARS = 3500;
-/** Longer bodies get their first part translated and are marked incomplete. */
+/** Longer bodies (as sent to the model) get their first part translated and are marked incomplete. */
 const MAX_CHARS = 60_000;
 /** X posts shorter than this carry their meaning in the Chinese title and summary. */
 const X_MIN_CHARS = 60;
@@ -212,18 +212,20 @@ export async function translateArticle(articleId: string, expectedRevision?: num
   const $ = cheerio.load(source, null, false);
   const blocks = segmentsOf($);
   if (!blocks.length) return result({ status: "skipped", reason: "no translatable text" });
-  // Beyond the cap, only the leading blocks are translated; the rest keep the original text.
+  // Beyond the cap, only the leading blocks are translated; the rest keep the original text. The cap
+  // counts what the model is sent: link addresses and media stay behind their placeholders.
   let budget = MAX_CHARS;
   const chosen: Element[] = [];
+  const shielded: Shielded[] = [];
   for (const el of blocks) {
-    const html = $(el).html() ?? "";
-    if (html.length > budget) break;
-    budget -= html.length;
+    const block = shield($(el).html() ?? "");
+    if (block.html.length > budget) break;
+    budget -= block.html.length;
     chosen.push(el);
+    shielded.push(block);
   }
   // No model request was made when even the first block exceeds the text cap.
   if (!chosen.length) return result({ status: "skipped", reason: "no batch translated" });
-  const shielded = chosen.map((el) => shield($(el).html() ?? ""));
   const restore = (answers: Array<string | null>) => answers.map((t, i) => (t === null ? null : unshield(t, shielded[i]!)));
   const first = await translateAll(articleId, row.revision, shielded.map((b) => b.html), SYSTEM_BODY);
   const receiptIds = [...first.receiptIds];

@@ -73,6 +73,72 @@ test("an externally reported calendar day stays date-only through storage", asyn
   assert.equal(row!.published_at_claim.toISOString(), "2026-10-13T00:00:00.000Z");
 });
 
+test("ingest stores supplied body and images without fetching the article page", async () => {
+  const sourceId = `test-body-ingest-${tag()}`;
+  const url = `https://example.org/${sourceId}`;
+  await ingestItems({ sourceId, items: [{
+    title: "Full report", url,
+    bodyText: "Report <script>unsafe()</script> and useful facts.",
+    images: ["https://example.org/cover.png", "javascript:alert(1)", "https://example.org/cover.png"],
+  }] });
+  const [row] = await sql<{ body_text: string; body_html: string; body_status: string; media: Array<{ kind: string; url: string }> }[]>`
+    SELECT body_text, body_html, body_status, media FROM articles WHERE source_id=${sourceId}`;
+  assert.equal(row!.body_text, "Report <script>unsafe()</script> and useful facts.");
+  assert.match(row!.body_html, /&lt;script&gt;unsafe\(\)&lt;\/script&gt;/);
+  assert.doesNotMatch(row!.body_html, /<script/);
+  assert.match(row!.body_html, /<img src="https:\/\/example.org\/cover.png">/);
+  assert.equal(row!.body_status, "ok");
+  assert.deepEqual(row!.media, [{ kind: "image", url: "https://example.org/cover.png" }]);
+  await ingestItems({ sourceId, items: [{ title: "Full report", url }] });
+  const [afterRetry] = await sql<{ body_text: string; media: Array<{ kind: string; url: string }> }[]>`
+    SELECT body_text, media FROM articles WHERE source_id=${sourceId}`;
+  assert.equal(afterRetry!.body_text, row!.body_text);
+  assert.deepEqual(afterRetry!.media, row!.media);
+});
+
+test("ingest replaces images independently while preserving body and model translation", async () => {
+  const sourceId = `test-images-ingest-${tag()}`;
+  const item = { title: "Report", url: `https://example.org/${sourceId}` };
+  await ingestItems({ sourceId, items: [{ ...item, bodyText: "Original report." }] });
+  const [original] = await sql`SELECT id, revision, body_html FROM articles WHERE source_id=${sourceId}`;
+  await sql`INSERT INTO translations(article_id,lang,revision,body_html,body_text,complete,origin)
+    VALUES (${original!.id},'zh',${original!.revision},'<p>原始报道。</p>','原始报道。',true,'model')`;
+
+  const read = async () => {
+    const [row] = await sql`SELECT a.body_text, a.body_html, a.media, a.revision, t.body_html AS translated_html
+      FROM articles a JOIN translations t ON t.article_id=a.id AND t.lang='zh' WHERE a.id=${original!.id}`;
+    return row!;
+  };
+  for (const images of [["https://example.org/first.png"], ["https://example.org/second.png"], []]) {
+    await ingestItems({ sourceId, items: [{ ...item, images }] });
+    const row = await read();
+    assert.equal(row.body_text, "Original report.");
+    assert.match(row.body_html, /Original report\./);
+    assert.match(row.translated_html, /原始报道。/);
+    assert.equal(row.revision, original!.revision);
+    assert.deepEqual(row.media, images.map(url => ({ kind: "image", url })));
+    for (const html of [row.body_html, row.translated_html]) {
+      assert.equal((html.match(/<img /g) ?? []).length, images.length);
+      if (images.length) assert.ok(html.includes(images[0]));
+    }
+    await ingestItems({ sourceId, items: [item] });
+    assert.deepEqual(await read(), row, "omitting both optional fields preserves presentation");
+  }
+});
+
+test("ingest keeps images when updating only the body", async () => {
+  const sourceId = `test-body-update-${tag()}`;
+  const item = { title: "Report", url: `https://example.org/${sourceId}` };
+  const images = ["https://example.org/cover.png"];
+  await ingestItems({ sourceId, items: [{ ...item, bodyText: "First report.", images }] });
+  await ingestItems({ sourceId, items: [{ ...item, bodyText: "Updated report." }] });
+  const [row] = await sql`SELECT body_text, body_html, media FROM articles WHERE source_id=${sourceId}`;
+  assert.equal(row!.body_text, "Updated report.");
+  assert.match(row!.body_html, /Updated report\./);
+  assert.match(row!.body_html, /cover\.png/);
+  assert.deepEqual(row!.media, images.map(url => ({ kind: "image", url })));
+});
+
 test("manual WeChat ingest enriches only new article links and uses the provider publication time", async () => {
   const shortUrl = `https://mp.weixin.qq.com/s/${WECHAT_TAG}-recent`;
   const longUrl = `https://mp.weixin.qq.com/s/?__biz=${WECHAT_TAG}&mid=123&idx=1&sn=long-post`;

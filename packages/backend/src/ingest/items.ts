@@ -2,15 +2,18 @@
 // rule as every other entrance: old or future-dated items and explicit backfill never count as
 // today's news and are never pushed. Unknown sources are created isolated, awaiting an operator.
 import { sql } from "../db.ts";
-import { upsertMaterial } from "../content/materials.ts";
+import * as cheerio from "cheerio";
+import { upsertMaterial, updatePresentation, type MediaItem } from "../content/materials.ts";
 import { queueProcessing } from "../jobs/content.ts";
 import { readPublicationDate } from "../sources/dates.ts";
 import { identityKeyForUrl, normalizeUrl } from "../lib/url.ts";
-import { stripTags } from "../lib/text.ts";
-import { sanitizeBody } from "../content/sanitize.ts";
+import { escapeXml, stripTags } from "../lib/text.ts";
+import { sanitizeBody, textToHtml } from "../content/sanitize.ts";
 import { mpArticle, mpProviderName } from "../providers/wechat.ts";
 
 export const MAX_ITEMS = 50;
+// Images accepted per item; matches the documented limit in docs/sources.md.
+const MAX_IMAGES = 6;
 
 export class IngestError extends Error {
   readonly status: number;
@@ -25,7 +28,28 @@ interface ItemIn {
   url?: unknown;
   publishedAt?: unknown;
   author?: unknown;
+  bodyText?: unknown;
+  images?: unknown;
   raw?: { _aihot?: { backfill?: boolean; baseline?: boolean } } & Record<string, unknown>;
+}
+
+function imageUrls(value: unknown): Array<{ kind: "image"; url: string }> {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const images: Array<{ kind: "image"; url: string }> = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    try {
+      const url = new URL(entry.trim());
+      if (!["http:", "https:"].includes(url.protocol) || seen.has(url.href)) continue;
+      seen.add(url.href);
+      images.push({ kind: "image", url: url.href });
+      if (images.length === MAX_IMAGES) break;
+    } catch {
+      // Ignore malformed optional image URLs.
+    }
+  }
+  return images;
 }
 
 /** Only the manual WeChat source's article pages may trigger a paid provider lookup. */
@@ -70,9 +94,12 @@ export async function ingestItems(body: { sourceId?: unknown; sourceName?: unkno
     const flags = it.raw?._aihot ?? {};
     let author = typeof it.author === "string" ? it.author.slice(0, 200) : null;
     let excerpt: string | null = null;
-    let bodyHtml: string | null = null;
-    let bodyText: string | null = null;
-    let bodyStatus: "pending" | "ok" | "none" = "pending";
+    // body_text is intentionally stored raw (no sanitization); sanitization is applied only to
+    // body_html so that model analysis sees the original text without escaped entities.
+    let bodyText = typeof it.bodyText === "string" && it.bodyText.trim() ? it.bodyText.trim() : null;
+    let bodyStatus: "pending" | "ok" | "none" = bodyText ? "ok" : "pending";
+    const media = imageUrls(it.images);
+    let bodyHtml = bodyText ? textToHtml(bodyText) : null;
     let raw = it.raw ?? null;
 
     if (manualWechat) {
@@ -105,21 +132,47 @@ export async function ingestItems(body: { sourceId?: unknown; sourceName?: unkno
         raw = { ...incomingRaw, [provider]: { ...incomingProvider, receiptId: article.receiptId } };
       }
     }
-    const res = await upsertMaterial({
-      sourceId: source!.id,
-      // Normalize only for deduplication. Ownership needs the reported origin (including www and
-      // scheme), and upsertMaterial already applies the common normalized identity rule.
-      url: rawUrl,
-      title,
-      author,
-      ...publication,
-      excerpt,
-      bodyHtml,
-      bodyText,
-      bodyStatus,
-      raw,
-      via: "ingest",
-      backfill: flags.backfill ? "reported-backfill" : flags.baseline ? "reported-baseline" : null,
+    const res = await sql.begin(async (tx) => {
+      const result = await upsertMaterial({
+        sourceId: source!.id,
+        // Normalize only for deduplication. Ownership needs the reported origin (including www and
+        // scheme), and upsertMaterial already applies the common normalized identity rule.
+        url: rawUrl,
+        title,
+        author,
+        ...publication,
+        excerpt,
+        bodyHtml,
+        bodyText,
+        bodyStatus,
+        media: Array.isArray(it.images) ? media : undefined,
+        raw,
+        via: "ingest",
+        backfill: flags.backfill ? "reported-backfill" : flags.baseline ? "reported-baseline" : null,
+      }, tx);
+      if (bodyText || Array.isArray(it.images)) {
+        const [stored] = await tx<{ source_id: string; body_html: string | null; media: MediaItem[] }[]>`
+          SELECT source_id, body_html, media FROM articles WHERE id = ${result.articleId} FOR UPDATE`;
+        // Only the owning source can update presentation, just as with the material itself.
+        // The row cannot vanish in normal flow; a null stored means a concurrent delete between
+        // upsert and this select, which is only observed under test contention. Skip the
+        // presentation update and emit a warning rather than silently no-op.
+        if (!stored) {
+          console.warn(JSON.stringify({ level: "warn", msg: "ingest: article vanished before presentation update", articleId: result.articleId }));
+        } else if (stored.source_id === source!.id) {
+          // cheerio.load with the third arg false loads a fragment; $.html() returns the inner
+          // HTML of the root node in this version. This alias has changed across cheerio majors;
+          // if cheerio is upgraded, verify no <html><body> wrapper appears in the output.
+          const $ = cheerio.load(stored.body_html ?? "", null, false);
+          $("[data-ingest-images]").remove();
+          const storedImages = stored.media.filter(image => image.kind === "image");
+          if (storedImages.length) {
+            $.root().append(`<div data-ingest-images>${storedImages.map(image => `<p><img src="${escapeXml(image.url)}"></p>`).join("")}</div>`);
+          }
+          await updatePresentation(tx, result.articleId, { html: $.html() });
+        }
+      }
+      return result;
     });
     if (res.created) created += 1;
     if (res.created || res.revised || res.processingNeeded) await queueProcessing(res.articleId);

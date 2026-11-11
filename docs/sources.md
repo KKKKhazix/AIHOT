@@ -255,11 +255,20 @@ Content-Type: application/json
   "sourceId": "my-crawler",
   "sourceName": "我的抓取脚本",
   "items": [
-    { "title": "必填", "url": "必填", "publishedAt": "2026-10-01T08:00:00+08:00", "author": "可选" }
+    {
+      "title": "必填",
+      "url": "https://example.com/article",
+      "publishedAt": "2026-10-01T08:00:00+08:00",
+      "author": "可选",
+      "bodyText": "可选的纯文本正文",
+      "images": ["https://example.com/cover.jpg"]
+    }
   ]
 }
 ```
 
+- 每条可选传 `bodyText`（纯文本正文）。它用于分析，系统会自动生成安全的展示 HTML；传了有效正文后不会再抓原文页获取正文；不传则保留已有正文。
+- `images` 是图片 URL 字符串数组，只接受完整的 HTTP(S) 地址，去重后最多保留前 6 张。传入数组会替换整组推送图片，`[]` 清空，不传则保留已有图片；单独补图片会保留已有正文和译文。图片进入素材媒体列表，供分析使用，也会附在正文 HTML 后。站内全文是否展示仍由信源的 `site_fulltext` 控制，默认关闭。
 - `INGEST_TOKEN` 在 `.env` 里设置，至少 16 位；不设置时接口一律返回 401。
 - 每次最多 50 条，超过返回 413。每个客户端每分钟能推几次由 `INGEST_RATE_LIMIT` 决定：`docker compose` 默认 10，超过返回 429（带 `Retry-After: 60`）；不用 Docker 时默认不限，前面没有反向代理限流的话在 `.env` 里设上，设成 0 表示不限。
 - 返回 `{"ok": true, "created": <新建条数>}`。不是 JSON 对象的条目、缺标题或网址的条目会被跳过，同一请求里重复的网址只取第一条。

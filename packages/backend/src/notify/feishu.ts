@@ -76,7 +76,7 @@ async function sendToChat(chatId: string, msgType: "text" | "post" | "interactiv
 /** How urgent: readers affected now, money or the owner's hands today, or a follow-up that can wait. */
 export type Level = "now" | "today" | "later";
 
-export interface Finding {
+interface FindingFields {
   key: string;
   level: Level;
   /** Plain words: no queue, unit or table names. */
@@ -112,9 +112,13 @@ export interface Finding {
    * stays on the ops list only.
    */
   agentOnly?: true;
-  /** The hub event type of such a wake, so each kind of agent-only work is its own line there; `alert.review` when unset. */
-  agentType?: `alert.${string}`;
 }
+
+/**
+ * An agent-only finding names what kind of work it is (`alert.<kind>`); which rule of the hub takes that kind, and when,
+ * is the hub's to say. No default: a new kind must not fall silently to another kind's handling.
+ */
+export type Finding = FindingFields & ({ agentOnly?: undefined; agentType?: undefined } | { agentOnly: true; agentType: `alert.${string}` });
 
 const MARK: Record<Exclude<Level, "later">, string> = { now: "🔴", today: "🟠" };
 

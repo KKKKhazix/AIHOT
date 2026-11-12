@@ -145,7 +145,11 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
   // Config changes can alter parsing/filtering even when the upstream bytes did not change.
   const configHash = sha256(stableJson(source.config));
   const previous = !opts.force && source.cursor?.rss?.configHash === configHash ? source.cursor.rss as RssValidator : null;
-  const headers: Record<string, string> = { accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8" };
+  const headers: Record<string, string> = {
+    accept: "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.8",
+    // 部分国内站点（量子位、开源中国）会 403 掉默认 UA，这里统一用浏览器 UA。
+    "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  };
   if (previous?.etag) headers["if-none-match"] = previous.etag;
   if (previous?.lastModified) headers["if-modified-since"] = previous.lastModified;
   let res = await fetchListing(url, { headers, timeoutMs: 25_000 });

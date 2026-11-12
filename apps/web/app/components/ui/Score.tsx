@@ -29,11 +29,12 @@ export function ScoreLabel({ score, compact = false }: { score: number | null; c
     >
       {!compact && (
         <>
-          <span className="text-[11px] font-medium leading-none opacity-80">AI 评分</span>
+          {/* The nudges center the ink, not the line box: the CJK label sits ~1px low and the mono digits ~0.5px high. */}
+          <span className="-translate-y-px text-[11px] font-medium leading-none opacity-80">AI 评分</span>
           <span className="h-2.5 w-px bg-current opacity-25" aria-hidden="true" />
         </>
       )}
-      <span className="mono text-[12.5px] font-bold leading-none tabular-nums">{value}</span>
+      <span className="mono translate-y-[0.5px] text-[12.5px] font-bold leading-none tabular-nums">{value}</span>
     </span>
   );
 }

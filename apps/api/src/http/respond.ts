@@ -114,6 +114,12 @@ export function sendTextWithEtag(req: FastifyRequest, reply: FastifyReply, text:
   return reply.header("Content-Type", opts.contentType).send(text);
 }
 
+/** A readable alternative for machine readers; search engines index its canonical web page. */
+export function sendPageMarkdown(req: FastifyRequest, reply: FastifyReply, text: string, opts: { path: string; etagPrefix: string; cacheControl: string }) {
+  reply.header("X-Robots-Tag", "noindex").header("Link", `<${siteUrl(opts.path)}>; rel="canonical"`);
+  return sendTextWithEtag(req, reply, text, { ...opts, contentType: "text/markdown; charset=utf-8" });
+}
+
 export class QueryError extends Error {}
 
 /**

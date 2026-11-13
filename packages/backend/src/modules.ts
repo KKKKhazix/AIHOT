@@ -173,6 +173,8 @@ export interface ServerModule {
   http?: (app: FastifyInstance) => void;
   agent?: {
     abilities?: AgentAbility[];
+    /** Questions answered by a web page's Markdown representation, without an MCP tool. */
+    pages?: Array<{ ask: string; where: string }>;
     /** The guide's "目前查不到的" list, after the engine's first entry. */
     unavailable?: string[];
     /** The guide's "请求" list (how to ask), after the engine's first entry. */

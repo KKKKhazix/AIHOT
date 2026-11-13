@@ -24,6 +24,8 @@ export interface PageMetaInput {
   rawTitle?: boolean;
   description?: string | null;
   path: string;
+  /** Optional in-site Markdown representation for machine readers. */
+  markdown?: string;
   image?: string | null;
   noindex?: boolean;
   /** Only Google is asked not to index the page; other engines index it unless `noindex`. */
@@ -96,6 +98,7 @@ export function pageMeta(input: PageMetaInput): MetaDescriptor[] {
     { name: "twitter:description", content: description },
     { name: "twitter:image", content: image },
   ];
+  if (input.markdown) tags.push({ tagName: "link", rel: "alternate", type: "text/markdown", href: `${base}${input.markdown}` });
   if (input.noindex) tags.push({ name: "robots", content: input.nofollow ? "noindex, nofollow" : "noindex, follow" });
   else {
     // Search results and Discover may show an indexable page's picture large, as they do for news sites.

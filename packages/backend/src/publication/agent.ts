@@ -270,6 +270,7 @@ function publicCategoryName(key: PublicApiCategoryKey): string {
 export function agentGuide(): string {
   const u = agentUrl;
   const abilities = serverModules().flatMap((m) => m.agent?.abilities ?? []);
+  const pages = serverModules().flatMap((m) => m.agent?.pages ?? []);
   const unavailable = serverModules().flatMap((m) => m.agent?.unavailable ?? []);
   const requests = serverModules().flatMap((m) => m.agent?.requests ?? []);
   const categories = PUBLIC_API_CATEGORY_KEYS.map((key) => `${key}（${publicCategoryName(key)}）`);
@@ -297,6 +298,7 @@ export function agentGuide(): string {
     `| ${SITE.name} 日报 | ${u("/daily")}（最新一期）；指定日期：${u("/daily/2026-09-30")} |`,
     `| 这一周、这个月的重点（周报、月报） | ${u("/weekly")}、${u("/monthly")}（最新一期）；指定一期：${u("/weekly/2026-W39")}、${u("/monthly/2026-09")} |`,
     ...abilities.map((a) => `| ${a.ask} | ${u(a.path)} |`),
+    ...pages.map((p) => `| ${p.ask} | ${p.where} |`),
     "",
     `参数可以组合，例如 ${u(`/latest?window=7d&category=${sample}`)}；关键词要做 URL 编码。`,
     "",

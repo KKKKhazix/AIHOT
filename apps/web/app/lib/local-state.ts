@@ -173,7 +173,7 @@ function normalizeStarred(v: Record<string, unknown>): LocalStarredItem {
 export function getStarred(): LocalStarredItem[] {
   return cached(KEYS.starred, () => {
     const parsed = readJson(KEYS.starred);
-    return Array.isArray(parsed) ? parsed.filter(isStarredItem).map((v) => normalizeStarred(v as unknown as Record<string, unknown>)).slice(0, STARRED_LIMIT) : [];
+    return Array.isArray(parsed) ? parsed.filter(isStarredItem).map((v) => normalizeStarred(v as unknown as Record<string, unknown>)) : [];
   });
 }
 
@@ -192,7 +192,7 @@ export function toggleStar(item: Omit<LocalStarredItem, "savedAt">): boolean {
     if (starredUnreadable()) return false;
     const list = getStarred();
     const exists = list.some((s) => s.id === item.id);
-    const next = exists ? list.filter((s) => s.id !== item.id) : [{ ...item, savedAt: new Date().toISOString() }, ...list].slice(0, STARRED_LIMIT);
+    const next = exists ? list.filter((s) => s.id !== item.id) : [{ ...item, savedAt: new Date().toISOString() }, ...list].slice(0, (list.length > STARRED_LIMIT ? list.length + 1 : STARRED_LIMIT));
     const saved = writeRaw(KEYS.starred, JSON.stringify(next));
     invalidate(KEYS.starred);
     return saved && !exists;
@@ -203,9 +203,10 @@ export function toggleStar(item: Omit<LocalStarredItem, "savedAt">): boolean {
 export const watchStarred = (listener: () => void) => subscribeStarred(listener);
 
 /** Stores this list as the stars, newest first; false when nothing was saved. */
+// Account merges can exceed the ordinary 500-item local window; never trim an imported account snapshot.
 export function replaceStarred(items: LocalStarredItem[]): boolean {
   return editLocalData(() => {
-    const saved = writeRaw(KEYS.starred, JSON.stringify(items.slice(0, STARRED_LIMIT)));
+    const saved = writeRaw(KEYS.starred, JSON.stringify(items));
     invalidate(KEYS.starred);
     return saved;
   });

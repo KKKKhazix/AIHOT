@@ -10,9 +10,6 @@ export interface Entry<T> {
 }
 export type Entries<T> = Record<string, Entry<T>>;
 
-/** Removals are remembered this long, so a device that comes back within it does not bring the item back. */
-const FORGET_REMOVED_MS = 90 * 86_400_000;
-
 // A total order on entries, so both sides of a merge pick the same one whatever order they meet in.
 function wins<T>(e: Entry<T>, other: Entry<T>): boolean {
   if (e.t !== other.t) return e.t > other.t;
@@ -26,11 +23,6 @@ export function mergeEntries<T>(a: Entries<T>, b: Entries<T>): Entries<T> {
   return out;
 }
 
-/** Drops removals older than the window. */
-export function forgetOld<T>(entries: Entries<T>, now: number): Entries<T> {
-  return Object.fromEntries(Object.entries(entries).filter(([, e]) => e.v !== null || e.t >= now - FORGET_REMOVED_MS));
-}
-
 /** Entries read from the account or a browser: those that do not read are left out, the rest kept. */
 export function readEntries<T>(raw: unknown, value: (v: unknown, key: string) => T | null): Entries<T> {
   if (!raw || typeof raw !== "object") return {};
@@ -38,7 +30,7 @@ export function readEntries<T>(raw: unknown, value: (v: unknown, key: string) =>
   for (const [key, e] of Object.entries(raw as Record<string, unknown>)) {
     if (!e || typeof e !== "object") continue;
     const { t, v } = e as { t?: unknown; v?: unknown };
-    if (typeof t !== "number" || !Number.isFinite(t)) continue;
+    if (typeof t !== "number" || !Number.isSafeInteger(t) || t < 0 || t > 8.64e15 || ["__proto__", "constructor", "prototype"].includes(key)) continue;
     if (v === null) out[key] = { t, v: null };
     else {
       const item = value(v, key);
@@ -57,7 +49,7 @@ export function readEntries<T>(raw: unknown, value: (v: unknown, key: string) =>
 export interface Collection<Local, Part> {
   key: string;
   read: () => Local;
-  write: (value: Local) => void;
+  write: (value: Local) => boolean | void;
   watch: (onChange: () => void) => () => void;
   fingerprints: (value: Local) => Record<string, string>;
   toDoc: (value: Local, stamps: Record<string, number>, now: number) => Part;

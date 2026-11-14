@@ -82,6 +82,7 @@ const OWNERS: Record<string, string> = {
   story_digests: "events/", grouping_decisions: "events/", grouping_overrides: "events/",
   audit_log: "audit.ts",
   feedback_submission_state: "operations/feedback.ts",
+  reader_sync_usage: "../../../modules/accounts/backend/",
   reader_accounts: "../../../modules/accounts/backend/", reader_logins: "../../../modules/accounts/backend/",
   reader_sessions: "../../../modules/accounts/backend/", reader_codes: "../../../modules/accounts/backend/",
   reader_code_sends: "../../../modules/accounts/backend/", reader_data: "../../../modules/accounts/backend/",

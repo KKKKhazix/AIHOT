@@ -113,18 +113,22 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
         </nav>
         <div className="mt-2 space-y-2.5 px-1 pt-1">
           {Account && <Account place="sidebar" />}
-          {SITE.github && (
-            <a
-              href={SITE.github}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mx-1 flex h-[34px] items-center justify-center gap-1.5 rounded-full border border-line text-[12.5px] text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink touch:h-11"
-            >
-              <IconGithub size={14} />
-              GitHub 开源
-            </a>
-          )}
-          <ThemeSwitch className="mx-1 touch:h-11" />
+          {/* GitHub shrinks to its mark beside the theme switch, so the foot is two rows rather than three stacked pills. */}
+          <div className="mx-1 flex items-center gap-2">
+            {SITE.github && (
+              <a
+                href={SITE.github}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="GitHub 开源"
+                title="GitHub 开源"
+                className="flex size-[34px] shrink-0 items-center justify-center rounded-full border border-line text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink touch:size-11"
+              >
+                <IconGithub size={15} />
+              </a>
+            )}
+            <ThemeSwitch className="min-w-0 flex-1 touch:h-11" />
+          </div>
           {/* Centred under the buttons; the full width keeps the longer public-security number on one line. */}
           <div className="-mx-1 flex flex-col items-center gap-1.5">
             {SITE.poweredBy && (

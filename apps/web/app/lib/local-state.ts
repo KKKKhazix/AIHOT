@@ -199,6 +199,18 @@ export function toggleStar(item: Omit<LocalStarredItem, "savedAt">): boolean {
   });
 }
 
+/** Calls `listener` whenever the stars change, in this tab or another, for code outside React (a sync). */
+export const watchStarred = (listener: () => void) => subscribeStarred(listener);
+
+/** Stores this list as the stars, newest first; false when nothing was saved. */
+export function replaceStarred(items: LocalStarredItem[]): boolean {
+  return editLocalData(() => {
+    const saved = writeRaw(KEYS.starred, JSON.stringify(items.slice(0, STARRED_LIMIT)));
+    invalidate(KEYS.starred);
+    return saved;
+  });
+}
+
 export function removeStar(id: string) {
   editLocalData(() => {
     if (starredUnreadable()) return;

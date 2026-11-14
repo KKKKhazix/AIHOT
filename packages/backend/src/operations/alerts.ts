@@ -348,12 +348,13 @@ const PROVIDERS: Record<string, { name: string; where: string; stops?: string }>
   jina: { name: "Jina", stops: "部分文章取不到正文", where: "Jina 后台" },
   dajiala: { name: "极致了（Dajiala）", stops: "公众号新文章收不到", where: "极致了后台" },
 };
-export const providerName = (service: string) => PROVIDERS[service]?.name ?? service;
+const provider = (service: string) => serverModules().find((module) => module.providers?.[service])?.providers?.[service] ?? PROVIDERS[service];
+export const providerName = (service: string) => provider(service)?.name ?? service;
 export const providerStops = async (service: string, models?: ReadonlySet<string>): Promise<string> => {
-  const p = PROVIDERS[service];
+  const p = provider(service);
   return p ? (p.stops ?? modelStops(service, models)) : "相关功能停了";
 };
-export const providerConsole = (service: string) => PROVIDERS[service]?.where ?? `${service} 后台`;
+export const providerConsole = (service: string) => provider(service)?.where ?? `${service} 后台`;
 
 const REFUSED_PREFIX = "provider.refused.";
 
@@ -395,7 +396,7 @@ async function providerFindings(now: number, open: AlertState): Promise<Finding[
   }
   for (const [key, p] of refused) {
     const service = p.service;
-    const unused = p.models && !PROVIDERS[service]?.stops && !(await stepsOnService(service, p.models)).length;
+    const unused = p.models && !provider(service)?.stops && !(await stepsOnService(service, p.models)).length;
     out.push({
       key,
       level: unused ? "later" : "today",

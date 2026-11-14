@@ -99,7 +99,7 @@ function parseIpv4(s: string): [number, number, number, number] | null {
 }
 
 /** The eight 16-bit groups of an IPv6 address (accepts "::" and a trailing dotted IPv4). */
-function ipv6Groups(s: string): number[] | null {
+export function ipv6Groups(s: string): number[] | null {
   let text = s.toLowerCase().replace(/%.*$/, "");
   const dotted = /(\d{1,3}(?:\.\d{1,3}){3})$/.exec(text);
   if (dotted) {

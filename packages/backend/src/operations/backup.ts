@@ -15,7 +15,7 @@ import { screenshotsForwarded } from "./feedback.ts";
 const run = promisify(execFile);
 const KEEP_LOCAL = 3;
 
-interface Store {
+export interface Store {
   secretId: string;
   secretKey: string;
   bucket: string;
@@ -68,11 +68,100 @@ async function fileSha256(file: string): Promise<string> {
   return h.digest("hex");
 }
 
-async function upload(s: Store, key: string, file: string, sha: string, size: number) {
+const EMPTY_SHA = hex("");
+/** One part per request: 64 MB keeps a slow link from holding one open long enough to be cut. */
+const PART_SIZE = 64 * 1024 * 1024;
+/** Below this a single PUT is cheaper than three requests and just as reliable. */
+const MULTIPART_FROM = 100 * 1024 * 1024;
+const ATTEMPTS = 3;
+
+/** One S3 request, tried again on the transient answers a long upload meets. */
+async function request(url: URL, init: RequestInit, timeoutMs: number): Promise<Response> {
+  let last: unknown = null;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) } as RequestInit);
+      if (res.ok || res.status < 500 && res.status !== 429) return res;
+      last = new Error(`HTTP ${res.status}`);
+    } catch (error) {
+      last = error;
+    }
+    if (attempt < ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+  }
+  throw last instanceof Error ? last : new Error(String(last));
+}
+
+/** The bytes of one part, buffered so it can be signed and retried. */
+async function readPart(file: string, start: number, length: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of createReadStream(file, { start, end: start + length - 1 })) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Upload one file. A dump can outgrow what a single PUT survives: on a slow link the store answers 502
+ * or drops the connection halfway, so above MULTIPART_FROM the file goes up in parts, each retried on
+ * its own.
+ */
+export async function upload(
+  s: Store, key: string, file: string, sha: string, size: number,
+  limits: { partSize?: number; threshold?: number } = {},
+): Promise<void> {
   const url = new URL(`${s.endpoint}/${key}`);
-  const headers = signV4({ method: "PUT", url, region: s.region, accessKey: s.secretId, secretKey: s.secretKey, payloadHash: sha, headers: { "content-length": String(size), "content-type": "application/octet-stream" } });
-  const res = await fetch(url, { method: "PUT", headers, body: createReadStream(file) as never, duplex: "half", signal: AbortSignal.timeout(60 * 60_000) } as RequestInit);
-  if (!res.ok) throw new Error(`backup upload ${key}: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+  if (size < (limits.threshold ?? MULTIPART_FROM)) {
+    const headers = signV4({ method: "PUT", url, region: s.region, accessKey: s.secretId, secretKey: s.secretKey, payloadHash: sha, headers: { "content-length": String(size), "content-type": "application/octet-stream" } });
+    const res = await fetch(url, { method: "PUT", headers, body: createReadStream(file) as never, duplex: "half", signal: AbortSignal.timeout(60 * 60_000) } as RequestInit);
+    if (!res.ok) throw new Error(`backup upload ${key}: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+    return;
+  }
+
+  const partSize = limits.partSize ?? PART_SIZE;
+  const sign = (method: string, target: URL, payloadHash: string, headers: Record<string, string>) =>
+    signV4({ method, url: target, region: s.region, accessKey: s.secretId, secretKey: s.secretKey, payloadHash, headers });
+
+  // 1. Where the parts go.
+  const create = new URL(url);
+  create.searchParams.set("uploads", "");
+  const created = await request(create, { method: "POST", headers: sign("POST", create, EMPTY_SHA, {}), body: "" }, 60_000);
+  const uploadId = created.ok ? /<UploadId>([^<]+)<\/UploadId>/.exec(await created.text())?.[1] : undefined;
+  if (!uploadId) throw new Error(`backup multipart ${key}: could not start (HTTP ${created.status})`);
+  const abort = () => {
+    const target = new URL(url);
+    target.searchParams.set("uploadId", uploadId);
+    void fetch(target, { method: "DELETE", headers: sign("DELETE", target, EMPTY_SHA, {}) }).catch(() => {});
+  };
+
+  try {
+    // 2. The parts, one request each.
+    const parts: Array<{ number: number; etag: string }> = [];
+    for (let number = 1, offset = 0; offset < size; number++, offset += partSize) {
+      const length = Math.min(partSize, size - offset);
+      const body = await readPart(file, offset, length);
+      const target = new URL(url);
+      target.searchParams.set("partNumber", String(number));
+      target.searchParams.set("uploadId", uploadId);
+      const headers = sign("PUT", target, hex(body), { "content-length": String(length), "content-type": "application/octet-stream" });
+      const res = await request(target, { method: "PUT", headers, body: body as never }, 10 * 60_000);
+      const etag = res.headers.get("etag");
+      if (!res.ok || !etag) throw new Error(`backup multipart ${key} part ${number}: HTTP ${res.status}${etag ? "" : " without an ETag"}`);
+      parts.push({ number, etag });
+    }
+    // 3. The store joins the parts only when every ETag is listed back.
+    const xml = `<CompleteMultipartUpload>${parts.map((p) => `<Part><PartNumber>${p.number}</PartNumber><ETag>${p.etag}</ETag></Part>`).join("")}</CompleteMultipartUpload>`;
+    const complete = new URL(url);
+    complete.searchParams.set("uploadId", uploadId);
+    const headers = sign("POST", complete, hex(xml), { "content-length": String(Buffer.byteLength(xml)), "content-type": "application/xml" });
+    const res = await request(complete, { method: "POST", headers, body: xml }, 60_000);
+    const answer = await res.text();
+    // A complete may answer 200 and put the failure in the body; the status alone reads as success.
+    if (!res.ok || /<Error[\s>]/.test(answer)) {
+      const code = /<Code>([^<]+)<\/Code>/.exec(answer)?.[1];
+      throw new Error(`backup multipart ${key}: HTTP ${res.status}${code ? ` ${code}` : ""} ${answer.slice(0, 300)}`);
+    }
+  } catch (error) {
+    abort();
+    throw error;
+  }
 }
 
 export async function runBackup(now = new Date()) {

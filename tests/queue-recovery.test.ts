@@ -9,6 +9,7 @@ import { getBoss, enqueue, QUEUES, recordRun, stopBoss } from "@aihot/backend/jo
 
 import { closeDb, sql } from "@aihot/backend/db";
 import { closeInterruptedRuns, runOwner } from "@aihot/backend/jobs/runs";
+import { BudgetExceededError } from "@aihot/backend/providers/receipts";
 
 after(async () => { await stopBoss(); await closeDb(); });
 
@@ -19,6 +20,19 @@ test("an array-valued schedule result keeps its owner without adding a false res
   const [row] = await sql`SELECT status,detail FROM job_runs WHERE job=${job}`;
   assert.equal(row!.status, "ok");
   assert.deepEqual(row!.detail, { result, owner: await runOwner() });
+});
+
+test("a run stopped by a paid-call budget is recorded as skipped, not failed", async () => {
+  const job = `budget-${tag()}`;
+  await assert.rejects(recordRun(job, async () => { throw new BudgetExceededError("socialdata", "hour", 600); }), /Budget/);
+  const [skipped] = await sql`SELECT status,error FROM job_runs WHERE job=${job}`;
+  assert.equal(skipped!.status, "skipped", "a budget pause is not a failure");
+  assert.match(String(skipped!.error), /Budget/);
+  const failedJob = `${job}-failed`;
+  await assert.rejects(recordRun(failedJob, async () => { throw new Error("real failure"); }), /real failure/);
+  const [failed] = await sql`SELECT status FROM job_runs WHERE job=${failedJob}`;
+  assert.equal(failed!.status, "failed", "other errors still fail");
+  await sql`DELETE FROM job_runs WHERE job IN (${job}, ${failedJob})`;
 });
 
 test("recovery closes a killed process's runs, preserves live and foreign owners and retains evidence", { skip: !["linux", "darwin"].includes(process.platform) }, async (t) => {

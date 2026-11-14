@@ -10,6 +10,7 @@ import { useScreen } from "./screens";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { Filings } from "./Filings";
 import { IconGithub } from "../icons";
+import { webModules } from "../../site-modules";
 
 /** True while the changelog has an entry newer than the one this reader last opened. */
 export function useChangelogDot(latestVersion: string | null): boolean {
@@ -84,6 +85,7 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
   const { pathname } = useLocation();
   const [columnRef, columnOverscroll] = useContainedScroll<HTMLElement>();
   const [navRef, navOverscroll] = useContainedScroll<HTMLElement>();
+  const Account = webModules().find((m) => m.account)?.account;
   // The links scroll between the wordmark and the footer; in a short window the footer would leave them
   // only a few rows, so the whole column scrolls instead.
   return (
@@ -110,6 +112,7 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
           })}
         </nav>
         <div className="mt-2 space-y-2.5 px-1 pt-1">
+          {Account && <Account place="sidebar" />}
           {SITE.github && (
             <a
               href={SITE.github}

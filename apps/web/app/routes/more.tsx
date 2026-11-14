@@ -74,12 +74,14 @@ export default function MorePage() {
   // The count is this browser's: shown once the page runs here, never in the shared server copy.
   const [here, setHere] = useState(false);
   useEffect(() => setHere(true), []);
+  const Account = webModules().find((m) => m.account)?.account;
   return (
     <div className="mx-auto max-w-[var(--page-max-reading)] pb-8">
       <PhoneBar title="我的" large />
       <h1 className="hidden pb-4 pt-1 text-[22px] font-bold text-ink lg:block">我的</h1>
       <div className="wide:grid wide:grid-cols-2 wide:items-start wide:gap-x-4 2xl:grid-cols-3">
         <Group>
+          {Account && <Account place="me" />}
           <RowLink row={{ to: "/starred", label: "收藏", icon: <IconBookmark size={20} />, detail: here && starred.length > 0 ? <span className="num">{starred.length}</span> : undefined }} />
           <li className="flex min-h-[56px] items-center gap-3 px-4 text-[16px] font-medium text-ink">
             <span className="text-ink-3">

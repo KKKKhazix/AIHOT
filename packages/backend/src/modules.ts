@@ -186,6 +186,8 @@ export interface ServerModule {
     entries?: () => Promise<SitemapEntry[]>;
   };
   models?: Record<string, ModelStep>;
+  /** Paid services it supplies, named in provider-access and budget alerts (operations/alerts.ts). */
+  providers?: Record<string, { name: string; where: string; stops: string }>;
   /** Cron schedules (the worker). */
   schedules?: Scheduled[];
   /** What is wrong now, for the owner's alerts (operations/alerts.ts), after the engine's problems. */

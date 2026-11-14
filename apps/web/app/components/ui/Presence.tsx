@@ -34,7 +34,9 @@ export function Presence({ show, children, enter, exit, duration }: {
   }, [show, duration]);
   if (!show && phase === "gone") return null;
   const child = show ? children : last.current;
-  const cls = !show ? exit : phase === "in" ? enter : "";
+  // The entrance class is on from the render that shows it: waiting for the effect painted one frame of the
+  // finished state before the animation restarted from nothing, a flash over the whole page for a sheet.
+  const cls = !show ? exit : phase === "still" ? "" : enter;
   return cloneElement(child, { className: `${child.props.className ?? ""} ${cls}`.trim() });
 }
 

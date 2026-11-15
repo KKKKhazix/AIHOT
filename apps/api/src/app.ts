@@ -93,7 +93,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerSite(app);
   registerOg(app);
   registerAdminAuth(app);
-  // The admin pages' API, on a site that has the pages; signing in serves every site.
+  // Admin pages and sign-in are site-dependent; preview identity is available on every site.
   if (ADMIN) registerAdmin(app);
   registerIngest(app);
   registerV1(app);

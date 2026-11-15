@@ -82,6 +82,7 @@ const OWNERS: Record<string, string> = {
   story_digests: "events/", grouping_decisions: "events/", grouping_overrides: "events/",
   audit_log: "audit.ts",
   feedback_submission_state: "operations/feedback.ts",
+  reader_previewers: "../../../modules/accounts/backend/",
   reader_sync_usage: "../../../modules/accounts/backend/",
   reader_accounts: "../../../modules/accounts/backend/", reader_logins: "../../../modules/accounts/backend/",
   reader_sessions: "../../../modules/accounts/backend/", reader_codes: "../../../modules/accounts/backend/",
@@ -125,8 +126,11 @@ test("every table and column is used by the code that reads and writes the datab
   const files = [...["packages/backend/src", "apps/api/src", "apps/worker/src"].flatMap((dir) => sources(dir)), ...modules()].map(({ text }) => words(text));
   const columns = await sql<{ table_name: string; column_name: string }[]>`
     SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name <> 'schema_migrations'`;
+  // This release stops using these columns; a following release removes them after old processes stop.
+  const pendingRemoval = new Set(["admin_sessions.auth_claims", "admin_users.feishu_union_id"]);
   const unused = new Set<string>();
   for (const { table_name: table, column_name: column } of columns) {
+    if (pendingRemoval.has(`${table}.${column}`)) continue;
     const users = files.filter((names) => names.has(table));
     if (users.length === 0) unused.add(`table ${table}`);
     // created_at is the row's own timestamp, kept on every table for operations.
@@ -256,7 +260,7 @@ test("scripts read the reduced-motion preference only through lib/motion.ts", ()
   assert.deepEqual(found, [], "use reducedMotion() or scrollBehavior() from lib/motion.ts");
 });
 
-test("a gray page is the admin's alone: its loader goes through grayGet and answers with GRAY_HEADERS", async () => {
+test("a gray page is only for previewers: its loader goes through grayGet and answers with GRAY_HEADERS", async () => {
   const { MODULES } = await import("@aihot/site/modules");
   const gray = MODULES.flatMap((m) => (m.pages ?? []).flatMap((p) => ("layout" in p ? p.pages : [p])).filter((p) => p.gray).map((p) => `modules/${m.name}/${p.file}`));
   for (const file of gray) {

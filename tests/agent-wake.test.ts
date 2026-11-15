@@ -9,7 +9,7 @@ import { sql, closeDb } from "@aihot/backend/db";
 import { getBoss, stopBoss } from "@aihot/backend/jobs/queue";
 import { installModules, type ServerModule } from "@aihot/backend/modules";
 import type { Finding } from "@aihot/backend/notify/feishu";
-import { wakeAgent, flushAgentEvents } from "@aihot/backend/notify/agent";
+import { wakeAgent, wakeDigest, flushAgentEvents } from "@aihot/backend/notify/agent";
 import { checkAlerts, collectFindings, holdAlert, sendDigest } from "@aihot/backend/operations/alerts";
 import { checkWorkerHeartbeat } from "@aihot/backend/operations/watch";
 const T=tag(), KEY=`test-hub-${T}`;
@@ -50,7 +50,7 @@ test('all immediate, today and agent-only incidents use the strict hub envelope 
  const first=hits.find(h=>h.body.subject===down.key)!;
  assert.equal(first.path,'/events');assert.equal(first.auth,`Bearer ${KEY}`);
  assert.deepEqual(Object.keys(first.body).sort(),['detail','id','link','subject','summary','type']);
- assert.equal(first.body.detail,down.detail);assert.equal(new URL(first.body.link).pathname,'/admin/runs');
+ assert.equal(first.body.detail,down.detail);assert.equal(new URL(first.body.link).pathname,'/api/health');
  assert.ok(!JSON.stringify(first.body).includes(KEY));
  assert.ok(first.body.id.length<=200);assert.ok(first.body.subject.length<=100);
  assert.match(first.body.subject,/^[A-Za-z0-9#._:/@-]+$/);assert.match(first.body.link,/^https?:\/\/[\x21-\x7e]+$/);
@@ -257,4 +257,9 @@ test('a failed owner send after waking never mints a second incident id on retry
  } finally {
   delete process.env.FEISHU_ALERT_WEBHOOK_URL;
  }
+});
+
+test('digest wakes link to the public health endpoint', async () => {
+ await wakeDigest('2035-04-18', 2);
+ assert.equal(new URL(hits.at(-1)!.body.link).pathname, '/api/health');
 });

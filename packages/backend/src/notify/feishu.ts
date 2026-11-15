@@ -1,5 +1,5 @@
-// Feishu delivery. Two separate apps: the login app (admin OAuth) and the message app (internal
-// feedback chat, operations alert chat, image upload). Content groups use custom bot webhooks, and so do
+// Feishu delivery uses the message app for internal feedback, operations alerts and image uploads.
+// Content groups use custom bot webhooks, and so do
 // alerts when FEISHU_ALERT_WEBHOOK_URL is set (they are plain text; feedback screenshots need the app).
 // Alerts and feedback never go to content groups, and content never goes to internal chats. What the owner is
 // told (sendAlert) goes first to Agent 自动化中台, which passes it on.

@@ -145,12 +145,9 @@ test("a rejected SEO correction leaves both the decision and public indexing unc
 test("bad admin input is a client error and never starts processing", async () => {
   const token = `admin-session-${T}`;
   const [user] = await sql`INSERT INTO admin_users (display_name) VALUES ('Review') RETURNING id`;
-  const claims = { appId: "test-session-app", unionId: "test-session-user", email: null };
-  process.env.FEISHU_LOGIN_APP_ID = claims.appId;
-  process.env.FEISHU_LOGIN_APP_SECRET = "test-app-secret";
-  config.adminUnionIds = [claims.unionId];
-  const binding = createHmac("sha256", process.env.SESSION_SECRET!).update(JSON.stringify(["admin-session-v1", "feishu", claims])).digest("hex");
-  await sql`INSERT INTO admin_sessions (id_hash, user_id, csrf_token, expires_at, auth_method, auth_binding, auth_claims) VALUES (${sha256(token)}, ${user!.id}, 'review-csrf', now() + interval '1 hour', 'feishu', ${binding}, ${sql.json(claims)})`;
+  config.adminPassword = "admin-corrections-test-password";
+  const binding = createHmac("sha256", process.env.SESSION_SECRET!).update(JSON.stringify(["admin-session-v1", "password", config.adminPassword])).digest("hex");
+  await sql`INSERT INTO admin_sessions (id_hash, user_id, csrf_token, expires_at, auth_method, auth_binding) VALUES (${sha256(token)}, ${user!.id}, 'review-csrf', now() + interval '1 hour', 'password', ${binding})`;
   const headers = { cookie: `aihot_admin=${token}`, "x-csrf-token": "review-csrf", "idempotency-key": `invalid-${T}` };
   const source = await app.inject({ method: "POST", url: "/api/admin/sources", headers, payload: { id: "bad" } });
   assert.equal(source.statusCode, 400);

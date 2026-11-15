@@ -21,7 +21,8 @@ let completed: string | null = null;
 let aborted: string | null = null;
 let failPart: number | null = null;
 let failAlways = false;
-let failComplete = false;
+let completeBody: string | undefined;
+let abortStatus = 204;
 let failedOnce = false;
 
 /** A store the fixtures drive: a domain endpoint, so every request stays inside this process. */
@@ -47,7 +48,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   }
   if (method === "DELETE") {
     aborted = url.searchParams.get("uploadId");
-    return new Response(null, { status: 204 });
+    return new Response(null, { status: abortStatus });
   }
   if (method === "PUT" && url.searchParams.has("partNumber")) {
     const number = Number(url.searchParams.get("partNumber"));
@@ -62,8 +63,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (method === "POST" && url.searchParams.has("uploadId")) {
     completed = typeof body === "string" ? body : String(body);
     // A complete may answer 200 and put the failure in the body; the status alone reads as success.
-    if (failComplete) return xml("<Error><Code>InternalError</Code><Message>try again</Message></Error>");
-    return xml("<CompleteMultipartUploadResult/>");
+    return xml(completeBody ?? ' \n <?xml version="1.0"?> <CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><ETag>"complete"</ETag></CompleteMultipartUploadResult>');
   }
   if (method === "PUT") {
     singlePuts += 1;
@@ -90,7 +90,8 @@ const reset = () => {
   aborted = null;
   failPart = null;
   failAlways = false;
-  failComplete = false;
+  completeBody = undefined;
+  abortStatus = 204;
   failedOnce = false;
 };
 
@@ -150,10 +151,21 @@ test("a part that keeps failing aborts the upload instead of leaving parts behin
 test("a complete that answers 200 with an <Error> body fails the upload instead of reporting success", async () => {
   reset();
   const { file, data, sha } = await fixture(2 * 1024 * 1024);
-  failComplete = true;
+  completeBody = "<Error><Code>InternalError</Code><Message>try again</Message></Error>";
   await assert.rejects(
     upload(store, "daily/error-body.bin", file, sha, data.length, { partSize: 1024 * 1024, threshold: 1024 * 1024 }),
     /InternalError/,
   );
   assert.equal(aborted, UPLOAD_ID, "the upload is aborted so no half-joined object stays behind");
+});
+
+test("without a final result, completion fails and a rejected abort is reported", async () => {
+  reset();
+  const { file, data, sha } = await fixture(2 * 1024 * 1024);
+  completeBody = " \n ";
+  abortStatus = 403;
+  await assert.rejects(
+    upload(store, "daily/empty-result.bin", file, sha, data.length, { partSize: 1024 * 1024, threshold: 1024 * 1024 }),
+    /without a complete upload result; abort multipart failed: Error: HTTP 403/,
+  );
 });

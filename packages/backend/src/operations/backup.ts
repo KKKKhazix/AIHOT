@@ -75,20 +75,18 @@ const PART_SIZE = 64 * 1024 * 1024;
 const MULTIPART_FROM = 100 * 1024 * 1024;
 const ATTEMPTS = 3;
 
-/** One S3 request, tried again on the transient answers a long upload meets. */
-async function request(url: URL, init: RequestInit, timeoutMs: number): Promise<Response> {
-  let last: unknown = null;
-  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+/** Retrying the same part number replaces that part. Do not replay initiation, which creates a new upload. */
+async function putPart(send: () => Promise<Response>): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
     try {
-      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) } as RequestInit);
-      if (res.ok || res.status < 500 && res.status !== 429) return res;
-      last = new Error(`HTTP ${res.status}`);
+      const res = await send();
+      if (res.ok || (res.status < 500 && res.status !== 429) || attempt === ATTEMPTS) return res;
+      await res.body?.cancel();
     } catch (error) {
-      last = error;
+      if (attempt === ATTEMPTS) throw error;
     }
-    if (attempt < ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
   }
-  throw last instanceof Error ? last : new Error(String(last));
 }
 
 /** The bytes of one part, buffered so it can be signed and retried. */
@@ -122,14 +120,14 @@ export async function upload(
   // 1. Where the parts go.
   const create = new URL(url);
   create.searchParams.set("uploads", "");
-  const created = await request(create, { method: "POST", headers: sign("POST", create, EMPTY_SHA, {}), body: "" }, 60_000);
+  const created = await fetch(create, {
+    method: "POST", headers: sign("POST", create, EMPTY_SHA, { "content-type": "application/octet-stream" }),
+    signal: AbortSignal.timeout(60_000),
+  });
   const uploadId = created.ok ? /<UploadId>([^<]+)<\/UploadId>/.exec(await created.text())?.[1] : undefined;
   if (!uploadId) throw new Error(`backup multipart ${key}: could not start (HTTP ${created.status})`);
-  const abort = () => {
-    const target = new URL(url);
-    target.searchParams.set("uploadId", uploadId);
-    void fetch(target, { method: "DELETE", headers: sign("DELETE", target, EMPTY_SHA, {}) }).catch(() => {});
-  };
+  const uploadUrl = new URL(url);
+  uploadUrl.searchParams.set("uploadId", uploadId);
 
   try {
     // 2. The parts, one request each.
@@ -140,26 +138,35 @@ export async function upload(
       const target = new URL(url);
       target.searchParams.set("partNumber", String(number));
       target.searchParams.set("uploadId", uploadId);
-      const headers = sign("PUT", target, hex(body), { "content-length": String(length), "content-type": "application/octet-stream" });
-      const res = await request(target, { method: "PUT", headers, body: body as never }, 10 * 60_000);
+      const partSha = hex(body);
+      const res = await putPart(() => fetch(target, {
+        method: "PUT", headers: sign("PUT", target, partSha, { "content-length": String(body.length), "content-type": "application/octet-stream" }),
+        body: body as never, signal: AbortSignal.timeout(10 * 60_000),
+      }));
       const etag = res.headers.get("etag");
       if (!res.ok || !etag) throw new Error(`backup multipart ${key} part ${number}: HTTP ${res.status}${etag ? "" : " without an ETag"}`);
       parts.push({ number, etag });
     }
     // 3. The store joins the parts only when every ETag is listed back.
     const xml = `<CompleteMultipartUpload>${parts.map((p) => `<Part><PartNumber>${p.number}</PartNumber><ETag>${p.etag}</ETag></Part>`).join("")}</CompleteMultipartUpload>`;
-    const complete = new URL(url);
-    complete.searchParams.set("uploadId", uploadId);
-    const headers = sign("POST", complete, hex(xml), { "content-length": String(Buffer.byteLength(xml)), "content-type": "application/xml" });
-    const res = await request(complete, { method: "POST", headers, body: xml }, 60_000);
-    const answer = await res.text();
-    // A complete may answer 200 and put the failure in the body; the status alone reads as success.
-    if (!res.ok || /<Error[\s>]/.test(answer)) {
-      const code = /<Code>([^<]+)<\/Code>/.exec(answer)?.[1];
-      throw new Error(`backup multipart ${key}: HTTP ${res.status}${code ? ` ${code}` : ""} ${answer.slice(0, 300)}`);
+    const headers = sign("POST", uploadUrl, hex(xml), { "content-length": String(Buffer.byteLength(xml)), "content-type": "application/xml" });
+    // COS can send HTTP 200 and keep the response open for minutes while it joins the parts.
+    const res = await fetch(uploadUrl, { method: "POST", headers, body: xml, signal: AbortSignal.timeout(10 * 60_000) });
+    const answer = (await res.text()).trim().replace(/^<\?xml[^>]*\?>\s*/, "");
+    if (!res.ok || !/^<CompleteMultipartUploadResult(?:\s[^>]*)?>[\s\S]*<\/CompleteMultipartUploadResult>$/.test(answer)) {
+      const code = /<Code>([A-Za-z0-9]+)<\/Code>/.exec(answer)?.[1];
+      throw new Error(`backup multipart ${key}: HTTP ${res.status}${code ? ` ${code}` : " without a complete upload result"}`);
     }
   } catch (error) {
-    abort();
+    try {
+      const canceled = await fetch(uploadUrl, {
+        method: "DELETE", headers: sign("DELETE", uploadUrl, EMPTY_SHA, {}), signal: AbortSignal.timeout(60_000),
+      });
+      await canceled.body?.cancel();
+      if (!canceled.ok && canceled.status !== 404) throw new Error(`HTTP ${canceled.status}`);
+    } catch (abortError) {
+      throw new Error(`${error}; abort multipart failed: ${abortError}`, { cause: error });
+    }
     throw error;
   }
 }
@@ -223,7 +230,7 @@ export async function runBackup(now = new Date()) {
   for (const file of kept.length && !filesError ? [dump, files] : [dump]) {
     const size = (await stat(file)).size;
     const sha = await fileSha256(file);
-    // One upload per file; the chosen prefix carries its retention class.
+    // The chosen prefix carries the file's retention class.
     const key = `${prefix}/${path.basename(file)}`;
     if (s) await upload(s, key, file, sha, size);
     out.push({ key: s ? key : `local-only:${path.basename(file)}`, bytes: size, sha256: sha });

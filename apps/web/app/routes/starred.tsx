@@ -125,7 +125,7 @@ export default function StarredPage() {
           <input ref={fileRef} type="file" accept="application/json,.json" className="sr-only" onChange={(e) => doImport(e.target.files?.[0])} />
         </div>
       </header>
-      {Account ? <Account place="starred">{localNote}</Account> : localNote}
+      {Account ? <Account place="starred" /> : localNote}
       <Presence show={!!notice} enter="anim-notice-in" exit="anim-fade-out" duration={160}>
         <div
           role="status"

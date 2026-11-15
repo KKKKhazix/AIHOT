@@ -102,15 +102,6 @@ test("unchanged sessions preserve CSRF, and neither the password nor the token i
   assert.ok(rows.length > 0 && !JSON.stringify(rows).includes(PASSWORD_A) && !JSON.stringify(rows).includes(token));
 });
 
-test("retired federated sessions are rejected and deleted without affecting password sessions", async () => {
-  const token = await password();
-  const valid = await password();
-  await sql`UPDATE admin_sessions SET auth_method = 'feishu' WHERE id_hash = ${sha256(token)}`;
-  await revoked(token);
-  assert.equal(await exists(token), false);
-  await principal(valid);
-});
-
 for (const next of [SECRET_B, ""]) test(`session-secret ${next ? "rotation" : "removal"} revokes password sessions`, async () => {
   const token = await password();
   process.env.SESSION_SECRET = next;

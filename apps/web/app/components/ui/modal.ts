@@ -34,7 +34,7 @@ export function useModal({ open, panel, onClose, initialFocus, returnFocus, onKe
         event.preventDefault();
         current.current.onClose();
       } else if (event.key === "Tab") {
-        const focusable = [...element.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex], [contenteditable="true"]')]
+        const focusable = [...element.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, iframe, [tabindex], [contenteditable="true"]')]
           .filter((node) => node.tabIndex >= 0 && !node.matches(":disabled") && !node.closest("[inert]") && node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden");
         event.preventDefault();
         if (!focusable.length) return element.focus({ preventScroll: true });

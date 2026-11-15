@@ -397,8 +397,10 @@ export async function releaseUnknownReceipt(db: Db, id: number, error: string): 
   return released ?? null;
 }
 
-export async function completeReceipt(db: Db, receiptId: number): Promise<void> {
+/** `storedElsewhere`: a top-level field of the answer the caller's write now keeps (embeddings: the vectors), dropped from the receipt. */
+export async function completeReceipt(db: Db, receiptId: number, storedElsewhere?: string): Promise<void> {
   await db`UPDATE receipts SET status = 'completed', completed_at = coalesce(completed_at, now()), updated_at = now() WHERE id = ${receiptId}`;
+  if (storedElsewhere) await db`UPDATE receipts SET response = response - ${storedElsewhere}::text WHERE id = ${receiptId}`;
 }
 
 /** Marks a received response that could not be used (e.g. unparsable) so a fresh attempt can be made. */

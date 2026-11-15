@@ -26,7 +26,8 @@ export async function registerEventJobs(boss: PgBoss) {
  * Material that needs grouping (needsGrouping: a passed report, a discussion post while it is news)
  * left pending without a job: a lost job, or a wait groupArticle leaves pending (budget, provider
  * outage, shutdown) that outlasted the job's retries. Terminal failures need a receipt release or an
- * explicit rerun.
+ * explicit rerun. No separate cross-hour retry ladder for failed rows (#400): refusals and
+ * uncertain paid outcomes must keep their existing recovery paths.
  */
 export async function sweepUngrouped(): Promise<{ enqueued: number }> {
   await ensureQueue(QUEUES.group);

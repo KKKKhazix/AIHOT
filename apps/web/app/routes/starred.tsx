@@ -174,7 +174,7 @@ export default function StarredPage() {
                 </h2>
                 {s.summary && <p className="mt-1.5 line-clamp-2 text-[14px] leading-[1.75] text-ink-3">{shortAddresses(s.summary)}</p>}
                 {unavailable && <p className="mt-2 text-[12.5px] text-hot">这条内容已经下架，收藏会一直保留，直到你手动移除。</p>}
-                {status === "summary-only" && <p className="mt-2 text-[12.5px] text-amber-ink">应来源方要求，这条内容现在只提供摘要。</p>}
+                {status === "summary-only" && <p className="mt-2 text-[12.5px] text-amber-ink">这条内容现在只提供摘要。</p>}
               </li>
             );
           })}

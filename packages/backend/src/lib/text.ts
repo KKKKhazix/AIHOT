@@ -101,6 +101,43 @@ export function stripTags(html: string): string {
   return collapseWhitespace(decodeEntities(stripTagMarkup(html.replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, " "))));
 }
 
+/** HTML rendered into newline-separated blocks, every tag a word boundary and entities decoded. */
+export function htmlBlockText(html: string | null | undefined): string {
+  if (!html) return "";
+  const withBreaks = html
+    .replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<\/?(?:p|div|li|h[1-6]|blockquote|figcaption|tr|dt|dd|caption|pre|section|article|aside|header|footer|br)\b[^>]*>/gi, "\n");
+  return decodeEntities(stripTagMarkup(withBreaks, " "))
+    .split(/\n+/)
+    .map((line) => collapseWhitespace(line))
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Combines text representations of the same document (such as plain body_text and rendered body_html)
+ * without duplicating shared paragraphs or dropping blocks unique to a shorter representation.
+ */
+export function mergeDistinctText(...parts: Array<string | null | undefined>): string {
+  const out: string[] = [];
+  const seenWhole = new Set<string>();
+  const seenBlocks = new Set<string>();
+  for (const part of parts) {
+    if (!part) continue;
+    const whole = collapseWhitespace(part);
+    if (!whole || seenWhole.has(whole)) continue;
+    seenWhole.add(whole);
+    for (const rawBlock of part.split(/\n+/)) {
+      const clean = collapseWhitespace(rawBlock);
+      if (!clean) continue;
+      if (clean.length >= 40 && seenBlocks.has(clean)) continue;
+      if (clean.length >= 40) seenBlocks.add(clean);
+      out.push(clean);
+    }
+  }
+  return out.join("\n\n");
+}
+
 export function escapeXml(s: string): string {
   return s
     .replace(/&/g, "&amp;")

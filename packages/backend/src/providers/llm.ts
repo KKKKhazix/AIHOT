@@ -215,6 +215,10 @@ async function chatOnce<S extends z.ZodType>(opts: ChatJsonOptions<S>, circuit =
       } catch {
         json = { unparsable: text.slice(0, 20000) };
       }
+      const finishReason = (json.choices as Array<{ finish_reason?: string }> | undefined)?.[0]?.finish_reason;
+      if (finishReason === "content_filter" || finishReason === "sensitive") {
+        throw new ProviderRejectedError(`${spec.service} finish_reason=${finishReason}: content_filter`, 200, false, false);
+      }
       const usage = (json.usage as Record<string, unknown> | undefined) ?? null;
       return {
         response: { ...json, _latencyMs: Math.round(performance.now() - started) },

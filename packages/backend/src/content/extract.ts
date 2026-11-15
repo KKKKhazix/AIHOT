@@ -868,7 +868,7 @@ export async function extractArticleBody(articleId: string): Promise<"ok" | "unc
     // A cover decided before (when the article was first stored) stays.
     const cover = got.cover ? sql.json(got.cover as never) : null;
     if (!time && hash === row.content_hash) {
-      await updatePresentation(tx, articleId, { html: got.html, media: row.media.length ? row.media : got.images });
+      await updatePresentation(tx, articleId, { html: got.html, media: row.media.length ? row.media : got.images, cover: got.cover ?? undefined });
       await tx`UPDATE articles SET body_status = 'ok', cover = coalesce(cover, ${cover}::jsonb), updated_at = now() WHERE id = ${articleId}`;
       return "ok";
     }
@@ -913,8 +913,8 @@ async function extractXArticle(articleId: string, tweetId: string, revision: num
     const title = got.title && onlyXArticleLink(row.x_post?.text) ? got.title : row.title;
     const bodyText = [base, block(got)].filter(Boolean).join("\n\n");
     if (bodyText === row.body_text && title === row.title) {
-      // The same words can have new media. Update their presentation without a new semantic revision.
-      if (row.x_article?.html && got.html) {
+      // The same words can have new media or HTML blocks. Update their presentation (or revise when policy requires review).
+      if (got.html) {
         await updatePresentation(tx, articleId, { xArticleHtml: got.html });
       }
       await tx`UPDATE articles SET body_status = 'ok', x_article = ${tx.json(got as never)}, updated_at = now() WHERE id = ${articleId}`;

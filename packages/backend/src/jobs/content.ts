@@ -11,6 +11,7 @@ import { analyzeArticle } from "../editorial/analyze.ts";
 import { isHistorical } from "../content/materials.ts";
 import { publishArticle } from "../publication/publish.ts";
 import { BudgetExceededError, failedReceiptId, failureKind } from "../providers/receipts.ts";
+import { editorialPolicy } from "../modules.ts";
 import { readsWhole } from "../sources/uses.ts";
 import { enqueue, QUEUES, shutdownSignal, work } from "./queue.ts";
 
@@ -268,7 +269,8 @@ const ARTICLE_STEPS = new Set(["prefilter_article", "score_article", "structure_
  * back to processing: one action, not two. Returns whether it was queued.
  */
 export async function resumeAfterRelease(receipt: { purpose: string; subject: string | null }, db: Db): Promise<boolean> {
-  const article = ARTICLE_STEPS.has(receipt.purpose) ? /^article:([^@:#]+)/.exec(receipt.subject ?? "")?.[1] : undefined;
+  const isAnalysisStep = ARTICLE_STEPS.has(receipt.purpose) || Boolean(editorialPolicy().analysisPurposes?.includes(receipt.purpose));
+  const article = isAnalysisStep ? /^article:([^@:#]+)/.exec(receipt.subject ?? "")?.[1] : undefined;
   if (!article) return false;
   const [a] = await db`UPDATE articles SET processing_state = 'new', processing_attempts = 0, processing_retry_at = NULL, processing_error = NULL
                         WHERE id = ${article} AND processing_state = 'failed' RETURNING id`;

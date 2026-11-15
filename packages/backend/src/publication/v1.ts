@@ -168,12 +168,26 @@ export async function selectedSnapshot(q: SnapshotQuery, now = new Date()) {
   // the client pages through the snapshot). Its remove still follows in changes, which the client
   // applies as a no-op.
   const rows = await sql<{ article_id: string; payload: V1ItemPayload }[]>`
-    SELECT latest.article_id, ${ledgerPayload(fields === "minimal", sql`latest.payload`)} AS payload FROM (
-      SELECT DISTINCT ON (article_id) article_id, op, payload FROM selected_ledger
+    SELECT latest.article_id,
+      ${ledgerPayload(
+        fields === "minimal",
+        sql`CASE
+          WHEN latest.seq = st.last_seq OR p.suppress_original
+            OR EXISTS (SELECT 1 FROM selected_ledger sl WHERE sl.article_id = latest.article_id AND sl.seq > latest.seq AND sl.op = 'remove')
+            OR EXISTS (SELECT 1 FROM analyses an WHERE an.article_id = latest.article_id AND an.output @> '{"suppressOriginal":true}'::jsonb)
+            OR EXISTS (SELECT 1 FROM audit_log al WHERE al.subject = 'content:' || latest.article_id AND al.after @> '{"suppressOriginal":true}'::jsonb)
+          THEN cur.payload
+          ELSE latest.payload
+        END`,
+      )} AS payload
+    FROM (
+      SELECT DISTINCT ON (article_id) article_id, seq, op, payload FROM selected_ledger
       WHERE seq <= ${w} AND article_id > ${afterId}
       ORDER BY article_id, seq DESC
     ) latest
     JOIN selected_state st ON st.article_id = latest.article_id AND st.in_set
+    JOIN publications p ON p.article_id = latest.article_id AND ${seatedCondition(now)}
+    JOIN selected_ledger cur ON cur.seq = st.last_seq AND cur.op = 'upsert'
     WHERE latest.op = 'upsert'
     ORDER BY latest.article_id
     LIMIT ${q.limit + 1}`;
@@ -205,12 +219,19 @@ export async function selectedChanges(q: { cursor: string; limit: number }, now 
   }
   const w = await ledgerWatermark();
   if (c.w > w) throw new SnapshotRequiredError("watermark is ahead of this ledger");
-  // An offline client's old watermark must not redistribute content withdrawn since the upsert.
-  // Keep every sequence (as a removal) so even a one-entry page advances without exposing it.
+  // An offline client's old watermark must not redistribute content withdrawn, unseated, or redacted since the upsert
+  // (including an item suppressed and later restored after a clean update). Always project the current seated payload.
   const rows = await sql<{ seq: number; article_id: string; op: "upsert" | "remove"; changed_at: Date; payload: V1ItemPayload | null }[]>`
-    SELECT l.seq, l.article_id, CASE WHEN p.article_id IS NULL THEN 'remove' ELSE l.op END AS op, l.changed_at,
-      CASE WHEN p.article_id IS NOT NULL THEN ${ledgerPayload(c.f === "minimal", sql`l.payload`)} END AS payload
-    FROM selected_ledger l LEFT JOIN publications p ON p.article_id = l.article_id AND ${listedCondition(now)}
+    SELECT l.seq, l.article_id,
+      CASE WHEN p.article_id IS NULL OR cur.seq IS NULL THEN 'remove' ELSE l.op END AS op,
+      l.changed_at,
+      CASE WHEN p.article_id IS NOT NULL AND cur.seq IS NOT NULL AND l.op = 'upsert'
+        THEN ${ledgerPayload(c.f === "minimal", sql`cur.payload`)}
+      END AS payload
+    FROM selected_ledger l
+    LEFT JOIN publications p ON p.article_id = l.article_id AND ${seatedCondition(now)}
+    LEFT JOIN selected_state st ON st.article_id = p.article_id AND st.in_set
+    LEFT JOIN selected_ledger cur ON cur.seq = st.last_seq AND cur.op = 'upsert'
     WHERE l.seq > ${c.w} AND l.seq <= ${w}
     ORDER BY l.seq LIMIT ${q.limit + 1}`;
   const page = rows.slice(0, q.limit);

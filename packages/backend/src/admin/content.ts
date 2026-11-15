@@ -13,7 +13,7 @@ import { identityKeyForUrl, normalizeUrl } from "../lib/url.ts";
 import { publishArticleTx, setSeoDecision } from "../publication/publish.ts";
 import { emit } from "../modules.ts";
 import { requestRegroup } from "../events/corrections.ts";
-import { resetAutomatic } from "../events/group.ts";
+import { resetAutomatic, syncArticleEventCopyTx } from "../events/group.ts";
 import { materialIdentityForUrl, contentHash, decideTimeline, explicitBackfill, isHistorical, updatePresentation, type MediaItem } from "../content/materials.ts";
 import { extractFromUrl, pageFetchable, pageRules } from "../content/extract.ts";
 import { PresentationMismatch, presentationCounts, rebaseTranslation } from "../content/presentation.ts";
@@ -256,6 +256,7 @@ export async function setVisibility(id: string, input: { visibility: "public" | 
       INSERT INTO editorial_overrides (article_id, visibility, reason, version, updated_by) VALUES (${id}, ${input.visibility}, ${input.reason}, 1, ${actor})
       ON CONFLICT (article_id) DO UPDATE SET visibility = EXCLUDED.visibility, reason = EXCLUDED.reason, version = editorial_overrides.version + 1, updated_by = EXCLUDED.updated_by, updated_at = now()`;
     const published = await publishArticleTx(tx, id);
+    await syncArticleEventCopyTx(tx, id);
     let hot = false;
     if (published?.reduced || (before.visibility ?? "public") !== input.visibility) {
       hot = await inHotRanking(id, tx);
@@ -295,6 +296,7 @@ const FieldsSchema = z
     score: z.number().min(0).max(100).nullable(),
     selected: z.boolean(),
     silent: z.boolean(),
+    suppressOriginal: z.boolean(),
   })
   .partial()
   .strict();
@@ -312,6 +314,7 @@ export async function overrideFields(id: string, input: { fields: unknown; clear
       INSERT INTO editorial_overrides (article_id, fields, reason, version, updated_by) VALUES (${id}, ${tx.json(next as never)}, ${input.reason}, 1, ${actor})
       ON CONFLICT (article_id) DO UPDATE SET fields = EXCLUDED.fields, reason = EXCLUDED.reason, version = editorial_overrides.version + 1, updated_by = EXCLUDED.updated_by, updated_at = now()`;
     const published = await publishArticleTx(tx, id);
+    await syncArticleEventCopyTx(tx, id);
     if (published?.changed) {
       await emit("articleChanged", { id, kind: "content", reduced: published.reduced, reason: "manual correction" }, tx);
       const changedFields = new Set([...Object.keys(fields), ...(input.clear ?? [])]);
@@ -419,7 +422,8 @@ async function refreshPresentation(id: string, options: Pick<AdminRerun, "previe
       WHERE subject=${`content:${id}`} AND action='content.rerun.presentation' AND actor=${actor} AND request_id=${requestId} ORDER BY id DESC LIMIT 1`;
     if (prior) return prior.after.result;
     if (stableJson(current) !== stableJson(a)) throw new Conflict("材料在预览后变化，请重新预览");
-    await updatePresentation(tx, id, { html: got.html, media: got.images });
+    const outcome = await updatePresentation(tx, id, { html: got.html, media: got.images });
+    if (outcome === "revised") await queueProcessing(id, { step: "analyze", db: tx });
     const applied = { ...result, applied: true };
     await audit(actor, "content.rerun.presentation", `content:${id}`, "仅刷新正文展示",
       { revision: a.revision, bodyHtml: a.body_html, media: a.media, translationHtml: a.tr_html },

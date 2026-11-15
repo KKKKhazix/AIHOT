@@ -10,6 +10,7 @@ import type { Brand } from "@aihot/contracts/site";
 import type { Db } from "./db.ts";
 import type { QueueOptions } from "./jobs/queue.ts";
 import type { Finding } from "./notify/feishu.ts";
+import type { ContentPart } from "./providers/llm.ts";
 import type { Topic, TopicMember } from "./publication/topics.ts";
 
 /** A cron schedule (Asia/Shanghai), recorded in job_runs like the engine's (apps/worker/src/schedules.ts). */
@@ -253,6 +254,115 @@ export interface ServerModule {
    * of the internal chat, and only their screenshots go to Feishu. It wakes whoever handles them (`alerts`).
    */
   feedbackPages?: readonly string[];
+  /** Publication suitability review before analysis, translation or event digests are stored (editorial/analyze.ts, editorial/translate.ts, events/digest.ts). */
+  editorial?: EditorialPolicy;
+}
+
+export interface EditorialFact {
+  title: string;
+  subject?: string | null;
+  action?: string | null;
+  object?: string | null;
+  occurredAt?: string | null;
+  evidence: string | null;
+  conditions: Array<{ text: string; quote: string }>;
+}
+
+export interface EditorialLoadedImages {
+  parts: ContentPart[];
+  /** Images that could not be inspected (transient fetch failure, unsupported format or beyond review cap). */
+  unverifiedCount: number;
+}
+
+export interface EditorialReviewInput {
+  articleId: string;
+  revision: number;
+  attemptTag?: string;
+  title: string;
+  url: string;
+  excerpt: string;
+  bodyText: string;
+  xPostText: string;
+  xQuotedText: string;
+  xArticleText?: string;
+  imageCount?: number;
+  loadImages?: () => Promise<EditorialLoadedImages>;
+  relevance: "pass" | "block" | "unknown";
+  selected: boolean;
+  score: number | null;
+  titleZh: string | null;
+  summaryZh: string | null;
+  reasonZh: string | null;
+  fact: EditorialFact | null;
+  contentRefused: boolean;
+}
+
+export interface EditorialReviewOutcome {
+  relevance?: "pass" | "block" | "unknown";
+  selected?: boolean;
+  score?: number | null;
+  titleZh?: string | null;
+  summaryZh?: string | null;
+  reasonZh?: string | null;
+  fact?: EditorialFact | null;
+  suppressOriginal?: boolean;
+  withdrawn?: boolean;
+  reused?: boolean;
+  receiptIds?: number[];
+  review?: Record<string, unknown>;
+}
+
+export interface EditorialTranslationReviewInput {
+  subject: string;
+  title: string;
+  sourceText: string;
+  translatedText: string;
+  contentRefused?: boolean;
+}
+
+export interface EditorialStoryDigestReviewInput {
+  storyId: number;
+  title: string;
+  digest: string;
+  fallbackTitle?: string;
+  fallbackDigest?: string;
+}
+
+export interface EditorialEventCopyInput {
+  title: string;
+  fallbackTitle?: string | null;
+  conditions?: string | null;
+  subject?: string | null;
+  action?: string | null;
+  object?: string | null;
+  taiwanContext?: boolean;
+}
+
+export interface EditorialEventCopyOutcome {
+  title: string;
+  titleChanged: boolean;
+  conditions: string | null;
+  subject: string | null;
+  action: string | null;
+  object: string | null;
+}
+
+export interface EditorialPolicy {
+  /** Receipt purposes produced during analyzeArticle that should resume the article when an unknown receipt is released (jobs/content.ts). */
+  analysisPurposes?: readonly string[];
+  /** Reviews an analysed or provider-refused item before its analysis row is saved (editorial/analyze.ts). */
+  reviewAnalysis?: (input: EditorialReviewInput) => Promise<EditorialReviewOutcome | null>;
+  /** Reviews translated body or quote text before it is stored (editorial/translate.ts). */
+  reviewTranslation?: (input: EditorialTranslationReviewInput) => Promise<{ allow: boolean; reason?: string; receiptIds?: number[] }>;
+  /** Reviews a generated event title and digest before saving (events/digest.ts). */
+  reviewStoryDigest?: (input: EditorialStoryDigestReviewInput) => Promise<{ title: string; digest: string; receiptIds?: number[] } | null>;
+  /** Sanitizes stored fact and story copy when a report is grouped, revised or overridden (events/group.ts). */
+  sanitizeEventCopy?: (input: EditorialEventCopyInput) => EditorialEventCopyOutcome;
+}
+
+export function editorialPolicy(): EditorialPolicy {
+  for (const m of installed) if (m.editorial) return m.editorial;
+  return {};
 }
 
 export function defineServerModule(module: ServerModule): ServerModule {

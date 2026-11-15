@@ -137,6 +137,15 @@ export function providerSpendingRefused(service: string, error: string): boolean
   return providerAccessRefused(service, error);
 }
 
+/**
+ * A provider's safety or content-inspection filter declined this input or output (Zhipu 1301,
+ * DashScope DataInspectionFailed, DeepSeek Content Exists Risk, OpenAI-compatible content_filter).
+ */
+export function providerContentRefused(error: unknown): boolean {
+  return failureKind(error) === "refused"
+    && /contentFilter|"1301"|DataInspectionFailed|data_inspection_failed|content_filter|Content Exists Risk/i.test((error as Error).message);
+}
+
 /** A temporary rate limit can pass; account/spending refusals need access restored first. */
 export function assertAccepted(service: string, status: number, body: string): void {
   if (status >= 200 && status < 300) return;

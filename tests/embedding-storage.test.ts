@@ -9,8 +9,11 @@ import { sha256 } from "@aihot/backend/lib/ids";
 
 const T = `storage-${tag()}`;
 const replacement = [1, 0, 0, 0];
-const provider = await stub((_hit, req) => ({ data: (JSON.parse(req.body).input as string[])
-  .map((_text, index) => ({ index, embedding: replacement })) }));
+let asked: string[] = [];
+const provider = await stub((_hit, req) => {
+  asked = JSON.parse(req.body).input as string[];
+  return { data: asked.map((_text, index) => ({ index, embedding: replacement })) };
+});
 process.env.EMBEDDING_MODEL = T;
 process.env.EMBEDDING_DIMS = "0";
 process.env.EMBEDDING_API_KEY = "test-key";
@@ -63,4 +66,36 @@ test("stored text hashes and model identities are still required for reuse", asy
     assert.deepEqual((await ensureEmbeddings([it])).get(it.id), replacement);
     assert.equal(provider.hits(), before + 1);
   }
+});
+
+test("an article with the exact text of another stored article takes its vector without a request", async () => {
+  const first = item();
+  const twin = { id: `${T}-${++serial}`, text: first.text };
+  await store(first, "{0,0,1,0}");
+  const before = provider.hits();
+  assert.deepEqual((await ensureEmbeddings([twin])).get(twin.id), [0, 0, 1, 0]);
+  assert.equal(provider.hits(), before);
+});
+
+test("an unusable row of a text does not hide a usable one of the same text", async () => {
+  const first = item();
+  const twin = { id: `${T}-${++serial}`, text: first.text };
+  await store(first, "{0,0,0,1}");
+  await store(twin, "{NaN,0,0,0}");
+  const before = provider.hits();
+  const got = await ensureEmbeddings([first, twin]);
+  assert.deepEqual(got.get(first.id), [0, 0, 0, 1]);
+  assert.deepEqual(got.get(twin.id), [0, 0, 0, 1]);
+  assert.equal(provider.hits(), before);
+});
+
+test("articles with the same text asked for together buy that text once", async () => {
+  const first = item();
+  const twin = { id: `${T}-${++serial}`, text: first.text };
+  const other = item();
+  const before = provider.hits();
+  const got = await ensureEmbeddings([first, twin, other]);
+  assert.equal(provider.hits(), before + 1);
+  assert.deepEqual(asked, [first.text, other.text]);
+  for (const it of [first, twin, other]) assert.deepEqual(got.get(it.id), replacement);
 });

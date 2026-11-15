@@ -110,7 +110,7 @@ export interface WebModule {
   /** Its folder under modules/. */
   name: string;
   /** The reader's account, from a module that offers one, drawn where the place asks (before hydration: signed out). */
-  account?: ComponentType<{ place: AccountPlace }>;
+  account?: ComponentType<{ place: AccountPlace; children?: ReactNode }>;
   /** Desktop sidebar: entries in a section between the engine's 内容 and 更多; modules naming the same section share it. */
   sidebar?: { section: string; items: NavItem[] };
   /** Phone tab bar: tabs before 我的. */

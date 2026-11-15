@@ -1,6 +1,8 @@
 // Database and file backups: a verified custom-format dump plus the uploaded files, sent
 // to the existing object store (Tencent COS through its S3-compatible API, AWS Signature V4) under
 // one retention prefix: monthly/ on the 1st, otherwise weekly/ on Sundays or daily/.
+// Remote retention and abandoned multipart cleanup belong to bucket lifecycle rules (#401),
+// without a second cleanup schedule in the framework.
 import { execFile } from "node:child_process";
 import { createHash, createHmac } from "node:crypto";
 import { createReadStream } from "node:fs";

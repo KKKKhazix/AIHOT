@@ -166,5 +166,11 @@ export function ErrorBoundary() {
   );
   // Admin errors stay inside the admin's own chrome.
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return body;
-  return <SiteShell changelogVersion={site?.changelogVersion ?? null}>{body}</SiteShell>;
+  // The modules' parts after the page stay: a gray page's 404 is where someone on the preview list signs in.
+  return (
+    <>
+      <SiteShell changelogVersion={site?.changelogVersion ?? null}>{body}</SiteShell>
+      {webModules().map((m) => m.root?.Bottom && <m.root.Bottom key={m.name} />)}
+    </>
+  );
 }

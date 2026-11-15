@@ -38,6 +38,8 @@ function parseDraft(value: unknown): Draft | null {
 
 /** Drafts the site's modules keep elsewhere in this browser. */
 const otherDrafts = () => webModules().flatMap((m) => (m.feedbackDraft ? [m.feedbackDraft] : []));
+/** The signed-in reader's email: the contact field starts with it, and they can change or clear it. */
+const signedInEmail = () => webModules().map((m) => m.signedInEmail?.() ?? null).find((email) => !!email) ?? "";
 
 function readDraft(): Draft | null {
   let draft = parseDraft(readJson(KEYS.feedbackDraft));
@@ -120,9 +122,12 @@ export default function FeedbackPage() {
   const [state, setState] = useState<{ kind: "idle" | "sending" | "done" | "error"; message?: string; id?: number }>({ kind: "idle" });
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Not a draft of its own: the signed-in email alone is never saved as one, and comes back after sending.
+  const prefilled = useRef("");
 
   useEffect(() => {
     const saved = readDraft();
+    prefilled.current = signedInEmail();
     // The page the reader was on before coming here (tracked across in-site navigation, "更多" skipped);
     // a document the browser opened fresh falls back to its referrer.
     const before = params.get("from") ? null : (lastPage() ?? (document.referrer.startsWith(location.origin) ? document.referrer : null));
@@ -131,13 +136,13 @@ export default function FeedbackPage() {
     // from here it is this page's draft, and a reload brings back what the reader has written since.
     const carried = carriedText(navigation);
     if (carried) {
-      setDraft((d) => ({ content: carried, email: saved?.email ?? "", pageUrl: d.pageUrl || from || saved?.pageUrl || "" }));
+      setDraft((d) => ({ content: carried, email: saved ? saved.email : prefilled.current, pageUrl: d.pageUrl || from || saved?.pageUrl || "" }));
       navigate(pathname + search, { replace: true, state: { ...(navigation as object), content: undefined } });
     } else if (saved) setDraft((d) => ({ ...saved, pageUrl: d.pageUrl || from || saved.pageUrl }));
-    else if (from) setDraft((d) => ({ ...d, pageUrl: from }));
+    else setDraft((d) => ({ ...d, email: prefilled.current, pageUrl: from ?? d.pageUrl }));
   }, []);
   useEffect(() => {
-    const t = setTimeout(() => writeDraft(draft.content || draft.email ? draft : null), 400);
+    const t = setTimeout(() => writeDraft(draft.content || (draft.email && draft.email !== prefilled.current) ? draft : null), 400);
     return () => clearTimeout(t);
   }, [draft]);
 
@@ -180,7 +185,7 @@ export default function FeedbackPage() {
       if (!res.ok) return setState({ kind: "error", message: body.detail ?? "提交失败，请稍后再试。" });
       writeDraft(null);
       setState({ kind: "done", id: body.id });
-      setDraft({ content: "", email: "", pageUrl: "" });
+      setDraft({ content: "", email: prefilled.current, pageUrl: "" });
       setShot(null);
     } catch {
       setState({ kind: "error", message: "网络不太顺，草稿已保存在本机，稍后再提交。" });

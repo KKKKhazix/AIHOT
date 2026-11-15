@@ -22,25 +22,26 @@ after(async () => {
 test("an unrelated malformed cookie leaves a real admin session usable without admitting invalid sessions", async () => {
   const token = `session-${tag()}`;
   const [user] = await sql<{ id: number }[]>`INSERT INTO admin_users (display_name) VALUES ('Cookie test') RETURNING id`;
-  const claims = { appId: "test-session-app", unionId: "test-session-user", email: null };
-  process.env.FEISHU_LOGIN_APP_ID = claims.appId;
-  process.env.FEISHU_LOGIN_APP_SECRET = "test-app-secret";
-  config.adminUnionIds = [claims.unionId];
-  const binding = createHmac("sha256", process.env.SESSION_SECRET!).update(JSON.stringify(["admin-session-v1", "feishu", claims])).digest("hex");
-  await sql`INSERT INTO admin_sessions (id_hash, user_id, csrf_token, expires_at, auth_method, auth_binding, auth_claims)
-            VALUES (${sha256(token)}, ${user!.id}, 'cookie-test-csrf', now() + interval '1 hour', 'feishu', ${binding}, ${sql.json(claims)})`;
+  config.adminPassword = "private-route-test-password";
+  const binding = createHmac("sha256", process.env.SESSION_SECRET!).update(JSON.stringify(["admin-session-v1", "password", config.adminPassword])).digest("hex");
+  await sql`INSERT INTO admin_sessions (id_hash, user_id, csrf_token, expires_at, auth_method, auth_binding)
+            VALUES (${sha256(token)}, ${user!.id}, 'cookie-test-csrf', now() + interval '1 hour', 'password', ${binding})`;
 
   for (const cookie of ["unrelated=%", "aihot_admin=%; unrelated=%E0%A4", "aihot_admin=forged; unrelated=%"]) {
-    const denied = await app.inject({ url: "/api/admin/me", headers: { cookie } });
+    const denied = await app.inject({ url: "/api/admin/preview", headers: { cookie } });
     assert.equal(denied.statusCode, 401);
-    assert.equal(denied.headers["cache-control"], "no-store");
+    assert.equal(denied.headers["cache-control"], "private, no-store");
   }
 
   const headers = { cookie: `unrelated=%; aihot_admin=${token}; another=%E0%A4` };
-  const me = await app.inject({ url: "/api/admin/me", headers });
+  const me = await app.inject({ url: "/api/admin/preview", headers });
   assert.equal(me.statusCode, 200);
   assert.equal(me.json().name, "Cookie test");
-  assert.equal(me.json().csrf, "cookie-test-csrf");
+  assert.deepEqual(Object.keys(me.json()), ["name"]);
+  if (!ADMIN) {
+    for (const url of ["/api/admin/me", "/api/auth/login", "/api/auth/options"]) assert.equal((await app.inject({ url, headers })).statusCode, 404);
+    return;
+  }
   const signedIn = await app.inject({ url: "/api/auth/login?return=%2Fadmin%2Fcontent", headers });
   assert.equal(signedIn.statusCode, 302);
   assert.equal(signedIn.headers.location, "/admin/content", "a live session skips the sign-in page");
@@ -62,11 +63,11 @@ test("an unrelated malformed cookie leaves a real admin session usable without a
   // The form parser now in front of sign-out keeps its size limit, and refuses before the session is touched.
   const oversized = await app.inject({ method: "POST", url: "/api/auth/logout", headers: { ...headers, "content-type": "application/x-www-form-urlencoded" }, payload: `x=${"a".repeat(20_000)}` });
   assert.equal(oversized.statusCode, 413);
-  assert.equal((await app.inject({ url: "/api/admin/me", headers })).statusCode, 200);
+  assert.equal((await app.inject({ url: "/api/admin/preview", headers })).statusCode, 200);
   // The sign-out button is a plain HTML form: the browser sends this content type even with an empty body.
   const logout = await app.inject({ method: "POST", url: "/api/auth/logout", headers: { ...headers, "content-type": "application/x-www-form-urlencoded" }, payload: "" });
   assert.equal(logout.statusCode, 303);
-  const ended = await app.inject({ url: "/api/admin/me", headers });
+  const ended = await app.inject({ url: "/api/admin/preview", headers });
   assert.equal(ended.statusCode, 401);
 });
 

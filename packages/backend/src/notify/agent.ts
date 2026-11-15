@@ -73,12 +73,12 @@ export async function wakeAgent(f: Finding, now = Date.now()): Promise<boolean> 
     id: identity.length <= 200 ? identity : `alert:${hash(identity)}`,
     type: f.agentOnly ? f.agentType : f.level === "today" ? "alert.today" : "alert.now",
     subject: subject(f.key), summary: clip(f.title,200), detail: clip([f.impact,f.detail].filter(Boolean).join("\n"),4000),
-    link: new URL("/admin/runs",config.siteUrl).href,
+    link: new URL("/api/health",config.siteUrl).href,
   }, now);
 }
 
 /** Called after the daily follow-up message was generated. No model or separate scheduler here. */
 /** Whether the hub took the day's list. */
 export async function wakeDigest(date: string, count: number): Promise<boolean> {
-  return publish({id:`digest:${date}`,type:"alert.digest",subject:`digest:${date}`,summary:`系统日报 ${date}`,detail:`${count} 项待跟进`,link:new URL("/admin/runs",config.siteUrl).href});
+  return publish({id:`digest:${date}`,type:"alert.digest",subject:`digest:${date}`,summary:`系统日报 ${date}`,detail:`${count} 项待跟进`,link:new URL("/api/health",config.siteUrl).href});
 }

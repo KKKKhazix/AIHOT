@@ -195,20 +195,20 @@ test("browser caching preserves noindex and private sign-in responses", async ()
   assert.match(await feedback.text(), /name="robots" content="noindex/);
   assert.equal(feedback.headers.get("Cache-Control"), "public, max-age=300, s-maxage=300, must-revalidate");
   const login = await fetch(origin + "/admin/login");
-  assert.equal(login.status, 200);
+  assert.equal(login.status, ADMIN ? 200 : 404, "a site without admin pages has no admin sign-in either");
   assert.equal(login.headers.get("Cache-Control"), "private, no-store");
-  assert.equal(login.headers.get("X-Robots-Tag"), "noindex, nofollow");
+  if (ADMIN) assert.equal(login.headers.get("X-Robots-Tag"), "noindex, nofollow");
   await login.text();
 });
 
-test("a signed-in admin is sent past the sign-in page", async () => {
+test("a signed-in admin is sent past the sign-in page", { skip: !ADMIN && "this site has no admin pages" }, async () => {
   const api = fakeApi((url, res, req) => {
     if (url.pathname === "/api/admin/me") {
       if (req.headers.cookie?.includes("aihot_admin=fixture")) return { name: "Fixture admin", csrf: "fixture", dev: false };
       res.statusCode = 401;
       return { code: "unauthorized" };
     }
-    if (url.pathname === "/api/auth/options") return { password: true, feishu: false };
+    if (url.pathname === "/api/auth/options") return { password: true };
   });
   const signedIn = await startWebServer(api);
   try {

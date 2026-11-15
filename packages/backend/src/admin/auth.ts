@@ -96,6 +96,11 @@ export async function sessionPrincipal(cookieHeader: string | undefined): Promis
       await sql`DELETE FROM admin_sessions WHERE id_hash = ${hash}`;
     }
   }
+  return devPrincipal();
+}
+
+/** Development's stand-in admin (DEV_AUTH_ROLE=admin); never in production. */
+export function devPrincipal(): AdminPrincipal | null {
   if (config.devAdmin && config.environmentName !== "production") return { userId: null, name: config.devAdmin.displayName, csrf: "dev", dev: true };
   return null;
 }

@@ -9,6 +9,7 @@ import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { sha256 } from "@aihot/backend/lib/ids";
+import { sessionPrincipal } from "@aihot/backend/admin/auth";
 import { buildApp } from "../apps/api/src/app.ts";
 
 process.env.INGEST_TOKEN = "private-route-test-ingest-token";
@@ -34,14 +35,17 @@ test("an unrelated malformed cookie leaves a real admin session usable without a
   }
 
   const headers = { cookie: `unrelated=%; aihot_admin=${token}; another=%E0%A4` };
+  assert.equal((await sessionPrincipal(headers.cookie))?.name, "Cookie test");
   const me = await app.inject({ url: "/api/admin/preview", headers });
-  assert.equal(me.statusCode, 200);
-  assert.equal(me.json().name, "Cookie test");
-  assert.deepEqual(Object.keys(me.json()), ["name"]);
   if (!ADMIN) {
+    // No admin sign-in here: the session is not a way into gray pages, and admin routes do not exist.
+    assert.equal(me.statusCode, 401);
     for (const url of ["/api/admin/me", "/api/auth/login", "/api/auth/options"]) assert.equal((await app.inject({ url, headers })).statusCode, 404);
     return;
   }
+  assert.equal(me.statusCode, 200);
+  assert.equal(me.json().name, "Cookie test");
+  assert.deepEqual(Object.keys(me.json()), ["name"]);
   const signedIn = await app.inject({ url: "/api/auth/login?return=%2Fadmin%2Fcontent", headers });
   assert.equal(signedIn.statusCode, 302);
   assert.equal(signedIn.headers.location, "/admin/content", "a live session skips the sign-in page");

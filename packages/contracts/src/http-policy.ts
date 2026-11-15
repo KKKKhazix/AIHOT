@@ -224,3 +224,11 @@ export function apiOwnedPatterns(): readonly RegExp[] {
 export function isApiOwned(pathname: string): boolean {
   return tables().apiPaths.some((re) => re.test(pathname));
 }
+
+/**
+ * Pages answered per visitor, never kept by a shared cache whatever their route asks for: the admin's, and gray pages
+ * (ModulePage.gray, mounted under /preview/) that only people on the preview list see.
+ */
+export function isPrivatePage(pathname: string): boolean {
+  return /^\/(?:admin|preview)(?:\/|$)/i.test(pathname);
+}

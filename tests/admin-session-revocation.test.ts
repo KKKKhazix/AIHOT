@@ -117,11 +117,17 @@ for (const next of [SECRET_B, ""]) test(`session-secret ${next ? "rotation" : "r
   await revoked(token);
 });
 
-test("password sessions grant preview with their audit actor", async () => {
+test("password sessions grant preview with their audit actor only on a site with admin pages", async () => {
   const token = await password();
   const admin = await sessionPrincipal(cookie(token));
-  assert.deepEqual(await previewPrincipal(cookie(token)), { name: admin!.name, actor: `admin:${admin!.userId}` });
   const response = await request("/api/admin/preview", token);
+  if (!ADMIN) {
+    // Nobody signs in as admin here: a leftover session must not stand in for the preview list.
+    assert.equal(await previewPrincipal(cookie(token)), null);
+    assert.equal(response.status, 401);
+    return;
+  }
+  assert.deepEqual(await previewPrincipal(cookie(token)), { name: admin!.name, actor: `admin:${admin!.userId}` });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { name: admin!.name });
 });

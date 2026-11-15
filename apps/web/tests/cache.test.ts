@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { ADMIN } from "@aihot/site";
 import { SIGN_IN_HOME } from "@aihot/contracts/admin";
+import { isPrivatePage } from "@aihot/contracts/http-policy";
 import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { UNSAFE_decodeViaTurboStream } from "react-router";
 import { fakeApi, startWebServer, type WebServer } from "./web-server.ts";
@@ -134,6 +135,17 @@ test("admin data and actions never become public cache entries", async () => {
   assert.equal(action.headers.get("Cache-Control"), "private, no-store");
   assert.equal(action.headers.get("X-Accel-Expires"), "0");
   await action.text();
+});
+
+test("gray pages are private like the admin's, whatever their route asks for", async () => {
+  for (const pathname of ["/preview", "/preview/", "/preview/models", "/Preview/models", "/admin", "/admin/runs"]) assert.equal(isPrivatePage(pathname), true, pathname);
+  for (const pathname of ["/", "/previews", "/all", "/items/preview", "/administer"]) assert.equal(isPrivatePage(pathname), false, pathname);
+  for (const pathname of ["/preview/missing", "/preview/missing.data", "/preview/missing.data?_routes=root"]) {
+    const res = await fetch(origin + pathname);
+    assert.equal(res.headers.get("Cache-Control"), "private, no-store", pathname);
+    assert.equal(res.headers.get("X-Accel-Expires"), "0", pathname);
+    await res.text();
+  }
 });
 
 test("browser freshness shares the selected deadline, including slow sibling loaders", async () => {

@@ -126,11 +126,8 @@ test("every table and column is used by the code that reads and writes the datab
   const files = [...["packages/backend/src", "apps/api/src", "apps/worker/src"].flatMap((dir) => sources(dir)), ...modules()].map(({ text }) => words(text));
   const columns = await sql<{ table_name: string; column_name: string }[]>`
     SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name <> 'schema_migrations'`;
-  // This release stops using these columns; a following release removes them after old processes stop.
-  const pendingRemoval = new Set(["admin_sessions.auth_claims", "admin_users.feishu_union_id"]);
   const unused = new Set<string>();
   for (const { table_name: table, column_name: column } of columns) {
-    if (pendingRemoval.has(`${table}.${column}`)) continue;
     const users = files.filter((names) => names.has(table));
     if (users.length === 0) unused.add(`table ${table}`);
     // created_at is the row's own timestamp, kept on every table for operations.

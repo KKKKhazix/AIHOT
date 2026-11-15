@@ -67,6 +67,7 @@ async function queryExtras(ranking: HotRanking): Promise<Extras> {
       SELECT DISTINCT ON (s.id) s.name, s.icon_url, a.x_post->>'avatarUrl' AS avatar
       FROM story_signals ss JOIN sources s ON s.id = ss.source_id
       LEFT JOIN articles a ON a.id = CASE WHEN s.icon_url IS NULL THEN ss.article_id END AND a.x_post ? 'avatarUrl'
+        AND NOT EXISTS (SELECT 1 FROM publications p WHERE p.article_id = a.id AND (p.suppress_original OR p.visibility <> 'public'))
       WHERE ss.story_id = ANY(${ids}::bigint[])
       ORDER BY s.id, (a.id IS NULL), a.discovered_at DESC, a.id DESC`,
     storyTexts(ids),

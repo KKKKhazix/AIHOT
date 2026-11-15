@@ -17,12 +17,14 @@ import { CATEGORIES } from "@aihot/industry/taxonomy";
 import { SELECTION } from "@aihot/industry/selection";
 import { ITEM_COPY } from "@aihot/site";
 import { sql } from "../db.ts";
+import { editorialPolicy } from "../modules.ts";
 import { chatJson, MODELS, type ContentPart } from "../providers/llm.ts";
-import { completeReceipt, failedReceiptId, failureKind } from "../providers/receipts.ts";
+import { completeReceipt, failedReceiptId, failureKind, providerContentRefused } from "../providers/receipts.ts";
 import { collapseWhitespace } from "../lib/text.ts";
 import { modelFor, modelRoute, modelSupportsVision } from "./models.ts";
-import { buildMaterial, firstImagePart, loadAnalyzeInput, type AnalyzeInputArticle } from "./input.ts";
+import { buildMaterial, firstImagePart, loadAnalyzeInput, loadArticleImageParts, type AnalyzeInputArticle } from "./input.ts";
 import { pageFetchable } from "../content/extract.ts";
+import { syncArticleEventCopyTx } from "../events/group.ts";
 import { shutdownSignal } from "../jobs/queue.ts";
 import {
   buildArticlePrompt, buildLongTweetPrompt, buildShortTweetPrompt, finalizeCopy, isShortTweetInput, looksZh, MAX_BODY_CHARS, missingEvidence,
@@ -209,13 +211,12 @@ export interface AnalysisRun {
     itemType?: string;
     authorRole?: string;
     identityGuard?: IdentityGuard;
+    understandRefused?: boolean;
     receiptIds: number[];
     reused: boolean;
   } | null;
   structure: (ReturnType<typeof normalizeStructure> & { model: string; receiptId: number; reused: boolean }) | null;
 }
-
-const isContentFilter = (error: unknown) => failureKind(error) === "refused" && /contentFilter|"1301"/.test((error as Error).message);
 
 /** Only a title or a feed summary, and a page to fetch: the article is judged on the page. */
 export function waitsForPage(a: AnalyzeInputArticle): boolean {
@@ -298,7 +299,7 @@ async function runScores(
       const receiptId = failedReceiptId(error);
       if (receiptId !== null) onReceipt?.(receiptId);
       // The model's content filter declines the material (Zhipu 1301): not scored, so not selected.
-      if (isContentFilter(error)) return { model, threshold, values, receiptIds, reused: false, refused: true };
+      if (providerContentRefused(error)) return { model, threshold, values, receiptIds, reused: false, refused: true };
       throw error;
     }
   }
@@ -351,13 +352,13 @@ export async function runUnderstand(a: AnalyzeInputArticle, opts: StepOpts = {})
   try {
     res = await call(image);
   } catch (error) {
-    if (isContentFilter(error)) return null;
+    if (providerContentRefused(error)) return null;
     // The model refused the image (download, format): the text is written without it.
     if (!image || failureKind(error) !== "refused") throw error;
     try {
       res = await call(null);
     } catch (retryError) {
-      if (isContentFilter(retryError)) return null;
+      if (providerContentRefused(retryError)) return null;
       throw retryError;
     }
   }
@@ -401,6 +402,7 @@ async function mendWording(a: AnalyzeInputArticle, w: NonNullable<AnalysisRun["w
     // An answer that is not the copy asked for, or a refusal the same request would meet again (each provider words
     // its own), leaves the first copy: a mend that cannot be had must not hold the item back. Its receipt stays failed
     // (seen on the runs page, and asked again the next time the item is analysed); a busy provider is tried again later.
+    if (editorialPolicy().reviewAnalysis && providerContentRefused(error)) throw error;
     const kind = failureKind(error);
     if (kind === "unusable" || kind === "refused") return w;
     throw error;
@@ -484,19 +486,42 @@ export async function runAnalysis(a: AnalyzeInputArticle, opts: StepOpts = {}): 
   const prefilter = await runSelectionPrefilter(a, opts);
   if (prefilter.label === "BLOCK") return { prefilter, scores: null, writing: null, structure: null };
   const original = originalPostCopy(a.xPost, a.url);
+  const failClosedRefusal = Boolean(editorialPolicy().reviewAnalysis);
   // The structure step needs nothing from the scores: it runs beside them.
   const structure = runStructure(a, opts).then((value) => ({ value }), (error: unknown) => ({ error }));
   try {
-    const scores = await runSelectionScores(a, opts);
+    let scores: AnalysisRun["scores"];
+    try {
+      scores = await runSelectionScores(a, opts);
+    } catch (scoreError) {
+      if (failClosedRefusal) {
+        const s = await structure;
+        if ("error" in s && providerContentRefused(s.error)) throw s.error;
+      }
+      throw scoreError;
+    }
+    const s = await structure;
+    if (failClosedRefusal && scores?.refused) {
+      return { prefilter, scores, writing: null, structure: "error" in s ? null : s.value };
+    }
+    if ("error" in s) throw s.error;
     const sum = scoreSum(scores);
     const near = scoresSelect(scores) || (sum !== null && sum > UNDERSTAND_FLOOR * SCORE_CALLS);
-    const s = await structure;
-    if ("error" in s) throw s.error;
     // Writing checks the material itself and is never handed the structure's fact: given those
     // extracted conclusions, it rewrote copy that had been right.
-    const writing: NonNullable<AnalysisRun["writing"]> = original
+    const understood = !original && near ? await runUnderstand(a, opts) : undefined;
+    if (failClosedRefusal && understood === null) {
+      return {
+        prefilter,
+        scores,
+        writing: { kind: "none", model: null, titleZh: "", summaryZh: "", reasonZh: null, understandRefused: true, receiptIds: [], reused: false },
+        structure: s.value,
+      };
+    }
+    const baseWriting: NonNullable<AnalysisRun["writing"]> = original
       ? { kind: "verbatim", model: null, titleZh: original.title, summaryZh: original.summary ?? "", reasonZh: null, receiptIds: [], reused: true }
-      : await mendWording(a, (near ? await runUnderstand(a, opts) : null) ?? (await runSummarize(a, opts)), opts);
+      : await mendWording(a, understood ?? (await runSummarize(a, opts)), opts);
+    const writing = understood === null ? { ...baseWriting, understandRefused: true } : baseWriting;
     return { prefilter, scores, writing, structure: s.value };
   } finally {
     // A score/writing error or deploy must not let the job finish while a paid structure request
@@ -529,6 +554,7 @@ export function normalizeAnalysis(run: AnalysisRun) {
     scores: values,
     scoreModel: run.scores?.model ?? null,
     scoreRefused: run.scores?.refused ?? false,
+    understandRefused: run.writing?.understandRefused ?? false,
     threshold,
     category: run.structure?.category ?? null,
     tags,
@@ -538,6 +564,8 @@ export function normalizeAnalysis(run: AnalysisRun) {
     reasonZh: run.writing?.reasonZh ?? null,
     scope: run.structure?.scope ?? "unknown",
     fact: run.structure?.fact ?? null,
+    suppressOriginal: false,
+    withdrawn: false,
   };
 }
 
@@ -560,19 +588,76 @@ export async function analyzeArticle(articleId: string, opts: StepOpts = {}): Pr
   if (!input) return null;
   // Its page first; extraction queues the analysis again (normally the queue already routed it there).
   if (waitsForPage(input)) return { analysisId: null, stale: false, needsBody: true, output: null, receiptIds: [], reused: true };
-  const run = await runAnalysis(input, opts);
+  const reviewer = editorialPolicy().reviewAnalysis;
+  let stepRefused = false;
+  let run: AnalysisRun;
+  try {
+    run = await runAnalysis(input, opts);
+  } catch (error) {
+    if (!reviewer || !providerContentRefused(error)) throw error;
+    stepRefused = true;
+    run = { prefilter: null, scores: null, writing: null, structure: null };
+  }
   const out = normalizeAnalysis(run);
+  const contentRefused = stepRefused || out.scoreRefused || out.understandRefused;
+  let reviewMeta: Record<string, unknown> | undefined;
+  let reviewReceipts: number[] = [];
+  let reviewReused = true;
+  if (reviewer) {
+    const imageUrls = input.imageUrls ?? [];
+    const reviewed = await reviewer({
+      articleId,
+      revision: input.revision,
+      attemptTag: opts.attemptTag,
+      title: input.title,
+      url: input.url,
+      excerpt: input.excerpt ?? "",
+      bodyText: input.fullBodyText ?? input.bodyText ?? "",
+      xPostText: input.rawXPostText ?? String(input.xPost?.text ?? ""),
+      xQuotedText: input.rawXQuotedText ?? String(input.xPost?.quoted?.text ?? ""),
+      xArticleText: input.xArticleText ?? "",
+      imageCount: imageUrls.length,
+      loadImages: () => loadArticleImageParts(imageUrls),
+      relevance: out.relevance as "pass" | "block" | "unknown",
+      selected: out.selected,
+      score: out.score,
+      titleZh: out.titleZh || null,
+      summaryZh: out.summaryZh || null,
+      reasonZh: out.reasonZh,
+      fact: out.fact,
+      contentRefused,
+    });
+    if (reviewed) {
+      if (reviewed.relevance !== undefined) out.relevance = reviewed.relevance;
+      if (reviewed.selected !== undefined) out.selected = reviewed.selected;
+      if (reviewed.score !== undefined) out.score = reviewed.score;
+      if (reviewed.titleZh !== undefined) out.titleZh = collapseWhitespace(reviewed.titleZh ?? "");
+      if (reviewed.summaryZh !== undefined) out.summaryZh = (reviewed.summaryZh ?? "").trim();
+      if (reviewed.reasonZh !== undefined) out.reasonZh = reviewed.reasonZh;
+      if (reviewed.fact !== undefined) out.fact = reviewed.fact;
+      if (reviewed.suppressOriginal !== undefined) out.suppressOriginal = reviewed.suppressOriginal;
+      if (reviewed.withdrawn !== undefined) out.withdrawn = reviewed.withdrawn;
+      reviewMeta = reviewed.review;
+      reviewReceipts = reviewed.receiptIds ?? [];
+      reviewReused = reviewed.reused ?? (reviewReceipts.length === 0);
+    }
+  }
   const receiptIds = [
     ...(run.prefilter ? [run.prefilter.receiptId] : []), ...(run.scores?.receiptIds ?? []), ...(run.writing?.receiptIds ?? []),
-    ...(run.structure ? [run.structure.receiptId] : []),
+    ...(run.structure ? [run.structure.receiptId] : []), ...reviewReceipts,
   ];
   const w = run.writing;
   const detail = {
     prefilter: run.prefilter && { label: run.prefilter.label, reason: run.prefilter.reason },
     scores: out.scores, scoreModel: out.scoreModel, threshold: out.threshold, ...(out.scoreRefused ? { scoreRefused: true } : {}),
+    ...(out.understandRefused ? { understandRefused: true } : {}),
+    ...(stepRefused ? { stepRefused: true } : {}),
     ...(w ? { writer: w.kind, writerModel: w.model, itemType: w.itemType ?? null, authorRole: w.authorRole ?? null } : {}),
     ...(w?.identityGuard?.outcome === "fallback" ? { identityGuard: w.identityGuard } : {}),
     scope: out.scope, fact: out.fact,
+    ...(out.suppressOriginal ? { suppressOriginal: true } : {}),
+    ...(out.withdrawn ? { withdrawn: true } : {}),
+    ...(reviewMeta ? { review: reviewMeta } : {}),
   };
   const committed = await sql.begin(async (tx) => {
     const [current] = await tx<{ revision: number }[]>`SELECT revision FROM articles WHERE id = ${articleId} FOR UPDATE`;
@@ -587,9 +672,10 @@ export async function analyzeArticle(articleId: string, opts: StepOpts = {}): Pr
     for (const id of receiptIds) await completeReceipt(tx, id);
     if (!stale) {
       await tx`UPDATE articles SET processing_state = ${out.relevance === "block" ? "blocked" : "analyzed"}, processing_error = NULL WHERE id = ${articleId}`;
+      await syncArticleEventCopyTx(tx, articleId);
     }
     return { analysisId: row!.id, stale };
   });
-  const reused = (run.prefilter?.reused ?? true) && (run.scores?.reused ?? true) && (w?.reused ?? true) && (run.structure?.reused ?? true);
+  const reused = (run.prefilter?.reused ?? true) && (run.scores?.reused ?? true) && (w?.reused ?? true) && (run.structure?.reused ?? true) && reviewReused;
   return { analysisId: committed.analysisId, stale: committed.stale, output: out, receiptIds, reused };
 }

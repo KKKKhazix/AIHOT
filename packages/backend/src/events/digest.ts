@@ -4,6 +4,7 @@ import { z } from "zod";
 import { modelFor } from "../editorial/models.ts";
 import { beijingDate, beijingTime } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
+import { editorialPolicy } from "../modules.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt } from "../providers/receipts.ts";
 import { digestFactEvidence, digestInputsHash, digestReports, type DigestReport } from "../publication/story-evidence.ts";
@@ -66,12 +67,33 @@ export async function composeStoryDigest(storyId: number, opts: { rewrite?: bool
   const corrected = opts.rewrite === true || sameReports || dropped;
   const user = buildStoryDigestInput(story, reports, { corrected, knownArticleIds: last?.article_ids });
   const latest = reports[reports.length - 1]!.title;
+  const fallbackDigest = reports
+    .slice(-5)
+    .map((r) => r.summary?.trim() || r.title.trim())
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 2000) || latest;
   // A withdrawal clears the public projection but retains its history. Restoring exactly the same
   // evidence reuses that digest through the normal version/input checks, without another model call.
   const res = !opts.rewrite && last?.inputs_hash === inputsHash ? { data: { title: "", digest: last.digest }, receiptId: last.receipt_id } : await chatJson({
     model: await modelFor("digest"), purpose: "story_digest", subject: `story:${storyId}@${ids.length}`, promptVersion: DIGEST_PROMPT_VERSION,
     system: DIGEST_SYSTEM, user, schema: DigestSchema, ...DIGEST_SAMPLING,
   });
+  const reviewed = editorialPolicy().reviewStoryDigest
+    ? await editorialPolicy().reviewStoryDigest!({
+        storyId,
+        title: res.data.title || story.title,
+        digest: res.data.digest,
+        fallbackTitle: latest,
+        fallbackDigest,
+      })
+    : null;
+  const nextTitle = reviewed ? (res.data.title ? reviewed.title : (reviewed.title !== story.title ? reviewed.title : "")) : res.data.title;
+  const nextDigest = reviewed ? reviewed.digest : res.data.digest;
+  const allReceipts = [
+    ...(res.receiptId !== null ? [res.receiptId] : []),
+    ...(reviewed?.receiptIds ?? []),
+  ];
   const version = story.version + 1;
   const updated = await sql.begin(async (tx) => {
     const [current] = await tx<{ version: number; merged_into: number | null }[]>`
@@ -80,16 +102,16 @@ export async function composeStoryDigest(storyId: number, opts: { rewrite?: bool
     // version. Compare the same input identity again after the model returns.
     if (!current || current.version !== story.version || current.merged_into !== null || digestInputsHash(await digestReports(tx, [storyId])) !== inputsHash) {
       // A paid response remains reusable even when an editor or another digest won the race.
-      if (res.receiptId !== null) await completeReceipt(tx, res.receiptId);
+      for (const rid of new Set(allReceipts)) await completeReceipt(tx, rid);
       return false;
     }
     await tx`INSERT INTO story_digests (story_id, version, digest, latest, receipt_id, article_ids, inputs_hash)
-             VALUES (${storyId}, ${version}, ${res.data.digest}, ${latest}, ${res.receiptId}, ${ids}, ${inputsHash})`;
-    await tx`UPDATE stories SET digest = ${res.data.digest}, latest = ${latest}, digest_updated_at = now(),
-               title = CASE WHEN origin = 'manual' OR ${res.data.title} = '' THEN title ELSE ${res.data.title} END,
+             VALUES (${storyId}, ${version}, ${nextDigest}, ${latest}, ${res.receiptId}, ${ids}, ${inputsHash})`;
+    await tx`UPDATE stories SET digest = ${nextDigest}, latest = ${latest}, digest_updated_at = now(),
+               title = CASE WHEN origin = 'manual' OR ${nextTitle} = '' THEN title ELSE ${nextTitle} END,
                version = ${version}, updated_at = now()
              WHERE id = ${storyId}`;
-    if (res.receiptId !== null) await completeReceipt(tx, res.receiptId);
+    for (const rid of new Set(allReceipts)) await completeReceipt(tx, rid);
     return true;
   });
   return updated ? { updated: true, version } : { updated: false };

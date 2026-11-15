@@ -12,16 +12,17 @@ import type { AnyNode, Element } from "domhandler";
 import { z } from "zod";
 import { sql } from "../db.ts";
 import { sanitizeBody, textToHtml } from "../content/sanitize.ts";
-import { rebaseTranslation } from "../content/presentation.ts";
+import { htmlAltText, rebaseTranslation } from "../content/presentation.ts";
 import { chatJson } from "../providers/llm.ts";
-import { completeReceipt, failureKind, ProviderRejectedError, rejectReceivedResponse } from "../providers/receipts.ts";
-import { collapseWhitespace, isChineseText } from "../lib/text.ts";
+import { completeReceipt, failureKind, providerContentRefused, ProviderRejectedError, rejectReceivedResponse } from "../providers/receipts.ts";
+import { collapseWhitespace, htmlBlockText, isChineseText, mergeDistinctText } from "../lib/text.ts";
 import { isEmptyOrLinkOnly, xArticleBody } from "../content/posts.ts";
 import { sha256 } from "../lib/ids.ts";
 import { modelFor } from "./models.ts";
 import { shutdownSignal } from "../jobs/queue.ts";
 import { promptText, promptVersion } from "./prompts.ts";
-import { emit } from "../modules.ts";
+import { editorialPolicy, emit } from "../modules.ts";
+import { republishTx } from "../publication/publish.ts";
 
 export const TRANSLATE_PROMPT_VERSION = promptVersion("translate-body", "translate-body-retry", "translate-post");
 const BATCH_CHARS = 3500;
@@ -175,9 +176,28 @@ export function unshield(translated: string, s: Shielded): string | null {
   return $.html().replace(/⟦(\d+)⟧/g, (_m, n: string) => s.tokens[Number(n)]!);
 }
 
+async function suppressFromTranslation(articleId: string, revision: number, receiptIds: number[], reason: string): Promise<boolean> {
+  return sql.begin(async (tx) => {
+    const [current] = await tx<{ revision: number }[]>`SELECT revision FROM articles WHERE id = ${articleId} FOR UPDATE`;
+    let suppressed = false;
+    if (current && current.revision === revision) {
+      const updated = await tx<{ id: number }[]>`
+        UPDATE analyses SET output = coalesce(output, '{}'::jsonb) || jsonb_build_object('suppressOriginal', true, 'translationReview', ${reason}::text)
+        WHERE id = (SELECT id FROM analyses WHERE article_id = ${articleId} AND input_revision = ${revision} ORDER BY id DESC LIMIT 1)
+        RETURNING id`;
+      if (updated.length > 0) {
+        await republishTx(tx, articleId);
+        suppressed = true;
+      }
+    }
+    for (const id of new Set(receiptIds)) await completeReceipt(tx, id);
+    return suppressed;
+  });
+}
+
 export async function translateArticle(articleId: string, expectedRevision?: number): Promise<TranslateResult> {
-  const [row] = await sql<{ revision: number; channel: string; language: string | null; body_html: string | null; body_text: string | null; x_post: { text?: string } | null; x_article: { text?: string; html?: string } | null; title: string; selected: boolean; body_mode: string; visibility: string }[]>`
-    SELECT a.revision, p.channel, a.language, a.body_html, a.body_text, a.x_post, a.x_article, p.title, p.selected, p.body_mode, p.visibility
+  const [row] = await sql<{ revision: number; channel: string; language: string | null; body_html: string | null; body_text: string | null; x_post: { text?: string } | null; x_article: { title?: string; text?: string; html?: string } | null; title: string; selected: boolean; body_mode: string; suppress_original: boolean; visibility: string }[]>`
+    SELECT a.revision, p.channel, a.language, a.body_html, a.body_text, a.x_post, a.x_article, p.title, p.selected, p.body_mode, p.suppress_original, p.visibility
     FROM publications p JOIN articles a ON a.id = p.article_id WHERE p.article_id = ${articleId}
       AND (${expectedRevision ?? null}::int IS NULL OR a.revision = ${expectedRevision ?? null})`;
   if (!row) return { articleId, revision: expectedRevision, status: "skipped", reason: "not published at the requested revision" };
@@ -187,12 +207,15 @@ export async function translateArticle(articleId: string, expectedRevision?: num
     for (const id of new Set(receiptIds)) await rejectReceivedResponse(id, `unusable translation: ${reason}`);
     return result({ status: "failed", reason });
   };
-  if (!row.selected || row.visibility !== "public" || row.body_mode !== "full") return result({ status: "skipped", reason: "not a selected full-text item" });
+  if (!row.selected || row.visibility !== "public" || row.body_mode !== "full" || row.suppress_original) {
+    return result({ status: "skipped", reason: "not a selected full-text item" });
+  }
+  const reviewer = editorialPolicy().reviewTranslation;
 
   // A post with a saved long article reads as an article (publication/detail.ts), so it is translated as an
   // article's body is: the post's own words and the article as laid out (xArticleBody), never the post's
   // introduction alone, which would stand in for the whole article.
-  const article = row.channel === "x" && row.x_article?.text ? row.x_article : null;
+  const article = row.channel === "x" && (row.x_article?.text || row.x_article?.html) ? row.x_article : null;
   if (article && !article.html) return result({ status: "skipped", reason: "saved long article without its layout" });
   if (row.channel === "x" && !article) {
     const text = String(row.x_post?.text ?? row.body_text ?? "").trim();
@@ -200,15 +223,43 @@ export async function translateArticle(articleId: string, expectedRevision?: num
     const meaningful = collapseWhitespace(text.replace(/https?:\/\/\S+/g, ""));
     if (isChineseText(text, row.language)) return result({ status: "skipped", reason: "already Chinese" });
     if (meaningful.length < X_MIN_CHARS) return result({ status: "skipped", reason: "short post" });
-    const translated = await translateAll(articleId, row.revision, [text], SYSTEM_POST);
+    let translated;
+    try {
+      translated = await translateAll(articleId, row.revision, [text], SYSTEM_POST);
+    } catch (error) {
+      if (reviewer && providerContentRefused(error)) {
+        const verdict = await reviewer({ subject: `article:${articleId}@${row.revision}`, title: row.title, sourceText: text, translatedText: "", contentRefused: true });
+        if (!verdict.allow) {
+          const suppressed = await suppressFromTranslation(articleId, row.revision, verdict.receiptIds ?? [], verdict.reason ?? "translation refused");
+          return result({ status: "skipped", reason: suppressed ? (verdict.reason ?? "original suppressed") : "stale revision" });
+        }
+      }
+      throw error;
+    }
     const [t] = translated.translations;
     if (!t) return unusable(translated.receiptIds, "translation did not line up");
+    if (reviewer) {
+      const verdict = await reviewer({ subject: `article:${articleId}@${row.revision}`, title: row.title, sourceText: text, translatedText: t });
+      const allReceipts = [...translated.receiptIds, ...(verdict.receiptIds ?? [])];
+      if (!verdict.allow) {
+        const suppressed = await suppressFromTranslation(articleId, row.revision, allReceipts, verdict.reason ?? "original suppressed");
+        return result({ status: "skipped", reason: suppressed ? (verdict.reason ?? "original suppressed") : "stale revision" });
+      }
+      await store(articleId, row.revision, row.title, textToHtml(t), t, true, allReceipts);
+      return result({ status: "translated", segments: 1 });
+    }
     await store(articleId, row.revision, row.title, textToHtml(t), t, true, translated.receiptIds);
     return result({ status: "translated", segments: 1 });
   }
 
   const source = article ? xArticleBody(String(row.x_post?.text ?? ""), article.html!) : row.body_html;
-  if (!source || isChineseText(article ? article.text! : row.body_text ?? "", row.language)) return result({ status: "skipped", reason: "no foreign-language body" });
+  if (!source) return result({ status: "skipped", reason: "no foreign-language body" });
+  const renderedText = mergeDistinctText(htmlBlockText(source), htmlAltText(source));
+  const sourceText = article
+    ? mergeDistinctText(row.x_post?.text, article.title, article.text, renderedText)
+    : mergeDistinctText(row.body_text, renderedText);
+  const languageBasis = (article ? article.text : row.body_text) || sourceText;
+  if (isChineseText(languageBasis, row.language)) return result({ status: "skipped", reason: "no foreign-language body" });
   const $ = cheerio.load(source, null, false);
   const blocks = segmentsOf($);
   if (!blocks.length) return result({ status: "skipped", reason: "no translatable text" });
@@ -227,15 +278,29 @@ export async function translateArticle(articleId: string, expectedRevision?: num
   // No model request was made when even the first block exceeds the text cap.
   if (!chosen.length) return result({ status: "skipped", reason: "no batch translated" });
   const restore = (answers: Array<string | null>) => answers.map((t, i) => (t === null ? null : unshield(t, shielded[i]!)));
-  const first = await translateAll(articleId, row.revision, shielded.map((b) => b.html), SYSTEM_BODY);
-  const receiptIds = [...first.receiptIds];
-  const translations = restore(first.translations);
-  // Blocks whose answer dropped a link or an image are asked once more, on their own receipt, with the retry prompt.
-  const missing = translations.flatMap((t, i) => (t === null ? [i] : []));
-  if (missing.length) {
-    const again = await translateAll(articleId, row.revision, missing.map((i) => shielded[i]!.html), SYSTEM_RETRY, "retry");
-    receiptIds.push(...again.receiptIds);
-    missing.forEach((i, k) => (translations[i] = again.translations[k] ? unshield(again.translations[k]!, shielded[i]!) : null));
+  const receiptIds: number[] = [];
+  let translations: Array<string | null>;
+  try {
+    const first = await translateAll(articleId, row.revision, shielded.map((b) => b.html), SYSTEM_BODY);
+    receiptIds.push(...first.receiptIds);
+    translations = restore(first.translations);
+    // Blocks whose answer dropped a link or an image are asked once more, on their own receipt, with the retry prompt.
+    const missing = translations.flatMap((t, i) => (t === null ? [i] : []));
+    if (missing.length) {
+      const again = await translateAll(articleId, row.revision, missing.map((i) => shielded[i]!.html), SYSTEM_RETRY, "retry");
+      receiptIds.push(...again.receiptIds);
+      missing.forEach((i, k) => (translations[i] = again.translations[k] ? unshield(again.translations[k]!, shielded[i]!) : null));
+    }
+  } catch (error) {
+    if (reviewer && providerContentRefused(error)) {
+      const verdict = await reviewer({ subject: `article:${articleId}@${row.revision}`, title: row.title, sourceText, translatedText: "", contentRefused: true });
+      receiptIds.push(...(verdict.receiptIds ?? []));
+      if (!verdict.allow) {
+        const suppressed = await suppressFromTranslation(articleId, row.revision, receiptIds, verdict.reason ?? "translation refused");
+        return result({ status: "skipped", reason: suppressed ? (verdict.reason ?? "original suppressed") : "stale revision" });
+      }
+    }
+    throw error;
   }
   let done = 0;
   chosen.forEach((el, i) => {
@@ -248,7 +313,17 @@ export async function translateArticle(articleId: string, expectedRevision?: num
   if (!done) return unusable(receiptIds, "no batch translated");
   const complete = done === blocks.length;
   const html = sanitizeBody($.html());
-  await store(articleId, row.revision, row.title, html, cheerio.load(html, null, false).root().text().trim(), complete, receiptIds,
+  const translatedText = cheerio.load(html, null, false).root().text().trim();
+  if (reviewer) {
+    const reviewTranslatedText = mergeDistinctText(htmlBlockText(html), translatedText);
+    const verdict = await reviewer({ subject: `article:${articleId}@${row.revision}`, title: row.title, sourceText, translatedText: reviewTranslatedText });
+    receiptIds.push(...(verdict.receiptIds ?? []));
+    if (!verdict.allow) {
+      const suppressed = await suppressFromTranslation(articleId, row.revision, receiptIds, verdict.reason ?? "original suppressed");
+      return result({ status: "skipped", reason: suppressed ? (verdict.reason ?? "original suppressed") : "stale revision" });
+    }
+  }
+  await store(articleId, row.revision, row.title, html, translatedText, complete, receiptIds,
     { html: source, xArticle: !!article });
   return result({ status: complete ? "translated" : "partial", segments: done });
 }
@@ -289,7 +364,19 @@ export async function importBodyTranslation(input: { articleId: string; sourceHt
   const clean = sanitizeBody(input.html);
   const text = cheerio.load(clean, null, false).root().text().trim();
   if (!clean || !text) throw new Error("Empty translation");
-  await store(input.articleId, row.revision, input.title, clean, text, input.complete, [], { html: input.sourceHtml, exact: true });
+  const reviewer = editorialPolicy().reviewTranslation;
+  let receiptIds: number[] = [];
+  if (reviewer) {
+    const sourceText = mergeDistinctText(htmlBlockText(input.sourceHtml), htmlAltText(input.sourceHtml));
+    const reviewTranslatedText = mergeDistinctText(htmlBlockText(clean), htmlAltText(clean), text);
+    const verdict = await reviewer({ subject: `article:${input.articleId}@${row.revision}`, title: input.title, sourceText, translatedText: reviewTranslatedText });
+    receiptIds = verdict.receiptIds ?? [];
+    if (!verdict.allow) {
+      await suppressFromTranslation(input.articleId, row.revision, receiptIds, verdict.reason ?? "imported translation suppressed");
+      throw new Error(`Imported translation rejected by compliance: ${verdict.reason ?? "original suppressed"}`);
+    }
+  }
+  await store(input.articleId, row.revision, input.title, clean, text, input.complete, receiptIds, { html: input.sourceHtml, exact: true });
 }
 
 /** A quoted post worth translating: at least a few letters beyond its links, and not already Chinese. */
@@ -314,10 +401,22 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
     FROM publications p JOIN articles a ON a.id = p.article_id
     CROSS JOIN LATERAL (SELECT substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') AS tweet_id) q
     LEFT JOIN quote_translations qt ON qt.tweet_id = q.tweet_id
-    WHERE p.channel = 'x' AND p.selected AND p.visibility = 'public' AND p.body_mode = 'full'
+    WHERE p.channel = 'x' AND p.selected AND p.visibility = 'public' AND p.body_mode = 'full' AND NOT p.suppress_original
       AND p.discovered_at > now() - make_interval(days => ${opts.days ?? 3})
       AND q.tweet_id IS NOT NULL AND coalesce(a.x_post->'quoted'->>'text', '') <> ''
     ORDER BY q.tweet_id, p.discovered_at DESC`;
+  const reviewer = editorialPolicy().reviewTranslation;
+  const suppressCiting = async (tweetId: string, receiptIds: number[], reason: string) => {
+    const cited = await sql<{ id: string; revision: number }[]>`
+      SELECT a.id, a.revision FROM articles a JOIN publications p ON p.article_id = a.id
+      WHERE substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') = ${tweetId} AND NOT p.suppress_original`;
+    for (const { id, revision } of cited) await suppressFromTranslation(id, revision, [], reason);
+    if (receiptIds.length) {
+      await sql.begin(async (tx) => {
+        for (const id of new Set(receiptIds)) await completeReceipt(tx, id);
+      });
+    }
+  };
   let stored = 0;
   for (const r of rows) {
     if (stored >= (opts.limit ?? 30) || Date.now() - started > (opts.budgetMs ?? 2 * 60_000) || shutdownSignal.signal.aborted) break;
@@ -337,6 +436,13 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
         receiptId = res.receiptId;
         zh = res.data.t.length === 1 ? res.data.t[0]!.trim() : null;
       } catch (error) {
+        if (reviewer && providerContentRefused(error)) {
+          const verdict = await reviewer({ subject: `quote:${r.tweet_id}`, title: "", sourceText: r.text, translatedText: "", contentRefused: true });
+          if (!verdict.allow) {
+            await suppressCiting(r.tweet_id, verdict.receiptIds ?? [], verdict.reason ?? "quoted translation refused");
+            continue;
+          }
+        }
         // What ends the run ends it; any other failure skips its post (an answer received is reused
         // next time, so a retry costs nothing).
         if (endsRun(error)) throw error;
@@ -344,6 +450,15 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
       }
     }
     if (!zh) continue;
+    const allReceipts = receiptId !== null ? [receiptId] : [];
+    if (reviewer) {
+      const verdict = await reviewer({ subject: `quote:${r.tweet_id}`, title: "", sourceText: r.text, translatedText: zh });
+      allReceipts.push(...(verdict.receiptIds ?? []));
+      if (!verdict.allow) {
+        await suppressCiting(r.tweet_id, allReceipts, verdict.reason ?? "quoted original suppressed");
+        continue;
+      }
+    }
     const changed = await sql.begin(async (tx) => {
       const saved = await tx`
         INSERT INTO quote_translations (tweet_id, text_hash, text_zh, origin) VALUES (${r.tweet_id}, ${hash}, ${zh}, ${origin})
@@ -357,7 +472,7 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
           WHERE substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') = ${r.tweet_id}`;
         for (const { id } of cited) await emit("articleChanged", { id, kind: "body", reason: "quoted post translation" }, tx);
       }
-      if (receiptId !== null) await completeReceipt(tx, receiptId);
+      for (const id of new Set(allReceipts)) await completeReceipt(tx, id);
       return saved.length > 0;
     });
     if (changed) stored += 1;
@@ -378,7 +493,7 @@ export async function translatePending(opts: { limit?: number; budgetMs?: number
       CASE WHEN p.channel='x' THEN coalesce(nullif(a.x_article->>'text',''),a.x_post->>'text',a.body_text) ELSE a.body_text END AS text
     FROM publications p JOIN articles a ON a.id = p.article_id
     LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh'
-    WHERE p.selected AND p.visibility = 'public' AND p.body_mode = 'full'
+    WHERE p.selected AND p.visibility = 'public' AND p.body_mode = 'full' AND NOT p.suppress_original
       AND (p.channel='x' OR a.body_html IS NOT NULL)
       AND (p.discovered_at > now() - interval '3 days'
            OR EXISTS (SELECT 1 FROM article_revisions r WHERE r.article_id = a.id AND r.revision = a.revision AND r.revision > 1

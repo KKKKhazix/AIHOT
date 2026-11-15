@@ -231,6 +231,7 @@ export interface AdminPublication {
   selected_ready_at: Timestamp | null;
   visible_after: Timestamp | null;
   body_mode: string;
+  suppress_original: boolean;
   syndicate: boolean;
   indexable: boolean;
   seo_indexed_at: Timestamp | null;

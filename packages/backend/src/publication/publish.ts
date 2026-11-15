@@ -11,7 +11,7 @@ import { originalPostCopy } from "../content/posts.ts";
 import { itemUrl } from "./links.ts";
 import { pickRepresentative, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity } from "./representative.ts";
 import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
-import { emit } from "../modules.ts";
+import { editorialPolicy, emit } from "../modules.ts";
 import {
   bodyModeOf, channelOf, displayTags, isIndexable, isPoolEligible, isSelectable, isIndependentSelectedSource, mayRedistribute, publicSourceName, type SourceFacts,
 } from "./rules.ts";
@@ -19,6 +19,7 @@ import { foldableSelectionCondition, latestCompositeCondition, ownFactEvidenceCo
 
 interface ArticleRow {
   id: string;
+  revision: number;
   source_id: string;
   url: string;
   title: string;
@@ -38,6 +39,7 @@ interface ArticleRow {
 
 interface AnalysisRow {
   id: number;
+  input_revision: number;
   relevance: string | null;
   category: string | null;
   tags: string[];
@@ -47,6 +49,7 @@ interface AnalysisRow {
   reason_zh: string | null;
   score: number | null;
   selected: boolean | null;
+  output: { suppressOriginal?: boolean; withdrawn?: boolean } | null;
 }
 
 interface OverrideRow {
@@ -71,6 +74,7 @@ interface PublicationRow {
   tags: string[];
   score: number | null;
   body_mode: string;
+  suppress_original: boolean;
   syndicate: boolean;
   url: string;
   channel: string;
@@ -195,10 +199,10 @@ async function settleSeats(tx: Tx, factId: number | null, self: string | null, n
 
 /** Brings one article's place in the selected sync ledger in line with its publication. */
 async function syncLedger(tx: Tx, articleId: string, now: Date): Promise<"upsert" | "remove" | null> {
-  const [p] = await tx<Array<{ selected: boolean; visibility: string; seat: boolean; title: string; original_title: string | null; summary: string | null;
+  const [p] = await tx<Array<{ selected: boolean; visibility: string; seat: boolean; suppress_original: boolean; title: string; original_title: string | null; summary: string | null;
     url: string; published_at: Date | null; discovered_at: Date; category: string | null; score: string | number | null; reason: string | null;
     source_name: string }>>`
-    SELECT p.selected, p.visibility, p.seat, p.title, p.original_title, p.summary, p.url, p.published_at, p.discovered_at, p.category,
+    SELECT p.selected, p.visibility, p.seat, p.suppress_original, p.title, p.original_title, p.summary, p.url, p.published_at, p.discovered_at, p.category,
            p.score, p.reason, s.name AS source_name
     FROM publications p JOIN sources s ON s.id = p.source_id WHERE p.article_id = ${articleId}`;
   if (!p) return null;
@@ -211,6 +215,9 @@ async function syncLedger(tx: Tx, articleId: string, now: Date): Promise<"upsert
     const payloadHash = sha256(stableJson(payload));
     if (state?.in_set && state.payload_hash === payloadHash) return null;
     const seq = await appendLedger(tx, articleId, "upsert", payload, now);
+    if (p.suppress_original) {
+      await tx`UPDATE selected_ledger SET payload = ${tx.json(payload as never)} WHERE article_id = ${articleId} AND op = 'upsert' AND seq < ${seq}`;
+    }
     await tx`INSERT INTO selected_state (article_id, in_set, payload_hash, last_seq) VALUES (${articleId}, true, ${payloadHash}, ${seq})
              ON CONFLICT (article_id) DO UPDATE SET in_set = true, payload_hash = EXCLUDED.payload_hash, last_seq = EXCLUDED.last_seq`;
     return "upsert";
@@ -239,7 +246,7 @@ export async function republishTx(tx: Tx, articleId: string, options: PublishOpt
 
 export async function publishArticleTx(tx: Tx, articleId: string, options: PublishOptions = {}): Promise<PublishResult | null> {
   const [article] = await tx<ArticleRow[]>`
-    SELECT id, source_id, url, title, language, published_at, discovered_at, timeline_at, backfill, body_status,
+    SELECT id, revision, source_id, url, title, language, published_at, discovered_at, timeline_at, backfill, body_status,
            body_text, x_post, x_article, grouped_at, grouping_status, selection_adds_value
     FROM articles WHERE id = ${articleId} FOR UPDATE`;
   if (!article) return null;
@@ -252,7 +259,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
     SELECT id, name, kind, tier, participation_mode, first_party, site_fulltext, syndicate_fulltext FROM sources WHERE id = ${article.source_id}`;
   if (!source) return null;
   const [analysis] = await tx<AnalysisRow[]>`
-    SELECT id, relevance, category, tags, subjects, title_zh, summary_zh, reason_zh, score, selected
+    SELECT id, input_revision, relevance, category, tags, subjects, title_zh, summary_zh, reason_zh, score, selected, output
     FROM analyses WHERE article_id = ${articleId} ORDER BY input_revision DESC, id DESC LIMIT 1`;
   const [override] = await tx<OverrideRow[]>`SELECT fields, visibility FROM editorial_overrides WHERE article_id = ${articleId}`;
   const [membership] = await tx<{ fact_id: number; story_id: number | null }[]>`
@@ -271,12 +278,19 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   const now = options.now ?? new Date();
 
   const f = override?.fields ?? {};
+  // While an editorial policy reviews material, an unanalysed revision withholds its new raw text and media
+  // until that revision's own analysis commits; any vetted copy from the prior revision remains available.
+  const awaitingReview = Boolean(editorialPolicy().reviewAnalysis)
+    && source.participation_mode === "editorial"
+    && (!analysis || analysis.input_revision < article.revision);
+  const suppressOriginal = awaitingReview || (typeof f.suppressOriginal === "boolean" ? f.suppressOriginal : analysis?.output?.suppressOriginal === true);
+  const withdrawnByAnalysis = analysis?.output?.withdrawn === true;
   const isChineseTitle = isChineseText(article.title, article.language);
   // An X post carries its Chinese in the summary and translation; without a Chinese title its own
   // text is the title, where an article would still be a half-finished card.
   const zhTitle = analysis?.title_zh?.trim() ? analysis.title_zh : null;
-  const original = originalPostCopy(article.x_post, article.url, article.x_article);
-  const title = pickString(f.title, original?.title ?? zhTitle ?? (isChineseTitle || article.x_post ? collapseWhitespace(article.title) : null));
+  const original = suppressOriginal ? null : originalPostCopy(article.x_post, article.url, article.x_article);
+  const title = pickString(f.title, original?.title ?? zhTitle ?? (!suppressOriginal && (isChineseTitle || article.x_post) ? collapseWhitespace(article.title) : null));
   const summary = pickString(f.summary, original ? original.summary : analysis?.summary_zh ?? null);
   const category = pickString(f.category, analysis?.category ?? null);
   const tags = Array.isArray(f.tags) ? (f.tags as string[]) : [...new Set([...(analysis?.tags ?? []), ...(analysis?.subjects ?? []).map((s) => `entity:${s}`)])];
@@ -284,7 +298,9 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   const relevance = typeof f.relevance === "string" ? (f.relevance as string) : analysis?.relevance ?? null;
   const judgedSelected = typeof f.selected === "boolean" ? (f.selected as boolean) : analysis?.selected ?? null;
   // Material from an isolated source reaches no public surface at all: not even a detail page.
-  const visibility = source.participation_mode === "isolated" ? "withdrawn" : (override?.visibility ?? "public");
+  const visibility = source.participation_mode === "isolated"
+    ? "withdrawn"
+    : (override?.visibility ?? (withdrawnByAnalysis || (suppressOriginal && !title) ? "withdrawn" : "public"));
 
   // An undated archive has a readable detail page, but its discovery is not a news timestamp.
   // Explicit imports can retain an editorial decision already published elsewhere.
@@ -301,9 +317,9 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   const hasXPost = !!article.x_post;
   const channel = channelOf(source.kind, hasXPost);
   const hasBody = !!article.body_text || !!article.x_post?.text || !!article.x_post?.media?.length || !!article.x_post?.quoted?.text;
-  const bodyMode = bodyModeOf(source, article.body_status, hasBody);
-  const syndicate = mayRedistribute(source, bodyMode);
-  const originalTitle = isChineseTitle && title === collapseWhitespace(article.title) ? null : collapseWhitespace(article.title);
+  const bodyMode = suppressOriginal ? "summary" : bodyModeOf(source, article.body_status, hasBody);
+  const syndicate = suppressOriginal ? false : mayRedistribute(source, bodyMode);
+  const originalTitle = suppressOriginal || (isChineseTitle && title === collapseWhitespace(article.title)) ? null : collapseWhitespace(article.title);
 
   // Waiting candidates are readable in the pool, with no selected seat, sync entry or push.
   // Completion stamps the actual release after lock waits, including across report cutoffs.
@@ -330,8 +346,8 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
 
   const next = {
     source_id: source.id, first_party: source.tier === "T1",
-    visibility, eligible, selected, selection_candidate: selectionCandidate, title: title ?? collapseWhitespace(article.title), original_title: originalTitle, summary, reason,
-    category, tags, score: round1(score), body_mode: bodyMode, story_id: membership?.story_id ?? null, fact_id: membership?.fact_id ?? null,
+    visibility, eligible, selected, selection_candidate: selectionCandidate, title: title ?? (suppressOriginal ? "" : collapseWhitespace(article.title)), original_title: originalTitle, summary, reason,
+    category, tags, score: round1(score), body_mode: bodyMode, suppress_original: suppressOriginal, story_id: membership?.story_id ?? null, fact_id: membership?.fact_id ?? null,
     indexable, url: article.url, channel, syndicate, published_at: article.published_at, discovered_at: article.discovered_at,
     timeline_at: article.timeline_at, backfill: article.backfill, sort_at: sortAt, visible_after: visibleAfter,
   };
@@ -361,11 +377,11 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   await tx`
     INSERT INTO publications (article_id, analysis_id, revision, visibility, eligible, selected, selection_candidate, title, original_title, summary,
       reason, category, tags, score, source_id, channel, first_party, url, published_at, discovered_at, timeline_at, backfill,
-      selected_ready_at, visible_after, body_mode, syndicate, indexable, story_id, fact_id, search_text, sort_at, updated_at)
+      selected_ready_at, visible_after, body_mode, suppress_original, syndicate, indexable, story_id, fact_id, search_text, sort_at, updated_at)
     VALUES (${articleId}, ${analysis?.id ?? null}, ${revision}, ${visibility}, ${eligible}, ${selected}, ${selectionCandidate}, ${next.title},
       ${originalTitle}, ${summary}, ${reason}, ${category}, ${tags}, ${next.score}, ${source.id}, ${channel}, ${source.tier === "T1"},
       ${article.url}, ${article.published_at}, ${article.discovered_at}, ${article.timeline_at}, ${article.backfill},
-      ${selectedReadyAt}, ${visibleAfter}, ${bodyMode}, ${syndicate}, ${indexable}, ${next.story_id}, ${next.fact_id}, ${searchText}, ${sortAt}, now())
+      ${selectedReadyAt}, ${visibleAfter}, ${bodyMode}, ${suppressOriginal}, ${syndicate}, ${indexable}, ${next.story_id}, ${next.fact_id}, ${searchText}, ${sortAt}, now())
     ON CONFLICT (article_id) DO UPDATE SET
       analysis_id = EXCLUDED.analysis_id, revision = EXCLUDED.revision, visibility = EXCLUDED.visibility,
       eligible = EXCLUDED.eligible, selected = EXCLUDED.selected, selection_candidate = EXCLUDED.selection_candidate, title = EXCLUDED.title, original_title = EXCLUDED.original_title,
@@ -373,7 +389,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
       score = EXCLUDED.score, source_id = EXCLUDED.source_id, channel = EXCLUDED.channel, first_party = EXCLUDED.first_party,
       url = EXCLUDED.url, published_at = EXCLUDED.published_at, discovered_at = EXCLUDED.discovered_at,
       timeline_at = EXCLUDED.timeline_at, backfill = EXCLUDED.backfill, selected_ready_at = EXCLUDED.selected_ready_at,
-      visible_after = EXCLUDED.visible_after, body_mode = EXCLUDED.body_mode, syndicate = EXCLUDED.syndicate,
+      visible_after = EXCLUDED.visible_after, body_mode = EXCLUDED.body_mode, suppress_original = EXCLUDED.suppress_original, syndicate = EXCLUDED.syndicate,
       indexable = EXCLUDED.indexable, story_id = EXCLUDED.story_id, fact_id = EXCLUDED.fact_id,
       search_text = EXCLUDED.search_text, sort_at = EXCLUDED.sort_at, updated_at = now()
     WHERE (publications.analysis_id, publications.revision, publications.visibility, publications.eligible,
@@ -381,7 +397,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
         publications.reason, publications.category, publications.tags, publications.score,
         publications.source_id, publications.channel, publications.first_party, publications.url,
         publications.published_at, publications.discovered_at, publications.timeline_at, publications.backfill,
-        publications.selected_ready_at, publications.visible_after, publications.body_mode, publications.syndicate,
+        publications.selected_ready_at, publications.visible_after, publications.body_mode, publications.suppress_original, publications.syndicate,
         publications.indexable, publications.story_id, publications.fact_id, publications.search_text,
         publications.sort_at)
       IS DISTINCT FROM (EXCLUDED.analysis_id, EXCLUDED.revision, EXCLUDED.visibility, EXCLUDED.eligible,
@@ -389,7 +405,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
         EXCLUDED.reason, EXCLUDED.category, EXCLUDED.tags, EXCLUDED.score,
         EXCLUDED.source_id, EXCLUDED.channel, EXCLUDED.first_party, EXCLUDED.url,
         EXCLUDED.published_at, EXCLUDED.discovered_at, EXCLUDED.timeline_at, EXCLUDED.backfill,
-        EXCLUDED.selected_ready_at, EXCLUDED.visible_after, EXCLUDED.body_mode, EXCLUDED.syndicate,
+        EXCLUDED.selected_ready_at, EXCLUDED.visible_after, EXCLUDED.body_mode, EXCLUDED.suppress_original, EXCLUDED.syndicate,
         EXCLUDED.indexable, EXCLUDED.story_id, EXCLUDED.fact_id, EXCLUDED.search_text,
         EXCLUDED.sort_at)`;
 
@@ -408,7 +424,7 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   if (selected && !previous?.selected && !options.releasedAt && !article.backfill && visibility === "public") {
     await enqueue(QUEUES.notifySelected, { articleId }, { singletonKey: `selected:${articleId}`, startAfter: new Date(now.getTime() + 5_000) }, tx);
     // Prepare its images alongside the newly confirmed selection.
-    await enqueue(QUEUES.prepareMedia, { articleId }, { singletonKey: `media:${articleId}` }, tx);
+    if (!suppressOriginal) await enqueue(QUEUES.prepareMedia, { articleId }, { singletonKey: `media:${articleId}` }, tx);
   }
 
   // Seats of the fact this article reports (and of the one it left), then its place in the sync ledger.
@@ -422,7 +438,8 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
     (visibility === "withdrawn" || !eligible ||
       (previous!.visibility === "public" && visibility !== "public") ||
       (previous!.selected && !selected) ||
-      (previous!.body_mode === "full" && bodyMode !== "full"));
+      (previous!.body_mode === "full" && bodyMode !== "full") ||
+      (!previous!.suppress_original && suppressOriginal));
   return { articleId, changed, changeKind, selected, visibility, ledger, reduced };
 }
 

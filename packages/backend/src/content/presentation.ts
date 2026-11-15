@@ -1,12 +1,140 @@
 // Reuse translated wording when only the source's layout, media or link destinations change.
 import * as cheerio from "cheerio";
 import type { Element } from "domhandler";
-import { collapseWhitespace } from "../lib/text.ts";
+import { isNonArticleImage } from "../lib/image-url.ts";
+import { collapseWhitespace, htmlBlockText } from "../lib/text.ts";
+import { isXVideoUrl } from "../lib/video-url.ts";
 
 const BLOCK = "p,h1,h2,h3,h4,h5,h6,li,blockquote,figcaption,td,th,dt,dd,caption";
 const MEDIA = "picture,video,img";
 
 export class PresentationMismatch extends Error {}
+
+export interface PresentationSnapshot {
+  bodyText?: string | null;
+  html?: string | null;
+  xArticleHtml?: string | null;
+  cover?: Record<string, any> | null;
+  media?: Array<Record<string, any>> | null;
+  xPost?: Record<string, any> | null;
+}
+
+/** Extracts visible/accessible attribute text preserved by sanitizeBody (img alt/title, link title). */
+export function htmlAltText(html: string | null | undefined): string {
+  if (!html) return "";
+  const $ = cheerio.load(html, null, false);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw: string | undefined) => {
+    const clean = collapseWhitespace(raw ?? "");
+    if (clean && !seen.has(clean)) {
+      seen.add(clean);
+      out.push(clean);
+    }
+  };
+  $("img").each((_i, el) => {
+    push($(el).attr("alt"));
+    push($(el).attr("title"));
+  });
+  $("a[title]").each((_i, el) => push($(el).attr("title")));
+  return out.join("\n");
+}
+
+export function mediaAltText(items: Array<Record<string, any>> | null | undefined): string {
+  if (!Array.isArray(items) || !items.length) return "";
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const clean = collapseWhitespace(typeof item?.alt === "string" ? item.alt : "");
+    if (clean && !seen.has(clean)) {
+      seen.add(clean);
+      out.push(clean);
+    }
+  }
+  return out.join("\n");
+}
+
+function addImageUrl(urls: string[], seen: Set<string>, raw: unknown): void {
+  if (typeof raw !== "string") return;
+  const url = raw.trim();
+  if (!url || seen.has(url)) return;
+  if (!/^https?:\/\//i.test(url) && !/^data:image\//i.test(url)) return;
+  if (isNonArticleImage(url) || isXVideoUrl(url)) return;
+  seen.add(url);
+  urls.push(url);
+}
+
+/** Distinct displayable image URLs across cover, media arrays, X post/quoted media and body HTML. */
+export function collectImageUrls(snap: PresentationSnapshot): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  addImageUrl(urls, seen, snap.cover?.url);
+  const visitMedia = (items: Array<Record<string, any>> | null | undefined) => {
+    if (!Array.isArray(items)) return;
+    for (const m of items) {
+      if (!m || typeof m !== "object") continue;
+      if (m.kind === "video") {
+        addImageUrl(urls, seen, m.poster);
+      } else {
+        addImageUrl(urls, seen, m.url);
+        addImageUrl(urls, seen, m.poster);
+      }
+    }
+  };
+  visitMedia(snap.xPost?.media);
+  visitMedia(snap.xPost?.quoted?.media);
+  visitMedia(snap.media);
+  for (const html of [snap.html, snap.xArticleHtml]) {
+    if (!html) continue;
+    const $ = cheerio.load(html, null, false);
+    $("img[src]").each((_i, el) => addImageUrl(urls, seen, $(el).attr("src")));
+    $("video[poster]").each((_i, el) => addImageUrl(urls, seen, $(el).attr("poster")));
+  }
+  return urls;
+}
+
+function textLinesOf(snap: PresentationSnapshot): string[] {
+  const rawParts = [
+    snap.bodyText,
+    htmlBlockText(snap.html),
+    htmlAltText(snap.html),
+    htmlBlockText(snap.xArticleHtml),
+    htmlAltText(snap.xArticleHtml),
+    mediaAltText(snap.media),
+    typeof snap.cover?.alt === "string" ? snap.cover.alt : null,
+    typeof snap.xPost?.text === "string" ? snap.xPost.text : null,
+    typeof snap.xPost?.quoted?.text === "string" ? snap.xPost.quoted.text : null,
+    mediaAltText(snap.xPost?.media),
+    mediaAltText(snap.xPost?.quoted?.media),
+  ];
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const part of rawParts) {
+    if (!part) continue;
+    for (const line of part.split(/\n+/)) {
+      const clean = collapseWhitespace(line);
+      if (clean && !seen.has(clean)) {
+        seen.add(clean);
+        lines.push(clean);
+      }
+    }
+  }
+  return lines;
+}
+
+/** True when a presentation update introduces new text/alt blocks or new displayable images not yet reviewed. */
+export function presentationAddsMaterial(previous: PresentationSnapshot, next: PresentationSnapshot): boolean {
+  const prevUrls = new Set(collectImageUrls(previous));
+  if (collectImageUrls(next).some((url) => !prevUrls.has(url))) return true;
+  const prevLines = textLinesOf(previous);
+  const prevSet = new Set(prevLines);
+  const prevWhole = collapseWhitespace(prevLines.join(" "));
+  for (const line of textLinesOf(next)) {
+    if (!/[\p{L}\p{N}\p{S}\p{Extended_Pictographic}]/u.test(line)) continue;
+    if (!prevSet.has(line) && !prevWhole.includes(line)) return true;
+  }
+  return false;
+}
 
 export function presentationCounts(html: string | null): { images: number; links: number } {
   const $ = cheerio.load(html ?? "", null, false);

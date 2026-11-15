@@ -27,6 +27,7 @@ import { embeddingsAvailable } from "../providers/embeddings.ts";
 import { isHistorical, newsCondition } from "../content/materials.ts";
 import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
 import { groupingPriority } from "../jobs/content.ts";
+import { editorialPolicy } from "../modules.ts";
 import { publishArticle, publishArticleTx, republishTx } from "../publication/publish.ts";
 import { isIndependentSelectedSource } from "../publication/rules.ts";
 import { groupingEvidenceCondition, latestCompositeCondition } from "../publication/scope.ts";
@@ -115,21 +116,171 @@ async function judgeSignal(articleId: string, query: ReportView, cands: Candidat
 // Writes
 
 async function createStory(db: Db, title: string, at: Date): Promise<number> {
+  const cleanTitle = editorialPolicy().sanitizeEventCopy
+    ? editorialPolicy().sanitizeEventCopy!({ title, taiwanContext: true }).title.slice(0, 120)
+    : title;
   const [row] = await db<{ id: number }[]>`
     INSERT INTO stories (public_id, title, first_report_at, latest_at, origin)
-    VALUES (${newUuid()}, ${title}, ${at}, ${at}, 'model') RETURNING id`;
+    VALUES (${newUuid()}, ${cleanTitle}, ${at}, ${at}, 'model') RETURNING id`;
   return row!.id;
 }
 
 async function createFact(db: Db, storyId: number, title: string, frame: Record<string, any> | null, at: Date): Promise<number> {
   let occurred = typeof frame?.occurredAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(frame.occurredAt) ? beijingMidnight(frame.occurredAt) : null;
   if (occurred && (!Number.isFinite(+occurred) || beijingDate(occurred) !== frame!.occurredAt)) occurred = null;
-  const conditions = Array.isArray(frame?.conditions) ? frame.conditions.map((c: { text?: string }) => c.text).filter(Boolean).join("；") || null : null;
+  const rawConditions = Array.isArray(frame?.conditions) ? frame.conditions.map((c: { text?: string }) => c.text).filter(Boolean).join("；") || null : null;
+  const cleaned = editorialPolicy().sanitizeEventCopy
+    ? editorialPolicy().sanitizeEventCopy!({
+        title,
+        conditions: rawConditions,
+        subject: frame?.subject ?? null,
+        action: frame?.action ?? null,
+        object: frame?.object ?? null,
+        taiwanContext: true,
+      })
+    : { title, conditions: rawConditions, subject: frame?.subject ?? null, action: frame?.action ?? null, object: frame?.object ?? null };
   const [row] = await db<{ id: number }[]>`
     INSERT INTO facts (public_id, story_id, title, subject, action, object, conditions, occurred_at, created_at)
-    VALUES (${`f${newShortId(8)}`}, ${storyId}, ${title}, ${frame?.subject ?? null}, ${frame?.action ?? null}, ${frame?.object ?? null}, ${conditions}, ${occurred}, ${at})
+    VALUES (${`f${newShortId(8)}`}, ${storyId}, ${cleaned.title.slice(0, 60)}, ${cleaned.subject}, ${cleaned.action}, ${cleaned.object}, ${cleaned.conditions}, ${occurred}, ${at})
     RETURNING id`;
   return row!.id;
+}
+
+/**
+ * Reconciles stored fact/story titles, conditions and raw evidence quotes after an article's
+ * analysis, suppression state, visibility or manual override changes.
+ */
+export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise<void> {
+  const sanitizer = editorialPolicy().sanitizeEventCopy;
+  if (!sanitizer) return;
+  const [article] = await tx<{ id: string; revision: number; title: string; participation_mode: string }[]>`
+    SELECT a.id, a.revision, a.title, s.participation_mode
+    FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId}`;
+  if (!article) return;
+  const [analysis] = await tx<{ input_revision: number; relevance: string | null; title_zh: string | null; output: Record<string, any> | null }[]>`
+    SELECT input_revision, relevance, title_zh, output FROM analyses WHERE article_id = ${articleId} ORDER BY input_revision DESC, id DESC LIMIT 1`;
+  const [pub] = await tx<{ visibility: string; suppress_original: boolean; title: string }[]>`
+    SELECT visibility, suppress_original, title FROM publications WHERE article_id = ${articleId}`;
+  const [override] = await tx<{ fields: Record<string, unknown>; visibility: string | null }[]>`
+    SELECT fields, visibility FROM editorial_overrides WHERE article_id = ${articleId}`;
+
+  const memberships = await tx<{
+    fact_id: number; role: string; evidence: string | null;
+    fact_title: string; subject: string | null; action: string | null; object: string | null; conditions: string | null;
+    story_id: number | null; story_title: string | null; story_origin: string | null;
+  }[]>`
+    SELECT fa.fact_id, fa.role, fa.evidence,
+           f.title AS fact_title, f.subject, f.action, f.object, f.conditions,
+           st.id AS story_id, st.title AS story_title, st.origin AS story_origin
+    FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id
+    LEFT JOIN stories st ON st.id = f.story_id AND st.merged_into IS NULL
+    WHERE fa.article_id = ${articleId}`;
+  if (!memberships.length) return;
+
+  const f = override?.fields ?? {};
+  const awaitingReview = Boolean(editorialPolicy().reviewAnalysis)
+    && article.participation_mode === "editorial"
+    && (!analysis || analysis.input_revision < article.revision);
+  const suppressOriginal = awaitingReview
+    || (typeof f.suppressOriginal === "boolean" ? f.suppressOriginal : analysis ? analysis.output?.suppressOriginal === true : pub?.suppress_original === true)
+    || override?.visibility === "summary-only";
+  const withdrawn = override?.visibility === "withdrawn"
+    || (!override?.visibility && (analysis ? analysis.output?.withdrawn === true : pub?.visibility === "withdrawn"));
+
+  const dirtyStories = new Set<number>();
+  if (suppressOriginal || withdrawn) {
+    const cleared = await tx`UPDATE fact_articles SET evidence = NULL WHERE article_id = ${articleId} AND evidence IS NOT NULL RETURNING fact_id`;
+    if (cleared.length) {
+      for (const m of memberships) if (m.story_id !== null) dirtyStories.add(Number(m.story_id));
+    }
+  }
+
+  const overrideTitle = typeof f.title === "string" && f.title.trim() ? f.title.trim() : null;
+  const ownCleanTitle = overrideTitle ?? (!awaitingReview && analysis?.title_zh?.trim() ? analysis.title_zh.trim() : pub && !withdrawn && pub.title.trim() ? pub.title.trim() : null);
+  const frame = !awaitingReview ? ((analysis?.output?.fact ?? null) as Record<string, any> | null) : null;
+  const ownFactCandidate = !withdrawn ? String(overrideTitle || frame?.title || ownCleanTitle || "").trim().slice(0, 60) : "";
+
+  const seenFacts = new Set<number>();
+  for (const m of memberships) {
+    const factId = Number(m.fact_id);
+    if (m.role !== "primary" && m.role !== "report") continue;
+    if (seenFacts.has(factId)) continue;
+    seenFacts.add(factId);
+
+    const peers = await tx<{ title: string; suppress_original: boolean }[]>`
+      SELECT p.title, p.suppress_original
+      FROM fact_articles fa2 JOIN publications p ON p.article_id = fa2.article_id
+      WHERE fa2.fact_id = ${factId} AND fa2.role IN ('primary', 'report') AND fa2.article_id <> ${articleId}
+        AND p.visibility = 'public'
+      ORDER BY (fa2.role = 'primary') DESC, p.first_party DESC, coalesce(p.score, 0) DESC`;
+    const soleActive = !withdrawn && peers.length === 0;
+    const fallbackFactTitle = ownFactCandidate || peers[0]?.title?.slice(0, 60) || "";
+    const targetFactTitle = soleActive && ownFactCandidate ? ownFactCandidate : m.fact_title;
+    const rawConditions = soleActive && !suppressOriginal && Array.isArray(frame?.conditions)
+      ? frame.conditions.map((c: { text?: string }) => c.text).filter(Boolean).join("；") || null
+      : (suppressOriginal || withdrawn) && peers.every((p) => p.suppress_original)
+        ? null
+        : m.conditions;
+    const cleaned = sanitizer({
+      title: targetFactTitle,
+      fallbackTitle: fallbackFactTitle,
+      conditions: rawConditions,
+      subject: soleActive && frame ? (frame.subject ?? null) : m.subject,
+      action: soleActive && frame ? (frame.action ?? null) : m.action,
+      object: soleActive && frame ? (frame.object ?? null) : m.object,
+      taiwanContext: true,
+    });
+    if (
+      cleaned.title !== m.fact_title
+      || cleaned.conditions !== m.conditions
+      || cleaned.subject !== m.subject
+      || cleaned.action !== m.action
+      || cleaned.object !== m.object
+    ) {
+      await tx`
+        UPDATE facts
+        SET title = ${cleaned.title.slice(0, 60)},
+            conditions = ${cleaned.conditions},
+            subject = ${cleaned.subject},
+            action = ${cleaned.action},
+            object = ${cleaned.object}
+        WHERE id = ${factId}`;
+      if (m.story_id !== null) dirtyStories.add(Number(m.story_id));
+    }
+  }
+
+  const seenStories = new Set<number>();
+  for (const m of memberships) {
+    if (m.story_id === null || m.story_title === null) continue;
+    const storyId = Number(m.story_id);
+    if (seenStories.has(storyId)) continue;
+    seenStories.add(storyId);
+
+    const storyPeers = await tx<{ title: string }[]>`
+      SELECT p.title
+      FROM facts f JOIN fact_articles fa2 ON fa2.fact_id = f.id JOIN publications p ON p.article_id = fa2.article_id
+      WHERE f.story_id = ${storyId} AND fa2.role IN ('primary', 'report') AND fa2.article_id <> ${articleId}
+        AND p.visibility = 'public'
+      ORDER BY coalesce(p.published_at, p.discovered_at) DESC LIMIT 1`;
+    const soleStoryReport = !withdrawn && storyPeers.length === 0 && (m.role === "primary" || m.role === "report");
+    const fallbackStoryTitle = (!withdrawn && (ownFactCandidate || ownCleanTitle) ? (ownFactCandidate || ownCleanTitle!) : storyPeers[0]?.title) || "";
+    const desiredStoryTitle = m.story_origin !== "manual" && soleStoryReport && (ownFactCandidate || ownCleanTitle)
+      ? (ownFactCandidate || ownCleanTitle!).slice(0, 120)
+      : m.story_title;
+    const cleanedStory = sanitizer({
+      title: desiredStoryTitle,
+      fallbackTitle: fallbackStoryTitle.slice(0, 120),
+      taiwanContext: true,
+    });
+    if (cleanedStory.title !== m.story_title) {
+      await tx`UPDATE stories SET title = ${cleanedStory.title.slice(0, 120)}, updated_at = now() WHERE id = ${storyId}`;
+      dirtyStories.add(storyId);
+    }
+  }
+
+  for (const storyId of dirtyStories) {
+    await enqueue(QUEUES.digest, { storyId }, { singletonKey: `story:${storyId}` }, tx);
+  }
 }
 
 export async function recordSignal(db: Tx, storyId: number, articleId: string, source: { id: string; signal_group_id: string | null }, kind: "editorial" | "signal", observedAt: Date) {
@@ -364,7 +515,10 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
   if (kept && !recheckSelection) {
     // A retry after the commit below failed still owes the article's replacement; the answers are saved.
     if (independent) await faceCards({ addsValue: addedValue !== false, reason: "" });
-    await markGrouped(articleId, a.revision);
+    await sql.begin(async (tx) => {
+      await markGrouped(articleId, a.revision, undefined, tx);
+      await syncArticleEventCopyTx(tx, articleId);
+    });
     return { verdict: "kept", factId: kept.factId, storyId: kept.storyId, replaces };
   }
 
@@ -438,6 +592,7 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
       await markGrouped(articleId, a.revision, manual ? { addsValue: true, reason: "人工确认的归属" } : selection, tx);
       if (!manual) await recordDecision(tx, articleId, kept.factId, kept.storyId, "kept",
         cands.map(c => ({ id: c.factId, score: c.score, ...verdicts.get(c.factId) })), receipts[0] ?? null);
+      await syncArticleEventCopyTx(tx, articleId);
       for (const receiptId of receipts) await completeReceipt(tx, receiptId);
       return manual;
     });
@@ -531,7 +686,10 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
     const fact = factId ?? (await createFact(tx, story, newTitle, frame, observedAt));
     const [hasPrimary] = await tx<{ n: number }[]>`SELECT count(*) AS n FROM fact_articles WHERE fact_id = ${fact} AND role = 'primary'`;
     const role = a.first_party && Number(hasPrimary?.n ?? 0) === 0 ? "primary" : "report";
-    const evidence = [frame?.evidence, ...(Array.isArray(frame?.conditions) ? frame.conditions.map((c: { quote?: string }) => c.quote) : [])].filter((x): x is string => typeof x === "string" && !!x).join("\n") || null;
+    const suppressEvidence = Boolean(an?.output?.suppressOriginal);
+    const evidence = suppressEvidence
+      ? null
+      : [frame?.evidence, ...(Array.isArray(frame?.conditions) ? frame.conditions.map((c: { quote?: string }) => c.quote) : [])].filter((x): x is string => typeof x === "string" && !!x).join("\n") || null;
     await tx`INSERT INTO fact_articles (fact_id, article_id, role, evidence, created_at) VALUES (${fact}, ${articleId}, ${role}, ${evidence}, ${observedAt}) ON CONFLICT (fact_id, article_id) DO NOTHING`;
     await recordSignal(tx, story, articleId, source, "editorial", observedAt);
     await recordDecision(tx, articleId, fact, story, verdict, decisionCandidates, receipts[0] ?? null);

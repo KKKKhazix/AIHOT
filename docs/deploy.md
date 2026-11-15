@@ -101,7 +101,7 @@ docker compose run --rm setup && docker compose up -d
 
 #### 后台只用管理员密码登录（2026 年 11 月 15 日）
 
-没有迁移。后台不再提供飞书登录，只剩管理员密码：用过飞书登录的，升级前先在 `.env` 设好 `ADMIN_PASSWORD`（至少 12 位），否则有后台页面的站点在生产环境拒绝启动；升级后用密码登录，原来的飞书登录会话自动失效。`FEISHU_LOGIN_APP_ID`、`FEISHU_LOGIN_APP_SECRET`、`ADMIN_FEISHU_UNION_IDS`、`ADMIN_EMAILS` 不再读取，可以从 `.env` 删掉，飞书开放平台上专为登录建的应用也可以停用。飞书的告警、反馈转发和内容推送不受影响。`site/site.ts` 的 `ADMIN` 为 `null`（不挂后台页面）的站点不再提供后台登录，也不再要求设管理员密码。
+后台不再提供飞书登录，只剩管理员密码。升级时 `setup` 自动执行两条迁移，删掉数据库里存的飞书身份（`admin_users.feishu_union_id`、`admin_sessions.auth_claims`），不用手动处理。用过飞书登录的，升级前先在 `.env` 设好 `ADMIN_PASSWORD`（至少 12 位），否则有后台页面的站点在生产环境拒绝启动；升级后用密码登录，原来的飞书登录会话自动失效。`FEISHU_LOGIN_APP_ID`、`FEISHU_LOGIN_APP_SECRET`、`ADMIN_FEISHU_UNION_IDS`、`ADMIN_EMAILS` 不再读取，可以从 `.env` 删掉，飞书开放平台上专为登录建的应用也可以停用。飞书的告警、反馈转发和内容推送不受影响。`site/site.ts` 的 `ADMIN` 为 `null`（不挂后台页面）的站点不再提供后台登录，也不再要求设管理员密码。
 
 #### 百度主动推送（2026 年 11 月 8 日）
 

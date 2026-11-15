@@ -1,6 +1,7 @@
 // Publish durable, source-owned events to the shared hub. Its documented idempotency contract makes
 // uncertain HTTP results safe to retry with the same ID. Execution/claim/retry state belongs to the hub.
 import { createHash } from "node:crypto";
+import { ADMIN } from "@aihot/site";
 import { credential, config } from "../config.ts";
 import { sql } from "../db.ts";
 import { feishuInternalEnabled, type Finding } from "./feishu.ts";
@@ -10,6 +11,8 @@ interface Receipt { event: Event; accepted: boolean; queuedAt: string; lastError
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const subject = (key: string) => /^[A-Za-z0-9#._:/@-]{1,100}$/.test(key) ? key : `finding:${hash(key)}`;
 const clip = (text: string, n: number) => text.slice(0, n);
+/** Where an alert points: the admin's runs page on a site that has admin pages, else the health check. */
+const runsLink = () => new URL(ADMIN ? "/admin/runs" : "/api/health", config.siteUrl).href;
 /** Whether an agent takes the alerts: events go to the hub, which wakes it. */
 export const agentConfigured = () => feishuInternalEnabled() && !!credential("integrations", "WEBHOOK_HUB_URL") && !!credential("integrations", "WEBHOOK_HUB_KEY");
 
@@ -73,12 +76,12 @@ export async function wakeAgent(f: Finding, now = Date.now()): Promise<boolean> 
     id: identity.length <= 200 ? identity : `alert:${hash(identity)}`,
     type: f.agentOnly ? f.agentType : f.level === "today" ? "alert.today" : "alert.now",
     subject: subject(f.key), summary: clip(f.title,200), detail: clip([f.impact,f.detail].filter(Boolean).join("\n"),4000),
-    link: new URL("/api/health",config.siteUrl).href,
+    link: runsLink(),
   }, now);
 }
 
 /** Called after the daily follow-up message was generated. No model or separate scheduler here. */
 /** Whether the hub took the day's list. */
 export async function wakeDigest(date: string, count: number): Promise<boolean> {
-  return publish({id:`digest:${date}`,type:"alert.digest",subject:`digest:${date}`,summary:`系统日报 ${date}`,detail:`${count} 项待跟进`,link:new URL("/api/health",config.siteUrl).href});
+  return publish({id:`digest:${date}`,type:"alert.digest",subject:`digest:${date}`,summary:`系统日报 ${date}`,detail:`${count} 项待跟进`,link:runsLink()});
 }

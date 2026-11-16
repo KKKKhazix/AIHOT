@@ -15,6 +15,7 @@ import { logError } from "../lib/log-error.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt } from "../providers/receipts.ts";
 import { shutdownSignal } from "../jobs/queue.ts";
+import { inModelWindow, modelWindow } from "../jobs/model-window.ts";
 import { emit } from "../modules.ts";
 import { arrangeDaily, candidates, dailyEdition, periodEntries, sectionOf, SECTION_ORDER, type Candidate, type EditionEntry } from "./edition.ts";
 
@@ -89,18 +90,31 @@ function windowPoint(at: Date): string {
 export async function composeDaily(date: string, reason?: string): Promise<{ key: string; entries: number }> {
   const previous = await savedReport("daily", date);
   if (previous && reason === undefined) return { key: date, entries: previous.entries };
+  // 2026-11-16（方案 A）：历史空窗口（窗口内没有任何判读）不需要每天重试到天荒地老，
+  // 用环境变量列出来直接跳过，止住 compose 每半小时一次的报错噪音。
+  const skip = String(process.env.REPORT_SKIP_DAILY || "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (skip.includes(date)) return { key: date, entries: 0 };
   const end = beijingAt(date, EDITION_TIMES.daily);
   const start = new Date(end.getTime() - 86400000);
   const edition = await dailyEdition(date, start, end);
-  // Nothing judged in the window is a failure upstream, not a quiet day: the run fails and is caught up later.
-  if (edition.entries.length === 0 && edition.stats.judgedReports === 0) throw new Error(`daily ${date}: nothing judged in its window`);
+  // 2026-11-16（用户选 A「静默版」）：窗口内一条判定都没有时，不再让整轮 compose 失败，
+  // 而是照常出一期，只是正文写明原因。此前的语义是「上游没产出＝失败」——结果是 11-13/11-14
+  // 连续失败、用户当天什么也收不到，而且每半小时重试一次永远补不上（窗口已过）。
+  // 注意只降级这一种情况：真正的上游异常（查询报错、写库失败、模型调用抛错）仍然会往上抛。
+  const silent = edition.entries.length === 0 && edition.stats.judgedReports === 0;
   const issue = arrangeDaily(edition.entries);
   const [lead, ...rest] = issue.main;
   const content = {
     date,
+    silent,
+    silentReason: silent
+      ? `本期窗口（${windowPoint(start)}–${windowPoint(end)}）内没有已判定条目：模型分析未在该窗口运行或未产出，本期只发报头与这条说明。`
+      : null,
     lead: lead
       ? { title: lead.entry.title, leadParagraph: lead.entry.summary }
-      : { title: REPORTS.quiet.title, leadParagraph: REPORTS.quiet.paragraph.replace("{start}", windowPoint(start)).replace("{end}", windowPoint(end)) },
+      : silent
+        ? { title: "本期没有可判定的内容", leadParagraph: `本期窗口（${windowPoint(start)}–${windowPoint(end)}）内没有已判定条目。这不是「今天很安静」，而是分析没有在这段窗口内产出——要么模型窗口被错过，要么上游在重试。` }
+        : { title: REPORTS.quiet.title, leadParagraph: REPORTS.quiet.paragraph.replace("{start}", windowPoint(start)).replace("{end}", windowPoint(end)) },
     leadItemId: lead?.entry.itemId ?? null,
     highlights: rest.slice(0, 3).map((e) => e.entry.itemId),
     sections: SECTION_ORDER
@@ -280,6 +294,26 @@ export function dueMonthly(now = new Date()): string {
   return `${Math.floor(month / 12)}-${String((month % 12) + 1).padStart(2, "0")}`;
 }
 
+/**
+ * With MODEL_WINDOW the weekly and the monthly are model-written, and their edition times (Monday 10:00,
+ * the 1st 10:30) fall outside a window that opens early in the morning. A period therefore counts as due
+ * as soon as it is over, and the run composes it in the window that precedes its edition time: the issue is
+ * ready before readers expect it, and the model is never called outside the window. The daily is written by
+ * rule, so it keeps its own edition time and is unaffected.
+ */
+function dueWeeklyWindowed(now = new Date()): string {
+  const today = beijingDate(now);
+  const dow = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7;
+  // The week that ended yesterday: its last day is `today - dow - 1`.
+  return isoWeekLabel(addDays(today, -dow - 1));
+}
+
+function dueMonthlyWindowed(now = new Date()): string {
+  const [y, m] = beijingDate(now).split("-").map(Number) as [number, number];
+  const month = y * 12 + (m - 1) - 1;
+  return `${Math.floor(month / 12)}-${String((month % 12) + 1).padStart(2, "0")}`;
+}
+
 const nextWeek = (label: string) => isoWeekLabel(addDays(isoWeekRange(label)!.start, 7));
 const nextMonth = (label: string) => {
   const [y, m] = label.split("-").map(Number) as [number, number];
@@ -295,15 +329,21 @@ const nextMonth = (label: string) => {
 export async function composeDueReports(now = new Date(), limit = 8): Promise<{ generated: string[]; failed: string[] }> {
   const generated: string[] = [];
   const failed: string[] = [];
+  // With MODEL_WINDOW the weekly and the monthly are held for the window (their edition times fall
+  // outside it), so they also become due as soon as their period ends rather than at that edition time.
+  const windowed = modelWindow() !== null;
   const kinds: Array<{ kind: ReportKind; due: string; next: (k: string) => string; end: (k: string) => string; compose: (k: string) => Promise<unknown> }> = [
     { kind: "daily", due: dueDaily(now), next: (k) => addDays(k, 1), end: (k) => k, compose: composeDaily },
-    { kind: "weekly", due: dueWeekly(now), next: nextWeek, end: (k) => isoWeekRange(k)!.end, compose: composeWeekly },
-    { kind: "monthly", due: dueMonthly(now), next: nextMonth, end: (k) => monthRange(k)!.end, compose: composeMonthly },
+    { kind: "weekly", due: windowed ? dueWeeklyWindowed(now) : dueWeekly(now), next: nextWeek, end: (k) => isoWeekRange(k)!.end, compose: composeWeekly },
+    { kind: "monthly", due: windowed ? dueMonthlyWindowed(now) : dueMonthly(now), next: nextMonth, end: (k) => monthRange(k)!.end, compose: composeMonthly },
   ];
+  // A model-written issue waits for the window rather than calling a model at its edition time.
+  const mayCompose = (kind: ReportKind) => kind === "daily" || !windowed || inModelWindow(now);
   // Weeklies and monthlies sum up dailies: a period that ended before the site's first daily has nothing to sum
   // up and is not due (a site started mid-month would otherwise fail that month's issue on every run).
   const [{ first: firstDaily }] = await sql<{ first: string | null }[]>`SELECT min(key) AS first FROM reports WHERE kind = 'daily'`;
   kinds: for (const k of kinds) {
+    if (!mayCompose(k.kind)) continue;
     const have = new Set((await sql<{ key: string }[]>`SELECT key FROM reports WHERE kind = ${k.kind}`).map((r) => r.key));
     const first = [...have].sort()[0] ?? k.due;
     for (let key = first; key <= k.due; key = k.next(key)) {

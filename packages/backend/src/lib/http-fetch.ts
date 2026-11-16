@@ -27,7 +27,7 @@ let pinnedCurve: Agent | null = null;
 let resolveEgress: ReturnType<typeof createEgressResolver> | null = null;
 
 function egressResolver() {
-  return resolveEgress ??= createEgressResolver(config.egressProxyUrl!);
+  return resolveEgress ??= createEgressResolver(config.egressProxyUrl!, config.egressDnsUpstreams);
 }
 
 function hostOf(url: URL): string {
@@ -48,7 +48,7 @@ function destinationPool(origin: string | URL, options: object): Pool {
 
 function dispatcherFor(viaProxy: boolean, privateHost: boolean): Dispatcher | undefined {
   if (viaProxy) {
-    proxyAgent ??= createEgressProxy(config.egressProxyUrl!, egressResolver(), destinationPool);
+    proxyAgent ??= createEgressProxy(config.egressProxyUrl!, egressResolver(), destinationPool, config.egressPinDns);
     return proxyAgent;
   }
   if (config.allowPrivateNetworkFetch) return undefined;

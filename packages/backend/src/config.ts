@@ -42,6 +42,11 @@ export const config = {
   // Every generated absolute link uses this address, whatever Host a request arrives with.
   siteUrl: str("SITE_URL", SITE.defaultUrl).replace(/\/+$/, ""),
   egressProxyUrl: env.EGRESS_PROXY_URL || null,
+  /** DoH upstreams for resolving proxied hostnames, tried in order; default keeps the original first. */
+  egressDnsUpstreams: (env.EGRESS_DNS_UPSTREAMS || "https://cloudflare-dns.com/dns-query, https://dns.google/resolve")
+    .split(",").map((v) => v.trim()).filter(Boolean),
+  /** false: after the public-address check, CONNECT carries the hostname and the proxy resolves it. */
+  egressPinDns: env.EGRESS_PIN_DNS !== "false",
   allowPrivateNetworkFetch: bool("ALLOW_PRIVATE_NETWORK_FETCH", false),
   /** Whole host names of self-hosted feed services on private addresses; only listing fetches use them. */
   privateFeedHosts: (env.PRIVATE_FEED_HOSTS || "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean),

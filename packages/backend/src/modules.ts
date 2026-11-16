@@ -333,7 +333,6 @@ export interface EditorialEventCopyInput {
   subject?: string | null;
   action?: string | null;
   object?: string | null;
-  taiwanContext?: boolean;
 }
 
 export interface EditorialEventCopyOutcome {

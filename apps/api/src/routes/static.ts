@@ -8,7 +8,7 @@ import { EDITION_TIMES, SITE } from "@aihot/site";
 import { CONTACT_ALIASES, PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT, config } from "@aihot/backend/config";
-import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
+import { applyPublicHeaders, etagMatches, sendTextWithEtag } from "../http/respond.ts";
 import { loadSitemap } from "@aihot/backend/publication/sitemap";
 import { llmsTxt, loadLlmsAvailability } from "@aihot/backend/publication/llms";
 import { loadContact } from "@aihot/backend/site/contact";
@@ -91,7 +91,7 @@ function sendEntry(req: FastifyRequest, reply: FastifyReply, entry: Entry, opts:
   reply.header("Content-Type", opts.type);
   reply.header("Cache-Control", opts.cacheControl);
   reply.header("ETag", entry.etag);
-  if (req.headers["if-none-match"] === entry.etag) return reply.code(304).send();
+  if (etagMatches(req.headers["if-none-match"], entry.etag)) return reply.code(304).send();
   return reply.send(entry.body);
 }
 

@@ -6,7 +6,7 @@ import { sql } from "../db.ts";
 import { cached, type Cached } from "../lib/cache.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { isoWeekRange, monthRange } from "@aihot/contracts/time";
-import { dailyUrl, itemUrl, periodUrl, siteUrl } from "./links.ts";
+import { dailyUrl, itemUrl, periodUrl } from "./links.ts";
 import { publicSourceName } from "./rules.ts";
 import { listedCondition } from "./scope.ts";
 import { mentionsIn } from "./mentions.ts";
@@ -701,8 +701,6 @@ export async function v1Period(kind: PeriodKind, key: string | "latest") {
     },
   };
 }
-
-export { siteUrl };
 
 export function reportNavigation(kind: ReportKind, index: ReportIndexEntry[], key: string): ReportNavigationEntry[] {
   const at = index.findIndex((e) => e.key === key);

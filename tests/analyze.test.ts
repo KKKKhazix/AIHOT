@@ -10,9 +10,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
-import { analyzeArticle, buildMaterial, loadAnalyzeInput, normalizeStructure, selectionThreshold, StructureSchema, UNDERSTAND_FLOOR } from "@aihot/backend/editorial/analyze";
+import { analyzeArticle, buildMaterial, loadAnalyzeInput, normalizeAnalysis, normalizeStructure, runAnalysis, selectionThreshold, StructureSchema, type AnalyzeInputArticle, UNDERSTAND_FLOOR } from "@aihot/backend/editorial/analyze";
 import { createSource, updateSource } from "@aihot/backend/admin/sources";
-import { queueProcessing } from "@aihot/backend/jobs/content";
+import { processArticle, queueProcessing } from "@aihot/backend/jobs/content";
+import { isPoolEligible } from "@aihot/backend/publication/rules";
 import { getBoss, QUEUES, stopBoss } from "@aihot/backend/jobs/queue";
 import { compactAnswerFirstSummary, enforceIdentity, MAX_BODY_CHARS, parseTranslateOutput } from "@aihot/backend/editorial/writing";
 import { READER_WORDING } from "@aihot/industry/wording";
@@ -26,7 +27,7 @@ const CLASSED_SOURCE = `test-analyze-classed-${T}`;
 
 interface Req { step: AnalysisStep; marker: string; user: string }
 const requests: Req[] = [];
-const MARKERS = ["CLEAR", "RESCUE", "LOW", "OFFTOPIC", "BARE", "VAGUE", "THIN", "SENSITIVE", "推文", "WORDY", "REFUSAL", "RENUMBER", "UNMENDED", "ECOSYS"];
+const MARKERS = ["CLEAR", "RESCUE", "LOW", "OFFTOPIC", "BARE", "VAGUE", "THIN", "SENSITIVE", "推文", "WORDY", "REFUSAL", "RENUMBER", "UNMENDED", "ECOSYS", "BAD_STRUCT"];
 // The scores sit a few points around the pack's T1 threshold and understand floor, so each case means
 // the same after a site recalibrates them: selected when the two add up to 2 × T1, written like a
 // selected item when they add up to more than 2 × FLOOR, translated otherwise.
@@ -43,8 +44,10 @@ const scoreAnswers: Record<string, number[]> = {
 
 const WORDY = ["WORDY", "REFUSAL", "RENUMBER", "UNMENDED"];
 
+let prefilterHold: { entered: ReturnType<typeof gate<void>>; release: ReturnType<typeof gate<void>> } | null = null;
+
 // One stub stands in for DashScope (prefilter, structure), Zhipu (score, understand) and DeepSeek (summarize).
-const provider = await stub((_hit, req) => {
+const provider = await stub(async (_hit, req) => {
   const body = JSON.parse(req.body) as { messages: Array<{ role: string; content: unknown }> };
   const last = body.messages[body.messages.length - 1]!.content;
   const user = typeof last === "string" ? last : JSON.stringify(last);
@@ -52,8 +55,13 @@ const provider = await stub((_hit, req) => {
   const marker = MARKERS.find((m) => user.includes(m)) ?? "";
   requests.push({ step, marker, user });
   const answer = (content: unknown) => ({ id: `stub-${requests.length}`, model: "stub", choices: [{ message: { content: typeof content === "string" ? content : JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } });
+  if (step === "prefilter" && prefilterHold) {
+    const waiting = prefilterHold;
+    waiting.entered.open();
+    await waiting.release.promise;
+  }
   if (step === "prefilter") return answer({ label: marker === "OFFTOPIC" || marker === "BARE" ? "BLOCK" : marker === "VAGUE" ? "UNKNOWN" : "PASS", reason: "测试" });
-  if (step === "score") return answer({ attentionScore: scoreAnswers[marker]!.shift() });
+  if (step === "score") return answer({ attentionScore: scoreAnswers[marker]?.shift() ?? SELECTING_SCORE });
   // Copy with a word a site keeps from readers (added to the pack's list below), and its mended form: whole (WORDY),
   // refused by the provider, with a number changed, or with as many such words as before.
   if (step === "understand" && WORDY.includes(marker)) return answer({ itemType: ITEM_TYPES[0], authorRole: "principal", tags: [], editorialJudgment: `理由里有禁用词 ${marker}`, titleZh: `标题里有禁用词 ${marker}`, summaryZh: `${marker} 的摘要。第二句补充 3 个数字。` });
@@ -67,7 +75,10 @@ const provider = await stub((_hit, req) => {
     if (marker === "SENSITIVE") return new Reply(400, { contentFilter: [{ level: 1, role: "user" }], error: { code: "1301", message: "系统检测到输入或生成内容可能包含不安全或敏感内容" } });
     return answer({ itemType: "model_release", authorRole: "principal", tags: ["模型发布", "开源", "Agent", "不存在的标签"], editorialJudgment: `理由 ${marker}`, titleZh: `理解标题 ${marker}`, summaryZh: `理解摘要 ${marker}。第二句补充一个关键数字。` });
   }
-  if (step === "structure") return answer({ category: "ai-models", tags: ["模型发布", "推理"], subjects: ["anthropic", "unknown-co"], scope: "single", fact: { title: `事实 ${marker}`, subject: "某公司", action: "发布", object: "模型", occurredAt: null, evidence: "a lab released a model", conditions: [] } });
+  if (step === "structure") {
+    if (marker === "BAD_STRUCT") return answer("invalid output");
+    return answer({ category: "ai-models", tags: ["模型发布", "推理"], subjects: ["anthropic", "unknown-co"], scope: "single", fact: { title: `事实 ${marker}`, subject: "某公司", action: "发布", object: "模型", occurredAt: null, evidence: "a lab released a model", conditions: [] } });
+  }
   return answer(`title_zh: 翻译标题 ${marker}\nsummary_zh: 翻译摘要 ${marker}。第二句补充影响。`);
 });
 pointModels(provider.url);
@@ -435,4 +446,133 @@ for (const failScore of [false, true]) test(`SIGTERM during ${failScore ? "faile
   const [result] = await sql`SELECT selected,score,receipt_ids FROM analyses WHERE article_id=${articleId}`;
   assert.equal(result!.selected, true); assert.equal(result!.score, SELECTING_SCORE); assert.equal(result!.receipt_ids.length, 5);
   assert.equal((await sql`SELECT processing_attempts FROM articles WHERE id=${articleId}`)[0]!.processing_attempts, 0);
+});
+
+test("an unresolved current identity does not start a separate writing request", async () => {
+  const beforeLen = requests.length;
+  const text = "BAD_STRUCT: We released Manus 2.0 on September 28. Today we explain Game Dev's editing workflow.";
+  await assert.rejects(runAnalysis({ id: `identity-${tag()}`, revision: 1, title: "BAD_STRUCT Manus Game Dev", url: "https://example.org/news", author: null,
+    publishedAt: new Date("2026-10-02T00:00:00Z"), bodyStatus: "ok", bodyText: text, excerpt: null, media: [], xPost: null,
+    source: { name: "Fixture", kind: "rss", tier: "T1", firstParty: true } }));
+  const seen = requests.slice(beforeLen).map((r) => r.step);
+  assert.ok(seen.includes("structure"));
+  assert.equal(seen.filter((s) => s === "understand" || s === "summarize").length, 0);
+});
+
+const missingArticle = (changes: Partial<AnalyzeInputArticle> = {}): AnalyzeInputArticle => ({
+  id: `missing-${tag()}`, revision: 1, title: "模型发布", url: "https://example.org/news", author: null,
+  publishedAt: new Date("2026-10-02T00:00:00Z"), bodyStatus: "unconfirmed", bodyText: null,
+  excerpt: null, media: [], xPost: null,
+  source: { name: "Fixture", kind: "rss", tier: "T1", firstParty: true }, ...changes,
+});
+const runFresh = (input: AnalyzeInputArticle) => runAnalysis(input, { attemptTag: tag() });
+
+test("title-only articles wait for evidence without a model call (no prefilter label could count)", async () => {
+  const beforeLen = requests.length;
+  const run = await runFresh(missingArticle({ bodyText: " \n", excerpt: " " }));
+  const out = normalizeAnalysis(run);
+  assert.deepEqual(requests.slice(beforeLen), []);
+  assert.equal(out.relevance, "unknown");
+  assert.equal(out.score, null);
+  assert.equal(out.selected, false);
+  assert.equal(out.titleZh, "");
+  assert.equal(out.summaryZh, "");
+  assert.equal(isPoolEligible({ participationMode: "editorial", relevance: out.relevance, title: out.titleZh, summary: out.summaryZh }), false);
+});
+
+test("real body, feed excerpt and quoted text still receive both scores and writing", async (t) => {
+  for (const changes of [{ bodyText: "来源确认模型发布。" }, { excerpt: "来源确认模型发布。" },
+    { xPost: { text: "支持", quoted: { text: "来源确认模型发布。" } } }]) await t.test(JSON.stringify(changes), async () => {
+    const beforeLen = requests.length;
+    const out = normalizeAnalysis(await runFresh(missingArticle(changes)));
+    const seen = requests.slice(beforeLen).map((r) => r.step);
+    assert.equal(seen.filter((step) => step === "score").length, 2);
+    assert.ok(seen.includes("understand"));
+    assert.equal(out.relevance, "pass");
+    assert.equal(out.selected, true);
+  });
+});
+
+test("an empty or link-only original post keeps scoring and verbatim publication", async (t) => {
+  for (const text of ["", "https://example.org/launch"]) await t.test(text || "media-only", async () => {
+    const beforeLen = requests.length;
+    const run = await runFresh(missingArticle({ xPost: { text, media: [] } }));
+    const out = normalizeAnalysis(run);
+    const seen = requests.slice(beforeLen).map((r) => r.step);
+    assert.equal(seen.filter((step) => step === "score").length, 2);
+    assert.equal(seen.filter((step) => step === "understand" || step === "summarize").length, 0);
+    assert.equal(run.writing?.kind, "verbatim");
+    assert.equal(out.relevance, "pass");
+    assert.equal(out.selected, true);
+    assert.equal(isPoolEligible({ participationMode: "editorial", relevance: out.relevance, title: out.titleZh, summary: out.summaryZh, originalPost: true }), true);
+  });
+});
+
+test("a later material revision can be scored after the title-only revision waits", async () => {
+  const input = missingArticle();
+  assert.equal(normalizeAnalysis(await runFresh(input)).relevance, "unknown");
+  const beforeLen = requests.length;
+  const out = normalizeAnalysis(await runFresh({ ...input, revision: 2, bodyStatus: "ok", bodyText: "来源确认模型发布。" }));
+  assert.equal(requests.slice(beforeLen).filter((r) => r.step === "score").length, 2);
+  assert.equal(out.relevance, "pass");
+  assert.equal(out.selected, true);
+});
+
+const consistencyMaterial = (name: string) => ({ sourceId: SOURCE, url: `https://example.org/${SOURCE}/${name}`, title: `A lab releases a model ${name}`,
+  bodyText: `A lab released a model ${name}. ` + "The release includes benchmark results and pricing details. ".repeat(12),
+  bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date() });
+
+test("a late successful analysis preserves newer input awaiting processing", async () => {
+  const input = consistencyMaterial("stale-success");
+  const { articleId } = await upsertMaterial(input);
+  const waiting = { entered: gate(), release: gate() };
+  prefilterHold = waiting;
+  const pending = processArticle(articleId);
+  await waiting.entered.promise;
+  try {
+    const revised = await upsertMaterial({ ...input, title: "The lab corrects the release", bodyText: "Corrected benchmark and pricing details. ".repeat(12) });
+    assert.equal(revised.revised, true);
+  } finally {
+    prefilterHold = null;
+    waiting.release.open();
+  }
+  const result = await pending;
+  const [current] = await sql`SELECT revision,processing_state,processing_error FROM articles WHERE id=${articleId}`;
+  assert.deepEqual({ ...current }, { revision: 2, processing_state: "new", processing_error: null },
+    "the recovery sweep must still see the new revision as unprocessed");
+  assert.equal(result.state, "stale");
+  const analyses = await sql`SELECT input_revision FROM analyses WHERE article_id=${articleId}`;
+  assert.deepEqual(analyses.map(r => r.input_revision), [1], "the obsolete result is retained only against its original input");
+  assert.equal((await sql`SELECT 1 FROM publications WHERE article_id=${articleId}`).length, 0);
+});
+
+test("a failed analysis commit rolls back its judgement and receipt completion; retry reuses the saved responses", async () => {
+  const { articleId } = await upsertMaterial(consistencyMaterial("atomic-commit"));
+  const subject = `article:${articleId}@1`;
+  await sql.unsafe(`CREATE FUNCTION reject_analysis_completion() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.processing_state = 'analyzed' THEN RAISE EXCEPTION 'injected analysis commit failure'; END IF; RETURN NEW; END $$`);
+  await sql.unsafe("CREATE TRIGGER reject_analysis_completion BEFORE UPDATE ON articles FOR EACH ROW EXECUTE FUNCTION reject_analysis_completion()");
+  try {
+    assert.equal((await processArticle(articleId)).state, "retrying");
+  } finally {
+    await sql.unsafe("DROP TRIGGER reject_analysis_completion ON articles");
+    await sql.unsafe("DROP FUNCTION reject_analysis_completion()");
+  }
+  assert.equal((await sql`SELECT 1 FROM analyses WHERE article_id=${articleId}`).length, 0, "a failed commit cannot leave a usable partial judgement");
+  const received = await sql`SELECT id,status FROM receipts WHERE subject=${subject} ORDER BY id`;
+  assert.ok(received.length > 0, "paid responses arrived before the business failure");
+  assert.ok(received.every(r => r.status === "received"), "receipt completion rolls back with the judgement");
+  const [failed] = await sql`SELECT processing_state,processing_error FROM articles WHERE id=${articleId}`;
+  assert.equal(failed!.processing_state, "new");
+  assert.match(failed!.processing_error, /injected analysis commit failure/);
+  assert.equal((await sql`SELECT 1 FROM publications WHERE article_id=${articleId}`).length, 0);
+  const hits = provider.hits();
+  assert.equal((await processArticle(articleId)).state, "pass");
+  assert.equal(provider.hits(), hits, "retry commits the persisted responses without buying them again");
+  assert.equal((await sql`SELECT 1 FROM analyses WHERE article_id=${articleId}`).length, 1);
+  const completed = await sql`SELECT id,status FROM receipts WHERE subject=${subject} ORDER BY id`;
+  assert.deepEqual(completed.map(r => r.id), received.map(r => r.id));
+  assert.ok(completed.every(r => r.status === "completed"));
+  assert.deepEqual({ ...(await sql`SELECT selected, selection_candidate FROM publications WHERE article_id=${articleId}`)[0] },
+    { selected: false, selection_candidate: true }, "saved analysis nominates a candidate while news identity is pending");
 });

@@ -58,6 +58,10 @@ const pages: Record<string, () => string> = {
   "/large/post": () => article("LFM3", `Benchmarks for the new models. ${"Each row compares the same task. ".repeat(12)}</p><table><tr><th>Benchmark</th><th>LFM3</th></tr><tr><td><p>LiveClaw</p></td><td><p>45.60</p></td></tr></table><p>`)
     .replace("</body>", `<script>${"x".repeat(9 * 1024 * 1024)}</script></body>`),
   "/en/items.json": () => JSON.stringify([{ title: "Improved token efficiency", url: `${site}/en/post` }]),
+  "/date-post": () => `<html><head><meta name="date" content="2026-09-11T19:58:33Z"></head><body><article><a href="/date-post">A real article</a><span title="Unix: 1789171113866">Sep 11, 2026</span></article></body></html>`,
+  "/date-modified": () => `<meta property="article:modified_time" content="2026-10-14T00:00:00Z"><time itemprop="dateModified" datetime="2026-10-14T00:00:00Z">Updated today</time>`,
+  "/date-unlabelled": () => `<time datetime="2026-10-14T00:00:00Z">2026-10-14</time>`,
+  "/date-published": () => `<time itemprop="datePublished" datetime="2020-02-15T00:00:00Z">Published February 15, 2020</time>`,
 };
 function article(title: string, text: string) {
   return `<html><head><title>${title}</title><meta property="article:published_time" content="2026-09-23T12:00:00Z"></head><body><article><h1>${title}</h1><p>${text}</p></article></body></html>`;
@@ -296,4 +300,50 @@ test("a source's language is an Accept-Language value, refused by kinds that rea
     }
   }
   for (const kind of ["x_search", "mp_account", "external"] as const) assert.deepEqual(unsupportedConfig(kind, { acceptLanguage: "en" }), ["acceptLanguage"], kind);
+});
+
+const mdSource = source({ url: "https://publisher.example/blog", allowUrlPrefixes: ["https://publisher.example/blog/"] });
+const readRepeated = (labels: string[]) => fromMarkdown(labels.map(label => `[${label}](https://publisher.example/blog/new-release)`).join("\n\n"), "https://publisher.example", mdSource);
+
+test("a repeated article takes its actual headline after an earlier call to action", () => {
+  assert.deepEqual(readRepeated(["Read more", "A new model release", "Read more"]), [{ url: "https://publisher.example/blog/new-release", title: "A new model release" }]);
+});
+
+test("a clean headline replaces a repeated card label that swallowed its whole summary", () => {
+  assert.equal(readRepeated(["An overlong card label with article description. ".repeat(4), "A concise actual headline"])[0]!.title, "A concise actual headline");
+});
+
+test("the first clean headline stays stable and a lone call to action can still be enriched from its detail page", () => {
+  assert.equal(readRepeated(["A clean actual headline", "Another title for the same story", "Read more"])[0]!.title, "A clean actual headline");
+  assert.equal(readRepeated(["Read more"])[0]!.title, "Read more");
+});
+
+test("parentheses in card image URLs cannot enter the headline or make it change with an asset deployment", () => {
+  const headline = "Hallo, Deutschland! Mistral Opens German Hub in Munich";
+  const card = (deployment: string) => `[![Image 5](https://publisher.example/_astro/Linkedin_Mistral02%20(1)_3Uubi.webp?dpl=${deployment}) ![Image 6](https://publisher.example/_astro/Linkedin_Mistral02%20(1)_3Uubi.webp?dpl=${deployment}) Company ## ${headline} September 28, 2026 By Mistral](https://publisher.example/blog/new-release)`;
+  const expected = [{ url: "https://publisher.example/blog/new-release", title: `Company ${headline} September 28, 2026 By Mistral` }];
+  for (const deployment of ["first", "second"]) assert.deepEqual(fromMarkdown(card(deployment), "https://publisher.example", mdSource), expected);
+  assert.deepEqual(fromMarkdown(`[![Image](https://publisher.example/a_(b_(c)).webp)](https://publisher.example/blog/image-only)\n${card("third")}`, "https://publisher.example", mdSource), expected);
+});
+
+test("a listing uses the visible date when its tooltip is not a publication date", () => {
+  const items = fromHtml(pages["/date-post"]!(), site, source({ url: site, itemSelector: "article", publishedAtSelector: "span[title^='Unix:']", publishedAtUtcOffset: "+00:00" }));
+  assert.equal(items[0]!.publishedAt?.toISOString(), "2026-09-11T00:00:00.000Z");
+});
+
+test("a detail date selector reads meta content and an invalid tooltip does not mask visible text", async () => {
+  for (const [publishedAtSelector, expected] of [["meta[name='date']", "2026-09-11T19:58:33.000Z"], ["span", "2026-09-11T00:00:00.000Z"]]) {
+    const item = await fetchDetail(site + "/date-post", source({ detail: { publishedAtSelector, publishedAtAuthoritative: true, publishedAtUtcOffset: "+00:00" } }), { date: true, title: false, summary: false });
+    assert.equal(item.publishedAt?.toISOString(), expected);
+  }
+});
+
+test("generic detail metadata does not promote modified or unlabelled time elements to publication", async () => {
+  const detailSource = source({ detail: { maxFetches: 1 } });
+  for (const path of ["/date-modified", "/date-unlabelled"]) {
+    const detail = await fetchDetail(site + path, detailSource, { date: true, title: false, summary: false });
+    assert.equal(detail.publishedAt, null, path);
+  }
+  const published = await fetchDetail(site + "/date-published", detailSource, { date: true, title: false, summary: false });
+  assert.equal(published.publishedAt?.toISOString(), "2020-02-15T00:00:00.000Z");
 });

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
+import { runInNewContext } from "node:vm";
 import { beijingDate, beijingTime } from "@aihot/contracts/time";
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -11,17 +12,20 @@ after(() => {
 let instance = 0;
 async function reader(starred: unknown[] = []) {
   const values = new Map([["aihot-starred-items", JSON.stringify(starred)]]);
+  const session = new Map<string, string>();
+  let denied = false;
+  const makeStore = (map: Map<string, string>) => ({
+    getItem: (key: string) => map.get(key) ?? null,
+    setItem: (key: string, value: string) => { if (denied) throw new Error("full"); map.set(key, value); },
+    removeItem: (key: string) => { if (denied) throw new Error("full"); map.delete(key); },
+  });
   Object.defineProperty(globalThis, "window", {
     configurable: true,
-    value: { localStorage: {
-      getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: string) => { values.set(key, value); },
-      removeItem: (key: string) => { values.delete(key); },
-    } },
+    value: { localStorage: makeStore(values), sessionStorage: makeStore(session) },
   });
   // Reopening the page starts with an empty snapshot cache.
   const state: typeof import("../app/lib/local-state.ts") = await import(`../app/lib/local-state.ts?test=${instance++}`);
-  return { state, values };
+  return { state, values, setDenied: (v: boolean) => { denied = v; } };
 }
 
 const displayDate = (value: string) => `${beijingDate(value)} ${beijingTime(value)}`;
@@ -102,4 +106,41 @@ test("the storage keys readers already have data under keep their names", async 
   for (const [role, key] of Object.entries(kept)) {
     assert.equal(state.KEYS[role as keyof typeof kept], key, `readers' ${role} data is stored under ${key}; renaming the key loses it`);
   }
+});
+
+test("appearance startup applies a saved browser font before rendering and safely handles invalid storage", async () => {
+  const { state } = await reader();
+  for (const font of ["browser", "bad", null, "denied"]) {
+    const attributes: Record<string, string> = {};
+    runInNewContext(state.APPEARANCE_BOOT_SCRIPT, {
+      localStorage: { getItem: (key: string) => { if (font === "denied") throw new Error("blocked"); return key === state.KEYS.font ? font : "dark"; } },
+      window: { matchMedia: () => ({ matches: false }) },
+      document: { documentElement: { setAttribute: (key: string, value: string) => { attributes[key] = value; } }, querySelectorAll: () => [] },
+    });
+    assert.equal(attributes["data-font"], font === "browser" ? "browser" : "system");
+    assert.equal(attributes["data-theme"], font === "denied" ? "light" : "dark");
+  }
+});
+
+test("font choices survive version-1 backups and denied writes without touching existing reader data", async () => {
+  const { state, setDenied } = await reader();
+  state.setFontPreference("browser");
+  assert.equal(state.getFontPreference(), "browser");
+  const backup = state.exportBundle();
+  assert.equal(backup.version, 1);
+  assert.equal(backup.font, "browser");
+  state.setFontPreference(null);
+  state.importBundle(JSON.stringify({ version: 1, starred: [], read: [], theme: "auto" }));
+  assert.equal(state.getFontPreference(), null, "old backups remain valid");
+  state.importBundle(JSON.stringify(backup));
+  assert.equal(state.getFontPreference(), "browser");
+  state.importBundle(JSON.stringify({ ...backup, font: "system" }));
+  assert.equal(state.getFontPreference(), "browser", "merging does not overwrite the reader's choice");
+  state.setFontPreference(null);
+  setDenied(true);
+  state.setFontPreference("browser");
+  assert.equal(state.getFontPreference(), "browser", "a choice still works in this tab when persistence is blocked");
+  state.setFontPreference(null);
+  assert.equal(state.getFontPreference(), null);
+  setDenied(false);
 });

@@ -32,7 +32,7 @@ export interface CollectResult {
 
 export async function loadSource(id: string): Promise<SourceRow | null> {
   const [s] = await sql<SourceRow[]>`
-    SELECT id, name, kind, config, tier, participation_mode, uses, first_party, interval_minutes, enabled, cursor, fail_count
+    SELECT id, name, kind, config, tier, participation_mode, uses, interval_minutes, enabled, cursor, fail_count
     FROM sources WHERE id = ${id}`;
   return s ?? null;
 }
@@ -464,7 +464,7 @@ function coveredTo(m: SourceRow): bigint {
 export async function collectXShard(key: string, sourceIds: string[]): Promise<{ key: string; status: "ok" | "failed" | "skipped"; accounts: number; found: number; created: number; error?: string }> {
   const members = (
     await sql<SourceRow[]>`
-      SELECT id, name, kind, config, tier, participation_mode, uses, first_party, interval_minutes, enabled, cursor, fail_count
+      SELECT id, name, kind, config, tier, participation_mode, uses, interval_minutes, enabled, cursor, fail_count
       FROM sources WHERE id IN ${sql(sourceIds)} ORDER BY id`
   ).filter((m) => m.enabled && shardHandle(m));
   if (members.length === 0) return { key, status: "skipped", accounts: 0, found: 0, created: 0 };
@@ -496,7 +496,7 @@ export async function collectXShard(key: string, sourceIds: string[]): Promise<{
     const strays = read.tweets.filter((t) => !here.has(t.user.screen_name.toLowerCase()));
     if (strays.length) {
       const owners = await sql<SourceRow[]>`
-        SELECT id, name, kind, config, tier, participation_mode, uses, first_party, interval_minutes, enabled, cursor, fail_count
+        SELECT id, name, kind, config, tier, participation_mode, uses, interval_minutes, enabled, cursor, fail_count
         FROM sources WHERE enabled AND ${sharded()}`;
       for (const owner of owners) {
         const handle = shardHandle(owner)?.toLowerCase();

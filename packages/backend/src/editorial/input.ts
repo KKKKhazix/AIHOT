@@ -50,11 +50,11 @@ export async function loadAnalyzeInput(articleId: string): Promise<AnalyzeInputA
   const [row] = await sql<{
     id: string; revision: number; title: string; url: string; author: string | null; published_at: Date | null; publication_time: string | null; discovered_at: Date;
     body_text: string | null; body_html: string | null; excerpt: string | null; body_status: string; x_post: Record<string, any> | null; x_article: { title?: string; text?: string; html?: string } | null;
-    cover: Record<string, any> | null; media: Array<Record<string, any>>; source_name: string; source_kind: string; tier: string; selection_class: string | null; first_party: boolean; source_tags: string[]; owner_entity_id: string | null;
+    cover: Record<string, any> | null; media: Array<Record<string, any>>; source_name: string; source_kind: string; tier: string; selection_class: string | null; source_tags: string[]; owner_entity_id: string | null;
     config: Record<string, any>; translation_zh: string | null;
   }[]>`
     SELECT a.id, a.revision, a.title, a.url, a.author, a.published_at, a.publication_time, a.discovered_at, a.body_text, a.body_html, a.excerpt, a.body_status, a.x_post, a.x_article, a.cover, a.media,
-           s.name AS source_name, s.kind AS source_kind, s.tier, s.selection_class, s.first_party, s.tags AS source_tags, s.owner_entity_id, s.config,
+           s.name AS source_name, s.kind AS source_kind, s.tier, s.selection_class, s.tags AS source_tags, s.owner_entity_id, s.config,
            tr.body_text AS translation_zh
     FROM articles a JOIN sources s ON s.id = a.source_id
     LEFT JOIN translations tr ON tr.article_id = a.id AND tr.lang = 'zh' AND tr.revision >= a.revision

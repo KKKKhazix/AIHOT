@@ -20,7 +20,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: `${loaderData?.source.name ?? "信源"} · ${SITE.name} 后台` }];
 
-type Draft = Pick<AdminSource, "name" | "kind" | "interval_minutes" | "tier" | "selection_class" | "participation_mode" | "uses" | "signal_group_id" | "first_party" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext"> & { tags: string; config: string };
+type Draft = Pick<AdminSource, "name" | "kind" | "interval_minutes" | "tier" | "selection_class" | "participation_mode" | "uses" | "signal_group_id" | "owner_entity_id" | "site_fulltext" | "syndicate_fulltext"> & { tags: string; config: string };
 
 function draftOf(s: AdminSource): Draft {
   return {
@@ -32,7 +32,6 @@ function draftOf(s: AdminSource): Draft {
     participation_mode: s.participation_mode,
     uses: s.uses,
     signal_group_id: s.signal_group_id,
-    first_party: s.first_party,
     owner_entity_id: s.owner_entity_id,
     site_fulltext: s.site_fulltext,
     syndicate_fulltext: s.syndicate_fulltext,

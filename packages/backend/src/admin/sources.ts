@@ -65,7 +65,7 @@ export async function listSources(f: SourceListFilters): Promise<BeforeJson<Admi
 }
 
 export async function sourceDetail(id: string): Promise<BeforeJson<AdminSourceDetail> | null> {
-  const [source] = await sql<BeforeJson<AdminSource>[]>`SELECT *, (tier = 'T1') AS first_party FROM sources WHERE id = ${id}`;
+  const [source] = await sql<BeforeJson<AdminSource>[]>`SELECT * FROM sources WHERE id = ${id}`;
   if (!source) return null;
   const [runs, items, [stats], history, [republish]] = await Promise.all([
     sql<BeforeJson<AdminSourceDetail["runs"][number]>[]>`SELECT id, started_at, finished_at, status, found_count, new_count, error, detail FROM fetch_runs WHERE source_id = ${id} ORDER BY started_at DESC LIMIT 30`,
@@ -129,7 +129,6 @@ const EDITABLE = z
     selection_class: SelectionClass,
     participation_mode: z.enum(["editorial", "hot_signal", "isolated"]),
     signal_group_id: z.string().max(120).nullable(),
-    first_party: z.boolean(),
     owner_entity_id: z.string().max(120).nullable(),
     site_fulltext: z.boolean(),
     syndicate_fulltext: z.boolean(),
@@ -170,8 +169,6 @@ async function saveSource(id: string, patch: z.infer<typeof EDITABLE>, input: { 
         patch.config!.publishedAfter ??= boundary;
       }
     }
-    // Kept in the admin shape for existing clients, but no independent first-party setting remains.
-    if (patch.tier !== undefined || patch.first_party !== undefined) patch.first_party = (patch.tier ?? before.tier) === "T1";
     if (patch.config) {
       const nextKind = patch.kind ?? before.kind as SourceRow["kind"];
       assertSupportedConfig(nextKind, patch.config);
@@ -218,7 +215,7 @@ async function saveSource(id: string, patch: z.infer<typeof EDITABLE>, input: { 
 }
 
 /** Source fields the public projection reads (publication/rules.ts and the v1 payload). */
-const PUBLICATION_FIELDS: string[] = ["kind", "participation_mode", "site_fulltext", "syndicate_fulltext", "tier", "name", "first_party", "owner_entity_id"];
+const PUBLICATION_FIELDS: string[] = ["kind", "participation_mode", "site_fulltext", "syndicate_fulltext", "tier", "name", "owner_entity_id"];
 
 /** Replacing a working collector requires the fields its replacement needs to produce articles. */
 function assertReplacementConfig(kind: string, config: Record<string, unknown>): void {
@@ -240,7 +237,6 @@ const CreateSchema = z
     selection_class: SelectionClass.default(null),
     participation_mode: z.enum(["editorial", "hot_signal", "isolated"]).default("editorial"),
     interval_minutes: z.number().int().min(1).max(1440).default(30),
-    first_party: z.boolean().default(false),
     tags: z.array(z.string()).default([]),
     uses: SourceUses.default([]),
     site_fulltext: z.boolean().default(SOURCE_DEFAULTS.siteFulltext),
@@ -273,17 +269,14 @@ export async function findDuplicateSource(kind: string, config: Record<string, u
 
 export async function createSource(input: unknown, actor: string): Promise<BeforeJson<AdminSourceCreated>> {
   const s = CreateSchema.parse(input);
-  // First party is tier T1 only: an official account, staff member, original reporting or a link to the
-  // official site does not make a T1_5 or T2 source first party (being a representative is decided separately).
-  s.first_party = s.tier === "T1";
   assertSupportedConfig(s.kind, s.config);
   const result = await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('admin-source-identity'))`;
     const dup = await findDuplicateSource(s.kind, s.config, undefined, tx);
     if (dup) return { created: false as const, duplicate: dup };
     const [row] = await tx<BeforeJson<AdminSource>[]>`
-    INSERT INTO sources (id, name, kind, config, tier, selection_class, participation_mode, uses, interval_minutes, first_party, tags, site_fulltext, syndicate_fulltext, next_fetch_at)
-    VALUES (${s.id}, ${s.name}, ${s.kind}, ${tx.json(s.config as never)}, ${s.tier}, ${s.selection_class}, ${s.participation_mode}, ${s.uses}, ${s.interval_minutes}, ${s.first_party}, ${s.tags},
+    INSERT INTO sources (id, name, kind, config, tier, selection_class, participation_mode, uses, interval_minutes, tags, site_fulltext, syndicate_fulltext, next_fetch_at)
+    VALUES (${s.id}, ${s.name}, ${s.kind}, ${tx.json(s.config as never)}, ${s.tier}, ${s.selection_class}, ${s.participation_mode}, ${s.uses}, ${s.interval_minutes}, ${s.tags},
             ${s.site_fulltext}, ${s.syndicate_fulltext}, now())
     ON CONFLICT (id) DO NOTHING RETURNING *`;
     if (!row) throw new Conflict(`信源 ID ${s.id} 已存在`);

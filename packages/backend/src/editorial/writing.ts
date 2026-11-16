@@ -1,3 +1,4 @@
+import { beijingDate } from "@aihot/contracts/time";
 import { describePublicationTime } from "../sources/dates.ts";
 // The writing side of the analysis: the prefilter's and the content understanding's inputs, the
 // title/summary prompts for everything else, the output parsing and the deterministic guards. The
@@ -273,7 +274,7 @@ const sourceName = (name?: string) => name?.trim() || "（未注明）";
 
 function anchorDate(d: Date | undefined): string {
   if (!d || Number.isNaN(d.getTime())) return "未注明";
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  return beijingDate(d);
 }
 
 export function buildArticlePrompt(input: TranslateInput): string {

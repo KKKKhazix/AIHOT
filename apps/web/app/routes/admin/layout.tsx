@@ -124,7 +124,7 @@ export default function AdminLayout({ loaderData }: Route.ComponentProps) {
             <span className="text-[14px] font-semibold text-ink">{`${SITE.name} 后台`}</span>
             {me.dev && <span className="rounded-mark bg-amber/15 px-1.5 text-[11px] font-medium text-amber">开发</span>}
           </div>
-          <nav className="no-scrollbar flex gap-1 overflow-x-auto px-3 py-2">
+          <nav className="scrollbar-none flex gap-1 overflow-x-auto px-3 py-2">
             {flat.map((i) => {
               const active = location.pathname === i.to || location.pathname.startsWith(`${i.to}/`);
               return (

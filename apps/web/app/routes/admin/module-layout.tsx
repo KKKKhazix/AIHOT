@@ -6,14 +6,14 @@ import { SITE } from "@aihot/site";
 import { RingMark } from "@aihot/site/brand/Logo.tsx";
 import { MODULES } from "@aihot/site/modules";
 import { NavigationProgress } from "../../components/shell/Chrome";
-import { adminPageGet, GRAY_HEADERS } from "../../lib/admin.server";
+import { adminPageAccess, GRAY_HEADERS } from "../../lib/admin.server";
 
 /** The sidebar: every admin page without parameters in its address, in the order the site lists its modules. */
 const NAV = MODULES.flatMap((m) => (m.pages ?? []).flatMap((p) => ("layout" in p || !p.admin || p.path.includes(":") ? [] : [{ to: `/admin/${p.path}`, label: p.nav ?? p.path }])));
 
 // Plain types, not the generated ones: a site without admin pages (the open-source edition) has no such route.
 export async function loader({ request }: { request: Request }) {
-  return data(await adminPageGet<{ name: string }>(request, "/api/admin/page-access"), { headers: GRAY_HEADERS });
+  return data(await adminPageAccess(request), { headers: GRAY_HEADERS });
 }
 
 export const headers = () => ({ ...GRAY_HEADERS, "X-Robots-Tag": "noindex, nofollow" });
@@ -54,7 +54,7 @@ export default function ModuleAdminLayout({ loaderData }: { loaderData: { name: 
             <Link to="/" className="ml-auto inline-flex min-h-11 items-center px-2 text-[13px] text-ink-3">{back}</Link>
           </div>
           {NAV.length > 1 && (
-            <nav className="no-scrollbar flex gap-1 overflow-x-auto px-3 pb-2">
+            <nav className="scrollbar-none flex gap-1 overflow-x-auto px-3 pb-2">
               {NAV.map((i) => (
                 <NavLink key={i.to} to={i.to}
                   className={({ isActive }) => `inline-flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-[13px] ${isActive ? "bg-ink text-bg" : "text-ink-3"}`}>

@@ -342,7 +342,6 @@ export interface EditorialEventCopyInput {
 
 export interface EditorialEventCopyOutcome {
   title: string;
-  titleChanged: boolean;
   conditions: string | null;
   subject: string | null;
   action: string | null;

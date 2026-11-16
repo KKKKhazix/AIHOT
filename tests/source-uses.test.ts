@@ -119,3 +119,15 @@ test("a use's pace speeds its sources up, never slows the news pipeline's pace a
   assert.equal(minutes["editorial-slow"], 30, "a slower use leaves the news pipeline's pace alone");
   assert.equal(minutes["jina"], 60, "listings paid per read stay hourly");
 });
+
+test("the source list shows health and the failure reason, failing sources first", async () => {
+  const prefix = `healthcheck-${T}`;
+  await sql`INSERT INTO sources (id, name, kind, health, fail_count, last_error) VALUES
+    (${`${prefix}-ok`}, ${`${prefix} A`}, 'rss', 'ok', 0, NULL), (${`${prefix}-failing`}, ${`${prefix} B`}, 'rss', 'failing', 6, 'HTTP 503')`;
+  const { rows, totals } = await listSources({ q: prefix });
+  assert.deepEqual(rows.map(({ id, health, fail_count, last_error }) => ({ id, health, fail_count, last_error })), [
+    { id: `${prefix}-failing`, health: "failing", fail_count: 6, last_error: "HTTP 503" },
+    { id: `${prefix}-ok`, health: "ok", fail_count: 0, last_error: null },
+  ]);
+  assert.ok(totals.failing >= 1);
+});

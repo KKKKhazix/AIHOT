@@ -7,13 +7,20 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
-import { heatRows, snapshotHeat } from "@aihot/backend/events/hot";
+import { heatRows, snapshotHeat, type HotEntry } from "@aihot/backend/events/hot";
+import { loadHotStrip, rankingExtras } from "@aihot/backend/publication/hot";
+import { loadHot, loadStoryDetail, v1HotTopics } from "@aihot/backend/publication/stories";
+import { buildApp } from "../apps/api/src/app.ts";
 
 const T = `hot-${tag()}`;
 const AT = new Date("2099-03-01T12:00:00Z");
 const H = 3600_000;
+let app: Awaited<ReturnType<typeof buildApp>> | undefined;
 
-after(closeDb);
+after(async () => {
+  await app?.close();
+  await closeDb();
+});
 
 async function source(key: string, opts: { mode?: string; owner?: string; createdAt?: Date } = {}) {
   const id = `${T}-${key}`;
@@ -155,4 +162,168 @@ test("an hour taken again updates the cohort after a source changes role", async
   const rows = await sql`SELECT participants, cohort FROM story_heat_hourly WHERE story_id = ${s}`;
   assert.ok(rows.length > 0);
   assert.ok(rows.every(r => r.participants === 1 && r.cohort === 0));
+});
+
+test("hot cards send a Unicode-safe excerpt while the event keeps its complete public text", async () => {
+  const at = new Date(Date.now() - 120_000);
+  const intro = "摘要".repeat(238) + "🤖".repeat(4);
+  const full = intro + "仅在详情显示".repeat(300);
+  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,next_fetch_at)
+    VALUES ('hot-card','Hot card','rss','T1','editorial','2100-01-01')`;
+  const [s] = await sql<{ id: number; public_id: string }[]>`INSERT INTO stories(public_id,title,summary)
+    VALUES (${randomUUID()},'Hot card',${full}) RETURNING id,public_id`;
+  const [fact] = await sql<{ id: number }[]>`INSERT INTO facts(public_id,story_id,title)
+    VALUES (${randomUUID()},${s!.id},'Hot card') RETURNING id`;
+  await sql`INSERT INTO articles(id,source_id,identity_key,url,title,discovered_at,timeline_at)
+    VALUES ('hot-card','hot-card','hot-card','https://example.org/hot-card','Hot card',${at},${at})`;
+  await sql`INSERT INTO fact_articles(fact_id,article_id,role) VALUES (${fact!.id},'hot-card','report')`;
+  await sql`INSERT INTO publications(article_id,source_id,title,summary,url,timeline_at,discovered_at,sort_at,body_mode,eligible,channel,story_id,fact_id)
+    VALUES ('hot-card','hot-card','Hot card',${full},'https://example.org/hot-card',${at},${at},${at},'summary',true,'news',${s!.id},${fact!.id})`;
+  const entry: HotEntry = { rank: 1, storyId: s!.id, storyPublicId: s!.public_id, title: "Hot card", heat: 10, trend: "flat", trendPct: 0, badges: [], participantCount: 0, sourceCount: 1, signalCount: 0, reportCount: 1, sourceNames: ["Hot card"], latestAt: at.toISOString(), firstReportAt: at.toISOString(), representativeItemId: "hot-card", representativeUrl: "https://example.org/hot-card", representativeSource: "Hot card", participants: [] };
+  await sql`INSERT INTO hot_rankings(computed_at,rule_version,entries,published) VALUES (${at},'test',${sql.json([entry] as never)},true)`;
+  assert.equal((await loadHot()).entries[0]!.summary, intro + "…");
+  assert.equal((await loadStoryDetail(s!.id))!.summary, full, "the event remains the full reading surface");
+  await sql`UPDATE stories SET summary='短摘要' WHERE id=${s!.id}`;
+  await sql`UPDATE publications SET summary='短摘要' WHERE article_id='hot-card'`;
+  assert.equal((await loadHot()).entries[0]!.summary, "短摘要");
+});
+
+test("hot covers follow current visibility and full-text rights within one ranking", async () => {
+  const src = "cover-scope";
+  const at = new Date(Date.now() - 90_000);
+  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,next_fetch_at)
+    VALUES (${src},${src},'rss','T1','editorial','2100-01-01')`;
+  const [s] = await sql<{ id: number; public_id: string }[]>`INSERT INTO stories (public_id,title)
+    VALUES (${randomUUID()},'封面范围') RETURNING id,public_id`;
+  const [fact] = await sql<{ id: number }[]>`INSERT INTO facts (public_id,story_id,title)
+    VALUES (${randomUUID()},${s!.id},'封面范围') RETURNING id`;
+  for (const [id, image] of [["cover-representative", null], ["cover-primary", "primary"], ["cover-fallback", "fallback"]] as const) {
+    await sql`INSERT INTO articles (id,source_id,identity_key,url,title,discovered_at,timeline_at,media)
+      VALUES (${id},${src},${id},${"https://example.org/" + id},${id},${at},${at},
+        ${sql.json(image ? [{ kind: "image", url: "https://example.org/" + image + ".png", width: 800, height: 450 }] : [])})`;
+    await sql`INSERT INTO fact_articles (fact_id,article_id,role) VALUES (${fact!.id},${id},'report')`;
+    await sql`INSERT INTO publications (article_id,source_id,title,url,timeline_at,discovered_at,sort_at,body_mode,eligible,channel,story_id,fact_id,score)
+      VALUES (${id},${src},${id},${"https://example.org/" + id},${at},${at},${at},${image ? "full" : "summary"},true,'news',${s!.id},${fact!.id},${image === "primary" ? 90 : 80})`;
+  }
+  const entry: HotEntry = { rank: 1, storyId: s!.id, storyPublicId: s!.public_id, title: "封面范围", heat: 10, trend: "flat", trendPct: 0, badges: [],
+    participantCount: 2, sourceCount: 1, signalCount: 0, reportCount: 3, sourceNames: [src], latestAt: at.toISOString(), firstReportAt: at.toISOString(),
+    representativeItemId: "cover-representative", representativeUrl: "https://example.org/cover-representative", representativeSource: src, participants: [] };
+  await sql`INSERT INTO hot_rankings (computed_at,rule_version,entries,published)
+    VALUES (${at},'test',${sql.json([entry] as never)},true)`;
+  const cover = async () => {
+    const hot = await loadHot();
+    assert.equal(hot.entries.length, 1, "the public representative keeps the story on the same ranking");
+    const url = hot.entries[0]!.cover?.url;
+    return url ? new URL(url, "http://localhost").searchParams.get("u") : null;
+  };
+  assert.equal(await cover(), "https://example.org/primary.png");
+  await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = 'cover-primary'`;
+  assert.equal(await cover(), "https://example.org/fallback.png", "a withdrawn secondary report cannot remain the cover");
+  await sql`UPDATE publications SET body_mode = 'summary' WHERE article_id = 'cover-fallback'`;
+  assert.equal(await cover(), null, "revoking full-text permission also removes its cover");
+});
+
+test("faces are 精选组 sources by tier (T1, T1.5, T2), at most 6; 氛围组 only counts in +N", async () => {
+  const facesTag = `hotfaces-${T}`;
+  const inputs = [
+    { name: "signal T1 with avatar", kind: "signal", tier: "T1", avatar: true },
+    { name: "T2 with avatar A", kind: "editorial", tier: "T2", avatar: true },
+    { name: "T1 without avatar", kind: "editorial", tier: "T1", avatar: false },
+    { name: "T1.5 with avatar", kind: "editorial", tier: "T1_5", avatar: true },
+    { name: "signal without avatar", kind: "signal", tier: "T2", avatar: false },
+    { name: "T1 with avatar", kind: "editorial", tier: "T1", avatar: true },
+    { name: "T2 with avatar B", kind: "editorial", tier: "T2", avatar: true },
+    { name: "T2 without avatar", kind: "editorial", tier: "T2", avatar: false },
+    { name: "T2 with avatar C", kind: "editorial", tier: "T2", avatar: true },
+    { name: "T2 with avatar D", kind: "editorial", tier: "T2", avatar: true },
+  ] as const;
+  const faceName = (i: number) => `${facesTag}-${inputs[i]!.name}`;
+  const faceSourceId = (i: number) => `${facesTag}-${i}`;
+  const imageUrl = (i: number) => inputs[i]!.avatar ? `https://example.org/${facesTag}/${i}.png` : null;
+  const at = new Date(Date.now() - 60_000);
+  for (const [i, person] of inputs.entries()) {
+    await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,icon_url,next_fetch_at)
+      VALUES (${faceSourceId(i)},${faceName(i)},'rss',${person.tier},${person.kind === "editorial" ? "editorial" : "hot_signal"},${imageUrl(i)},'2100-01-01')`;
+    await sql`INSERT INTO articles (id,source_id,identity_key,url,title,discovered_at,timeline_at)
+      VALUES(${faceSourceId(i)},${faceSourceId(i)},${faceSourceId(i)},${"https://example.org/" + faceSourceId(i)},${faceName(i)},${at},${at})`;
+  }
+  const entries: HotEntry[] = [];
+  for (let i = 0; i < 3; i++) {
+    const [s] = await sql<{ id: number; public_id: string }[]>`INSERT INTO stories(public_id,title) VALUES(${randomUUID()},${facesTag}) RETURNING id,public_id`;
+    const [fact] = await sql`INSERT INTO facts(public_id,story_id,title) VALUES(${randomUUID()},${s!.id},${facesTag}) RETURNING id`;
+    for (const [p, person] of inputs.entries()) if (person.kind === "editorial") {
+      await sql`INSERT INTO fact_articles(fact_id,article_id,role) VALUES(${fact!.id},${faceSourceId(p)},'report')`;
+      await sql`INSERT INTO publications(article_id,source_id,title,url,timeline_at,discovered_at,sort_at,body_mode,eligible,channel)
+        VALUES(${faceSourceId(p)},${faceSourceId(p)},${faceName(p)},${"https://example.org/" + faceSourceId(p)},${at},${at},${at},'summary',true,'news')
+        ON CONFLICT(article_id) DO NOTHING`;
+    }
+    for (const [p, person] of inputs.entries()) await sql`INSERT INTO story_signals(story_id,article_id,participant_key,source_id,kind,observed_at)
+      VALUES(${s!.id},${faceSourceId(p)},${faceSourceId(p)},${faceSourceId(p)},${person.kind},${at})`;
+    entries.push({ rank: i + 1, storyId: s!.id, storyPublicId: s!.public_id, title: facesTag, heat: 10, trend: "flat", trendPct: 0, badges: [],
+      participantCount: 12, sourceCount: 8, signalCount: 2, reportCount: 5, sourceNames: inputs.map((_, idx) => faceName(idx)), latestAt: at.toISOString(), firstReportAt: at.toISOString(),
+      representativeItemId: faceSourceId(1), representativeUrl: "https://example.org/" + faceSourceId(1), representativeSource: faceName(1), participants: [
+        ...inputs.map((p, idx) => ({ name: faceName(idx), kind: p.kind, tier: p.tier })),
+        { name: `${faceName(5)}（another channel）`, kind: "editorial", tier: "T1" },
+      ] });
+  }
+  const [saved] = await sql<{ id: number }[]>`INSERT INTO hot_rankings(computed_at,rule_version,entries,published)
+    VALUES(${at},'test',${sql.json(entries as never)},true) RETURNING id`;
+  const ranking = { id: saved!.id, computedAt: at.toISOString(), ruleVersion: "test", entries, coverage: null };
+  const extras = await rankingExtras(ranking);
+  const full = extras.participants(entries[0]!);
+  const home = (await loadHotStrip())![0]!;
+  const hot = (await loadHot()).entries[0]!;
+  const order = [5, 2, 3, 1, 6, 8, 9, 7, 0, 4];
+  assert.deepEqual(full.map(p => p.name), order.map(faceName));
+  assert.deepEqual(home.participants, full, "home shows the same faces");
+  assert.deepEqual(hot.participants, full, "/hot shows the same faces");
+  assert.equal(home.participantCount, 12, "the +N count still includes everyone");
+  assert.equal(hot.participantCount, 12);
+  assert.deepEqual(full.slice(0, 6).map(p => p.iconUrl ? new URL(p.iconUrl, "http://localhost").searchParams.get("u") : null), order.slice(0, 6).map(imageUrl), "visible faces keep their image or initial");
+  assert.equal(full[1]!.iconUrl, null, "a visible initial still takes one of the six slots");
+  const signals = extras.participants({ ...entries[0]!, participants: entries[0]!.participants.filter(p => p.kind === "signal") });
+  assert.deepEqual(signals, order.filter(i => inputs[i]!.kind === "signal").map(i => ({ name: faceName(i), kind: "signal" })), "no editorial faces means no image URLs at all");
+  const external = (await v1HotTopics()).items[0]!;
+  assert.equal(external.participantCount, 12);
+  assert.deepEqual(external.sourceNames, entries[0]!.sourceNames, "machine clients keep every stored source name");
+  assert.deepEqual(Object.keys(external).sort(), ["rank", "id", "title", "source", "links", "sourceCount", "signalCount", "participantCount", "sourceNames", "latestAt"].sort(), "the external hot-topic contract is unchanged");
+});
+
+test("search carries exactly the existing topic links and five visible hot links, including after a withdrawal", async () => {
+  app ??= await buildApp();
+  const at = new Date(Date.now() - 30_000);
+  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,next_fetch_at)
+    VALUES ('suggestions','Suggestions','rss','T1','editorial','2100-01-01')`;
+  const entries: HotEntry[] = [];
+  for (let i = 1; i <= 6; i++) {
+    const title = `Suggestion ${i}`;
+    const id = `suggestion-${i}`;
+    const [s] = await sql<{ id: number; public_id: string }[]>`INSERT INTO stories (public_id,title)
+      VALUES (${randomUUID()},${title}) RETURNING id,public_id`;
+    const [fact] = await sql<{ id: number }[]>`INSERT INTO facts (public_id,story_id,title)
+      VALUES (${randomUUID()},${s!.id},${title}) RETURNING id`;
+    await sql`INSERT INTO articles (id,source_id,identity_key,url,title,discovered_at,timeline_at)
+      VALUES (${id},'suggestions',${id},${"https://example.org/" + id},${title},${at},${at})`;
+    await sql`INSERT INTO fact_articles (fact_id,article_id,role) VALUES (${fact!.id},${id},'report')`;
+    await sql`INSERT INTO publications (article_id,source_id,title,url,timeline_at,discovered_at,sort_at,body_mode,eligible,channel,story_id,fact_id)
+      VALUES (${id},'suggestions',${title},${"https://example.org/" + id},${at},${at},${at},'summary',true,'news',${s!.id},${fact!.id})`;
+    entries.push({ rank: i, storyId: s!.id, storyPublicId: s!.public_id, title, heat: 10, trend: "flat", trendPct: 0, badges: [],
+      participantCount: 0, sourceCount: 1, signalCount: 0, reportCount: 1, sourceNames: ["Suggestions"], latestAt: at.toISOString(), firstReportAt: at.toISOString(),
+      representativeItemId: id, representativeUrl: "https://example.org/" + id, representativeSource: "Suggestions", participants: [] });
+  }
+  await sql`INSERT INTO hot_rankings (computed_at,rule_version,entries,published) VALUES (${at},'test',${sql.json(entries as never)},true)`;
+  const read = () => app!.inject({ method: "GET", url: "/api/site/search/suggestions" });
+  const fullTopics = (await app!.inject({ method: "GET", url: "/api/site/topics" })).json();
+  const first = await read();
+  assert.equal(first.statusCode, 200);
+  const expectedTopics = fullTopics.topics.map((t: { slug: string; name: string; group: string }) => ({ slug: t.slug, name: t.name, group: t.group }));
+  const expectedHot = entries.slice(0, 5).map(e => ({ rank: e.rank, title: e.title, to: "/story/" + e.storyPublicId }));
+  assert.deepEqual(first.json(), { topics: expectedTopics, hot: expectedHot });
+  assert.equal(first.headers["cache-control"], "public, max-age=30, s-maxage=30, must-revalidate");
+  assert.ok(first.headers.etag);
+  assert.equal((await app!.inject({ method: "GET", url: "/api/site/search/suggestions", headers: { "if-none-match": String(first.headers.etag) } })).statusCode, 304);
+  await sql`UPDATE publications SET visibility = 'withdrawn' WHERE article_id = 'suggestion-1'`;
+  const next = await read();
+  assert.deepEqual(next.json().hot, entries.slice(1, 6).map(e => ({ rank: e.rank, title: e.title, to: "/story/" + e.storyPublicId })));
+  assert.notEqual(next.headers.etag, first.headers.etag);
 });

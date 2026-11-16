@@ -33,7 +33,7 @@ function secret(): string {
 }
 
 export function signature(url: string, mode: string, exp: number | string): string {
-  return createHmac("sha256", secret()).update(`${url}|${mode}|${exp}`).digest("hex");
+  return createHmac("sha256", secret()).update(`${url}|${mode}|${exp}`).digest("hex").slice(0, SIG_HEX);
 }
 
 /** Expiry rounded up to a window boundary at least `lifetime` (48 h) ahead, so URLs stay cacheable. */
@@ -51,7 +51,7 @@ export function proxiedImage(url: string | null | undefined, mode: ProxyMode, ab
 }
 
 function signedMediaUrl(url: string, mode: string, exp: number, absolute: boolean): string {
-  const path = `/api/img-proxy?u=${encodeURIComponent(url)}&mode=${mode}&exp=${exp}&sig=${signature(url, mode, exp).slice(0, SIG_HEX)}`;
+  const path = `/api/img-proxy?u=${encodeURIComponent(url)}&mode=${mode}&exp=${exp}&sig=${signature(url, mode, exp)}`;
   return absolute ? `${config.siteUrl}${path}` : path;
 }
 
@@ -65,20 +65,18 @@ export type VerifyResult = { ok: true; url: string; mode: string; avif: boolean 
 
 export function verifyProxyRequest(params: { u?: string; mode?: string; exp?: string; sig?: string }, nowMs = Date.now()): VerifyResult {
   const { u, mode, exp, sig } = params;
-  if (!u || mode === "" || !exp || !sig) return { ok: false, reason: "missing" };
+  if (!u || !mode || !exp || !sig) return { ok: false, reason: "missing" };
   if (!/^\d{9,11}$/.test(exp)) return { ok: false, reason: "missing" };
   if (Number(exp) * 1000 < nowMs) return { ok: false, reason: "expired" };
   if (!/^https?:\/\//i.test(u)) return { ok: false, reason: "bad-url" };
-  // Older article pages signed body images without a mode (as "default"); those still in open tabs and
-  // caches keep loading, as full images, until their signature expires.
-  const avif = mode?.endsWith(AVIF_MODE_SUFFIX) ?? false;
-  const rendition = avif ? mode!.slice(0, -AVIF_MODE_SUFFIX.length) : mode;
+  const avif = mode.endsWith(AVIF_MODE_SUFFIX);
+  const rendition = avif ? mode.slice(0, -AVIF_MODE_SUFFIX.length) : mode;
   if (rendition === X_VIDEO_MODE && !isXVideoUrl(u)) return { ok: false, reason: "bad-url" };
-  if (avif && !(AVIF_MODES as readonly string[]).includes(rendition!)) return { ok: false, reason: "bad-signature" };
-  const given = Buffer.from(new RegExp(`^(?:[0-9a-f]{${SIG_HEX}}|[0-9a-f]{64})$`, "i").test(sig) ? sig : "", "hex");
-  const expected = Buffer.from(signature(u, rendition ?? "default", exp), "hex").subarray(0, given.length);
+  if (avif && !(AVIF_MODES as readonly string[]).includes(rendition)) return { ok: false, reason: "bad-signature" };
+  const given = Buffer.from(new RegExp(`^[0-9a-f]{${SIG_HEX}}$`, "i").test(sig) ? sig : "", "hex");
+  const expected = Buffer.from(signature(u, rendition, exp), "hex");
   if (given.length === 0 || !timingSafeEqual(given, expected)) return { ok: false, reason: "bad-signature" };
-  return { ok: true, url: u, mode: rendition ?? "full", avif };
+  return { ok: true, url: u, mode: rendition, avif };
 }
 
 /**

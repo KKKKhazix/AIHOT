@@ -1,6 +1,7 @@
 // Reports: a scheduled run that starts late still writes the issue it was due for, never one whose
-// window is still open; a daily whose window nothing was judged in is refused rather than published as a
-// quiet day; and an older weekly that froze no summaries shows the cited articles' public summaries.
+// window is still open; a daily whose window published nothing is an ordinary quiet day, while one that
+// published reports but judged none is a silent issue (a different lead, and an operations alert); and an
+// older weekly that froze no summaries shows the cited articles' public summaries.
 import { editionAt, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
@@ -10,10 +11,11 @@ import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
 import { loadReport } from "@aihot/backend/publication/reports";
 import { composeDaily, dueDaily, dueMonthly, dueWeekly } from "@aihot/backend/reports/compose";
-import { SITE } from "@aihot/site";
+import { REPORTS, SITE } from "@aihot/site";
 
 const T = tag();
 const SOURCE = `test-reports-${T}`;
+const SILENT_SOURCE = `test-reports-silent-${T}`;
 const WEEK = "2098-W20";
 after(async () => {
   await stopBoss();
@@ -31,11 +33,39 @@ test("a late run writes the issue that was due, not today's", () => {
   assert.equal(dueMonthly(editionAt("monthly", "2027-01-15")), "2026-12");
 });
 
-test("a daily with nothing judged in its window is refused, not published as a quiet day", async () => {
+interface DailyContent { silent: boolean; silentReason: string | null; lead: { title: string }; generator: Record<string, number> }
+const savedDaily = async (date: string) => (await sql<{ content: DailyContent }[]>`
+  SELECT content FROM reports WHERE kind = 'daily' AND key = ${date}`)[0]!.content;
+
+test("a daily whose window published nothing is an ordinary quiet issue", async () => {
   const date = "2098-01-15";
-  await assert.rejects(composeDaily(date), /nothing judged/);
-  const [row] = await sql`SELECT 1 FROM reports WHERE kind = 'daily' AND key = ${date}`;
-  assert.equal(row, undefined);
+  assert.deepEqual(await composeDaily(date), { key: date, entries: 0 });
+  const content = await savedDaily(date);
+  assert.equal(content.silent, false, "0 publications is a quiet day, not an upstream failure");
+  assert.equal(content.silentReason, null);
+  assert.equal(content.lead.title, REPORTS.quiet.title);
+  assert.equal(content.generator.publishedReports, 0);
+  assert.equal(content.generator.judgedReports, 0);
+});
+
+test("a daily whose window published reports but judged none is a silent issue, not a quiet day", async () => {
+  const date = "2098-01-16";
+  const at = editionAt("daily", date, -3600);
+  const id = `silent-${T}`;
+  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at) VALUES (${SILENT_SOURCE}, 'Reports silent', 'rss', 'T1', 'editorial', '2100-01-01')`;
+  await sql`INSERT INTO articles (id, source_id, identity_key, url, title, discovered_at, timeline_at)
+            VALUES (${id}, ${SILENT_SOURCE}, ${id}, 'https://example.com/silent', ${id}, ${at}, ${at})`;
+  // Published to the site but never scored or selected: the analysis did not run in this window.
+  await sql`INSERT INTO publications (article_id, title, source_id, channel, url, discovered_at, timeline_at, sort_at, eligible, selected, visible_after, visibility, score)
+            VALUES (${id}, ${id}, ${SILENT_SOURCE}, 'news', 'https://example.com/silent', ${at}, ${at}, ${at}, true, false, ${at}, 'public', NULL)`;
+  assert.deepEqual(await composeDaily(date), { key: date, entries: 0 });
+  const content = await savedDaily(date);
+  assert.equal(content.silent, true);
+  assert.match(content.silentReason ?? "", /发布了 1 篇内容/);
+  assert.match(content.silentReason ?? "", /没有判定结果/);
+  assert.equal(content.lead.title, "本期没有可判定的内容");
+  assert.equal(content.generator.publishedReports, 1);
+  assert.equal(content.generator.judgedReports, 0);
 });
 
 test("a weekly that froze no summaries shows the articles' public summaries", async () => {

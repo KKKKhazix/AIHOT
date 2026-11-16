@@ -84,29 +84,59 @@ function windowPoint(at: Date): string {
 const DAILY_HIGHLIGHTS = 3;
 
 /**
+ * An issue without entries is one of two things, and readers must not be told the wrong one:
+ * - "silent": the window published reports but judged none — the analysis did not run (upstream);
+ * - "quiet": the window published nothing — an ordinary quiet day.
+ * Anything with entries is neither (null). The counts come from dailyEdition's stats.
+ */
+export function dailySilence(edition: { entries: unknown[]; stats: Record<string, number> }): "silent" | "quiet" | null {
+  if (edition.entries.length > 0) return null;
+  return edition.stats.judgedReports === 0 && (edition.stats.publishedReports ?? 0) > 0 ? "silent" : "quiet";
+}
+
+/**
  * Daily report for Beijing date D covers the 24 hours up to the site's edition time on D (EDITION_TIMES).
  * Its most important entry leads, in its own words, and the next three are today's highlights; a thin issue
  * (a weekend's often carries a single entry) fills the rest with the window's best reports it left out
  * (`picks`, dailyPicks), which are neither entries nor counted in its metrics. A window the editors judged
  * with nothing new in it still has its issue: no entries, no highlights, and a lead that says so (REPORTS.quiet).
+ * A window that published reports but judged none is a silent issue instead (see dailySilence): it says the
+ * analysis did not run, and the operations alerts report it.
  */
 export async function composeDaily(date: string, reason?: string): Promise<{ key: string; entries: number }> {
   const previous = await savedReport("daily", date);
   if (previous && reason === undefined) return { key: date, entries: previous.entries };
+  // 2026-11-16（方案 A）：历史空窗口（窗口内没有任何判读）不需要每天重试到天荒地老，
+  // 用环境变量列出来直接跳过，止住 compose 每半小时一次的报错噪音。
+  const skip = String(process.env.REPORT_SKIP_DAILY || "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (skip.includes(date)) return { key: date, entries: 0 };
   const end = beijingAt(date, EDITION_TIMES.daily);
   const start = new Date(end.getTime() - 86400000);
   const edition = await dailyEdition(date, start, end);
-  // Nothing judged in the window is a failure upstream, not a quiet day: the run fails and is caught up later.
-  if (edition.entries.length === 0 && edition.stats.judgedReports === 0) throw new Error(`daily ${date}: nothing judged in its window`);
+  // 2026-11-16（用户选 A「静默版」）：窗口内一条判定都没有时，不再让整轮 compose 失败，
+  // 而是照常出一期，只是正文写明原因。此前的语义是「上游没产出＝失败」——结果是 11-13/11-14
+  // 连续失败、用户当天什么也收不到，而且每半小时重试一次永远补不上（窗口已过）。
+  // 注意只降级这一种情况：真正的上游异常（查询报错、写库失败、模型调用抛错）仍然会往上抛。
+  // 2026-11-16（补齐）：还要区分「有发布但 0 判定」（静默刊，上游未产出，告警）与
+  // 「0 篇发布」（正常安静日，不告警）——后者不该被说成「分析没跑」。
+  const silence = dailySilence(edition);
+  const silent = silence === "silent";
   const issue = arrangeDaily(edition.entries);
   const [lead, ...rest] = issue.main;
   const highlights = rest.slice(0, DAILY_HIGHLIGHTS).map((e) => e.entry.itemId);
   const picks = lead ? await dailyPicks(date, start, end, [...issue.main, ...issue.flashes], DAILY_HIGHLIGHTS - highlights.length) : [];
+  const guard = silence === "silent"
+    ? `本期窗口（${windowPoint(start)}–${windowPoint(end)}）内发布了 ${edition.stats.publishedReports} 篇内容，但一篇都没有判定结果：模型分析未在该窗口运行或未产出，本期只发报头与这条说明。`
+    : null;
   const content = {
     date,
+    silent,
+    silentReason: guard,
     lead: lead
       ? { title: lead.entry.title, leadParagraph: lead.entry.summary }
-      : { title: REPORTS.quiet.title, leadParagraph: REPORTS.quiet.paragraph.replace("{start}", windowPoint(start)).replace("{end}", windowPoint(end)) },
+      : silent
+        ? { title: "本期没有可判定的内容", leadParagraph: `本期窗口（${windowPoint(start)}–${windowPoint(end)}）内发布了 ${edition.stats.publishedReports} 篇内容，但没有一篇判定结果。这不是「今天很安静」，而是分析没有在这段窗口内产出——要么模型窗口被错过，要么上游在重试。` }
+        : { title: REPORTS.quiet.title, leadParagraph: REPORTS.quiet.paragraph.replace("{start}", windowPoint(start)).replace("{end}", windowPoint(end)) },
     leadItemId: lead?.entry.itemId ?? null,
     highlights: [...highlights, ...picks.map((p) => p.itemId)],
     ...(picks.length ? { picks } : {}),

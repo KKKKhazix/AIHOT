@@ -8,9 +8,16 @@ import { checkAlerts, collectFindings } from "@aihot/backend/operations/alerts";
 
 const at = (date: string, time = "10:00") => beijingAt(date, time).getTime();
 const key = (date: string) => `report.daily:${date}`;
+const silentKey = (date: string) => `report.daily.silent:${date}`;
 const daily = (keys: string[]) => keys.filter(k => k.startsWith("report.daily"));
+const silent = (keys: string[]) => keys.filter(k => k.startsWith("report.daily.silent:"));
 async function report(date: string) {
   await sql`INSERT INTO reports(kind,key,window_start,window_end,content,generated_at) VALUES('daily',${date},${new Date(at(date))},${new Date(at(date))},'{}',${new Date(at(date))})`;
+}
+/** A published daily whose window had reports but no judgment: the analysis produced nothing. */
+async function silentReport(date: string) {
+  await sql`INSERT INTO reports(kind,key,window_start,window_end,content,generated_at)
+    VALUES('daily',${date},${new Date(at(date))},${new Date(at(date))},${sql.json({ silent: true, silentReason: `窗口内发布了 3 篇内容，但一篇都没有判定结果` })},${new Date(at(date))})`;
 }
 before(async () => { await getBoss(); });
 beforeEach(async () => {
@@ -74,4 +81,22 @@ test("an edition still missing past the scan window is closed once instead of re
   assert.ok(!result.open.includes(key("2026-10-01")));
   result = await checkAlerts(at("2026-10-08", "12:00"));
   assert.ok(!result.sent.some(k => k.startsWith(key("2026-10-01"))));
+});
+
+test("a silent edition is announced once and closed when a non-silent revision replaces it", async () => {
+  await silentReport("2026-10-06");
+  let result = await checkAlerts(at("2026-10-06", "10:30"));
+  assert.deepEqual(silent(result.sent), [silentKey("2026-10-06")]);
+  assert.deepEqual(silent(result.open), [silentKey("2026-10-06")]);
+  assert.deepEqual(daily(result.sent).filter(k => !k.startsWith("report.daily.silent:")), [], "the edition exists: not a missing daily");
+  // Reader impact repeats hourly, like a missing edition.
+  result = await checkAlerts(at("2026-10-06", "11:00"));
+  assert.deepEqual(silent(result.sent), [], "no repeat within the hour");
+  // A manual regeneration that judged the window replaces the stored content (a revision), so the
+  // finding disappears and the existing recovery path closes it.
+  await sql`UPDATE reports SET content = ${sql.json({ silent: false, lead: { title: "今日安静，无大事发生" } })}, revision = revision + 1
+            WHERE kind = 'daily' AND key = '2026-10-06'`;
+  result = await checkAlerts(at("2026-10-06", "11:10"));
+  assert.deepEqual(silent(result.sent), [`${silentKey("2026-10-06")}:recovered`]);
+  assert.deepEqual(silent(result.open), []);
 });

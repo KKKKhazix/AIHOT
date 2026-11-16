@@ -166,12 +166,16 @@ test("daily composition waits for a pre-cutoff release to commit instead of losi
     commit.open();
     await publication;
     await report;
-    await assert.rejects(composeDaily("2020-01-05"), /nothing judged/);
-    const reports = await sql<{ key: string; content: { sections: Array<{ items: Array<{ itemId: string }> }> } }[]>`
+    // The release committed into 01-04's window, so 01-05 published nothing: a quiet issue, not a failure.
+    assert.deepEqual(await composeDaily("2020-01-05"), { key: "2020-01-05", entries: 0 });
+    const reports = await sql<{ key: string; content: { silent: boolean; sections: Array<{ items: Array<{ itemId: string }> }>; generator: { publishedReports: number } } }[]>`
       SELECT key, content FROM reports WHERE kind = 'daily' AND key IN ('2020-01-04', '2020-01-05')`;
     const hasItem = (key: string) => reports.find((r) => r.key === key)!.content.sections.some((s) => s.items.some((item) => item.itemId === id));
     assert.equal(hasItem("2020-01-04"), true);
-    assert.equal(reports.some((r) => r.key === "2020-01-05"), false);
+    const quiet = reports.find((r) => r.key === "2020-01-05")!;
+    assert.equal(quiet.content.silent, false, "0 publications is a quiet day, not an upstream failure");
+    assert.equal(quiet.content.generator.publishedReports, 0);
+    assert.equal(hasItem("2020-01-05"), false);
     assert.equal((await candidates(editionAt("daily", "2020-01-04"), editionAt("daily", "2020-01-05"))).some((c) => c.itemId === id), false);
   } finally {
     commit.open();

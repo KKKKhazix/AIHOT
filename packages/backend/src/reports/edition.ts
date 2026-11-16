@@ -324,6 +324,18 @@ async function judgedReports(start: Date, end: Date): Promise<number> {
 }
 
 /**
+ * The window's public reports, judged or not. It separates a day nothing was published in (readers get
+ * the ordinary quiet issue) from one where reports were published but never judged (the analysis did
+ * not run: a silent issue, and an operations alert).
+ */
+async function publishedReports(start: Date, end: Date): Promise<number> {
+  const [row] = await sql<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM publications p
+    WHERE ${listedCondition(end)} AND NOT p.backfill AND p.timeline_at >= ${start} AND p.timeline_at < ${end}`;
+  return row!.n;
+}
+
+/**
  * How much an event matters to a reader of the day: the best score among its selected reports, its
  * heat as the independent participants who discussed it within the issue's window (as the hot list
  * counts them: 1 → 5, 3 → 10, 7 → 15, 15 → 20), a first-hand post, and less for an event an earlier
@@ -340,7 +352,7 @@ interface Fact { key: string; rows: ReportRow[]; selected: boolean; sources: str
  * selected reports and missed facts, minus what the week's issues already carried, one entry per event.
  */
 export async function dailyEdition(date: string, start: Date, end: Date): Promise<{ entries: EditionEntry[]; stats: Record<string, number> }> {
-  const [memory, selected, missed, judged] = await Promise.all([dailyMemory(date), periodReports(start, end), missedFacts(start, end), judgedReports(start, end)]);
+  const [memory, selected, missed, judged, published] = await Promise.all([dailyMemory(date), periodReports(start, end), missedFacts(start, end), judgedReports(start, end), publishedReports(start, end)]);
   const raw = [
     ...[...groupBy(selected, factKeyOf)].map(([key, rows]) => ({ key, rows, selected: true })),
     ...missed.map((m) => ({ ...m, selected: false })),
@@ -408,7 +420,7 @@ export async function dailyEdition(date: string, start: Date, end: Date): Promis
   entries.sort((a, b) => b.importance - a.importance || a.entry.itemId.localeCompare(b.entry.itemId));
   return {
     entries,
-    stats: { judgedReports: judged, selectedReports: selected.length, facts: raw.length, repeatsSuppressed: raw.length - kept.length, fillIns: kept.filter((f) => !f.selected).length, events: entries.length },
+    stats: { judgedReports: judged, publishedReports: published, selectedReports: selected.length, facts: raw.length, repeatsSuppressed: raw.length - kept.length, fillIns: kept.filter((f) => !f.selected).length, events: entries.length },
   };
 }
 

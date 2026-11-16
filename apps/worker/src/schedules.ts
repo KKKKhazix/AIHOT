@@ -12,6 +12,7 @@ import { refreshSourceIcons } from "@aihot/backend/sources/icons";
 import { computeHotRanking, snapshotHeat } from "@aihot/backend/events/hot";
 import { linkRelatedStories } from "@aihot/backend/events/consolidate";
 import { composeDueReports } from "@aihot/backend/reports/compose";
+import { capDailyPerSource } from "@aihot/backend/jobs/daily-cap";
 import { dailyRetention } from "@aihot/backend/operations/retention";
 import { submitIndexNow } from "@aihot/backend/operations/indexnow";
 import { checkAlerts, sendDigest } from "@aihot/backend/operations/alerts";
@@ -19,18 +20,30 @@ import { recoverStaleWork } from "@aihot/backend/operations/recover";
 import { forwardPendingFeedback } from "@aihot/backend/operations/feedback";
 import { backupConfigured, runBackup } from "@aihot/backend/operations/backup";
 import { sourceHealthWeekly } from "@aihot/backend/operations/reports";
+import { modelWindowCron, withinModelWindow } from "@aihot/backend/jobs/model-window";
 
 const collecting = process.env.COLLECT_ENABLED === "true";
 
+/**
+ * The cron for a job that must call no model outside MODEL_WINDOW. With a window configured the schedule
+ * fires only inside it (the queue worker checks the edge again); without one the caller's own default
+ * stands, so an upgrade that sets no window keeps the schedule it always had.
+ */
+const modelCron = (stepMinutes: number, fallback: string) => modelWindowCron(stepMinutes) ?? fallback;
+
 const ENGINE_SCHEDULES: Scheduled[] = [
-  { name: "content.sweep", cron: "*/5 * * * *", run: sweepUnprocessed },
+  // Re-queues work whose job was lost or has waited too long. It only enqueues, and those enqueues are
+  // held for the window, so running it inside the window is enough to recover everything.
+  { name: "content.sweep", cron: modelCron(5, "*/5 * * * *"), run: sweepUnprocessed },
   // Full-text translations of newly selected items (model calls; off with MODEL_CALLS_ENABLED=false).
-  { name: "content.translate", cron: "*/5 * * * *", run: () => translatePending() },
+  { name: "content.translate", cron: modelCron(5, "*/5 * * * *"), run: withinModelWindow(() => translatePending()) },
   { name: "hot.rank", cron: "*/5 * * * *", run: () => computeHotRanking() },
   { name: "hot.snapshot", cron: "2 * * * *", run: () => snapshotHeat() },
   { name: "stories.links", cron: "12 * * * *", run: linkRelatedStories },
   // Every issue that is due and not written yet, each from its edition time (site/site.ts EDITION_TIMES)
-  // at the next half hour; a missed or failed one at the next run.
+  // at the next half hour; a missed or failed one at the next run. The daily is written by rule and keeps
+  // its edition time; a weekly or monthly is model-written, so composeDueReports leaves those for the
+  // next MODEL_WINDOW instead of calling a model here.
   { name: "reports.compose", cron: "0,30 * * * *", missed: "once", run: () => composeDueReports() },
   // The deletions the privacy notice promises, once their retention periods are over.
   { name: "ops.retention", cron: "30 3 * * *", missed: "once", run: () => dailyRetention() },
@@ -51,6 +64,8 @@ const ENGINE_SCHEDULES: Scheduled[] = [
     ? [
         { name: "sources.schedule", cron: "* * * * *", run: () => scheduleDueSources() },
         { name: "sources.adapt-intervals", cron: "20 4 * * *", run: adaptIntervals },
+        // 2026-11-14：所有站每源每天只留最靠前的 10 条（用户决定），其余标 skipped 不再分析。
+        { name: "sources.cap-daily", cron: "0 */2 * * *", run: () => capDailyPerSource(10) },
         // Icons are read from the sources' own sites, so they stop with collection.
         { name: "sources.icons", cron: "40 4 * * *", missed: "once" as const, run: () => refreshSourceIcons() },
       ]

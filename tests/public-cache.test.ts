@@ -26,8 +26,8 @@ before(async () => {
     const entry = {itemId:id,title:'公开缓存示例',summary:'公开缓存摘要'};
     const content = kind==='daily' ? {sections:[{label:'模型',items:[entry]}],flashes:[]}
       : {headline:'公开缓存示例',themes:[{heading:'模型',storyRefs:[entry]}]};
-    await sql`INSERT INTO reports(kind,key,window_start,window_end,content,origin,generated_at)
-      VALUES(${kind!},${key!},now()-interval '1 day',now(),${sql.json(content)},'manual',now())`;
+    await sql`INSERT INTO reports(kind,key,window_start,window_end,content,generated_at)
+      VALUES(${kind!},${key!},now()-interval '1 day',now(),${sql.json(content)},now())`;
   }
 });
 after(async()=>{await app.close();await stopBoss();await closeDb();});

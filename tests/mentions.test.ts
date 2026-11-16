@@ -72,11 +72,11 @@ test("a report is sent the pages its lead and summaries name", async () => {
   installModules(models);
   const id = await article("Dots 2 发布", "Dots 2 上线。");
   const key = "2096-02-01";
-  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at, origin)
+  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at)
     VALUES ('daily', ${key}, ${at}, ${at}, ${sql.json({
       lead: { title: "英伟达发布新卡", leadParagraph: "英伟达发布新卡。" },
       sections: [{ label: "模型", items: [{ itemId: id, title: "Dots 2 发布", summary: "Dots 2 上线。", sourceUrl: "https://example.com", sourceName: "Mention source" }] }],
-    } as never)}, ${at}, 'manual')`;
+    } as never)}, ${at})`;
   const report = (await loadReport("daily", key))!;
   assert.deepEqual(hrefs(report.mentions), ["/topics/nvidia", "/models/dots-2"]);
 });

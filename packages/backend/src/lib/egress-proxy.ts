@@ -75,18 +75,21 @@ export function createEgressResolver(proxyUrl: string, upstreams: string[] = ["h
         let records: Array<{ type: number; data: string; TTL: number }> | null = null;
         let lastError: unknown;
         for (const upstream of upstreams) {
-          try {
-            records = (await Promise.all(types.map(async (type) => {
-              const url = new URL(upstream);
-              url.search = new URLSearchParams({ name: host, type }).toString();
-              const res = await request(url, { dispatcher: dns, signal: AbortSignal.timeout(5_000), headers: { accept: "application/dns-json" } });
-              if (res.statusCode !== 200) { await res.body.dump(); throw new Error(`DNS upstream ${res.statusCode}`); }
-              const data = await res.body.json() as { Status?: number; Answer?: Array<{ type: number; data: string; TTL: number }> };
-              if (data.Status !== 0) throw new Error(`DNS lookup failed for ${host}`);
-              return (data.Answer ?? []).filter((a) => a.type === 1 || a.type === 28);
-            }))).flat();
-            break;
-          } catch (error) { lastError = error; }
+          const settled = await Promise.allSettled(types.map(async (type) => {
+            const url = new URL(upstream);
+            url.search = new URLSearchParams({ name: host, type }).toString();
+            const res = await request(url, { dispatcher: dns, signal: AbortSignal.timeout(5_000), headers: { accept: "application/dns-json" } });
+            if (res.statusCode !== 200) { await res.body.dump(); throw new Error(`DNS upstream ${res.statusCode}`); }
+            const data = await res.body.json() as { Status?: number; Answer?: Array<{ type: number; data: string; TTL: number }> };
+            if (data.Status !== 0) throw new Error(`DNS lookup failed for ${host}`);
+            return (data.Answer ?? []).filter((a) => a.type === 1 || a.type === 28);
+          }));
+          const answered = settled.flatMap((r) => r.status === "fulfilled" ? r.value : []);
+          // An internal answer ends the lookup even when the other query failed: the next upstream never outvotes it.
+          if (answered.some((a) => isBlockedAddress(a.data))) throw new Error(`Blocked proxy address for ${host}`);
+          const failed = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+          if (!failed) { records = answered; break; }
+          lastError = failed.reason;
         }
         if (!records) throw lastError;
         const addresses = records.map((r) => r.data);

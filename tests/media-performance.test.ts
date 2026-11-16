@@ -251,9 +251,10 @@ test("image HTTP responses keep earlier URLs valid, reject tampering before fetc
   assert.equal(first.statusCode, 200);
   assert.equal(first.headers["content-type"], "image/webp");
   assert.deepEqual(first.rawPayload, second.rawPayload);
-  const old = new URLSearchParams({ u: url, exp, sig: signature(url, "default", exp) });
-  assert.equal((await app.inject({ url: `/api/img-proxy?${old}` })).statusCode, 200);
-  // Current URLs carry the first 16 hex digits; a wrong short signature is refused like a long one.
+  // An address without a mode (signed before 2026-09-30, all expired by 2026-11-01) is no longer read.
+  const modeless = new URLSearchParams({ u: url, exp, sig: signature(url, "default", exp) });
+  assert.notEqual((await app.inject({ url: `/api/img-proxy?${modeless}` })).statusCode, 200);
+  // URLs carry 16 hex digits; a wrong one is refused.
   const { proxiedImage } = await import("@aihot/backend/media/imgproxy");
   const short = proxiedImage(url, "card")!;
   assert.match(short, /&sig=[0-9a-f]{16}$/);

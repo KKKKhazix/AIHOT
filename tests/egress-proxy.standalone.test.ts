@@ -45,6 +45,12 @@ function upstream(answer: string) {
 const unreachable = net.createServer((socket) => socket.destroy());
 const publicDns = upstream("93.184.216.34");
 const internalDns = upstream("10.0.0.5");
+// Answers A with an internal address and fails AAAA.
+const halfInternalDns = createServer((req, res) => {
+  if (new URL(req.url!, "http://dns").searchParams.get("type") !== "A") { res.statusCode = 500; res.end(); return; }
+  res.setHeader("content-type", "application/dns-json");
+  res.end(JSON.stringify({ Status: 0, Answer: [{ type: 1, data: "10.0.0.6", TTL: 30 }] }));
+});
 const router = createServer((req, res) => {
   const forwarded = httpRequest(new URL(req.url!), { method: req.method, headers: req.headers }, (answer) => {
     res.writeHead(answer.statusCode!, answer.headers);
@@ -53,7 +59,7 @@ const router = createServer((req, res) => {
   forwarded.on("error", () => res.socket?.destroy());
   req.pipe(forwarded);
 });
-const dnsServers = [unreachable, publicDns, internalDns, router];
+const dnsServers = [unreachable, publicDns, internalDns, halfInternalDns, router];
 await Promise.all(dnsServers.map((s) => new Promise<void>((r) => s.listen(0, "127.0.0.1", r))));
 const local = (s: net.Server, path = "") => `http://127.0.0.1:${(s.address() as net.AddressInfo).port}${path}`;
 after(async () => {
@@ -106,4 +112,10 @@ test("an internal answer is refused at once, not asked again of the next upstrea
   const resolve = createEgressResolver(local(router), [local(internalDns, "/dns-query"), local(publicDns, "/resolve")]);
   await assert.rejects(resolve("rebind.invalid"), /Blocked proxy address/);
   assert.equal(asked.get("93.184.216.34 rebind.invalid"), undefined);
+});
+
+test("an internal answer still ends the lookup when the upstream's other query fails", async () => {
+  const resolve = createEgressResolver(local(router), [local(halfInternalDns, "/dns-query"), local(publicDns, "/resolve")]);
+  await assert.rejects(resolve("half.invalid"), /Blocked proxy address/);
+  assert.equal(asked.get("93.184.216.34 half.invalid"), undefined);
 });

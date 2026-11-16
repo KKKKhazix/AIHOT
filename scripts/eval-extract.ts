@@ -40,6 +40,7 @@ interface Result {
   url: string;
   rules: PageRules;
   body: Body | null;
+  error?: string;
 }
 
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
@@ -91,7 +92,10 @@ function run(pages: string, out: string) {
   const results: Result[] = [];
   for (const page of saved) {
     if (!page.html) continue;
-    const extracted = readable(readFileSync(path.join(pages, page.html), "utf8"), page.fetchedUrl!, page.rules);
+    // A page that makes extraction throw fails that article in production too: record it as this page's result.
+    let extracted: ReturnType<typeof readable> = null, error: string | undefined;
+    try { extracted = readable(readFileSync(path.join(pages, page.html), "utf8"), page.fetchedUrl!, page.rules); }
+    catch (thrown) { error = String(thrown); }
     let body: Body | null = null;
     if (extracted) {
       const $ = load(extracted.html, null, false);
@@ -112,7 +116,7 @@ function run(pages: string, out: string) {
         cover: extracted.cover ?? null,
       };
     }
-    results.push({ id: page.id, url: page.url, rules: page.rules, body });
+    results.push({ id: page.id, url: page.url, rules: page.rules, body, ...(error ? { error } : {}) });
   }
   writeJson(out, results);
   console.log(`回放 ${results.length} 篇，提取到正文 ${results.filter(result => result.body).length} 篇。`);
@@ -148,7 +152,8 @@ function diff(a: string, b: string) {
     }
     const x = first.body, y = second.body;
     if (!x || !y) unreadable++;
-    if (json(x) === json(y)) { unchanged++; continue; }
+    if (first.error !== second.error) lines.push(`- 抽取出错：${second.url}：${first.error ?? "无"} → ${second.error ?? "无"}`);
+    if (json(x) === json(y)) { if (first.error === second.error) unchanged++; continue; }
     const textChanged = x?.text !== y?.text;
     const media = (body: Body | null) => body && [body.images, body.captions, body.videos, body.cover];
     const mediaChanged = json(media(x)) !== json(media(y));

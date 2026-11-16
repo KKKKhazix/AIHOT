@@ -2,7 +2,7 @@
 // retry policy: business code enqueues by name, the worker registers one handler per queue (jobs/*.ts),
 // and both sides are checked against JobData, so a payload cannot drift between producer and consumer.
 // A module declares its own queues (modules.ts ModuleQueue), typed by the queue in the same way.
-import { PgBoss, type SendOptions, type WorkOptions } from "pg-boss";
+import { PgBoss, type JobWithMetadata, type SendOptions, type WorkOptions } from "pg-boss";
 import { config } from "../config.ts";
 import { sql, type Db } from "../db.ts";
 import { shutdownSignal } from "../lib/shutdown.ts";
@@ -10,6 +10,7 @@ import { failureKind } from "../providers/receipts.ts";
 import { logError } from "../lib/log-error.ts";
 import { serverModules, type ModuleQueue } from "../modules.ts";
 import { runOwner } from "./runs.ts";
+import { deferUntilModelWindow, inModelWindow, nextModelWindowStart } from "./model-window.ts";
 export { shutdownSignal } from "../lib/shutdown.ts";
 
 let boss: PgBoss | null = null;
@@ -57,6 +58,14 @@ const QUEUE_OPTIONS: Record<QueueName, QueueOptions> = {
   [QUEUES.republishSource]: { policy: "short", retryLimit: 2, retryDelay: 60, expireInSeconds: 3600 },
   [QUEUES.prepareMedia]: { policy: "short", retryLimit: 1, retryDelay: 120, expireInSeconds: 600 },
 };
+
+/**
+ * The queues whose handler calls a model. With MODEL_WINDOW set, their jobs are queued for the window's
+ * next opening instead of now, so the model server is used only inside it. Nothing else waits: collection,
+ * body extraction, publication and the pushes keep running whenever they are due, and only the model call
+ * is held back. Everything that reaches a model goes through one of these three queues.
+ */
+const MODEL_QUEUES: ReadonlySet<string> = new Set<string>([QUEUES.analyze, QUEUES.group, QUEUES.digest]);
 
 const ensured = new Set<string>();
 
@@ -131,11 +140,17 @@ function queueDb(tx: Db) {
   return { executeSql: async (text: string, values?: unknown[]) => ({ rows: await tx.unsafe(text, (values ?? []) as never[]) }) };
 }
 
-/** Enqueues a job. With `tx`, the job commits atomically with the caller's business write. */
+/**
+ * Enqueues a job. With `tx`, the job commits atomically with the caller's business write. A job on a model
+ * queue outside MODEL_WINDOW is queued for the window's next opening; its singleton key is unchanged, so a
+ * deferred job replaces the same work rather than duplicating it, and the sweeps that re-queue it are no-ops.
+ */
 export async function enqueue<Q extends QueueName>(name: Q, data: JobData[Q], options: SendOptions = {}, tx?: Db): Promise<string | null> {
   await ensureQueue(name);
   const b = await getBoss();
-  return b.send(name, data, tx ? { ...options, db: queueDb(tx) } : options);
+  const deferred = MODEL_QUEUES.has(name) ? deferUntilModelWindow() : null;
+  const opts: SendOptions = deferred ? { ...options, startAfter: deferred } : options;
+  return b.send(name, data, tx ? { ...opts, db: queueDb(tx) } : opts);
 }
 
 /** Enqueues a job on a module's queue. With `tx`, the job commits atomically with the caller's business write. */
@@ -159,15 +174,40 @@ export async function retryReleasedReceiptJobs(): Promise<number> {
         AND EXISTS (SELECT 1 FROM audit_log a WHERE a.action = 'receipt.release'
                     AND a.subject = 'receipt:' || (j.output->>'receiptId') AND a.created_at > j.started_on)
       ORDER BY j.completed_on LIMIT 200 FOR UPDATE OF j SKIP LOCKED`;
-    for (const job of jobs) await b.retry(job.name, job.id, { db: queueDb(tx) });
-    return jobs.length;
+    let retried = 0;
+    for (const job of jobs) {
+      // A model-queue job waits for the next window. The release itself is durable (audit_log), so the
+      // next run of this sweep inside the window finds the same job still failed and revives it then.
+      if (MODEL_QUEUES.has(job.name) && !inModelWindow()) continue;
+      await b.retry(job.name, job.id, { db: queueDb(tx) });
+      retried += 1;
+    }
+    return retried;
   });
 }
 
-/** The worker's handler for one queue (jobs/*.ts), called with each job's data. */
+/**
+ * The worker's handler for one queue (jobs/*.ts), called with each job's data. A model queue also checks
+ * the window here: a job enqueued inside it can still be claimed just after it closes (or be handed over
+ * by a retry), and that attempt goes back to the queue for the next opening rather than calling a model.
+ */
 export async function work<Q extends QueueName>(boss: PgBoss, name: Q, options: WorkOptions, handler: (data: JobData[Q]) => Promise<unknown>): Promise<void> {
   await ensureQueue(name);
-  await boss.work<JobData[Q]>(name, options, async ([job]) => (job ? handler(job.data) : undefined));
+  if (!MODEL_QUEUES.has(name)) {
+    await boss.work<JobData[Q]>(name, options, async ([job]) => (job ? handler(job.data) : undefined));
+    return;
+  }
+  await boss.work<JobData[Q]>(name, { ...options, includeMetadata: true }, async ([job]) => {
+    if (!job) return undefined;
+    if (!inModelWindow()) {
+      // Queue the same work for the window's next opening: same singleton key, so this replaces rather
+      // than duplicates it. `includeMetadata` is what carries that key (and the priority) here.
+      const meta = job as JobWithMetadata<JobData[Q]>;
+      await boss.send(name, job.data, { singletonKey: meta.singletonKey ?? undefined, startAfter: nextModelWindowStart(), priority: meta.priority });
+      return { deferred: "outside MODEL_WINDOW" };
+    }
+    return handler(job.data);
+  });
 }
 
 /** The worker's handlers for the site's modules' queues. */

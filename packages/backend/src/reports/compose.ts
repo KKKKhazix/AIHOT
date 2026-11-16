@@ -15,6 +15,7 @@ import { logError } from "../lib/log-error.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt } from "../providers/receipts.ts";
 import { shutdownSignal } from "../jobs/queue.ts";
+import { inModelWindow, modelWindow } from "../jobs/model-window.ts";
 import { emit } from "../modules.ts";
 import { arrangeDaily, candidates, dailyEdition, dailyPicks, periodEntries, sectionOf, SECTION_ORDER, type Candidate, type EditionEntry } from "./edition.ts";
 
@@ -297,6 +298,26 @@ export function dueMonthly(now = new Date()): string {
   return `${Math.floor(month / 12)}-${String((month % 12) + 1).padStart(2, "0")}`;
 }
 
+/**
+ * With MODEL_WINDOW the weekly and the monthly are model-written, and their edition times (Monday 10:00,
+ * the 1st 10:30) fall outside a window that opens early in the morning. A period therefore counts as due
+ * as soon as it is over, and the run composes it in the window that precedes its edition time: the issue is
+ * ready before readers expect it, and the model is never called outside the window. The daily is written by
+ * rule, so it keeps its own edition time and is unaffected.
+ */
+function dueWeeklyWindowed(now = new Date()): string {
+  const today = beijingDate(now);
+  const dow = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7;
+  // The week that ended yesterday: its last day is `today - dow - 1`.
+  return isoWeekLabel(addDays(today, -dow - 1));
+}
+
+function dueMonthlyWindowed(now = new Date()): string {
+  const [y, m] = beijingDate(now).split("-").map(Number) as [number, number];
+  const month = y * 12 + (m - 1) - 1;
+  return `${Math.floor(month / 12)}-${String((month % 12) + 1).padStart(2, "0")}`;
+}
+
 const nextWeek = (label: string) => isoWeekLabel(addDays(isoWeekRange(label)!.start, 7));
 const nextMonth = (label: string) => {
   const [y, m] = label.split("-").map(Number) as [number, number];
@@ -312,15 +333,21 @@ const nextMonth = (label: string) => {
 export async function composeDueReports(now = new Date(), limit = 8): Promise<{ generated: string[]; failed: string[] }> {
   const generated: string[] = [];
   const failed: string[] = [];
+  // With MODEL_WINDOW the weekly and the monthly are held for the window (their edition times fall
+  // outside it), so they also become due as soon as their period ends rather than at that edition time.
+  const windowed = modelWindow() !== null;
   const kinds: Array<{ kind: ReportKind; due: string; next: (k: string) => string; end: (k: string) => string; compose: (k: string) => Promise<unknown> }> = [
     { kind: "daily", due: dueDaily(now), next: (k) => addDays(k, 1), end: (k) => k, compose: composeDaily },
-    { kind: "weekly", due: dueWeekly(now), next: nextWeek, end: (k) => isoWeekRange(k)!.end, compose: composeWeekly },
-    { kind: "monthly", due: dueMonthly(now), next: nextMonth, end: (k) => monthRange(k)!.end, compose: composeMonthly },
+    { kind: "weekly", due: windowed ? dueWeeklyWindowed(now) : dueWeekly(now), next: nextWeek, end: (k) => isoWeekRange(k)!.end, compose: composeWeekly },
+    { kind: "monthly", due: windowed ? dueMonthlyWindowed(now) : dueMonthly(now), next: nextMonth, end: (k) => monthRange(k)!.end, compose: composeMonthly },
   ];
+  // A model-written issue waits for the window rather than calling a model at its edition time.
+  const mayCompose = (kind: ReportKind) => kind === "daily" || !windowed || inModelWindow(now);
   // Weeklies and monthlies sum up dailies: a period that ended before the site's first daily has nothing to sum
   // up and is not due (a site started mid-month would otherwise fail that month's issue on every run).
   const [{ first: firstDaily }] = await sql<{ first: string | null }[]>`SELECT min(key) AS first FROM reports WHERE kind = 'daily'`;
   kinds: for (const k of kinds) {
+    if (!mayCompose(k.kind)) continue;
     const have = new Set((await sql<{ key: string }[]>`SELECT key FROM reports WHERE kind = ${k.kind}`).map((r) => r.key));
     const first = [...have].sort()[0] ?? k.due;
     for (let key = first; key <= k.due; key = k.next(key)) {

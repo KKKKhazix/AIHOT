@@ -42,6 +42,12 @@ export async function grayGet<T>(request: Request, path: string): Promise<T> {
   return get<T>(request, path, true);
 }
 
+/** Read-only admin page data, hidden from everyone else. */
+export async function adminPageGet<T>(request: Request, path: string): Promise<T> {
+  await get(request, "/api/admin/page-access", true);
+  return get<T>(request, path, true);
+}
+
 /** Whether this request already carries an admin session (or the development stand-in). */
 export async function adminSignedIn(request: Request): Promise<boolean> {
   const res = await fetch(`${API_BASE_URL}/api/admin/me`, {

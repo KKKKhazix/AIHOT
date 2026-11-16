@@ -197,7 +197,9 @@ export async function runBackup(now = new Date()) {
     env[key === "user" ? "PGUSER" : "PGPASSWORD"] = decodeURIComponent(option.slice(separator + 1));
     return false;
   }).join("&");
-  await run("pg_dump", ["--format=custom", "--compress=6", "--no-owner", "--file", dump, connection.href], { env, maxBuffer: 16 * 1024 * 1024 });
+  // Raw analytics events keep their table but not their rows: the privacy notice keeps them 30 days, a backup
+  // lives up to 100, and their daily aggregates and visitor states are tables of their own.
+  await run("pg_dump", ["--format=custom", "--compress=6", "--no-owner", "--exclude-table-data=analytics_events", "--file", dump, connection.href], { env, maxBuffer: 16 * 1024 * 1024 });
   // Verify before shipping: the archive must list cleanly.
   await run("pg_restore", ["--list", dump], { maxBuffer: 64 * 1024 * 1024 });
   const files = path.join(dir, `${name}-files-${stamp}.tar.gz`);

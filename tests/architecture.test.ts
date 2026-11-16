@@ -276,3 +276,12 @@ test("pages are prefetched only through IntentLink", () => {
     .map(({ at }) => at);
   assert.deepEqual(found, [], "link with IntentLink (in PillTabs, prefetchOnPress), which prefetches when the reader presses");
 });
+
+test("admin page loaders use adminPageGet and GRAY_HEADERS", async () => {
+  const { MODULES } = await import("@aihot/site/modules");
+  const pages = MODULES.flatMap((m) => (m.pages ?? []).flatMap((p) => ("layout" in p ? p.pages : [p])).filter((p) => p.admin).map((p) => `modules/${m.name}/${p.file}`));
+  for (const file of pages) {
+    const text = readFileSync(path.join(ROOT, file), "utf8");
+    assert.ok(/\badminPageGet\b/.test(text) && /\bGRAY_HEADERS\b/.test(text), `${file} must use adminPageGet and GRAY_HEADERS`);
+  }
+});

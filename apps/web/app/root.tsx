@@ -122,7 +122,7 @@ export default function App() {
     document.addEventListener("touchstart", noop, { passive: true });
     return () => document.removeEventListener("touchstart", noop);
   }, []);
-  // The admin has its own chrome.
+  // The admin pages, the engine's and the modules', have their own chrome.
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return <Outlet />;
   return (
     <>
@@ -164,7 +164,7 @@ export function ErrorBoundary() {
       </div>
     </div>
   );
-  // Admin errors stay inside the admin's own chrome.
+  // Admin errors stay out of the site's shell too.
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return body;
   // The modules' parts after the page stay: a gray page's 404 is where someone on the preview list signs in.
   return (

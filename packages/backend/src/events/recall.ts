@@ -315,18 +315,30 @@ export const CARD_DAYS = 7;
 export type CardRow = ReportView & { article_id: string; revision: number; source_id: string; fact_id: number | null; story_id: number | null; score: number };
 
 /** The cards around `at`, closest first: every card a reader sees, with or without a fact (cards.ts). */
+const CARD_COLUMNS = sql`p.article_id, p.revision, p.source_id, p.fact_id, f.story_id, p.title, p.summary, s.name AS source, (s.tier = 'T1') AS "firstParty",
+      p.published_at AS at, a.publication_time AS "publicationTime"
+    FROM publications p JOIN articles a ON a.id = p.article_id JOIN sources s ON s.id = p.source_id LEFT JOIN facts f ON f.id = p.fact_id`;
+
+const cardOf = (c: Omit<CardRow, "score">, score: number): CardRow =>
+  ({ ...c, fact_id: c.fact_id === null ? null : Number(c.fact_id), story_id: c.story_id === null ? null : Number(c.story_id), score });
+
+/** The cards of the given sources inside one fact: grouping already found them the same news. */
+export async function factCards(queryId: string, factId: number, only: string[]): Promise<CardRow[]> {
+  const rows = await sql<Omit<CardRow, "score">[]>`
+    SELECT ${CARD_COLUMNS} WHERE ${seatedCondition(new Date())} AND p.article_id <> ${queryId} AND p.fact_id = ${factId} AND p.source_id = ANY(${only})`;
+  return rows.map((c) => cardOf(c, 1));
+}
+
 export async function recallCards(queryId: string, queryText: string, at: Date, ownFact: number | null, sources: { skip?: string[]; only?: string[] }, minScore: number, top: number): Promise<CardRow[]> {
   const pool = await sql<Omit<CardRow, "score">[]>`
-    SELECT p.article_id, p.revision, p.source_id, p.fact_id, f.story_id, p.title, p.summary, s.name AS source, (s.tier = 'T1') AS "firstParty",
-      p.published_at AS at, a.publication_time AS "publicationTime"
-    FROM publications p JOIN articles a ON a.id = p.article_id JOIN sources s ON s.id = p.source_id LEFT JOIN facts f ON f.id = p.fact_id
+    SELECT ${CARD_COLUMNS}
     WHERE ${seatedCondition(new Date())} AND p.article_id <> ${queryId}
       AND p.timeline_at BETWEEN ${new Date(at.getTime() - CARD_DAYS * 86_400_000)} AND ${new Date(at.getTime() + CARD_DAYS * 86_400_000)}
       AND (${ownFact}::bigint IS NULL OR p.fact_id IS DISTINCT FROM ${ownFact}::bigint)
       ${sources.skip?.length ? sql`AND NOT p.source_id = ANY(${sources.skip})` : sql``}
       ${sources.only ? sql`AND p.source_id = ANY(${sources.only})` : sql``}`;
   const scores = await similarReports(queryId, queryText, pool, minScore);
-  return pool.filter((c) => scores.has(c.article_id)).map((c) => ({ ...c, fact_id: c.fact_id === null ? null : Number(c.fact_id), story_id: c.story_id === null ? null : Number(c.story_id), score: scores.get(c.article_id)! }))
+  return pool.filter((c) => scores.has(c.article_id)).map((c) => cardOf(c, scores.get(c.article_id)!))
     .sort((x, y) => y.score - x.score).slice(0, top);
 }
 

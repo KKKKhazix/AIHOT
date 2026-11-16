@@ -481,11 +481,11 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
   const faceCards = async (selection: SelectionValue, ownFact: number | null = null): Promise<{ selection: SelectionValue; into?: CardRow }> => {
     if (!reader || !selection.addsValue) return { selection };
     if (independent) {
-      const echoes = await echoesOnCard(reader);
+      const echoes = await echoesOnCard(reader, ownFact);
       if (echoes.length) replaces = { ids: echoes.map((echo) => echo.article_id), title: reader.view.title };
       return { selection };
     }
-    const article = await ownArticleOnCard(reader);
+    const article = await ownArticleOnCard(reader, ownFact);
     if (article) return { selection: { addsValue: false, reason: alreadyOnCard(article.title) } };
     if (ownFact && await factHasCard(ownFact)) return { selection };
     const card = await seenOnCard(reader, ownFact);
@@ -514,7 +514,7 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
   // nulls from before the value check keep their existing value without buying another judgement.
   if (kept && !recheckSelection) {
     // A retry after the commit below failed still owes the article's replacement; the answers are saved.
-    if (independent) await faceCards({ addsValue: addedValue !== false, reason: "" });
+    if (independent) await faceCards({ addsValue: addedValue !== false, reason: "" }, kept.factId);
     await sql.begin(async (tx) => {
       await markGrouped(articleId, a.revision, undefined, tx);
       await syncArticleEventCopyTx(tx, articleId);

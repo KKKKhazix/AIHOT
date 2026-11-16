@@ -138,7 +138,7 @@ test("admin data and actions never become public cache entries", async () => {
 });
 
 test("gray pages are private like the admin's, whatever their route asks for", async () => {
-  for (const pathname of ["/preview", "/preview/", "/preview/models", "/Preview/models", "/admin", "/admin/runs"]) assert.equal(isPrivatePage(pathname), true, pathname);
+  for (const pathname of ["/preview", "/preview/", "/preview/models", "/Preview/models", "/admin", "/admin/runs", "/admin/expiry"]) assert.equal(isPrivatePage(pathname), true, pathname);
   for (const pathname of ["/", "/previews", "/all", "/items/preview", "/administer"]) assert.equal(isPrivatePage(pathname), false, pathname);
   for (const pathname of ["/preview/missing", "/preview/missing.data", "/preview/missing.data?_routes=root"]) {
     const res = await fetch(origin + pathname);

@@ -97,9 +97,9 @@ interface FindingFields {
    * The owner hears of it at once even while an agent takes the alerts (operations/alerts.ts): only the owner
    * can act (paying, renewing, a device beside them), or what would act has stopped (the whole site, the
    * machine the agent runs on, the channel to the agent). "only": nothing in it is the agent's to do (a
-   * top-up), so the agent is not woken for it.
+   * top-up), so the agent is not woken for it. "private" also limits delivery to the owner's private chat.
    */
-  owner?: true | "only";
+  owner?: true | "only" | "private";
   /**
    * The agent is the one to act: whenever the owner is messaged about it, the agent is woken first and the
    * message says so instead of asking him to pass it on (operations/alerts.ts).
@@ -150,19 +150,19 @@ export function formatRecovery(title: string, since: Date, now: number): { title
 }
 
 /**
- * What the owner is told: through Agent 自动化中台 when the hub is set up; when it isn't, or doesn't take
- * it (it restarts on every release), the alert group's bot webhook, else the alert chat, falling back to the
- * internal feedback chat — never a content group.
+ * The hub sends the notification to the owner. A private message ID lets the caller retry exactly
+ * that notice through the hub. Other alerts use the existing group channel if the hub is unavailable.
  */
-export async function sendAlert(title: string, lines: string[]): Promise<"sent" | "disabled"> {
+export async function sendAlert(title: string, lines: string[], privateMessageId?: string): Promise<"sent" | "disabled" | "pending"> {
   // Production needs no label; any other environment that has sending on says which one it is.
   const text = `${config.environmentName === "production" ? "" : `【${config.environmentName}】`}${title}\n${lines.join("\n")}`;
   if (!feishuInternalEnabled()) {
     console.log(JSON.stringify({ level: "warn", msg: "alert (not sent: FEISHU_INTERNAL_ENABLED is off)", title, lines }));
     return "disabled";
   }
-  const rest = await toldThroughHub(webhookPieces(text));
+  const rest = await toldThroughHub(webhookPieces(text), privateMessageId);
   if (!rest.length) return "sent";
+  if (privateMessageId) return "pending";
   const webhook = credential("integrations", "FEISHU_ALERT_WEBHOOK_URL");
   if (webhook) {
     for (const piece of rest) {
@@ -178,14 +178,14 @@ export async function sendAlert(title: string, lines: string[]): Promise<"sent" 
 }
 
 /**
- * Hands the pieces to the hub's /tell with the source key, each under its own message key. The pieces it didn't take,
- * from the first it refused or couldn't be reached for, which go to the group instead.
+ * Hands the pieces to the hub's /tell with the source key, each under its own message key.
+ * Returns the unsent pieces so the caller can apply the alert's delivery policy.
  */
-async function toldThroughHub(pieces: string[]): Promise<string[]> {
+async function toldThroughHub(pieces: string[], messageId?: string): Promise<string[]> {
   const hub = credential("integrations", "WEBHOOK_HUB_URL");
   const key = credential("integrations", "WEBHOOK_HUB_KEY");
   if (!hub || !key) return pieces;
-  const id = `alert-${Date.now()}-${createHash("sha256").update(pieces.join("")).digest("hex").slice(0, 12)}`;
+  const id = messageId ?? `alert-${Date.now()}-${createHash("sha256").update(pieces.join("")).digest("hex").slice(0, 12)}`;
   for (const [i, piece] of pieces.entries()) {
     try {
       const res = await fetch(new URL("/tell", hub), {
@@ -194,7 +194,7 @@ async function toldThroughHub(pieces: string[]): Promise<string[]> {
       });
       if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
     } catch (error) {
-      console.error(JSON.stringify({ level: "warn", msg: "alert not taken by the hub; the rest sent to the alert group", taken: i, error: String(error) }));
+      console.error(JSON.stringify({ level: "warn", msg: "alert not taken by the hub", taken: i, error: String(error) }));
       return pieces.slice(i);
     }
   }

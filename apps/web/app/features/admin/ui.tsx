@@ -269,7 +269,7 @@ export function Json({ value, collapsed = true, label = "原始数据" }: { valu
 
 /**
  * A modal that collects a reason (and optional extra fields) before a manual change. The submit
- * handler receives the reason (or the `fieldLabel` field's value); returning true closes the dialog.
+ * handler receives the reason; returning true closes the dialog.
  * Without `requireReason` there is no text field.
  */
 export function ReasonDialog({
@@ -279,7 +279,6 @@ export function ReasonDialog({
   confirmLabel = "确认",
   danger,
   requireReason = true,
-  fieldLabel,
   children,
   onClose,
   onSubmit,
@@ -291,8 +290,6 @@ export function ReasonDialog({
   confirmLabel?: string;
   danger?: boolean;
   requireReason?: boolean;
-  /** Names the required field when it is not an audit reason, e.g. a credential's name. */
-  fieldLabel?: string;
   children?: ReactNode;
   onClose: () => void;
   onSubmit: (reason: string) => Promise<boolean | void> | boolean | void;
@@ -337,8 +334,8 @@ export function ReasonDialog({
             {children && <div className="mt-4 space-y-3">{children}</div>}
             {requireReason && (
               <div className="mt-4">
-                <Field label={fieldLabel ?? "原因（写进审计记录）"}>
-                  <Textarea ref={ref} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={fieldLabel ? "" : "为什么做这个改动"} rows={2} />
+                <Field label="原因（写进审计记录）">
+                  <Textarea ref={ref} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="为什么做这个改动" rows={2} />
                 </Field>
               </div>
             )}

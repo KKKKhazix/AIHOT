@@ -1,10 +1,9 @@
 // Admin API (/api/admin/*): what each back-office endpoint returns, shared by the api's admin
 // functions and the admin pages. Only administrators reach it; it changes with the admin UI and is
 // never a public contract. Rows mirror their SQL columns (snake_case); timestamps are ISO strings.
-import { ADMIN } from "@aihot/site";
 
-/** Where signing in leads when the visitor was not headed anywhere: the admin pages, on a site that has them. */
-export const SIGN_IN_HOME = ADMIN ? "/admin" : "/";
+/** Where signing in leads when the visitor was not headed anywhere. Only a site with admin pages has a sign-in. */
+export const SIGN_IN_HOME = "/admin";
 
 /**
  * A path on this site to go to after signing in; anything else (other hosts, protocol-relative, schemes) is

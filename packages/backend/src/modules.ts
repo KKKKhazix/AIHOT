@@ -72,8 +72,6 @@ export interface LlmsLines {
   topics?: string[];
   /** Sentences after the access section's opening one. */
   access?: string[];
-  /** The usage notes, after the engine's. */
-  usage?: string[];
   /** Its clients built on the Agent guide, by name: the guide's line says Agents without them read it, and that they read it too. */
   guideClients?: string[];
   /** Ways in of its own beside MCP, RSS and the API, a line each after the guide's. */
@@ -185,8 +183,6 @@ export interface ServerModule {
     abilities?: AgentAbility[];
     /** Questions answered by a web page's Markdown representation, without an MCP tool. */
     pages?: Array<{ ask: string; where: string }>;
-    /** The guide's "目前查不到的" list, after the engine's first entry. */
-    unavailable?: string[];
     /** The guide's "请求" list (how to ask), after the engine's first entry. */
     requests?: string[];
   };

@@ -271,7 +271,6 @@ export function agentGuide(): string {
   const u = agentUrl;
   const abilities = serverModules().flatMap((m) => m.agent?.abilities ?? []);
   const pages = serverModules().flatMap((m) => m.agent?.pages ?? []);
-  const unavailable = serverModules().flatMap((m) => m.agent?.unavailable ?? []);
   const requests = serverModules().flatMap((m) => m.agent?.requests ?? []);
   const categories = PUBLIC_API_CATEGORY_KEYS.map((key) => `${key}（${publicCategoryName(key)}）`);
   // Examples use one of the site's configured public categories.
@@ -305,7 +304,6 @@ export function agentGuide(): string {
     "## 目前查不到的",
     "",
     "- 超过 7 天的历史搜索。",
-    ...unavailable.map((line) => `- ${line}`),
     `- 单篇文章全文：给用户 ${SITE.name} 阅读页链接；数字、原话等重要内容请用户回原文核对。`,
     "",
     "## 怎么回答",

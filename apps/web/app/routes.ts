@@ -4,12 +4,14 @@ import { MODULES } from "@aihot/site/modules";
 
 /** A module's route module, from the app directory. */
 const file = (module: string, path: string) => `../../../modules/${module}/${path}`;
-const page = (module: string, p: ModulePage) => route(p.gray ? `preview/${p.path}` : p.path, file(module, p.file), p.id ? { id: p.id } : {});
+const page = (module: string, p: ModulePage) => route(p.gray ? `preview/${p.path}` : p.admin ? `admin/${p.path}` : p.path, file(module, p.file), p.id ? { id: p.id } : {});
 
-/** The site's modules' pages, after the engine's. */
+/** The site's modules' pages, after the engine's; admin pages go into the back office's shell. */
 const modulePages: RouteConfigEntry[] = MODULES.flatMap((m) =>
-  (m.pages ?? []).map((p) => ("layout" in p ? layout(file(m.name, p.layout), p.id ? { id: p.id } : {}, p.pages.map((c) => page(m.name, c))) : page(m.name, p))),
+  (m.pages ?? []).filter((p) => "layout" in p || !p.admin)
+    .map((p) => ("layout" in p ? layout(file(m.name, p.layout), p.id ? { id: p.id } : {}, p.pages.map((c) => page(m.name, c))) : page(m.name, p))),
 );
+const adminPages: RouteConfigEntry[] = MODULES.flatMap((m) => (m.pages ?? []).flatMap((p) => ("layout" in p || !p.admin ? [] : [page(m.name, p)])));
 
 export default [
   index("routes/home.tsx"),
@@ -39,6 +41,8 @@ export default [
   route("starred", "routes/starred.tsx"),
   route("agent", "routes/agent.tsx"),
   ...modulePages,
+  // The modules' admin pages (ModulePage.admin), for the admins a site module names, in their own back-office shell.
+  ...(adminPages.length ? [layout("routes/admin/module-layout.tsx", { id: "module-admin-layout" }, adminPages)] : []),
   route("admin/login", "routes/admin-login.tsx"),
   // A site without admin pages (null ADMIN settings) answers 404 here (the layout); signing in serves every site.
   layout("routes/admin/layout.tsx", { id: "admin-layout" }, [

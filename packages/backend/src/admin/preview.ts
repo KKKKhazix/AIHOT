@@ -10,3 +10,11 @@ export async function previewPrincipal(cookieHeader: string | undefined): Promis
   const preview = serverModules().find((module) => module.preview)?.preview;
   return preview ? preview(cookieHeader) : null;
 }
+
+/** Admin pages admit engine admins and the site's module-provided admins. */
+export async function adminPagePrincipal(cookieHeader: string | undefined): Promise<Previewer | null> {
+  const admin = ADMIN ? await sessionPrincipal(cookieHeader) : devPrincipal();
+  if (admin) return { name: admin.name, actor: actorOf(admin) };
+  const identify = serverModules().find((module) => module.admin)?.admin;
+  return identify ? identify(cookieHeader) : null;
+}

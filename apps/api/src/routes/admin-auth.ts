@@ -14,7 +14,7 @@ import {
   sessionPrincipal,
   type AdminPrincipal,
 } from "@aihot/backend/admin/auth";
-import { previewPrincipal } from "@aihot/backend/admin/preview";
+import { adminPagePrincipal, previewPrincipal } from "@aihot/backend/admin/preview";
 import type { Previewer } from "@aihot/backend/modules";
 import { sendProblem } from "../http/respond.ts";
 
@@ -95,12 +95,35 @@ export function previewHandler(fn: (req: FastifyRequest, reply: FastifyReply, pr
   };
 }
 
+export function adminPageHandler(fn: (req: FastifyRequest, reply: FastifyReply, previewer: Previewer) => Promise<unknown>) {
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    reply.header("Cache-Control", "no-store");
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      reply.header("Allow", "GET, HEAD");
+      return sendProblem(req, reply, { status: 405, code: "method_not_allowed", detail: "Admin page data is read-only." });
+    }
+    const previewer = await adminPagePrincipal(req.headers.cookie);
+    if (!previewer) return sendProblem(req, reply, { status: 401, code: "unauthorized", detail: "Admin page access required." });
+    try {
+      return await fn(req, reply, previewer);
+    } catch (error) {
+      return handlerError(req, reply, error);
+    }
+  };
+}
+
 export function registerAdminAuth(app: FastifyInstance) {
   app.get("/api/admin/preview", async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
     const previewer = await previewPrincipal(req.headers.cookie);
     if (!previewer) return sendProblem(req, reply, { status: 401, code: "unauthorized", detail: "Preview access required.", cacheControl: "private, no-store" });
     return { name: previewer.name };
+  });
+  app.get("/api/admin/page-access", async (req, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const admin = await adminPagePrincipal(req.headers.cookie);
+    if (!admin) return sendProblem(req, reply, { status: 401, code: "unauthorized", detail: "Admin page access required.", cacheControl: "private, no-store" });
+    return { name: admin.name };
   });
   if (!ADMIN) return;
 

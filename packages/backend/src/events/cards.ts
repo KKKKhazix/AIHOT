@@ -13,7 +13,7 @@ import { completeReceipt } from "../providers/receipts.ts";
 import { republishTx } from "../publication/publish.ts";
 import { echoesOfIndependent, independentOfEcho, independentSelectedSources, isIndependentSelectedSource } from "../publication/rules.ts";
 import { foldableSelectionCondition, seatedCondition } from "../publication/scope.ts";
-import { recallCards, type CardRow } from "./recall.ts";
+import { factCards, recallCards, type CardRow } from "./recall.ts";
 import { PAIR_SYSTEM, PairSchema, RELATE_PROMPT_VERSION, STORY_REVIEW_MIN_CONFIDENCE, TIE_MIN_CONFIDENCE, pairUser, reportText, type ReportView } from "./relate.ts";
 
 /** Below this, two reports of one piece of news are rare and analyses of one filing common. */
@@ -96,18 +96,26 @@ export async function seenOnCard(reader: Reader, ownFact: number | null): Promis
   return firstSame(reader, await recall(reader, ownFact, { skip: independentSelectedSources() }));
 }
 
-/** The card of the author's own article telling this post's news, whatever fact the two share. */
-export async function ownArticleOnCard(reader: Reader): Promise<CardRow | null> {
+/**
+ * The card of the author's own article telling this post's news, whatever fact the two share. Grouping
+ * already putting them in one fact settles it without a comparison (反馈 2723: the comparison missed
+ * a pair grouping had joined, and both cards went out).
+ */
+export async function ownArticleOnCard(reader: Reader, ownFact: number | null): Promise<CardRow | null> {
   const article = independentOfEcho(reader.sourceId);
-  return article ? firstSame(reader, await recall(reader, null, { only: [article] })) : null;
+  if (!article) return null;
+  const [same] = ownFact === null ? [] : await factCards(reader.articleId, ownFact, [article]);
+  return same ?? firstSame(reader, await recall(reader, null, { only: [article] }));
 }
 
-/** The cards an independent source's article replaces: its author's posts telling the same news. */
-export async function echoesOnCard(reader: Reader): Promise<CardRow[]> {
+/** The cards an independent source's article replaces: its author's posts telling the same news, in its fact or found by comparison. */
+export async function echoesOnCard(reader: Reader, ownFact: number | null): Promise<CardRow[]> {
   const only = echoesOfIndependent(reader.sourceId);
   if (!only.length) return [];
-  const echoes: CardRow[] = [];
-  for (const card of await recall(reader, null, { only })) if (await sameNews(reader, card)) echoes.push(card);
+  const echoes = ownFact === null ? [] : await factCards(reader.articleId, ownFact, only);
+  for (const card of await recall(reader, null, { only })) {
+    if (!echoes.some((echo) => echo.article_id === card.article_id) && await sameNews(reader, card)) echoes.push(card);
+  }
   return echoes;
 }
 

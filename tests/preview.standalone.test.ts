@@ -70,3 +70,22 @@ test("multiple preview providers fail installation without replacing the install
   assert.throws(() => installModules([first, { name: "second", preview: async () => null }]), /preview/i);
   assert.deepEqual(serverModules(), [first]);
 });
+
+test("admin page data admits only module admins and only reads", async () => {
+  config.devAdmin = null;
+  installModules([{ name: "example", preview: async () => ({ name: "Preview", actor: "reader:preview" }), admin: async (cookie) => cookie === "admin=yes" ? { name: "Admin", actor: "reader:admin" } : null }]);
+  const { adminPageHandler } = await import("../apps/api/src/routes/admin-auth.ts");
+  const app = Fastify();
+  registerAdminAuth(app);
+  app.route({ method: ["GET", "POST"], url: "/admin-data", handler: adminPageHandler(async () => ({ ok: true })) });
+  try {
+    assert.equal((await app.inject("/admin-data")).statusCode, 401);
+    assert.equal((await app.inject({ url: "/admin-data", headers: { cookie: "preview=yes" } })).statusCode, 401);
+    assert.equal((await app.inject({ method: "POST", url: "/admin-data", headers: { cookie: "admin=yes" } })).statusCode, 405);
+    assert.equal((await app.inject({ url: "/admin-data", headers: { cookie: "admin=yes" } })).statusCode, 200);
+    assert.equal((await app.inject("/api/admin/page-access")).statusCode, 401);
+    const access = await app.inject({ url: "/api/admin/page-access", headers: { cookie: "admin=yes" } });
+    assert.deepEqual(access.json(), { name: "Admin" });
+    assert.equal(access.headers["cache-control"], "private, no-store");
+  } finally { await app.close(); }
+});

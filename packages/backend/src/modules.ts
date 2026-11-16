@@ -173,6 +173,8 @@ export interface ServerModule {
   name: string;
   /** Who besides the engine's admin may open gray pages (ModulePage.gray) and read their data (admin/preview.ts). */
   preview?: (cookieHeader: string | undefined) => Promise<Previewer | null>;
+  /** Admits only ModulePage.admin pages and their read-only data, not other /api/admin permissions. */
+  admin?: (cookieHeader: string | undefined) => Promise<Previewer | null>;
   /** Sources whose selected articles keep independent cards/seats without changing admission or event identity (publication/rules.ts, scope.ts). */
   independentSelectedSources?: readonly string[];
   /** Another account of an independent source's author, by source id: its post gives way to the article on the same news (events/cards.ts). */

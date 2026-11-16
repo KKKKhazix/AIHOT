@@ -6,8 +6,9 @@
 // file's process it copies the template and gives the file its own data and temporary folders.
 // *.standalone.test.ts need no database copy; npm run test:standalone runs them without a database.
 import "./setup.ts";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,21 +42,60 @@ const dropCopies = () =>
     }
   });
 
-export async function globalSetup() {
-  await onServer(async (db) => {
-    if ((await db`SELECT 1 FROM pg_database WHERE datname = ${name}`).length === 0) await db`CREATE DATABASE ${db(name)}`;
+// Homebrew databases on a Mac only. CI starts its own server on a separate port.
+async function openLocalPostgres() {
+  if (process.platform !== "darwin" || !["localhost", "127.0.0.1", "[::1]"].includes(template.hostname)
+    || (template.port || process.env.PGPORT || "5432") !== "5432"
+    || template.searchParams.has("host") || template.searchParams.has("port")) return;
+  const prefix = ["/opt/homebrew", "/usr/local"].find((prefix) =>
+    existsSync(path.join(prefix, "opt/postgresql@16/bin/pg_ctl"))
+    && existsSync(path.join(prefix, "var/postgresql@16/PG_VERSION")));
+  if (!prefix) return;
+  const helper = spawn("/usr/bin/python3", [
+    fileURLToPath(new URL("./local-postgres.py", import.meta.url)),
+    path.join(prefix, "opt/postgresql@16/bin"), path.join(prefix, "var/postgresql@16"),
+    template.hostname.replace(/^\[|\]$/g, ""),
+  ], { detached: true, stdio: ["pipe", "pipe", "inherit"] });
+  const closed = once(helper, "close").then(([code]) => {
+    if (code !== 0) throw new Error(`Local PostgreSQL helper exited with code ${code}`);
   });
-  execFileSync(process.execPath, [fileURLToPath(new URL("../scripts/migrate.ts", import.meta.url))], { stdio: ["ignore", "ignore", "inherit"] });
-  await dropCopies(); // left by an interrupted run
+  await Promise.race([
+    once(helper.stdout, "data"),
+    closed.then(() => { throw new Error("Local PostgreSQL helper exited before the test run started"); }),
+  ]);
+  return async () => {
+    helper.stdin.end();
+    await closed;
+  };
+}
+
+let closeLocalPostgres: (() => Promise<void>) | undefined;
+
+export async function globalSetup() {
+  closeLocalPostgres = await openLocalPostgres();
+  try {
+    await onServer(async (db) => {
+      if ((await db`SELECT 1 FROM pg_database WHERE datname = ${name}`).length === 0) await db`CREATE DATABASE ${db(name)}`;
+    });
+    execFileSync(process.execPath, [fileURLToPath(new URL("../scripts/migrate.ts", import.meta.url))], { stdio: ["ignore", "ignore", "inherit"] });
+    await dropCopies(); // left by an interrupted run
+  } catch (error) {
+    await closeLocalPostgres?.();
+    throw error;
+  }
 }
 
 // Each file's scratch folder is named after the runner, so a run removes only its own leftovers.
 const scratchPrefix = (runner: number) => `aihot-test-${runner}-`;
 
 export async function globalTeardown() {
-  await dropCopies();
-  for (const entry of readdirSync(tmpdir())) {
-    if (entry.startsWith(scratchPrefix(process.pid))) rmSync(path.join(tmpdir(), entry), { recursive: true, force: true }); // a crashed file's
+  try {
+    await dropCopies();
+    for (const entry of readdirSync(tmpdir())) {
+      if (entry.startsWith(scratchPrefix(process.pid))) rmSync(path.join(tmpdir(), entry), { recursive: true, force: true }); // a crashed file's
+    }
+  } finally {
+    await closeLocalPostgres?.();
   }
 }
 

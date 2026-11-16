@@ -562,6 +562,31 @@ test("the owner's post on the same news gives way to their article, whichever ca
   }
 });
 
+test("the owner's post and article grouped into one fact keep one card even when the card comparison misses", async () => {
+  sameNewsAhead();
+  const text = family();
+  const article = await card(text, "single", ownArticles);
+  relation = "SAME_OCCURRENCE";
+  otherNews("SAME_STORY");
+  const post = await report(text + "帖子", "single", true, ownPosts);
+  assert.equal((await groupArticle(post)).factId, article.factId, "fixture: the post joins the article's fact");
+  assert.deepEqual([(await state(post)).selected, (await state(article.id)).selected], [false, true]);
+  assert.equal(await cards([post, article.id]), 1);
+
+  sameNewsAhead();
+  const first = family();
+  otherNews("UNRELATED");
+  const earlier = await report(first, "single", true, ownPosts);
+  const founded = await groupArticle(earlier);
+  await releasedMinuteAgo(earlier);
+  relation = "SAME_OCCURRENCE";
+  otherNews("SAME_STORY");
+  const later = await report(first + "文章", "single", true, ownArticles);
+  const result = await groupArticle(later);
+  assert.equal(result.factId, founded.factId, "fixture: the article joins the post's fact");
+  assert.deepEqual([result.retired, (await state(earlier)).selected, (await state(later)).selected], [[earlier], false, true]);
+});
+
 test("the owner's post gives way even when ordinary reports already hold the fact's card", async () => {
   sameNewsAhead();
   const text = family();
@@ -573,7 +598,7 @@ test("the owner's post gives way even when ordinary reports already hold the fac
   const post = await report(text + "帖子", "single", true, ownPosts);
   pairCalls = 0;
   await groupArticle(post);
-  assert.ok(pairCalls > 0, "the post compares with the article although the fact has a card");
+  assert.equal(pairCalls, 0, "sharing the article's fact settles it, although the fact has a card");
   assert.deepEqual([(await state(post)).selected, (await state(ordinary)).selected, (await state(article.id)).selected], [false, true, true]);
 });
 

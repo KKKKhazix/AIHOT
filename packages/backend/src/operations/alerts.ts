@@ -6,7 +6,6 @@
 //           closed on its own: a fix removes it, and one judged not worth fixing is closed with a reason.
 // A finding with agentOnly is still now or today, but it only wakes the agent: nothing is sent when it
 // opens, nothing is sent when it clears, and it stays off the 09:00 digest.
-// A module can name those alerts as well, including `name:<item>`, so a row saved before the flag still closes quietly.
 // With an agent taking the alerts (notify/agent.ts), a now or today problem that is not the owner's own
 // (Finding.owner) is handed to the agent instead. The owner hears of it when the same problem is handed over
 // a third time in a day, or when it is still open HANDED_MS after the handoff, and from then on as above;
@@ -376,37 +375,20 @@ async function providerFindings(now: number, open: AlertState): Promise<Finding[
     summary.n += p.n;
     models.set(key, summary);
   }
-  // Earlier versions combined every model under a service key without saving its scope. Freeze the
-  // unresolved models once for those existing events; their old timestamps cannot establish that scope.
-  for (const [key, incident] of Object.entries(open)) {
-    if (!key.startsWith(REFUSED_PREFIX) || key.includes(":") || incident.refusedModels) continue;
-    const service = key.slice(REFUSED_PREFIX.length);
-    incident.refusedModels = [...models.values()].filter(p => p.service === service).map(p => p.model);
-  }
-  const refused = new Map<string, { service: string; n: number; last: string; models?: Set<string> }>();
-  for (const [modelKey, p] of models) {
-    const legacyKey = `${REFUSED_PREFIX}${p.service}`;
-    const legacy = open[legacyKey];
-    const key = legacy?.refusedModels?.includes(p.model) ? legacyKey : modelKey;
+  for (const [key, p] of models) {
     if (!open[key] && p.latest <= now - 3600_000) continue;
-    const summary = refused.get(key) ?? { service: p.service, n: 0, last: p.last, models: new Set<string>() };
-    summary.n += p.n;
-    if (p.model === null) summary.models = undefined;
-    else summary.models?.add(p.model);
-    refused.set(key, summary);
-  }
-  for (const [key, p] of refused) {
     const service = p.service;
-    const unused = p.models && !provider(service)?.stops && !(await stepsOnService(service, p.models)).length;
+    const scope = p.model === null ? undefined : new Set([p.model]);
+    const unused = scope && !provider(service)?.stops && !(await stepsOnService(service, scope)).length;
     out.push({
       key,
       level: unused ? "later" : "today",
       ...(unused ? {} : { owner: true as const }),
       title: unused ? `${providerName(service)} 的旧模型限制尚未验证` : `${providerName(service)} 拒绝调用，需要核对账号或额度`,
-      impact: unused ? "当前处理步骤未使用这些受限模型；旧限制仍未验证" : await providerStops(service, p.models),
+      impact: unused ? "当前处理步骤未使用这些受限模型；旧限制仍未验证" : await providerStops(service, scope),
       heals: "需先恢复访问，再确认失败任务已接续",
       action: `去${providerConsole(service)}看余额、套餐和消费上限；充值或恢复后让 AI 核实调用并补跑刚才失败的任务（后台看着都正常的话，也把这条发给 AI 查原因）`,
-      detail: `${p.models ? `模型 ${[...p.models].join("、")}；` : ""}最近一次成功后被拒 ${p.n} 次，尚未取得后续成功调用：${p.last}`,
+      detail: `${p.model !== null ? `模型 ${p.model}；` : ""}最近一次成功后被拒 ${p.n} 次，尚未取得后续成功调用：${p.last}`,
     });
   }
   const capped = await sql<{ service: string; per_day: number; used: number }[]>`
@@ -437,7 +419,6 @@ interface AlertEntry {
   privateOwner?: true;
   privateNotice?: PrivateNotice;
   handedAt?: string;
-  refusedModels?: (string | null)[];
 }
 type AlertState = Record<string, AlertEntry>;
 

@@ -284,3 +284,9 @@ test("admin page loaders use adminPageGet and GRAY_HEADERS", async () => {
     assert.ok(/\badminPageGet\b/.test(text) && /\bGRAY_HEADERS\b/.test(text), `${file} must use adminPageGet and GRAY_HEADERS`);
   }
 });
+
+// Animations use Presence.tsx (CSS keyframes) or the Web Animations API, not a runtime animation library.
+test("web code does not import motion or framer-motion", () => {
+  const found = violations([...sources("apps/web"), ...moduleWeb(), ...sources("site")], (_file, spec) => /^(?:motion|framer-motion)(?:$|\/)/.test(spec));
+  assert.deepEqual(found, [], "animate with Presence.tsx, CSS keyframes or the Web Animations API instead of motion");
+});

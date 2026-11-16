@@ -5,6 +5,7 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "strict": true,
+    "noUnusedLocals": true,
     "noUncheckedIndexedAccess": false,
     "skipLibCheck": true,
     "noEmit": true,

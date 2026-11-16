@@ -266,3 +266,15 @@ test('digest wakes link to the runs page, or the health check on a site without 
  await wakeDigest('2035-04-18', 2);
  assert.equal(new URL(hits.at(-1)!.body.link).pathname, LINK);
 });
+
+test('daily retention drops events the hub took over a month ago, never ones still waiting to be delivered', async () => {
+ const { dailyRetention } = await import('@aihot/backend/operations/retention');
+ const now = new Date('2035-05-20T00:00:00Z'), old = '2035-04-10T00:00:00Z', recent = '2035-05-10T00:00:00Z';
+ const event = { id: 'x', type: 'alert.today', subject: 's', summary: 's', detail: '', link: '' };
+ for (const [name, accepted, queuedAt] of [['old-taken', true, old], ['old-waiting', false, old], ['recent-taken', true, recent]] as const) {
+  await sql`INSERT INTO settings(key,value) VALUES (${`webhook.event.${T}-${name}`}, ${sql.json({ event, accepted, queuedAt })})`;
+ }
+ await dailyRetention(now);
+ const left = await sql<{ key: string }[]>`SELECT key FROM settings WHERE key LIKE ${`webhook.event.${T}-%`} ORDER BY key`;
+ assert.deepEqual(left.map((r) => r.key), [`webhook.event.${T}-old-waiting`, `webhook.event.${T}-recent-taken`]);
+});

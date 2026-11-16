@@ -6,21 +6,19 @@ import { sql } from "../db.ts";
 import { guardedFetch } from "../lib/http-fetch.ts";
 import { stripTags } from "../lib/text.ts";
 import { isVideoPageUrl } from "../lib/video-url.ts";
-import { jinaRead } from "../providers/jina.ts";
-import { BudgetExceededError } from "../providers/receipts.ts";
+import { browserHtml } from "../providers/browser-read.ts";
 import { getArticle } from "../providers/socialdata.ts";
 import { articleUtcOffset, parseLooseDate } from "../sources/dates.ts";
 import type { SourceRow } from "../sources/types.ts";
 import { onlyXArticleLink, xArticleText } from "../sources/x.ts";
 import { sanitizeBody, trimTrailingChrome } from "./sanitize.ts";
 import { contentHash, fillPublicationTime, reviseMaterial } from "./materials.ts";
-import { markdownBody } from "./markdown.ts";
 
 export interface ExtractedBody {
   html: string;
   text: string;
   images: Array<{ kind: "image"; url: string; width: number | null; height: number | null }>;
-  via: "readability" | "jina";
+  via: "readability" | "browser";
   /** The page's publication metadata; neither modification time nor dates mentioned in its prose. */
   publishedAt?: Date | null;
 }
@@ -137,16 +135,15 @@ export async function extractFromUrl(url: string, subject: string, utcOffset?: s
   } catch {
     // fall through to Jina
   }
+  // 2026-11-16：兜底改成「本地 Chrome 渲染一次再走 Readability」——不依赖 Jina / API key / 出境。
   try {
-    const page = await jinaRead(url, { purpose: "body_fallback", subject });
-    const html = markdownBody(page.markdown, url);
-    const text = stripTags(html);
-    if (text.length < MIN_BODY_CHARS) return null;
-    return { html, text, images: [], via: "jina" };
-  } catch (error) {
-    if (error instanceof BudgetExceededError) return null;
-    throw error;
+    const html = await browserHtml(url);
+    const got = readable(html, url, utcOffset);
+    if (got) return { ...got, via: "browser" };
+  } catch {
+    // 浏览器兜底也失败就按"抽不到正文"处理，不抛错（与旧 Jina 分支的返回语义一致）。
   }
+  return null;
 }
 
 /** Ordinary article pages; player pages have no article body, and social posts arrive separately. */

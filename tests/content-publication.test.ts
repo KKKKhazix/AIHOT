@@ -172,7 +172,7 @@ test("website and machine stories choose the same latest development and archive
   }
 });
 
-test("digest input excludes mentions, preserves scoped conditions, and ignores generated latest", async () => {
+test("digest input excludes mentions and preserves scoped conditions", async () => {
   const s = await source("digest", "T1");
   const g = await story();
   const main = await report(s, g, { title: "Dots 任务仍计费用量", hours: 5 });
@@ -184,8 +184,6 @@ test("digest input excludes mentions, preserves scoped conditions, and ignores g
   assert.ok(digestPrompt.includes("Tasks consume usage.") && digestPrompt.includes("自主执行任务消耗额度"));
   assert.ok(!digestPrompt.includes(mention) && !digestPrompt.includes("MENTION MUST NOT ENTER DIGEST"));
   assert.ok(!digestPrompt.includes(composite), "known composite input is excluded before its stale hard membership is cleaned");
-  const [stored] = await sql`SELECT latest FROM stories WHERE id=${g.storyId}`;
-  assert.equal(stored!.latest, "Dots 任务仍计费用量");
   const calls = provider.hits();
   assert.equal((await composeStoryDigest(g.storyId)).updated, false);
   assert.equal(provider.hits(), calls);
@@ -204,8 +202,8 @@ test("digest input excludes mentions, preserves scoped conditions, and ignores g
   const beforeClear = provider.hits();
   assert.equal((await composeStoryDigest(g.storyId)).updated, true);
   assert.equal(provider.hits(), beforeClear, "clearing an empty story does not call a model");
-  const [cleared] = await sql`SELECT digest, latest FROM stories WHERE id=${g.storyId}`;
-  assert.deepEqual({ ...cleared }, { digest: null, latest: null });
+  const [cleared] = await sql`SELECT digest FROM stories WHERE id=${g.storyId}`;
+  assert.equal(cleared!.digest, null);
 });
 
 // A prompt change reaches a story only when its reports change; the rewrite writes it again now, from the

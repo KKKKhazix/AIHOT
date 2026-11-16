@@ -36,8 +36,9 @@ class PinnedProxyClient extends Client {
     // The address check always runs (the resolve is the same DoH that guardedFetch's SSRF guard uses).
     // With pinning on, the CONNECT authority is the checked address. Some rule-based proxies cannot
     // tunnel to an IP literal at all — they route it outside the domain rules and the connection is
-    // reset (production, 2026-11-16) — so EGRESS_PIN_DNS=false leaves the authority as the checked
-    // hostname and lets the proxy resolve it; the name is still verified public here first.
+    // reset — so EGRESS_PIN_DNS=false leaves the authority as the hostname. The proxy then resolves it
+    // again: the check here stops names that resolve internal now, not one that answers differently the
+    // second time, which is why pinning stays the default.
     const addresses = net.isIP(host) ? [host] : await this.resolve(host);
     if (!addresses.length || addresses.some(isBlockedAddress)) throw new Error(`Blocked proxy address for ${host}`);
     if (!this.pin) return super.connect(options);

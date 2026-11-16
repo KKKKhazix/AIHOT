@@ -1,0 +1,12 @@
+{
+  "name": "@aihot/wechat-push",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./server": "./server.ts"
+  },
+  "dependencies": {
+    "@aihot/backend": "*"
+  }
+}

@@ -268,6 +268,10 @@ interface AlertState {
 const DAILY_PREFIX = "report.daily:";
 const dailyDate = (key: string) => key.startsWith(DAILY_PREFIX) && isValidDate(key.slice(DAILY_PREFIX.length))
   ? key.slice(DAILY_PREFIX.length) : undefined;
+/** A daily that came out silent: readers have an issue, but it carries no entry (the analysis produced nothing). */
+const SILENT_PREFIX = "report.daily.silent:";
+const silentDate = (key: string) => key.startsWith(SILENT_PREFIX) && isValidDate(key.slice(SILENT_PREFIX.length))
+  ? key.slice(SILENT_PREFIX.length) : undefined;
 /** Missing dailies are looked for, and announced ones followed, over the last seven Beijing calendar days. */
 const dailyScanFrom = (now: number) => addDays(beijingDate(now), -6);
 
@@ -302,13 +306,31 @@ async function dailyReportFindings(now: number): Promise<Finding[]> {
   const overdue = [...dates].filter(date => now >= beijingAt(date, EDITION_TIMES.daily).getTime() + 2 * 3600_000).sort();
   if (!overdue.length) return [];
   const published = new Set((await sql<{ key: string }[]>`SELECT key FROM reports WHERE kind = 'daily' AND key IN ${sql(overdue)}`).map(r => r.key));
-  return overdue.filter(date => !published.has(date)).map(date => ({
+  const findings: Finding[] = overdue.filter(date => !published.has(date)).map(date => ({
     key: `${DAILY_PREFIX}${date}`, level: "now",
     title: `${date} 的日报还没生成`, impact: `读者看不到 ${date} 的日报`,
     heals: "尚未补齐；需查看运行记录确认是否需要人工补做",
     action: "尽快发起一次维护处理",
     detail: `reports daily ${date} 不存在；看 reports.compose 的运行记录`,
   }));
+  // A silent edition is published, so the missing-daily rule above never sees it: the window had
+  // reports, none was judged, and readers got an issue with nothing in it. Only the stored content
+  // is read, so a later non-silent revision of the same day ends the finding (checkAlerts sends the
+  // recovery once the content is no longer silent).
+  const silent = await sql<{ key: string; generated_at: Date; reason: string | null }[]>`
+    SELECT key, generated_at, content->>'silentReason' AS reason FROM reports
+    WHERE kind = 'daily' AND content->>'silent' = 'true' AND key >= ${from} AND key <= ${today}
+    ORDER BY key`;
+  for (const s of silent) findings.push({
+    key: `${SILENT_PREFIX}${s.key}`, level: "now",
+    title: `${s.key} 的日报是静默版：窗口内有发布、没有判定`,
+    impact: `读者能看到 ${s.key} 的日报，但本期没有任何可读条目`,
+    heals: "不会自动补出：该窗口已经过去，需要人工补跑",
+    action: `查模型分析为什么在窗口内没有产出；确认后补跑 ${s.key}（scripts/compose-report.ts --date ${s.key}）`,
+    detail: s.reason ?? `reports daily ${s.key} 的 content.silent 为 true；看 reports.compose 与模型调用的运行记录`,
+    since: s.generated_at,
+  });
+  return findings;
 }
 
 /**
@@ -334,16 +356,23 @@ export async function checkAlerts(now = Date.now()) {
   for (const [key, open] of Object.entries(state)) {
     if (found.some((f) => f.key === key) || held.includes(key)) continue;
     // Suppressed findings (valves, startup grace or responder policy) are not evidence of recovery.
-    const date = dailyDate(key);
-    if (date) {
-      const [report] = await sql`SELECT 1 FROM reports WHERE kind = 'daily' AND key = ${date}`;
-      if (!report && date >= dailyScanFrom(now)) continue;
-      if (!report) {
-        // Past the scan window a missing edition is closed with one message instead of reminded about forever.
-        await sendAlert(`${date} 的日报没能补出，停止提醒`, [`读者看不到 ${date} 的日报；缺期从 ${beijingStamp(new Date(open.since))} 起，已超出七天的检查范围`]);
-        sent.push(`${key}:expired`);
-        delete state[key];
-        continue;
+    const silent = silentDate(key);
+    if (silent) {
+      // The issue is still stored silent: the finding is suppressed, not recovered.
+      const [row] = await sql<{ silent: string | null }[]>`SELECT content->>'silent' AS silent FROM reports WHERE kind = 'daily' AND key = ${silent}`;
+      if (row?.silent === "true") continue;
+    } else {
+      const date = dailyDate(key);
+      if (date) {
+        const [report] = await sql`SELECT 1 FROM reports WHERE kind = 'daily' AND key = ${date}`;
+        if (!report && date >= dailyScanFrom(now)) continue;
+        if (!report) {
+          // Past the scan window a missing edition is closed with one message instead of reminded about forever.
+          await sendAlert(`${date} 的日报没能补出，停止提醒`, [`读者看不到 ${date} 的日报；缺期从 ${beijingStamp(new Date(open.since))} 起，已超出七天的检查范围`]);
+          sent.push(`${key}:expired`);
+          delete state[key];
+          continue;
+        }
       }
     }
     const msg = formatRecovery(open.title, new Date(open.since), now);

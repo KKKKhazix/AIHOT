@@ -75,16 +75,27 @@ test("report publication and its receipt commit together and recovery reuses the
   assert.equal((await sql`SELECT status FROM receipts WHERE subject = 'report:weekly:2024-W18'`)[0]!.status, "completed");
 });
 
-test("empty older gaps cannot starve a later daily, weekly or monthly, and failures remain visible", async () => {
+test("empty older gaps cannot starve a later daily, weekly or monthly", async () => {
   // An older issue carried an item; the days after it are empty. Weeklies and monthlies are compiled from dailies.
   const early = await item("2024-01-23");
   await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at)
     VALUES ('daily', '2024-01-23', now(), now(), ${sql.json({ sections: [{ label: "行业动态", items: [{ itemId: early, title: early }] }] })}, now())`;
   await item("2024-02-02");
-  await assert.rejects(composeDueReports(editionAt("daily", "2024-02-02", 3600)), /reports:/);
+  // Empty gaps are written as quiet issues (0 publications) instead of failing the whole run; the schedule's
+  // limit of 8 issues per run means the catch-up takes a few runs, and none of them may report a failure.
+  const failures: string[] = [];
+  for (let run = 0; run < 4; run++) {
+    const result = await composeDueReports(editionAt("daily", "2024-02-02", 3600));
+    failures.push(...result.failed);
+    if (result.generated.length === 0) break;
+  }
+  assert.deepEqual(failures, []);
   for (const [kind, key] of [["daily", "2024-02-02"], ["weekly", "2024-W04"], ["monthly", "2024-01"]]) {
     assert.ok(await report(kind!, key!), `${kind} ${key} was recovered past the empty gaps`);
   }
+  // The empty days between are quiet issues, not silent ones: nothing was published in their windows.
+  const [gap] = await sql<{ silent: string | null }[]>`SELECT content->>'silent' AS silent FROM reports WHERE kind = 'daily' AND key = '2024-01-24'`;
+  assert.equal(gap?.silent, "false");
 });
 
 test("a week or month that ended before the first daily is not due, so a site started mid-month runs clean", async () => {

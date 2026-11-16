@@ -11,5 +11,9 @@
     "./modules/web": "./modules/web.ts",
     "./pages/*": "./pages/*",
     "./brand/*": "./brand/*"
+  },
+  "dependencies": {
+    "@aihot/github-rank": "*",
+    "@aihot/wechat-push": "*"
   }
 }

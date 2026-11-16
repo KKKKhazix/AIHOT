@@ -6,13 +6,14 @@
 // node --env-file=.env --experimental-strip-types scripts/compose-report.ts --date YYYY-MM-DD [--dry-run] [--push]
 //
 // --dry-run reads the day's window and prints what would be written; it never touches the table.
+// It exits 0 whenever the real run would write an issue (including a quiet or a silent one).
 // --push POSTs the composed briefing to 127.0.0.1:8199/push (WEIXIN_PUSH_URL overrides the address)
 // and prints the bridge's messageId.
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
-import { composeDaily } from "@aihot/backend/reports/compose";
+import { composeDaily, dailySilence } from "@aihot/backend/reports/compose";
 import { arrangeDaily, dailyEdition } from "@aihot/backend/reports/edition";
 import { composeText } from "@aihot/wechat-push/server";
 import { beijingAt, beijingDate } from "@aihot/contracts/time";
@@ -107,11 +108,11 @@ try {
 
   if (opts.dryRun) {
     // Same window and same builders as composeDaily, stopping before saveReport: nothing is written.
+    // A window with no entries still writes a real issue (a quiet or a silent one), so a dry run is
+    // successful there too: exit 0, and `silence` says which issue the real run would write.
     const edition = await dailyEdition(opts.date, start, end);
     const issue = arrangeDaily(edition.entries);
-    const failure = edition.entries.length === 0 && edition.stats.judgedReports === 0
-      ? `daily ${opts.date}: nothing judged in its window`
-      : null;
+    const silence = dailySilence(edition);
     console.log(JSON.stringify({
       date: opts.date,
       dryRun: true,
@@ -122,11 +123,13 @@ try {
       mainEntries: issue.main.length,
       flashes: issue.flashes.length,
       stats: edition.stats,
-      wouldWrite: failure === null,
-      reason: failure,
+      wouldWrite: true,
+      silence,
+      reason: silence === "silent"
+        ? `窗口内有 ${edition.stats.publishedReports ?? 0} 篇发布、0 判定：真跑会写静默版（与真跑一致，exit 0）`
+        : silence === "quiet" ? "窗口内 0 篇发布：正常安静日，真跑会写安静版（与真跑一致，exit 0）" : null,
       ...(opts.push ? { push: "skipped: --dry-run does not send" } : {}),
     }));
-    if (failure !== null) exitCode = 2;
   } else {
     const backup = existing ? await backupIssue(opts.date, existing) : null;
     // A resident row means an explicit regeneration: pass a reason so saveReport keeps the old one as a revision.

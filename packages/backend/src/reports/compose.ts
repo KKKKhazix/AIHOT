@@ -50,10 +50,10 @@ async function savedReport(kind: ReportKind, key: string) {
  * it is. With a reason (an explicit regeneration) the issue is replaced and the edition it replaces is
  * kept as a revision. Says whether the issue was written.
  */
-async function saveReport(kind: ReportKind, key: string, start: Date, end: Date, content: Record<string, unknown>, reason: string | undefined, model: string | null, receiptIds: number[]): Promise<boolean> {
+async function saveReport(kind: ReportKind, key: string, start: Date, end: Date, content: Record<string, unknown>, reason: string | undefined, receiptIds: number[]): Promise<boolean> {
   return sql.begin(async (tx) => {
-    const insert = async () => (await tx`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at, model, origin)
-      VALUES (${kind}, ${key}, ${start}, ${end}, ${tx.json(content as never)}, now(), ${model}, 'model') ON CONFLICT (kind, key) DO NOTHING`).count > 0;
+    const insert = async () => (await tx`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at)
+      VALUES (${kind}, ${key}, ${start}, ${end}, ${tx.json(content as never)}, now()) ON CONFLICT (kind, key) DO NOTHING`).count > 0;
     let written: boolean;
     if (reason === undefined) written = await insert();
     else {
@@ -63,7 +63,7 @@ async function saveReport(kind: ReportKind, key: string, start: Date, end: Date,
         await tx`INSERT INTO report_revisions (report_id, revision, content, generated_at, reason)
                  VALUES (${existing.id}, ${existing.revision}, ${tx.json(existing.content as never)}, ${existing.generated_at}, ${reason}) ON CONFLICT DO NOTHING`;
         await tx`UPDATE reports SET content = ${tx.json(content as never)}, window_start = ${start}, window_end = ${end}, generated_at = now(),
-                   model = ${model}, revision = revision + 1, origin = 'model', updated_at = now() WHERE id = ${existing.id}`;
+                   revision = revision + 1, updated_at = now() WHERE id = ${existing.id}`;
         written = true;
       } else written = await insert();
     }
@@ -119,7 +119,7 @@ export async function composeDaily(date: string, reason?: string): Promise<{ key
     windowEnd: end.toISOString(),
     generator: { version: REPORT_VERSION, ...edition.stats, ...issue.stats },
   };
-  await saveReport("daily", date, start, end, content, reason, null, []);
+  await saveReport("daily", date, start, end, content, reason, []);
   return { key: date, entries: issue.main.length };
 }
 
@@ -258,7 +258,7 @@ async function composePeriod(kind: "weekly" | "monthly", key: string, startDate:
     metrics: { totalStories: top.length, selectedCount: selected.length, reportsCovered: issues },
     generator: { version: REPORT_VERSION, model, written: overview !== null },
   };
-  await saveReport(kind, key, start, end, content, reason, model, receiptId === null ? [] : [receiptId]);
+  await saveReport(kind, key, start, end, content, reason, receiptId === null ? [] : [receiptId]);
   return { key, entries: top.length };
 }
 

@@ -48,8 +48,8 @@ export async function composeStoryDigest(storyId: number, opts: { rewrite?: bool
   if (!story) return { updated: false };
   const reports = await digestReports(sql, [storyId]);
   if (reports.length === 0) {
-    const cleared = await sql`UPDATE stories SET digest = NULL, latest = NULL, digest_updated_at = NULL, updated_at = now()
-      WHERE id = ${storyId} AND version = ${story.version} AND merged_into IS NULL AND (digest IS NOT NULL OR latest IS NOT NULL)`;
+    const cleared = await sql`UPDATE stories SET digest = NULL, digest_updated_at = NULL, updated_at = now()
+      WHERE id = ${storyId} AND version = ${story.version} AND merged_into IS NULL AND digest IS NOT NULL`;
     return { updated: cleared.count > 0 };
   }
   reports.sort(byReportTime);
@@ -105,9 +105,9 @@ export async function composeStoryDigest(storyId: number, opts: { rewrite?: bool
       for (const rid of new Set(allReceipts)) await completeReceipt(tx, rid);
       return false;
     }
-    await tx`INSERT INTO story_digests (story_id, version, digest, latest, receipt_id, article_ids, inputs_hash)
-             VALUES (${storyId}, ${version}, ${nextDigest}, ${latest}, ${res.receiptId}, ${ids}, ${inputsHash})`;
-    await tx`UPDATE stories SET digest = ${nextDigest}, latest = ${latest}, digest_updated_at = now(),
+    await tx`INSERT INTO story_digests (story_id, version, digest, receipt_id, article_ids, inputs_hash)
+             VALUES (${storyId}, ${version}, ${nextDigest}, ${res.receiptId}, ${ids}, ${inputsHash})`;
+    await tx`UPDATE stories SET digest = ${nextDigest}, digest_updated_at = now(),
                title = CASE WHEN origin = 'manual' OR ${nextTitle} = '' THEN title ELSE ${nextTitle} END,
                version = ${version}, updated_at = now()
              WHERE id = ${storyId}`;

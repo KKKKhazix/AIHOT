@@ -36,7 +36,7 @@ type WorkerMessage = { result?: { state: string }; error?: { name: string; messa
 const children = new Set<ReturnType<typeof spawn>>();
 
 // The production processing entrypoint in a separate OS process. The caller controls retries here;
-// analyze-shutdown.test.ts separately covers pg-boss delivery and graceful queue shutdown.
+// analyze.test.ts also covers pg-boss delivery and graceful queue shutdown.
 function worker(articleId: string) {
   const script = `
     import { processArticle } from '@aihot/backend/jobs/content';

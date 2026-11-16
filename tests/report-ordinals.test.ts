@@ -26,7 +26,7 @@ async function insert(kind: ReportKind, keys: string[]) {
   const content = { fixtureTag: T, overview: `DETAIL_ONLY_${T}`, ...(kind === "daily" ? { sections: [{ label: "测试", items: [citation] }] } : { themes: [{ heading: "测试", storyRefs: [citation] }] }) };
   await sql`INSERT INTO reports ${sql(keys.map((key) => ({
     kind, key, window_start: new Date("2026-01-01T00:00:00Z"), window_end: new Date("2026-01-02T00:00:00Z"),
-    generated_at: new Date("2026-01-02T00:00:00Z"), origin: "manual", content: sql.json(content),
+    generated_at: new Date("2026-01-02T00:00:00Z"), content: sql.json(content),
   })))}`;
 }
 

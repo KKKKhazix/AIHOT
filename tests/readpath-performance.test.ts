@@ -116,8 +116,8 @@ test('report directories skip a withdrawn lead for the next citation, including 
     { label: 'second', items: [{ itemId: `${T}-historical`, title: 'Historical fallback' }, { itemId: id(2), title: 'Third item' }] },
   ] };
   const key = `2097-12-${String(1 + Math.floor(Math.random() * 28)).padStart(2, '0')}`;
-  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at, origin)
-    VALUES ('daily', ${key}, ${now}, ${now}, ${sql.json(content)}, ${now}, 'manual')`;
+  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at)
+    VALUES ('daily', ${key}, ${now}, ${now}, ${sql.json(content)}, ${now})`;
   const entry = (await listReports('daily')).find((r) => r.key === key)!;
   assert.deepEqual([entry.title, entry.count], ['Historical fallback', 3]);
   const full = (await app.inject({ method: 'GET', url: '/api/site/reports/daily' })).json().items;

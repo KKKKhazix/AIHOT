@@ -39,8 +39,8 @@ async function citation(title: string) {
 }
 
 async function issue(kind: ReportKind, key: string, content: Record<string, unknown>) {
-  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at, origin)
-    VALUES (${kind}, ${key}, ${generatedAt}, ${generatedAt}, ${sql.json(content as never)}, ${generatedAt}, 'manual')`;
+  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at)
+    VALUES (${kind}, ${key}, ${generatedAt}, ${generatedAt}, ${sql.json(content as never)}, ${generatedAt})`;
 }
 
 async function dailyOutlets(key: string) {

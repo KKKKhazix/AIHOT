@@ -45,7 +45,7 @@ async function source(suffix: string, tier: string, owner: string | null = null,
   return id;
 }
 async function story(title = "OpenAI 发布 Dots") {
-  const [s] = await sql`INSERT INTO stories (public_id,title,first_report_at,latest_at,latest) VALUES (${randomUUID()},${title},${at(100)},${at(0)},'错误的生成进展') RETURNING id, public_id`;
+  const [s] = await sql`INSERT INTO stories (public_id,title,first_report_at,latest_at) VALUES (${randomUUID()},${title},${at(100)},${at(0)}) RETURNING id, public_id`;
   const [f] = await sql`INSERT INTO facts (public_id,story_id,title,subject,action,object,conditions)
     VALUES (${`f-${randomUUID()}`},${s!.id},${title},'OpenAI','发布','Dots','自主执行任务消耗额度') RETURNING id, public_id`;
   return { storyId: Number(s!.id), storyPublicId: s!.public_id as string, factId: Number(f!.id), factPublicId: f!.public_id as string };
@@ -418,11 +418,11 @@ test("an in-flight digest cannot overwrite an editor revision or a merge, and it
     await entered.promise;
     const user = digestPrompt;
     try {
-      await sql`UPDATE stories SET version=version+2,origin='manual',title='人工修正后的事件',digest='人工修正后的综述内容',latest='人工确认进展',merged_into=${target?.storyId ?? null} WHERE id=${g.storyId}`;
+      await sql`UPDATE stories SET version=version+2,origin='manual',title='人工修正后的事件',digest='人工修正后的综述内容',merged_into=${target?.storyId ?? null} WHERE id=${g.storyId}`;
     } finally { release.open(); }
     assert.deepEqual(await pending,{updated:false});
-    const [stored] = await sql`SELECT version,title,digest,latest,merged_into FROM stories WHERE id=${g.storyId}`;
-    assert.deepEqual({...stored},{version:3,title:'人工修正后的事件',digest:'人工修正后的综述内容',latest:'人工确认进展',merged_into:target?.storyId ?? null});
+    const [stored] = await sql`SELECT version,title,digest,merged_into FROM stories WHERE id=${g.storyId}`;
+    assert.deepEqual({...stored},{version:3,title:'人工修正后的事件',digest:'人工修正后的综述内容',merged_into:target?.storyId ?? null});
     assert.equal((await sql`SELECT 1 FROM story_digests WHERE story_id=${g.storyId}`).length,0,'obsolete input cannot create digest history');
     const calls = provider.hits();
     const reused = await chatJson({model:'deepseek-flash',purpose:'story_digest',subject:`story:${g.storyId}@1`,promptVersion:DIGEST_PROMPT_VERSION,

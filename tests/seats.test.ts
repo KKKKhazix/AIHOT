@@ -21,9 +21,9 @@ const OFFICIAL = `test-seats-official-${T}`;
 const app = await buildApp();
 
 before(async () => {
-  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, first_party, next_fetch_at) VALUES
-    (${MEDIA}, 'Media', 'rss', 'T2', 'editorial', false, '2100-01-01'),
-    (${OFFICIAL}, 'Official', 'rss', 'T1', 'editorial', true, '2100-01-01')`;
+  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at) VALUES
+    (${MEDIA}, 'Media', 'rss', 'T2', 'editorial', '2100-01-01'),
+    (${OFFICIAL}, 'Official', 'rss', 'T1', 'editorial', '2100-01-01')`;
 });
 after(async () => {
   await app.close();

@@ -40,8 +40,8 @@ after(async () => { await provider.close(); await stopBoss(); await closeDb(); }
 
 async function source(suffix: string, tier: string, owner: string | null = null, role: string | null = null) {
   const id = `${key}-${suffix}`;
-  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,owner_entity_id,config,first_party,next_fetch_at)
-    VALUES (${id},${suffix},'rss',${tier},'editorial',${owner},${sql.json(role ? { publisherRole: role } : {})},${tier !== 'T1'},'2100-01-01')`;
+  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,owner_entity_id,config,next_fetch_at)
+    VALUES (${id},${suffix},'rss',${tier},'editorial',${owner},${sql.json(role ? { publisherRole: role } : {})},'2100-01-01')`;
   return id;
 }
 async function story(title = "OpenAI 发布 Dots") {

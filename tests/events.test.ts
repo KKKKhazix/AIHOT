@@ -528,7 +528,7 @@ test("ROUNDUP answers describe a pair, not the single query's identity; grounded
     const [fact] = await sql`SELECT conditions FROM facts WHERE id = ${result.factId!}`;
     assert.equal(fact!.conditions, "仅预览用户");
     const [membership] = await sql`SELECT role, evidence FROM fact_articles WHERE article_id = ${id}`;
-    assert.equal(membership!.role, "primary", "T1 comes from tier even when old source.first_party is false");
+    assert.equal(membership!.role, "primary", "T1 comes from tier");
     assert.equal(membership!.evidence, "A new model.\nPreview users only.");
   } finally { relation = "SAME_OCCURRENCE"; }
 });

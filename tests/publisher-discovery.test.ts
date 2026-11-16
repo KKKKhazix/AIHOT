@@ -13,8 +13,8 @@ import { assertSupportedConfig } from "@aihot/backend/sources/config-keys";
 after(async () => { await stopBoss(); await closeDb(); });
 async function source(tier: string, config: Record<string, unknown> = {}) {
   const id = `publisher-discovery-${tag()}`;
-  await sql`INSERT INTO sources(id,name,kind,tier,first_party,config,participation_mode,next_fetch_at)
-    VALUES(${id},${id},'json_list',${tier},${tier === "T1"},${sql.json(config as never)},'editorial','2100-01-01')`;
+  await sql`INSERT INTO sources(id,name,kind,tier,config,participation_mode,next_fetch_at)
+    VALUES(${id},${id},'json_list',${tier},${sql.json(config as never)},'editorial','2100-01-01')`;
   return id;
 }
 const discover = (sourceId: string, url: string) => upsertMaterial({ sourceId, url, title: "An original article", via: "fetch" });

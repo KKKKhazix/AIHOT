@@ -53,7 +53,7 @@ test("a weekly that froze no summaries shows the articles' public summaries", as
   assert.equal(report?.sections[0]?.items[0]?.summary, `公开摘要-${T}`);
   assert.equal(report?.sections[0]?.items[0]?.sourceName, "Reports");
   assert.equal(report?.sections[0]?.items[0]?.firstParty, true, "a frozen citation cannot override verified current provenance");
-  await sql`UPDATE sources SET tier = 'T1_5', first_party = true WHERE id = ${SOURCE}`;
+  await sql`UPDATE sources SET tier = 'T1_5' WHERE id = ${SOURCE}`;
   await publishArticle(articleId);
   assert.equal((await loadReport("weekly", WEEK))?.sections[0]?.items[0]?.firstParty, false);
 });

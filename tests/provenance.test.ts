@@ -12,15 +12,15 @@ import { loadPool } from "@aihot/backend/publication/pool";
 import { ingestItems } from "@aihot/backend/ingest/items";
 import { queueProcessing, settleNonEditorial } from "@aihot/backend/jobs/content";
 import { collectSource } from "@aihot/backend/sources/collect";
-import { createSource, updateSource } from "@aihot/backend/admin/sources";
+import { updateSource } from "@aihot/backend/admin/sources";
 import { groupArticle } from "@aihot/backend/events/group";
 
 after(async () => { await stopBoss(); await closeDb(); });
 
-async function source(tier: string, config = {}, firstParty = tier === "T1", opts: { kind?: string; mode?: string; enabled?: boolean } = {}) {
+async function source(tier: string, config = {}, opts: { kind?: string; mode?: string; enabled?: boolean } = {}) {
   const id = `provenance-${tag()}`;
-  await sql`INSERT INTO sources (id, name, kind, tier, first_party, config, participation_mode, site_fulltext, next_fetch_at, enabled)
-    VALUES (${id}, ${id}, ${opts.kind ?? 'rss'}, ${tier}, ${firstParty}, ${sql.json(config)}, ${opts.mode ?? 'editorial'}, true, '2100-01-01', ${opts.enabled ?? true})`;
+  await sql`INSERT INTO sources (id, name, kind, tier, config, participation_mode, site_fulltext, next_fetch_at, enabled)
+    VALUES (${id}, ${id}, ${opts.kind ?? 'rss'}, ${tier}, ${sql.json(config)}, ${opts.mode ?? 'editorial'}, true, '2100-01-01', ${opts.enabled ?? true})`;
   return id;
 }
 
@@ -29,7 +29,7 @@ const jobs = (articleId: string) => sql<{ name: string; data: { signalOnly?: boo
 
 test("the first external discovery uses a paused verified publisher, keeps the real discovery and queues extraction once", async () => {
   const scope = `https://www.${tag()}.example/news`;
-  const official = await source("T1", { publisherUrlPrefixes: [scope], fetchPublicContent: true }, true, { enabled: false });
+  const official = await source("T1", { publisherUrlPrefixes: [scope], fetchPublicContent: true }, { enabled: false });
   const media = await source("T2");
   const url = `${scope}/release`;
   const input = { sourceId: media, items: [{ url, title: "Release", author: "HN submitter", publishedAt: new Date().toISOString() }] };
@@ -45,14 +45,14 @@ test("the first external discovery uses a paused verified publisher, keeps the r
 
 test("a repeated signal discovery adopts a newly registered publisher and resumes editorial processing without revising material", async () => {
   const scope = `https://${tag()}.example/news`;
-  const signal = await source("T2", {}, false, { mode: "hot_signal" });
+  const signal = await source("T2", {}, { mode: "hot_signal" });
   const url = `${scope}/release`;
   const first = await upsertMaterial({ sourceId: signal, url, title: "Original", bodyText: "Preserved body", via: "fetch", publishedAt: new Date() });
   await queueProcessing(first.articleId);
   assert.deepEqual((await jobs(first.articleId)).map((j) => [j.name, j.data.signalOnly]), [[QUEUES.group, true]]);
   assert.equal((await settleNonEditorial(first.articleId)).group, true);
   const [before] = await sql`SELECT * FROM articles WHERE id = ${first.articleId}`;
-  const official = await source("T1", { publisherUrlPrefixes: [scope] }, true, { enabled: false });
+  const official = await source("T1", { publisherUrlPrefixes: [scope] }, { enabled: false });
   const input = { sourceId: signal, items: [{ url, title: "Changed signal headline" }] };
   await ingestItems(input);
   await ingestItems(input);
@@ -72,7 +72,7 @@ test("a repeated signal discovery adopts a newly registered publisher and resume
 // judgement. A newly scored candidate must remain unselected until its news identity is confirmed.
 for (const entrance of ["publisher", "source-mode"] as const) test(`${entrance} promotion cannot reuse a signal-only grouping as news confirmation`, async () => {
   const scope = `https://${tag()}.example/news`;
-  const signal = await source("T1", {}, true, { mode: "hot_signal" });
+  const signal = await source("T1", {}, { mode: "hot_signal" });
   const make = async (name: string) => (await upsertMaterial({ sourceId: signal, url: `${scope}/${name}`,
     title: `Release ${name}`, bodyText: "Preserved original material", via: "fetch", publishedAt: new Date() })).articleId;
   const fresh = await make("new");
@@ -132,9 +132,9 @@ test("attribution reuses an existing current-revision editorial judgement even a
 test("only an observed web-list path supplies implicit ownership; non-T1 and RSS domains never do", async () => {
   const scope = `https://${tag()}.example/news`;
   const media = await source("T2");
-  const web = await source("T1", { url: scope }, true, { kind: "web_list" });
+  const web = await source("T1", { url: scope }, { kind: "web_list" });
   await source("T1", { feedUrl: `${scope}/rss` });
-  await source("T1_5", { publisherUrlPrefixes: [scope] }, true);
+  await source("T1_5", { publisherUrlPrefixes: [scope] });
   const url = `${scope}/release`;
   const { articleId } = await upsertMaterial({ sourceId: media, url, title: "Release", via: "fetch" });
   assert.equal((await sql`SELECT source_id FROM articles WHERE id = ${articleId}`)[0]!.source_id, media);
@@ -203,8 +203,8 @@ test("ambiguous registered publishers do not silently choose a source", async ()
   assert.equal((await sql`SELECT source_id FROM articles WHERE id = ${articleId}`)[0]!.source_id, media);
 });
 
-test("a non-T1 flag cannot enter the first-party channel, and source edits derive the flag from tier", async () => {
-  const id = await source("T1_5", {}, true);
+test("a non-T1 source never enters the first-party channel", async () => {
+  const id = await source("T1_5");
   const { articleId } = await upsertMaterial({ sourceId: id, url: `https://example.com/${tag()}`, title: "Official social announcement", via: "fetch" });
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, title_zh, summary_zh, selected)
     VALUES (${articleId}, 1, 'rule', 'pass', ${id}, '公告摘要', false)`;
@@ -212,9 +212,4 @@ test("a non-T1 flag cannot enter the first-party channel, and source edits deriv
   assert.equal((await sql`SELECT first_party FROM publications WHERE article_id = ${articleId}`)[0]!.first_party, false);
   const pool = await loadPool({ channel: "firstParty", q: id, category: null, tag: null });
   assert.equal(pool.items.length, 0);
-  const [s] = await sql`SELECT updated_at FROM sources WHERE id = ${id}`;
-  const updated = await updateSource(id, { version: s!.updated_at.toISOString(), patch: { tier: "T1", first_party: false } }, "test");
-  assert.equal(updated!.first_party, true);
-  const created = await createSource({ id: `provenance-create-${tag()}`, name: "Official person", kind: "external", config: {}, tier: "T1_5", first_party: true }, "test");
-  assert.equal(created.created && created.source!.first_party, false);
 });

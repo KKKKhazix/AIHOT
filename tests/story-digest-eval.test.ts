@@ -47,8 +47,8 @@ const answer = (title: string, digest: string, tokens: [number, number]) => ({
 
 async function source(suffix: string, tier: string) {
   const id = `${key}-${suffix}`;
-  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,config,first_party,next_fetch_at)
-    VALUES (${id},${`来源 ${suffix}`},'rss',${tier},'editorial',${sql.json({})},${tier === "T1"},'2100-01-01')`;
+  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,config,next_fetch_at)
+    VALUES (${id},${`来源 ${suffix}`},'rss',${tier},'editorial',${sql.json({})},'2100-01-01')`;
   return id;
 }
 

@@ -1,4 +1,5 @@
 // What the judging steps read about an article: loaded once per analysis and rendered per step.
+import sharp from "sharp";
 import { describePublicationTime } from "../sources/dates.ts";
 import { sql } from "../db.ts";
 import { collapseWhitespace, htmlBlockText, mergeDistinctText, truncate } from "../lib/text.ts";
@@ -111,6 +112,17 @@ export function buildMaterial(a: AnalyzeInputArticle): string {
   return lines.join("\n");
 }
 
+async function imagePart(body: Buffer, type: string): Promise<ContentPart | null> {
+  if (!/^image\/(jpeg|png|webp)$/.test(type)) return null;
+  const { width, height } = await sharp(body).metadata();
+  // Vision providers reject either side at 10 pixels or below. Pad thin thumbnails without
+  // dropping review evidence, stretching their content or changing the reader's cached image.
+  if (width! <= 10 || height! <= 10) {
+    body = await sharp(body).extend({ top: 0, left: 0, right: Math.max(0, 11 - width!), bottom: Math.max(0, 11 - height!), background: "#fff" }).toBuffer();
+  }
+  return { type: "image_url", image_url: { url: `data:${type};base64,${body.toString("base64")}` } };
+}
+
 /**
  * The article's first image, inlined: models often cannot reach the original hosts, so they get the
  * site's cached thumbnail. None when it cannot be fetched.
@@ -126,7 +138,7 @@ export async function firstImagePart(a: Pick<AnalyzeInputArticle, "media"> & Par
     if (type === "image/svg+xml" && body.length > SVG_PASSTHROUGH_MAX_BYTES) {
       ({ body, type } = await rasterImage(body, type, "thumb"));
     }
-    return /^image\/(jpeg|png|webp)$/.test(type) ? { type: "image_url", image_url: { url: `data:${type};base64,${body.toString("base64")}` } } : null;
+    return await imagePart(body, type);
   } catch {
     return null;
   }
@@ -163,8 +175,9 @@ export async function loadArticleImageParts(urls: readonly string[]): Promise<Ed
           ({ body, type } = await rasterImage(body, type, "thumb"));
         }
       }
-      if (/^image\/(jpeg|png|webp)$/.test(type)) {
-        parts.push({ type: "image_url", image_url: { url: `data:${type};base64,${body.toString("base64")}` } });
+      const part = await imagePart(body, type);
+      if (part) {
+        parts.push(part);
       } else {
         unverifiedCount += 1;
       }

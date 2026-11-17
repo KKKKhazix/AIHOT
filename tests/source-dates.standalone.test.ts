@@ -3,7 +3,7 @@
 // and TZ=Asia/Shanghai to see both).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { describeReport } from "@aihot/backend/events/relate";
+import { batchUser, describeReport } from "@aihot/backend/events/relate";
 import { readable } from "@aihot/backend/content/extract";
 import { parseLooseDate, readPublicationDate, readRelativeDate, describePublicationTime } from "@aihot/backend/sources/dates";
 
@@ -157,6 +157,15 @@ test('grouping distinguishes a publication day from an exact instant', () => {
   const text = describeReport(report, '报道');
   assert.match(text, /发布时间：2026-10-13（原文仅有日期，时刻未知）/);
   assert.doesNotMatch(text, /15:00/);
+});
+
+// Evidence past the first 6,000 characters of a long body reaches grouping, for the new report and the selected reading alike.
+test('grouping sees late evidence in a long body on both sides', () => {
+  const sourceText = '前'.repeat(6500) + '后半部的独立分析证据';
+  const report = { title: '研究发布后的长文解读', source: 'Example', firstParty: false, at: new Date(), summary: '概述', sourceText };
+  const prompt = batchUser(report, [], '新报道', [{ report: { ...report, sourceText: null }, sourceText }]);
+  assert.equal(prompt.split('后半部的独立分析证据').length - 1, 2);
+  assert.ok(describeReport({ ...report, sourceText: '短正文' }, '新报道').includes('短正文'));
 });
 
 test("legacy JSON and RSS formats keep their source date and zone", () => {

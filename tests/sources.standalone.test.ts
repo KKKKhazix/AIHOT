@@ -129,18 +129,32 @@ test("posts addressed by a query on the listing's path are posts, its pages and 
   assert.equal(fromHtml('<a href="https://www.example.org/">Home on www</a>', "https://example.org/", source({ url: "https://example.org/" })).length, 1);
 });
 
-test("promotions a feed rotates inside its posts are left out of the body", () => {
+test("promotions a feed rotates inside its posts are left out of the body and media", async () => {
   // Microsoft Research's feed puts a different podcast or product promotion into each post on every load.
   const promo = (label: string, name: string) =>
     `<div class="border-bottom border-top mt-5 mb-5 msr-promo text-center alignwide" data-bi-aN="promo">` +
     `<p class="msr-promo__label text-uppercase"><span>${label}</span></p><div class="row"><div class="msr-promo__content">` +
-    `<h2 class="h4">${name}</h2><p>Join Microsoft researchers.</p><a href="https://example.org/podcast">Listen now</a></div></div></div>`;
-  const post = (p: string) => `<p>Skala is now available in the tools scientists use.</p>${p}<p>From community release to native integration.</p>`;
+    `<img src="https://example.org/${name}.jpg"><h2 class="h4">${name}</h2><p>Join Microsoft researchers.</p><a href="https://example.org/podcast">Listen now</a></div></div></div>`;
+  const post = (p: string) => `<p>Skala is now available in the tools scientists use.</p><img src="/chart.png">${p}<p>From community release to native integration.</p><img data-src="/detail.png">`;
   const a = sanitizeBody(post(promo("PODCAST SERIES", "Ideas")), "https://example.org/post");
   const b = sanitizeBody(post(promo("", "Foundry Labs")), "https://example.org/post");
   assert.equal(a, b, "the same post whichever promotion it carried");
   assert.ok(!/PODCAST SERIES|Ideas|Foundry Labs|Listen now/.test(a));
   assert.ok(a.includes("native integration"), "the post's own text stays");
+  for (const name of ["Ideas", "Foundry Labs"]) {
+    const html = post(promo("PODCAST SERIES", name));
+    pages["/promo.xml"] = () => `<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><item><title>Research</title><link>https://example.org/post</link><enclosure type="image/jpeg" url="https://example.org/cover.jpg"/><content:encoded><![CDATA[${html}]]></content:encoded></item></channel></rss>`;
+    pages["/promo.atom"] = () => `<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Research</title><link href="https://example.org/post"/><content type="html"><![CDATA[${html}]]></content></entry></feed>`;
+    for (const path of ["/promo.xml", "/promo.atom"]) {
+      const [item] = (await fetchRss({ id: "test-feed", config: { feedUrl: site + path, summaryIsBody: true }, participation_mode: "editorial" } as never)).candidates;
+      assert.equal(item!.bodyHtml, a);
+      assert.deepEqual(item!.media, [
+        ...(path === "/promo.xml" ? [{ kind: "image", url: "https://example.org/cover.jpg" }] : []),
+        { kind: "image", url: "https://example.org/chart.png" },
+        { kind: "image", url: "https://example.org/detail.png" },
+      ]);
+    }
+  }
 });
 
 test("a listing that links other articles in its teasers takes only the links that begin a line", () => {

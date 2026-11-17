@@ -129,11 +129,11 @@ for (const lock of ["article", "fact seat", "report snapshot"] as const) {
       await holding;
       await publication;
 
-      const [published] = await sql<{ visible_after: Date; visible_at: Date }[]>`
-        SELECT p.visible_after, l.visible_at FROM publications p JOIN selected_ledger l ON l.article_id = p.article_id
+      const [published] = await sql<{ visible_after: Date; changed_at: Date }[]>`
+        SELECT p.visible_after, l.changed_at FROM publications p JOIN selected_ledger l ON l.article_id = p.article_id
         WHERE p.article_id = ${id} ORDER BY l.seq DESC LIMIT 1`;
       assert.equal(published!.visible_after.toISOString(), editionAt("daily", "2020-01-02", 10).toISOString());
-      assert.equal(published!.visible_at.toISOString(), published!.visible_after.toISOString());
+      assert.equal(published!.changed_at.toISOString(), published!.visible_after.toISOString());
       const boundary = editionAt("daily", "2020-01-02");
       assert.equal((await candidates(editionAt("daily", "2020-01-01"), boundary)).some((c) => c.itemId === id), false);
       assert.equal((await candidates(boundary, editionAt("daily", "2020-01-03"))).some((c) => c.itemId === id), true);

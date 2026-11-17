@@ -213,7 +213,7 @@ export async function contentChain(id: string): Promise<Chain | null> {
       FROM analyses an WHERE an.article_id = ${id} ORDER BY an.created_at DESC LIMIT 10`,
     sql<BeforeJson<AdminPublication>[]>`SELECT * FROM publications WHERE article_id = ${id}`,
     sql<NonNullable<Chain["override"]>[]>`SELECT fields, visibility, reason, version, updated_by, updated_at FROM editorial_overrides WHERE article_id = ${id}`,
-    sql<Chain["ledger"]>`SELECT seq, op, visible_at, changed_at FROM selected_ledger WHERE article_id = ${id} ORDER BY seq DESC LIMIT 10`,
+    sql<Chain["ledger"]>`SELECT seq, op, changed_at FROM selected_ledger WHERE article_id = ${id} ORDER BY seq DESC LIMIT 10`,
     sql<Chain["membership"]>`
       SELECT fa.fact_id, fa.role, fa.manual, f.public_id AS fact_public_id, f.title AS fact_title, st.id AS story_id, st.public_id AS story_public_id, st.title AS story_title
       FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id LEFT JOIN stories st ON st.id = f.story_id WHERE fa.article_id = ${id}`,

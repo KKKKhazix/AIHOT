@@ -256,7 +256,7 @@ export interface AdminContentChain {
   }>;
   publication: AdminPublication | null;
   override: { fields: Record<string, unknown>; visibility: string | null; reason: string | null; version: number; updated_by: string; updated_at: Timestamp } | null;
-  ledger: Array<{ seq: number; op: string; visible_at: Timestamp; changed_at: Timestamp }>;
+  ledger: Array<{ seq: number; op: string; changed_at: Timestamp }>;
   membership: Array<{ fact_id: number; role: string; manual: boolean; fact_public_id: string; fact_title: string; story_id: number | null; story_public_id: string | null; story_title: string | null }>;
   decisions: Array<{ verdict: string; fact_id: number | null; story_id: number | null; receipt_id: number | null; candidates: unknown; created_at: Timestamp }>;
   deliveries: Array<{ target_key: string; dedupe_key: string; status: string; attempts: number; response: string | null; created_at: Timestamp; sent_at: Timestamp | null }>;

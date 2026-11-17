@@ -199,7 +199,7 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
       const enclosure = enclosures.find((e) => /^image\//.test(e?.["@type"] ?? ""));
       const media = [
         ...(enclosure ? [{ kind: "image" as const, url: enclosure["@url"]! }] : []),
-        ...(bodyHtmlRaw ? imagesFrom(bodyHtmlRaw, link) : []),
+        ...(bodyHtml ? imagesFrom(bodyHtml, link) : []),
       ];
       out.push({
         url: link,
@@ -242,7 +242,7 @@ export async function fetchRss(source: SourceRow, opts: { force?: boolean } = {}
         sourceUpdatedAt: parseDate(text(e.updated)),
         ...feedText(bodyHtml, summary, source, !video, plainBody),
         ...(videoExcerpt ? { excerpt: videoExcerpt } : {}),
-        media: bodyHtmlRaw ? imagesFrom(bodyHtmlRaw, entryUrl) : [],
+        media: bodyHtml ? imagesFrom(bodyHtml, entryUrl) : [],
         categories: arr(e.category).map((c: any) => c?.["@term"] ?? text(c)).filter(Boolean),
         raw: { id: text(e.id) || null },
       });

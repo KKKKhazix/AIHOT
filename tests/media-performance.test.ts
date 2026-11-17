@@ -23,6 +23,7 @@ let failureHits = 0;
 let refusalHits = 0;
 let animationHits = 0;
 const png = await sharp({ create: { width: 800, height: 400, channels: 3, background: "#176b75" } }).png().toBuffer();
+const separator = await sharp({ create: { width: 2920, height: 10, channels: 3, background: "#176b75" } }).png().toBuffer();
 // A photo-like JPEG (gradients and soft shapes) that AVIF encodes in far fewer bytes at the same sharpness.
 const photo = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d3557"/><stop offset="0.5" stop-color="#e9c46a"/><stop offset="1" stop-color="#e76f51"/></linearGradient><radialGradient id="r"><stop offset="0" stop-color="#fff" stop-opacity="0.9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><rect width="1600" height="900" fill="url(#g)"/><circle cx="480" cy="360" r="260" fill="url(#r)"/><circle cx="1180" cy="560" r="180" fill="#2a9d8f" opacity="0.7"/><rect x="760" y="140" width="320" height="200" rx="40" fill="#264653" opacity="0.6"/></svg>`)).jpeg({ quality: 95 }).toBuffer();
 // Ten noisy 160×120 frames: a GIF that animated WebP clearly beats.
@@ -38,6 +39,7 @@ for (let at = overBudgetGif.indexOf(descriptor); at !== -1; at = overBudgetGif.i
   overBudgetGif.writeUInt16LE(11000, at + 7);
 }
 const server = createServer(async (req, res) => {
+  if (req.url === "/separator.png") { res.writeHead(200, { "content-type": "image/png" }); return res.end(separator); }
   if (req.url === "/anim.gif") { animationHits++; res.writeHead(200, { "content-type": "image/gif" }); return res.end(animatedGif); }
   if (req.url === "/tiny.gif") { res.writeHead(200, { "content-type": "image/gif" }); return res.end(tinyGif); }
   if (req.url === "/photo.jpg") { res.writeHead(200, { "content-type": "image/jpeg" }); return res.end(photo); }
@@ -150,6 +152,26 @@ test("a retained large SVG still supplies the model's raster thumbnail", async (
   assert.match(data, /^data:image\/(jpeg|png|webp);base64,/);
   assert.equal((await sharp(Buffer.from(data.split(",")[1]!, "base64")).metadata()).width, 720);
   assert.equal(imageHits, before);
+});
+
+test("model inputs retain thin images within the provider's minimum dimensions", async () => {
+  const { firstImagePart, loadArticleImageParts } = await import("@aihot/backend/editorial/input");
+  const url = `${base}/separator.png`;
+  const narrow = await sharp({ create: { width: 1, height: 80, channels: 3, background: "#176b75" } }).png().toBuffer();
+  const loaded = await loadArticleImageParts([url, `data:image/png;base64,${narrow.toString("base64")}`, `${base}/image`]);
+  assert.equal(loaded.parts.length, 3, "thin images must still be reviewed");
+  assert.equal(loaded.unverifiedCount, 0);
+  const first = await firstImagePart({ media: [{ kind: "image", url }] });
+  assert.ok(first);
+  const bodies = [...loaded.parts, first].map((part) => {
+    assert.equal(part.type, "image_url");
+    return Buffer.from((part as { image_url: { url: string } }).image_url.url.split(",")[1]!, "base64");
+  });
+  for (const body of bodies) {
+    const meta = await sharp(body).metadata();
+    assert.ok(meta.width! > 10 && meta.height! > 10, "the provider rejects either dimension at 10 or below");
+  }
+  assert.deepEqual(bodies[2], (await produceImage(`${base}/image`, "thumb")).body, "ordinary images retain their bytes");
 });
 
 test("site media exposes responsive previews and full lightboxes while RSS retains thumb images", () => {

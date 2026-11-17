@@ -160,7 +160,6 @@ export function v1Payload(p: {
 async function appendLedger(tx: Tx, articleId: string, op: "upsert" | "remove", payload: V1ItemPayload | null, now: Date): Promise<number> {
   await tx`SELECT pg_advisory_xact_lock(hashtext('selected_ledger'))`;
   const { next } = one(await tx<{ next: number }[]>`SELECT coalesce(max(seq), 0) + 1 AS next FROM selected_ledger`);
-  // visible_at is no longer written (its default fills it); the next release drops the column.
   await tx`INSERT INTO selected_ledger (seq, article_id, op, changed_at, payload)
            VALUES (${next}, ${articleId}, ${op}, ${now}, ${payload ? tx.json(payload as never) : null})`;
   return next;

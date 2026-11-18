@@ -1066,6 +1066,22 @@
       "tags": ["待确认"],
       "site_fulltext": false,
       "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-wechat-empty-3547411898",
+      "name": "待确认公众号 3547411898",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3547411898.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "enabled": false,
+      "tags": ["待确认"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
     }
   ]
 }

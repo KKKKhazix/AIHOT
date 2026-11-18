@@ -344,6 +344,291 @@
       "syndicate_fulltext": false
     },
     {
+      "id": "rss-hd-publish",
+      "name": "邯郸发布",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3089929225.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["邯郸", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-hd-admin-approval",
+      "name": "邯郸行政审批",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3547177968.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["邯郸", "政务", "企业开办"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-quzhou-zhengshi",
+      "name": "曲周政事",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3241173061.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["曲周", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-quzhou-publish",
+      "name": "曲周发布",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3917403333.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["曲周", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-quxian-publish",
+      "name": "邱县发布",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3019118518.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["邱县", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-chengan-media",
+      "name": "成安融媒",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3247127472.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["成安", "媒体"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-hd-jingkai",
+      "name": "邯郸经开发布",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3988245781.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["邯郸", "经开区", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-hd-science-tech",
+      "name": "邯郸市科学技术局",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3001128131.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["邯郸", "科技", "政策"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-congtai-weishi",
+      "name": "丛台微视",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3077948306.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["丛台", "媒体"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-hd-jinan-publish",
+      "name": "邯郸冀南新区发布",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3988257802.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["邯郸", "冀南新区", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-guangtao-zhengwu",
+      "name": "馆陶政务",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3291237783.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["馆陶", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-opc-cn-news",
+      "name": "OPC中文资讯",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3589470704.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "行业"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-opc-toolbox",
+      "name": "OPC工具箱",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3926231727.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "实操"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-opc-chuangxiangjia",
+      "name": "创想家OPC",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3631952291.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "社区"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-opc-zhixiaotu",
+      "name": "智小途OPC",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3916679055.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "工具"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-opc-juejin",
+      "name": "OPC掘金",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3891898769.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "行业"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-daiyou-opc",
+      "name": "代友OPC生态社区",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3510987502.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "社区"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-opc-operations",
+      "name": "OPC运营群",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3930729716.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "运营"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-opc-publish",
+      "name": "OPC发布",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3690202174.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "行业"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
       "id": "rss-wechat-empty-3885548244",
       "name": "待确认公众号 3885548244",
       "kind": "rss",

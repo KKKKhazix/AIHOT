@@ -134,6 +134,78 @@
       "syndicate_fulltext": false
     },
     {
+      "id": "json-datawhale-activity",
+      "name": "Datawhale 活动",
+      "kind": "json_list",
+      "config": {
+        "url": "https://backend.datawhale.cn/api/activity/v2/queryActivityPage?size=12&sort=createTime,desc",
+        "mode": "json_api",
+        "itemsPath": "data.rows",
+        "titlePaths": ["name"],
+        "urlTemplate": "https://www.datawhale.cn/activity/{id}",
+        "summaryPaths": ["intro"],
+        "summaryIsBody": true,
+        "publishedAtPath": "beginAt",
+        "publishedAtUtcOffset": "+08:00",
+        "externalIdPath": "id",
+        "_aihot": { "initialBackfillLimit": 12 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "tags": ["Datawhale", "活动"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "json-xfyun-algorithm",
+      "name": "讯飞 AI 开发者大赛 · 算法赛",
+      "kind": "json_list",
+      "config": {
+        "url": "https://challenge.xfyun.cn/2020/ai-contest/api/contests/contests-list?typeBasicProblem=algorithem&curPage=1&pageSize=20",
+        "mode": "json_api",
+        "itemsPath": "data.content",
+        "titlePaths": ["name_basic_problem"],
+        "urlTemplate": "https://challenge.xfyun.cn/topic/info?type={contest_flag}",
+        "summaryPaths": ["desc_basic_problem"],
+        "summaryIsBody": true,
+        "publishedAtPath": "publish_time",
+        "publishedAtUtcOffset": "+08:00",
+        "externalIdPath": "contest_name",
+        "_aihot": { "initialBackfillLimit": 20 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "tags": ["AI", "赛事"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "json-xfyun-application",
+      "name": "讯飞 AI 开发者大赛 · 应用赛",
+      "kind": "json_list",
+      "config": {
+        "url": "https://challenge.xfyun.cn/2020/ai-contest/api/contests/contests-list?typeBasicProblem=application&curPage=1&pageSize=20",
+        "mode": "json_api",
+        "itemsPath": "data.content",
+        "titlePaths": ["name_basic_problem"],
+        "urlTemplate": "https://challenge.xfyun.cn/topic/info?type={contest_flag}",
+        "summaryPaths": ["desc_basic_problem"],
+        "summaryIsBody": true,
+        "publishedAtPath": "publish_time",
+        "publishedAtUtcOffset": "+08:00",
+        "externalIdPath": "contest_name",
+        "_aihot": { "initialBackfillLimit": 20 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "tags": ["AI", "赛事"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
       "id": "rss-hd-talent-web",
       "name": "邯郸人才网订阅号",
       "kind": "rss",

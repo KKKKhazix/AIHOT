@@ -1,7 +1,7 @@
 // Outbound HTTP for collectors, the image proxy and the paid APIs: SSRF guard, routing, limits.
 import net from "node:net";
 import { addAbortListener } from "node:events";
-import { Agent, Pool, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
+import { Agent, Pool, ProxyAgent, fetch as undiciFetch, getGlobalDispatcher, type Dispatcher } from "undici";
 import { config } from "../config.ts";
 import { assertPublicUrl, guardedLookup } from "./url.ts";
 import { createEgressProxy, createEgressResolver, OUTBOUND_HTTP_OPTIONS } from "./egress-proxy.ts";
@@ -15,10 +15,11 @@ import { DEPLOYMENT, SITE } from "@aihot/site";
  * hosts, are connected here instead, so the
  * connect-time address check still applies. A name sent through the proxy is resolved through it too
  * (egress-proxy.ts), and the tunnel goes to the checked address. "direct" is for paid APIs called
- * straight (Dajiala) and the site's own addresses. A listing fetch from a host in
- * PRIVATE_FEED_HOSTS is connected directly too.
+ * straight (Dajiala) and the site's own addresses. "direct-first" tries the proxy only if the
+ * first connection times out before the request. A listing fetch from a host in PRIVATE_FEED_HOSTS
+ * is connected directly too.
  */
-export type EgressRoute = "egress" | "direct";
+export type EgressRoute = "egress" | "direct" | "direct-first";
 
 let proxyAgent: ProxyAgent | null = null;
 let directAgent: Agent | null = null;
@@ -150,7 +151,7 @@ export async function guardedFetch(input: string, opts: GuardedFetchOptions = {}
   // One budget includes DNS, every redirect and the body. Restarting it at each hop allowed a
   // nominal 20 s image request to occupy the API for minutes.
   const signal = AbortSignal.timeout(opts.timeoutMs ?? 20_000);
-  const route = opts.route ?? "egress";
+  let route = opts.route === "direct-first" ? "direct" : opts.route ?? "egress";
   const configuredHost = hostOf(new URL(input));
   const privateHosts = opts.privateFeedHost && config.privateFeedHosts.includes(configuredHost) ? [configuredHost] : [];
   const check = (target: string) => withinDeadline(assertPublicUrl(target, config.allowPrivateNetworkFetch,
@@ -170,6 +171,17 @@ export async function guardedFetch(input: string, opts: GuardedFetchOptions = {}
   for (let hop = 0; ; hop++) {
     const viaProxy = proxied(url, route, privateHosts);
     const privateHost = privateHosts.includes(hostOf(url));
+    const primary = dispatcherFor(viaProxy, privateHost);
+    const canSwitch = opts.route === "direct-first" && hop === 0 && proxied(url, "egress", privateHosts);
+    let requestStarted = false;
+    const dispatcher = canSwitch ? (primary ?? getGlobalDispatcher()).compose(dispatch => (options, handler) => {
+      const onRequestStart = handler.onRequestStart;
+      handler.onRequestStart = function (controller, context) {
+        requestStarted = true;
+        onRequestStart?.call(this, controller, context);
+      };
+      return dispatch(options, handler);
+    }) : primary;
     const send = (dispatcher: Dispatcher | undefined) => undiciFetch(url, {
       method,
       headers: Object.fromEntries(headers),
@@ -178,7 +190,15 @@ export async function guardedFetch(input: string, opts: GuardedFetchOptions = {}
       dispatcher,
       signal,
     });
-    const res = await send(dispatcherFor(viaProxy, privateHost)).catch(async (error: unknown) => {
+    const res = await send(dispatcher).catch(async (error: unknown) => {
+      const cause = (error as { cause?: { code?: string } })?.cause;
+      // Fetch itself can try a new connection after a response (421). The dispatcher records
+      // that the first request started, even if the caller only sees the later connection error.
+      if (canSwitch && !requestStarted && !signal.aborted && cause?.code === "UND_ERR_CONNECT_TIMEOUT") {
+        route = "egress";
+        url = await check(url.href);
+        return send(dispatcherFor(true, false));
+      }
       // Only a direct connection has a curve of its own to change, and only while the budget lasts:
       // a retry on an aborted signal fails the same way and hides the original error.
       const pinned = viaProxy || privateHost || signal.aborted || !brokenHandshake(error) ? undefined : pinnedCurveAgent();

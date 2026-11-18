@@ -70,6 +70,9 @@ async function get<T>(path: string, request: Omit<ReceiptRequest, "service">,
       headers: { authorization: `Bearer ${key}`, accept: "application/json" },
       timeoutMs: read.timeoutMs,
       maxBytes: read.maxBytes,
+      // Direct search worked while the proxy returned timeouts and upstream errors; the proxy
+      // remains useful when the direct connection itself times out before a request is sent.
+      route: "direct-first",
     });
     if (res.status === 404 && read.missing) return { response: null, usage: read.missing, cost: objectsCost(0) };
     const text = res.text();

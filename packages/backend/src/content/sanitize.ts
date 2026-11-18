@@ -14,17 +14,21 @@ const ALLOWED_TAGS = [
 
 /** A class naming a promotion block (msr-promo, promo-box …), not text such as "promotion". */
 const PROMO_CLASS = /(?:^|[-_])promo(?:$|[-_])/i;
+const RELATED_HEADING = /^related (?:articles|posts|stories|content|reading|coverage)$/i;
 
 /**
- * Drop promotions and non-video source elements before unknown containers are unwrapped. Rotating
- * promotions are not article material, and a nested fallback source is not a video candidate.
+ * Drop promotions, related story cards, and non-video source elements before their containers are
+ * unwrapped. Feed content can include the same changing recommendations as the publisher's page.
  */
 function dropNonBodyMarkup(html: string): string {
-  if (!/promo|<source\b/i.test(html)) return html;
+  if (!/promo|<source\b|<section\b/i.test(html)) return html;
   const $ = cheerio.load(html, null, false);
   $("source").filter((_, el) => !$(el).parent().is("video")).remove();
   $("[class]")
     .filter((_, el) => ($(el).attr("class") ?? "").split(/\s+/).some((c) => PROMO_CLASS.test(c)))
+    .remove();
+  $("section:has(article a[href])")
+    .filter((_, el) => RELATED_HEADING.test(collapse($(el).children("h2, h3").first().text())))
     .remove();
   return $.html();
 }
@@ -146,7 +150,7 @@ export function normalizeBlocks(html: string): string {
  */
 const TRAILING_CHROME = [
   /^topics$/i, /^tags?$/i, /^latest in [\p{L}\s&-]{1,30}$/iu, /^latest (?:news|stories)$/i, /^most (?:popular|read)$/i,
-  /^related (?:articles|posts|stories|content|reading|coverage)$/i, /^more (?:stories|articles|news)$/i, /^(?:keep reading|read next|up next)$/i,
+  RELATED_HEADING, /^more (?:stories|articles|news)$/i, /^(?:keep reading|read next|up next)$/i,
   /^(?:you (?:might|may) also like|recommended(?: for you)?)$/i, /^(?:subscribe|sign up)\b.{0,80}$/i, /^share (?:this|on)\b.{0,40}$/i,
   /^follow us\b.{0,40}$/i, /^advertisement$/i,
 ];

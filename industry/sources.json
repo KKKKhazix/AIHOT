@@ -629,6 +629,171 @@
       "syndicate_fulltext": false
     },
     {
+      "id": "rss-cili-cixian",
+      "name": "磁力磁县",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3896678270.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["磁县", "媒体"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-shexian-publish",
+      "name": "涉县发布",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3007209129.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["涉县", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-weiguan-fengfeng",
+      "name": "微观峰峰",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3070752323.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["峰峰矿区", "媒体"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-damei-fuxing",
+      "name": "大美复兴",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3006141302.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["复兴区", "媒体"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-linzhang-publish",
+      "name": "临漳发布",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3002712648.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["临漳", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-chengan-yahui",
+      "name": "成安县亚辉创业园",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3250267616.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["成安", "OPC"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-daming-jingkai",
+      "name": "大名经开电商产业园",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3930904199.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["大名", "OPC"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-guangtao-publish",
+      "name": "馆陶发布",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3281646722.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["馆陶", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-weiguan-feixiang",
+      "name": "微观肥乡",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3076072096.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["肥乡", "媒体"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-jize-media",
+      "name": "鸡泽融媒",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3091137169.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["鸡泽", "媒体"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-yongnian-publish",
+      "name": "永年发布",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3095748698.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["永年", "政务"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
       "id": "rss-wechat-empty-3885548244",
       "name": "待确认公众号 3885548244",
       "kind": "rss",

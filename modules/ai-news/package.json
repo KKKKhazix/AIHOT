@@ -1,0 +1,10 @@
+{
+  "name": "@aihot/ai-news",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./module": "./module.ts",
+    "./web": "./web.tsx"
+  }
+}

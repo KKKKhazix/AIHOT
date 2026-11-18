@@ -1,368 +1,135 @@
 {
-  "$comment": "示范信源：首次启动时导入（scripts/seed.ts），已存在的不会被覆盖。之后在后台“信源”里新建、修改和暂停。字段说明见 docs/customize.md。",
+  "$comment": "OPCHOT 示范信源：首次启动时导入（scripts/seed.ts），已存在的不会被覆盖。微信公众号请在后台“信源”页添加你自建 RSS 的 feedUrl（kind=rss）；人工摘录或自建抓取脚本通过 /api/ingest/items 推送（external）。字段说明见 docs/customize.md。",
   "sources": [
     {
-      "id": "rss-openai-news",
-      "name": "OpenAI News",
-      "kind": "rss",
+      "id": "json-opc-home-articles",
+      "name": "鹅城智谷（广平 OPC 门户）：工作动态",
+      "kind": "json_list",
       "config": {
-        "feedUrl": "https://openai.com/news/rss.xml",
+        "url": "https://opc-home.guanglingzhixun.cn/api/v1/h5/articles?column_id=1&page=1&pageSize=50",
+        "mode": "json_api",
+        "itemsPath": "data.list",
+        "titlePaths": ["title"],
+        "urlTemplate": "https://opc-home.guanglingzhixun.cn/#/pages/article/list?id={id}",
+        "summaryPaths": ["summary"],
+        "summaryIsBody": true,
+        "publishedAtPath": "date",
+        "publishedAtUtcOffset": "+08:00",
+        "externalIdPath": "id",
         "_aihot": {
-          "initialBackfillLimit": 8
+          "initialBackfillLimit": 10
         }
       },
-      "tier": "T1",
-      "owner_entity_id": "openai",
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [
-        "官方"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-google-deepmind",
-      "name": "Google DeepMind",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://deepmind.google/blog/rss.xml",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T1",
-      "owner_entity_id": "google",
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [
-        "官方"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-google-research",
-      "name": "Google Research",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://research.google/blog/rss/",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T1",
-      "owner_entity_id": "google",
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [
-        "官方",
-        "研究"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-hugging-face",
-      "name": "Hugging Face Blog",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://huggingface.co/blog/feed.xml",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T1",
-      "owner_entity_id": "hugging-face",
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [
-        "官方",
-        "开源"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-microsoft-research",
-      "name": "Microsoft Research",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://www.microsoft.com/en-us/research/feed/",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T1",
-      "owner_entity_id": "microsoft",
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [
-        "官方",
-        "研究"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-nvidia-blog",
-      "name": "NVIDIA Blog",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://blogs.nvidia.com/feed/",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T1",
-      "owner_entity_id": "nvidia",
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [
-        "官方"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-aws-ml",
-      "name": "AWS Machine Learning Blog",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://aws.amazon.com/blogs/machine-learning/feed/",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T1",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [
-        "官方",
-        "教程"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-github-ai",
-      "name": "GitHub Blog · AI & ML",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://github.blog/ai-and-ml/feed/",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T1",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [
-        "官方"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-mistral",
-      "name": "Mistral AI",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://mistral.ai/news/rss",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T1",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 120,
-      "tags": [
-        "官方"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-bair",
-      "name": "Berkeley AI Research",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://bair.berkeley.edu/blog/feed.xml",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T1",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [
-        "研究"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-the-verge-ai",
-      "name": "The Verge · AI",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
+      "tier": "T1_5",
+      "owner_entity_id": "guangping-opc",
       "participation_mode": "editorial",
       "interval_minutes": 60,
-      "tags": [
-        "媒体"
-      ],
+      "tags": ["广平", "工作动态"],
       "site_fulltext": false,
       "syndicate_fulltext": false
     },
     {
-      "id": "rss-techcrunch-ai",
-      "name": "TechCrunch · AI",
-      "kind": "rss",
+      "id": "json-opc-home-policies-hd",
+      "name": "鹅城智谷（广平 OPC 门户）：邯郸市政策",
+      "kind": "json_list",
       "config": {
-        "feedUrl": "https://techcrunch.com/category/artificial-intelligence/feed/",
+        "url": "https://opc-home.guanglingzhixun.cn/api/v1/h5/policies?level=%E9%82%AF%E9%83%B8%E5%B8%82&page=1&pageSize=50",
+        "mode": "json_api",
+        "itemsPath": "data.list",
+        "titlePaths": ["title"],
+        "urlTemplate": "https://opc-home.guanglingzhixun.cn/#/pages/policy/index?id={id}",
+        "summaryPaths": ["summary"],
+        "summaryIsBody": true,
+        "publishedAtPath": "date",
+        "publishedAtUtcOffset": "+08:00",
+        "externalIdPath": "id",
         "_aihot": {
-          "initialBackfillLimit": 8
+          "initialBackfillLimit": 20
         }
       },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 60,
-      "tags": [
-        "媒体"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-ars-technica-ai",
-      "name": "Ars Technica · AI",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://arstechnica.com/ai/feed/",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 60,
-      "tags": [
-        "媒体"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-mit-tech-review-ai",
-      "name": "MIT Technology Review · AI",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
+      "tier": "T1",
       "participation_mode": "editorial",
       "interval_minutes": 120,
-      "tags": [
-        "媒体"
-      ],
+      "tags": ["邯郸市", "政策"],
       "site_fulltext": false,
       "syndicate_fulltext": false
     },
     {
-      "id": "rss-the-decoder",
-      "name": "The Decoder",
-      "kind": "rss",
+      "id": "json-opc-home-policies-gp",
+      "name": "鹅城智谷（广平 OPC 门户）：广平县政策",
+      "kind": "json_list",
       "config": {
-        "feedUrl": "https://the-decoder.com/feed/",
+        "url": "https://opc-home.guanglingzhixun.cn/api/v1/h5/policies?level=%E5%B9%BF%E5%B9%B3%E5%8E%BF&page=1&pageSize=50",
+        "mode": "json_api",
+        "itemsPath": "data.list",
+        "titlePaths": ["title"],
+        "urlTemplate": "https://opc-home.guanglingzhixun.cn/#/pages/policy/index?id={id}",
+        "summaryPaths": ["summary"],
+        "summaryIsBody": true,
+        "publishedAtPath": "date",
+        "publishedAtUtcOffset": "+08:00",
+        "externalIdPath": "id",
         "_aihot": {
-          "initialBackfillLimit": 8
+          "initialBackfillLimit": 10
         }
       },
-      "tier": "T2",
-      "owner_entity_id": null,
-      "participation_mode": "editorial",
-      "interval_minutes": 60,
-      "tags": [
-        "媒体"
-      ],
-      "site_fulltext": false,
-      "syndicate_fulltext": false
-    },
-    {
-      "id": "rss-simon-willison",
-      "name": "Simon Willison",
-      "kind": "rss",
-      "config": {
-        "feedUrl": "https://simonwillison.net/atom/everything/",
-        "_aihot": {
-          "initialBackfillLimit": 8
-        }
-      },
-      "tier": "T2",
-      "owner_entity_id": null,
+      "tier": "T1",
+      "owner_entity_id": "guangping-opc",
       "participation_mode": "editorial",
       "interval_minutes": 120,
-      "tags": [
-        "个人"
-      ],
+      "tags": ["广平县", "政策"],
       "site_fulltext": false,
       "syndicate_fulltext": false
     },
     {
-      "id": "rss-import-ai",
-      "name": "Import AI",
-      "kind": "rss",
+      "id": "json-opc-home-policies-hebei",
+      "name": "鹅城智谷（广平 OPC 门户）：河北省政策",
+      "kind": "json_list",
       "config": {
-        "feedUrl": "https://importai.substack.com/feed",
+        "url": "https://opc-home.guanglingzhixun.cn/api/v1/h5/policies?level=%E6%B2%B3%E5%8C%97%E7%9C%81&page=1&pageSize=50",
+        "mode": "json_api",
+        "itemsPath": "data.list",
+        "titlePaths": ["title"],
+        "urlTemplate": "https://opc-home.guanglingzhixun.cn/#/pages/policy/index?id={id}",
+        "summaryPaths": ["summary"],
+        "summaryIsBody": true,
+        "publishedAtPath": "date",
+        "publishedAtUtcOffset": "+08:00",
+        "externalIdPath": "id",
         "_aihot": {
-          "initialBackfillLimit": 8
+          "initialBackfillLimit": 12
         }
       },
-      "tier": "T2",
-      "owner_entity_id": null,
+      "tier": "T1",
       "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [
-        "个人",
-        "周刊"
-      ],
+      "interval_minutes": 120,
+      "tags": ["河北省", "政策"],
       "site_fulltext": false,
       "syndicate_fulltext": false
     },
     {
-      "id": "rss-latent-space",
-      "name": "Latent Space",
-      "kind": "rss",
+      "id": "json-opc-home-policies-national",
+      "name": "鹅城智谷（广平 OPC 门户）：国家政策",
+      "kind": "json_list",
       "config": {
-        "feedUrl": "https://www.latent.space/feed",
+        "url": "https://opc-home.guanglingzhixun.cn/api/v1/h5/policies?level=%E5%9B%BD%E5%AE%B6&page=1&pageSize=50",
+        "mode": "json_api",
+        "itemsPath": "data.list",
+        "titlePaths": ["title"],
+        "urlTemplate": "https://opc-home.guanglingzhixun.cn/#/pages/policy/index?id={id}",
+        "summaryPaths": ["summary"],
+        "summaryIsBody": true,
+        "publishedAtPath": "date",
+        "publishedAtUtcOffset": "+08:00",
+        "externalIdPath": "id",
         "_aihot": {
-          "initialBackfillLimit": 8
+          "initialBackfillLimit": 13
         }
       },
-      "tier": "T2",
-      "owner_entity_id": null,
+      "tier": "T1",
       "participation_mode": "editorial",
-      "interval_minutes": 180,
-      "tags": [
-        "个人"
-      ],
+      "interval_minutes": 120,
+      "tags": ["国家", "政策"],
       "site_fulltext": false,
       "syndicate_fulltext": false
     }

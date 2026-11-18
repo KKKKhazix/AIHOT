@@ -1,10 +1,10 @@
 # docker compose up -d --build     → http://localhost:3000   (the admin is at /admin)
 # docker compose --profile https up -d --build   → HTTPS for SITE_DOMAIN through Caddy
-name: aihot
+name: opchot
 
 x-app: &app
   build: .
-  image: aihot-app
+  image: opchot-app
   restart: unless-stopped
 
 x-backend: &backend
@@ -12,7 +12,7 @@ x-backend: &backend
   env_file: .env
   environment: &backend-env
     NODE_ENV: production
-    DATABASE_URL: postgres://aihot:${POSTGRES_PASSWORD:-aihot}@db:5432/aihot
+    DATABASE_URL: postgres://opchot:${POSTGRES_PASSWORD:-opchot}@db:5432/opchot
     AIHOT_DATA_DIR: /data
     API_BASE_URL: http://api:3001
     # No proxy in front limits pushes to /api/ingest/items: the api does (per client and minute; 0 turns it off).
@@ -28,13 +28,13 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: aihot
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aihot}
-      POSTGRES_DB: aihot
+      POSTGRES_USER: opchot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opchot}
+      POSTGRES_DB: opchot
     volumes:
       - db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aihot -d aihot"]
+      test: ["CMD-SHELL", "pg_isready -U opchot -d opchot"]
       interval: 5s
       timeout: 5s
       retries: 30

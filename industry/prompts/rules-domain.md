@@ -1,45 +1,32 @@
 
-【AI 领域翻译规则 — 本平台 100% 是 AI/ML/LLM 行业内容，严格遵守】
+【OPC 领域翻译规则 — 本平台聚焦一人公司（OPC）创业、社区、政策与场景，严格遵守】
 
-1. 歧义默认值：以下词在中文有非 AI 歧义，**一律按 AI 含义翻译**：
-   - LLM = 大语言模型（绝不译"法学硕士"/"Master of Laws"）
-   - Token / tokens = 模型 token（保留英文；绝不译"代币"/"令牌"）
-   - Transformer = Transformer 架构（保留英文；不译"变压器"）
-   - Diffusion = 扩散模型（AI 生成，不是物理扩散）
-   - Agent / Agentic = AI 智能体 / 智能体的（不译"代理人"/"中介"）
-   - Alignment = 对齐（AI 安全语境）
-   - Inference = 推理（模型生成）
-   - Reasoning = 推理（注意：与 inference 都译"推理"，必要时用"链式推理"区分 CoT；reasoning model 指 o1/o3/R1 这类思考型模型）
-   - Embedding = 嵌入向量（也可保留英文）
-   - Distillation = 知识蒸馏
-   - Hallucination = 模型幻觉
-   - Fine-tune / Fine-tuning = 微调
-   - Pretrain / Pretraining = 预训练
-   - Context window = 上下文窗口
-   - Prompt = 提示词
-   - Skill / Skills = 技能（Claude 等 Agent 框架的能力包，不译"特长"）
+1. 歧义默认值：以下词在中文里有其他含义，**一律按 OPC/创业语境翻译**：
+   - OPC = 一人公司（One Person Company），不译"开放平台通信"等其他含义；首次出现可写"一人公司（OPC）"
+   - 社区 = OPC 社区/创业社区，不译"住宅小区"；遇到"高新区社区"按行政区划理解
+   - 场景 = 应用场景（AI 落地需求），不译"场景布置/拍摄场景"
+   - 订单 = 可以承接的商务订单，不译"订单记录"之外的电商术语
+   - 算力券 = 政府发放的算力补贴凭证，保留"算力券"
+   - 一件事 = 政务服务"一件事"集成办理，按专有政策术语保留
+   - 工位 = 共享办公工位，不译"工作站"
+   - 入驻 = 企业/创业者进驻社区，不译"入住"
+   - 免租 = 免除场地租金，保留"免租"
+   - 陪跑 = 创业陪跑服务，不译"陪跑训练"
+   - 主理人 = 社区/空间运营负责人，保留"主理人"
 
-2. 以下专有名词**一律保留英文原文**，不翻译不加中文括注：
-   - AI 公司：OpenAI / Anthropic / Google DeepMind / xAI / Meta AI / Mistral / DeepSeek / Cohere / HuggingFace（HF）/ Runway / ElevenLabs / Suno / Pika / Midjourney / Perplexity
-   - 模型族（举例 + 通用规则）：GPT / Claude / Gemini / Llama / Qwen / Grok / o 系列 / DeepSeek / Mistral / Mixtral / Phi / Sora / Veo / Imagen
-     **规则**：任何大模型族名、产品代号一律保留英文
-   - 模型版本号（举例 + 通用规则）：GPT-5 / Claude 4.7 / Claude Sonnet 4.6 / Llama 4 / Gemini 3 / o3 / o4 / DeepSeek-V4 / Qwen3.7
-     **规则**：版本号一字不改（包括字母数字后缀如 4o / 4.7 / 405B / V4 / R1），绝不"翻译性扩写"（不要把 "405B" 译成 "4050 亿"，不要把 "V4" 译成 "第 4 代"）
-   - 技术缩写（举例 + 通用规则）：LLM / RAG / RLHF / DPO / LoRA / QLoRA / PEFT / MoE / CoT / ReAct / KV cache / SOTA / AGI / MCP / ADK / NPU / GPU / TPU
-     **规则**：任何 2-5 字母的全大写缩写，默认按 AI/ML 含义保留英文
-   - 评测基准（举例 + 通用规则）：MMLU / GPQA / HumanEval / SWE-bench / SWE-bench Verified / AIME / HLE / ARC-AGI / ARC-AGI 2 / MT-Bench / Chatbot Arena / Aider Polyglot / LiveCodeBench
-     **规则**：以 -bench / -eval 结尾或全大写的评测名一律保留英文
-   - AI 工具/产品：Cursor / Copilot / Codex / Aider / Devin / Cline / Claude Code / Windsurf / Zed / v0 / Bolt / Lovable / Replit Agent
-   - Agent 框架：LangChain / LangGraph / LlamaIndex / CrewAI / AutoGen / Pydantic AI / Vercel AI SDK / DSPy
-   - 推理/部署：Ollama / vLLM / SGLang / TensorRT / Triton / CUDA / ROCm
-   - 通用技术：API / SDK / CLI / IDE / SaaS / CDN / SSO / OAuth / JWT / WebSocket / SSE / gRPC
+2. 以下专有名词**一律保留原文**，不翻译不扩写：
+   - 政策文号、文件名：如"邯郸市支持人工智能OPC创新发展十条政策措施"保持官方写法
+   - 社区、园区、机构名：青年武界·OPC数字创业社区 / 丛台区数字贸易产业园 / 邯郸科创智谷 / 鹅城智谷 / 丛台·创栖里
+   - 平台名：OPCHOT / 鹅城智谷 / 一品一播 / 信息谷
+   - 技术缩写：AI / API / SaaS / AIGC / GMV / MCN / SKU / CRM / ERP
+   - 金额、面积、工位数、入驻率、时间窗口：保留阿拉伯数字和单位，不改写成中文数量词
+   - 网址、政策申报链接、报名二维码说明原样保留
 
-3. 中国厂商**优先用官方中文品牌名**（首次出现可双标"千问（Qwen3）"，后续选一种保持一致）：
-   - 千问（Qwen）/ 文心一言 / 智谱（GLM）/ 月之暗面（Kimi）/ 深度求索（DeepSeek）/ 阶跃星辰（Step）/ 零一万物（Yi）/ 百川 / 豆包（字节）/ 混元（腾讯）/ 可灵（Kling，快手）/ 即梦（Jimeng，字节）/ MiniMax（不译）/ 美团 LongCat / 昆仑万维 Skywork / 面壁 MiniCPM / 华为昇腾 / 寒武纪
+3. 行政区划**使用官方全称**：
+   - 邯郸市 / 武安市 / 丛台区 / 复兴区 / 邯山区 / 峰峰矿区 / 永年区 / 肥乡区 / 经开区 / 冀南新区 / 鸡泽县 / 邱县 / 曲周县 / 馆陶县 / 涉县 / 广平县 / 成安县 / 魏县 / 磁县 / 临漳县 / 大名县
+   - 不要把"经开区"扩写成"经济技术开发区"，除非原文如此
 
 4. 代码 / 命令 / URL / 数字单位 **一字不改**保留：
-   - 反引号代码 `code` 不翻译
-   - 命令如 /code-review、pip install、npm run 不译（不要译"代码审查"）
-   - URL 原样
-   - 数字+单位：8k context / 175B params / 3.5x speedup / $3 per M tokens / 99.9%
-   - 金额、参数量、比例、区间必须保留原文的阿拉伯数字和单位；不要把 $10B-$100B 改写成“数百亿至数千亿美元”等中文数量词
+   - 网址、报名链接、附件名原样
+   - 日期保留"2026-11-10"或"11 月 10 日"原文写法，不推算成其他日期
+   - 金额、比例、面积、人数保留原文的阿拉伯数字和单位

@@ -794,6 +794,216 @@
       "syndicate_fulltext": false
     },
     {
+      "id": "rss-trae-ai",
+      "name": "TRAE.ai",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3911685025.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "赛事"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-qoder",
+      "name": "Qoder",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3198267297.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "工具"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-tencent-workbuddy",
+      "name": "腾讯WorkBuddy",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3638818335.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "工具"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-moonshot-kimi",
+      "name": "月之暗面 Kimi",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3702378138.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "工具"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-agi-path",
+      "name": "通往AGI之路",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3933490096.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "社区"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-guancha-insights",
+      "name": "观猹insights",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3191673346.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "赛事"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-datawhale",
+      "name": "Datawhale",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3226363426.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "培训"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-modelscope",
+      "name": "魔搭ModelScope社区",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3975755543.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "社区"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-sensetime",
+      "name": "商汤科技SenseTime",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3205727600.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "企业"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-sensetime-xiaohuanxiong",
+      "name": "商汤小浣熊",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3964035590.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "工具"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-zhixingxing-ai",
+      "name": "智猩猩AI",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/2398114060.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "媒体"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-saibo-chanxin",
+      "name": "赛博禅心",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3934419561.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "媒体"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-volcengine-agent",
+      "name": "火山引擎Agent社区",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3905207779.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1_5",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "社区"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-deepseek-harness",
+      "name": "DeepSeek Harness 团队",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3687371919.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T1",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["AI", "工具"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
       "id": "rss-wechat-empty-3885548244",
       "name": "待确认公众号 3885548244",
       "kind": "rss",

@@ -157,6 +157,19 @@ test("promotions a feed rotates inside its posts are left out of the body and me
   }
 });
 
+test("related story cards inside feed content do not change the article body or media", async () => {
+  const body = '<p>Seven new models are available.</p><img src="/chart.png">';
+  for (const recommendation of ["Model announcement", "Keynote transcript"]) {
+    const html = `${body}<section><h2>Related Stories</h2><div><article><h3><a href="/recommended">${recommendation}</a></h3><img src="/${recommendation}.png"></article></div></section><p>Published on the official blog.</p>`;
+    pages["/related.xml"] = () => `<rss xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><item><title>Seven models</title><link>https://example.org/post</link><content:encoded><![CDATA[${html}]]></content:encoded></item></channel></rss>`;
+    const [item] = (await fetchRss({ id: "test-feed", config: { feedUrl: site + "/related.xml", summaryIsBody: true }, participation_mode: "editorial" } as never)).candidates;
+    assert.equal(item!.bodyText, "Seven new models are available. Published on the official blog.");
+    assert.deepEqual(item!.media, [{ kind: "image", url: "https://example.org/chart.png" }]);
+  }
+  const authored = "<section><h2>Related work</h2><p>We compare earlier research.</p></section>";
+  assert.match(sanitizeBody(authored), /We compare earlier research/);
+});
+
 test("a listing that links other articles in its teasers takes only the links that begin a line", () => {
   // A news listing through Jina: each headline stands on its own line; its teaser links older stories inline.
   const md = [

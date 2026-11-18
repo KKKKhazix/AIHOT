@@ -284,6 +284,66 @@
       "syndicate_fulltext": false
     },
     {
+      "id": "rss-opc-xu",
+      "name": "老许的OPC超级个体之路",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3918627174.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "实操"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-opc-quan",
+      "name": "opc圈",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3701229293.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "行业"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-opc-gongchuang",
+      "name": "OPC共创圈",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/3687454578.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "社区"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
+      "id": "rss-opc-shengtai",
+      "name": "OPC生态圈",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://vaqlbqhb.sealosbja.site/feed/2394955580.xml",
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 60,
+      "tags": ["OPC", "生态"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
       "id": "rss-wechat-empty-3885548244",
       "name": "待确认公众号 3885548244",
       "kind": "rss",

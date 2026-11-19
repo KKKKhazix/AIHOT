@@ -9,7 +9,7 @@ import { addressRuns } from "@aihot/contracts/addresses";
 import { MentionText } from "../components/ui/MentionText";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { breadcrumbLd, pageMeta, storyLd, titled } from "../lib/seo";
+import { breadcrumbLd, pageMeta, storyArticleLd, storyLd, titled } from "../lib/seo";
 import { beijingDate, beijingTime } from "@aihot/contracts/time";
 import { byBeijingDay, monthDay, monthDayTime, relativeTime } from "../lib/format";
 import { useCurrentSection } from "../lib/motion";
@@ -38,6 +38,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 export function meta({ loaderData }: Route.MetaArgs) {
   if (!loaderData) return [{ title: titled("事件不存在") }, { name: "robots", content: "noindex" }];
   const s = loaderData.story;
+  const article = storyArticleLd(s);
   return pageMeta({
     title: s.title,
     description: (s.digest ?? s.summary ?? s.excerpt?.text)?.slice(0, 150) ?? `${s.sourceCount} 个报道来源 ${s.reportCount} 篇报道，完整时间线与最新进展。`,
@@ -48,6 +49,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
     noindex: s.reportCount < STORY_INDEX_MIN_REPORTS,
     jsonLd: [
       storyLd(s),
+      ...(article ? [article] : []),
       breadcrumbLd([{ name: SITE.name, path: "/" }, ...UP.crumbs, { name: s.title, path: `/story/${s.publicId}` }]),
     ],
   });

@@ -8,7 +8,7 @@ import { isChineseText, stripTagMarkup } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { textToHtml } from "../content/sanitize.ts";
 import { xArticleBody } from "../content/posts.ts";
-import { eventPageCondition, exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, thinPageCondition, toItemSummary, xView, type ItemRow } from "./items.ts";
+import { exportTranslation, isChineseBody, ITEM_COLUMNS, ITEM_FROM, seatHolders, showsPost, storyIndexableCondition, thinPageCondition, toItemSummary, xView, type ItemRow } from "./items.ts";
 import { evidenceCondition, listedCondition } from "./scope.ts";
 import { itemUrl, siteUrl } from "./links.ts";
 import { hasItemPage, publicSourceName } from "./rules.ts";
@@ -27,8 +27,10 @@ interface DetailRow extends ItemRow {
   tr_complete: boolean | null;
   topics: string[];
   thin: boolean;
-  /** Its event page stands for it in search (eventPageCondition). */
-  event_page: boolean;
+  /** Its event gathers enough reports to stand in search (storyIndexableCondition). */
+  story_indexable: boolean;
+  /** Manually marked for indexing by an editor. */
+  seo_manual: boolean;
 }
 
 export type DetailResult =
@@ -53,7 +55,8 @@ async function loadRow(id: string, now = new Date()): Promise<DetailRow | null> 
   const [row] = await sql<DetailRow[]>`
     SELECT ${ITEM_COLUMNS}, CASE WHEN p.body_mode = 'full' THEN a.x_article->>'html' END AS x_article_html,
       a.body_html, a.body_text, a.body_status, a.cover, tr.body_html AS tr_html, tr.complete AS tr_complete,
-      ${topicMembership()} AS topics, ${thinPageCondition()} AS thin, ${eventPageCondition(now)} AS event_page
+      ${topicMembership()} AS topics, ${thinPageCondition()} AS thin,
+      ${storyIndexableCondition(now)} AS story_indexable, (p.seo_indexed_at IS NOT NULL) AS seo_manual
     ${ITEM_FROM}
     WHERE p.article_id = ${id}`;
   return row ?? null;
@@ -186,6 +189,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
   const sameEvent = (await seatHolders([row], now)).get(row.id) ?? null;
   const item: SiteItemDetail = {
     ...summary,
+    story: summary.story ? { ...summary.story, indexable: row.story_indexable } : null,
     x,
     ...(sameEvent ? { reason: null, sameEvent } : {}),
     readingMode: "full",
@@ -197,7 +201,7 @@ export async function loadItemDetail(id: string, language: "zh" | "original" = "
     tagTopics: tagTopics(summary.tags),
     daily: await firstDaily(id),
     indexable: row.indexable,
-    googleNoindex: row.indexable && (row.thin || row.event_page),
+    googleNoindex: row.indexable && (row.thin || (!row.seo_manual && row.story_indexable)),
     markdownAvailable: markdownAvailable(row),
     group,
     hasTranslation: reading.hasTranslation,

@@ -1,14 +1,14 @@
 import { data, useLoaderData } from "react-router";
 import type { Route } from "./+types/report-detail";
-import { REPORT_NAMES, type ReportDetail, type ReportNavigationResponse, type ReportKind } from "@aihot/contracts/site";
-import { SITE, subjectAfter } from "@aihot/site";
+import { REPORT_NAMES, reportDateLabel, type ReportDetail, type ReportNavigationResponse, type ReportKind } from "@aihot/contracts/site";
+import { SITE, subjectAfter, withSubject } from "@aihot/site";
 import { apiGet, cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { pageMeta, reportDescription, reportLd, reportTitle, titled } from "../lib/seo";
+import { breadcrumbLd, pageMeta, reportDescription, reportLd, reportTitle, titled } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
 import { ReportLayout } from "../features/report/ReportLayout";
 import { ReportPaper, reportOutline } from "../features/report/ReportPaper";
-import { feedLink, kindFromPath } from "../features/report/format";
+import { KIND_PATH, feedLink, kindFromPath } from "../features/report/format";
 import type { Screen } from "../components/shell/screens";
 
 export const handle: Screen = { tab: "daily", name: "日报" };
@@ -43,7 +43,14 @@ export function meta({ loaderData }: Route.MetaArgs) {
     path,
     image: `/og/reports/${r.kind}/${r.key}.png`,
     type: "article",
-    jsonLd: reportLd(r, path, description),
+    jsonLd: [
+      reportLd(r, path, description),
+      breadcrumbLd([
+        { name: SITE.name, path: "/" },
+        { name: withSubject(REPORT_NAMES[r.kind]), path: KIND_PATH[r.kind] },
+        { name: reportDateLabel(r.kind, r.key), path },
+      ]),
+    ],
   }), feedLink(r.kind)];
 }
 

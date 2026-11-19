@@ -36,6 +36,12 @@ const details: Record<string, SiteItemDetail> = {
   "metadata-short": { ...detail, id: "metadata-short", googleNoindex: true },
   "metadata-hidden": { ...detail, id: "metadata-hidden", selected: false, indexable: false },
   "metadata-undated": { ...detail, id: "metadata-undated", publishedAt: null, discoveredAt: "2026-10-04T07:30:00.000Z" },
+  "metadata-xpost": {
+    ...detail,
+    id: "metadata-xpost",
+    channel: "x",
+    x: { authorName: "Fixture Author", handle: "fixture", avatarUrl: null, quoted: null, media: [], article: false },
+  },
 };
 const citation = (available: boolean): ReportCitation => ({ itemId: available ? item.id : "withdrawn", title: available ? item.title : "已撤下的旧头条", summary: item.summary, sourceName: item.source.name, sourceUrl: detail.links.original, sourceIconUrl: null, firstParty: true, publishedAt: at, available });
 /** A daily whose one entry was withdrawn: its highlights are only the reports a thin issue is filled with. */
@@ -52,6 +58,8 @@ const api = createServer((req, res) => {
   res.setHeader("Content-Type", "application/json");
   const send = (value: unknown) => res.end(JSON.stringify(value));
   if (path === "/api/site/meta") return send({ changelogVersion: "fixture" });
+  if (path === "/api/health") return send({ ok: true });
+  if (path === "/api/site/hot") return send({ computedAt: at, windowHours: 48, entries: [] });
   if (path === "/api/site/timeline") return send({ filters: readFilters(url.searchParams), cards: [{ key: item.id, anchorAt: at, item, group: null }], nextCursor: null, hot: null, dayCounts: { "2026-10-04": 1 } });
   if (path === "/api/site/pool") return send({ filters: { ...readFilters(url.searchParams), q: url.searchParams.get("q"), tab: url.searchParams.get("tab") ?? "time" }, items: [item], page: Number(url.searchParams.get("page") ?? 1), pageCount: 3, total: 100, todayCount: 1, freshness: at });
   const article = /^\/api\/site\/items\/([^/]+?)(?:\/original)?$/.exec(path)?.[1];
@@ -216,10 +224,37 @@ test("story metadata describes the visible collection, current summary and repor
   assert.ok(collection);
   assert.equal(collection.name, story.title);
   assert.equal(collection.description, story.digest);
+  assert.equal(collection.image, `${web.origin}/og/stories/${story.publicId}.png`);
   assert.equal(collection.dateModified, story.digestUpdatedAt);
   assert.equal("datePublished" in collection, false);
   assert.deepEqual(collection.publisher, organization());
   const list = collection.mainEntity as { itemListElement: Array<{ name: string }> };
   assert.deepEqual(list.itemListElement.map((entry) => entry.name), [item.title]);
   assert.ok($("main").text().includes(story.digest!));
+  assert.equal(structured($).find((entry) => entry["@type"] === "NewsArticle"), undefined, "a single-report noindex story does not emit a NewsArticle");
+
+  const several = await page(`/story/${severalReports.publicId}`);
+  const article = structured(several).find((entry) => entry["@type"] === "NewsArticle")!;
+  assert.ok(article, "an indexable story with a digest emits a NewsArticle dated by its digest");
+  assert.equal(article.headline, severalReports.title);
+  assert.equal(article.datePublished, severalReports.digestUpdatedAt);
+  assert.equal(article.image, `${web.origin}/og/stories/${severalReports.publicId}.png`);
+});
+
+test("entry pages keep one accessible heading each and distinct metadata across agent tabs", async () => {
+  for (const path of ["/", "/all", "/hot", `/items/${item.id}`, "/items/metadata-xpost"]) {
+    const $ = await page(path);
+    assert.equal($("h1").length, 1, `${path}: exactly one h1`);
+    assert.ok($("h1").text().trim().length > 0, `${path}: non-empty h1`);
+    assert.equal($("h1").closest(".hidden").length, 0, `${path}: h1 must not sit inside display:none on mobile`);
+  }
+  const article = structured(await page(`/items/${item.id}`)).find((entry) => entry["@type"] === "NewsArticle")!;
+  assert.ok(Array.isArray(article.articleSection) && article.articleSection.length > 0, "article carries section metadata");
+
+  const [agentDefault, agentRss, agentApi] = await Promise.all([page("/agent"), page("/agent?tab=rss"), page("/agent?tab=api")]);
+  const titles = [agentDefault("title").text(), agentRss("title").text(), agentApi("title").text()];
+  assert.equal(new Set(titles).size, 3, `each agent tab keeps a distinct title: ${titles.join(" | ")}`);
+  const descriptions = [agentDefault("meta[name=description]").attr("content"), agentRss("meta[name=description]").attr("content"), agentApi("meta[name=description]").attr("content")];
+  assert.equal(new Set(descriptions).size, 3, "each agent tab keeps a distinct description");
+  assert.ok(structured(agentRss).some((entry) => entry["@type"] === "BreadcrumbList"));
 });

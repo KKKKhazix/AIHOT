@@ -174,6 +174,9 @@ test("the news section lists the last 48 hours of events, selections and reports
     assert.ok(lastmod(xml, path), `${path} carries its date`);
   }
   assert.equal(lastmod(xml, `/items/${ids.long}`), ago(1).toISOString(), "a selection is dated by its release");
+  assert.equal(lastmod(index, "/sitemaps/news.xml"), lastmod(xml, `/items/${ids.long}`), "sitemap index carries the shard's latest lastmod");
+  assert.ok(lastmod(index, "/sitemaps/stories.xml"), "dated shards carry lastmod in the sitemap index");
+  assert.equal(lastmod(index, "/sitemaps/pages.xml"), undefined, "undated shards do not invent lastmod in the sitemap index");
   for (const path of [`/items/${ids.old}`, `/story/${stories.stale}`, "/daily/2099-01-01"]) assert.ok(!news.includes(path), `${path} is older than 48 hours`);
   assert.ok(!news.includes(`/items/${ids.noBody}`), "only what the other sections list: not a page kept from Google");
   assert.ok(!news.includes(`/story/${stories.lone}`), "only what the other sections list: not a one-report event");

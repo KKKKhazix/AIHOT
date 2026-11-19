@@ -38,18 +38,17 @@ export function meta({ loaderData }: Route.MetaArgs) {
 
 export default function Home() {
   const { data, filters } = useLoaderData<typeof loader>();
-  const title = filters.tag ? `#${filters.tag}` : "精选";
   return (
     <div className="pb-6">
       {/* Phones: the bar (精选 | 全部, filter, search), the filter in use, today's hot topics, the feed. */}
       <FeedBar base="/" category={filters.category} channel={filters.channel} />
       <ActiveFilters base="/" category={filters.category} channel={filters.channel} tag={filters.tag} />
-      <div className="hidden lg:block">
-        <h1 className="text-[24px] font-semibold leading-[1.3] text-ink">{title}</h1>
-        <div className="mb-5 mt-4 flex items-center justify-between gap-4">
-          <CategoryTabs base="/" category={filters.category} channel={filters.channel} layoutId="home-cat-desk" className="min-w-0" />
-          <SearchField keep={{ category: filters.category }} />
-        </div>
+      <h1 className="sr-only lg:not-sr-only lg:text-[24px] lg:font-semibold lg:leading-[1.3] lg:text-ink">
+        {filters.tag ? `#${filters.tag}` : "精选"}
+      </h1>
+      <div className="mb-5 mt-4 hidden items-center justify-between gap-4 lg:flex">
+        <CategoryTabs base="/" category={filters.category} channel={filters.channel} layoutId="home-cat-desk" className="min-w-0" />
+        <SearchField keep={{ category: filters.category }} />
       </div>
 
       {data.hot && inNav("/hot") && <HotTopics entries={data.hot} />}

@@ -5,7 +5,7 @@ import { SITE } from "@aihot/site";
 import { useLoaderData } from "react-router";
 import { apiGet, cachedPage } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { pageMeta } from "../lib/seo";
+import { breadcrumbLd, pageMeta } from "../lib/seo";
 import { setChangelogSeen } from "../lib/local-state";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
 import { IconChevronRight } from "../components/icons";
@@ -24,7 +24,13 @@ export async function loader({ request }: { request: Request }) {
 }
 
 export function meta() {
-  return pageMeta({ title: "更新日志", description: `${SITE.name} 的功能更新、优化、公告与下线记录。`, path: "/changelog", image: "/og/pages/changelog.png" });
+  return pageMeta({
+    title: "更新日志",
+    description: `${SITE.name} 的功能更新、优化、公告与下线记录。`,
+    path: "/changelog",
+    image: "/og/pages/changelog.png",
+    jsonLd: breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "更新日志", path: "/changelog" }]),
+  });
 }
 
 const KIND_DOT: Record<Release["kind"], string> = {

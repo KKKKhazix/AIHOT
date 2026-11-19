@@ -173,7 +173,7 @@ test('the report goes first, then pages that answer lasting searches, then stori
   let lasting: string[] = [];
   pages(() => lasting);
   await submitBaiduPush(DAY1);
-  lasting = ['/about-new', '/topics/baidu-topic', '/leaderboard/prices'];
+  lasting = ['/about-new', '/topics/baidu-topic', '/topics/baidu-topic/page/2', '/leaderboard/prices'];
   await material('baidu-older', '2026-10-09T02:10:00Z');
   await material('baidu-older-also', '2026-10-09T02:10:00Z');
   await material('baidu-newer', '2026-10-09T02:20:00Z');
@@ -198,6 +198,7 @@ test('the report goes first, then pages that answer lasting searches, then stori
   assert.equal(sent[0], '/daily/2026-10-09', 'the one URL that learns the quota is the most valuable one');
   assert.ok(at('/leaderboard/prices') > 0 && at('/leaderboard/prices') < at('/topics/baidu-topic'));
   assert.ok(at('/topics/baidu-topic') < at(`/story/${publicId}`), 'pages for lasting searches before the day\'s news');
+  assert.equal(at('/topics/baidu-topic/page/2'), -1, 'topic archive pages never spend Baidu push quota');
   assert.ok(at(`/story/${publicId}`) > 0);
   assert.ok(at(`/story/${publicId}`) < at(`/story/${olderStory}`), 'the newer story first');
   assert.ok(at(`/story/${olderStory}`) < at('/items/baidu-newer'));

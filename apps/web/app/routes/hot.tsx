@@ -4,10 +4,10 @@ import { IntentLink } from "../components/ui/IntentLink";
 import type { HotEntryView, HotResponse } from "@aihot/contracts/site";
 import { beijingDate } from "@aihot/contracts/time";
 import { shortAddresses } from "@aihot/contracts/addresses";
-import { SEO_TITLES, subjectAfter, withSubject } from "@aihot/site";
+import { SEO_TITLES, SITE, subjectAfter, withSubject } from "@aihot/site";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { archiveLd, pageMeta } from "../lib/seo";
+import { archiveLd, breadcrumbLd, pageMeta } from "../lib/seo";
 import { monthDay, monthDayTime } from "../lib/format";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/Page";
@@ -41,7 +41,10 @@ export function meta({ loaderData }: Route.MetaArgs) {
     description: `${lead}${subjectAfter("过去 48 小时", "圈")}讨论最多的 10 个事件：热度、走势，以及都有谁在报道。`,
     path: "/hot",
     image: "/og/pages/hot.png",
-    jsonLd: entries.length ? archiveLd("/hot", SEO_TITLES.hot, entries.map((e) => ({ path: `/story/${e.story.publicId}`, name: e.story.title }))) : undefined,
+    jsonLd: [
+      ...(entries.length ? [archiveLd("/hot", SEO_TITLES.hot, entries.map((e) => ({ path: `/story/${e.story.publicId}`, name: e.story.title })))] : []),
+      breadcrumbLd([{ name: SITE.name, path: "/" }, { name: withSubject("热点榜"), path: "/hot" }]),
+    ],
   });
 }
 
@@ -256,38 +259,34 @@ export default function HotPage() {
     <div className="pb-10">
       <PhoneBar
         title="热点"
-        large
-        sub={
-          <>
-            过去 {hot.windowHours}{`${subjectAfter(" 小时", "圈")}讨论最多的 `}{hot.entries.length || 10} 件事
-            {hot.computedAt && (
-              <>
-                {" · "}
-                <span className="num">{monthDayTime(hot.computedAt)}</span> 更新
-              </>
-            )}
-          </>
-        }
         actions={
           <button type="button" onClick={showMethod} className="flex h-11 items-center gap-1 px-3 text-[14px] text-accent active:opacity-50">
             <IconInfo size={17} /> 怎么算
           </button>
         }
       />
-      <header className="hidden flex-wrap items-end justify-between gap-x-6 gap-y-2 pb-5 pt-1 lg:flex">
+      <header className="pb-3 pt-0.5 lg:flex lg:flex-wrap lg:items-end lg:justify-between lg:gap-x-6 lg:gap-y-2 lg:pb-5 lg:pt-1">
         <div>
-          <div className="flex items-center gap-2 text-[12px] font-semibold tracking-[0.08em] text-hot">
+          <div className="hidden items-center gap-2 text-[12px] font-semibold tracking-[0.08em] text-hot lg:flex">
             <span className="relative flex size-2" aria-hidden="true">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-hot opacity-30" />
               <span className="relative inline-flex size-2 rounded-full bg-hot" />
             </span>
             实时热度
           </div>
-          <h1 className="mt-1.5 text-[24px] font-bold leading-[1.3] tracking-[-0.01em] text-ink lg:text-[26px]">{withSubject("热点榜")}</h1>
-          <p className="mt-1.5 text-[13.5px] text-ink-3">过去 {hot.windowHours}{` 小时，${withSubject("圈")}讨论最多的 `}{hot.entries.length || 10} 件事</p>
+          <h1 data-page-title="" className="text-[30px] font-bold leading-[1.25] tracking-[-0.01em] text-ink lg:mt-1.5 lg:text-[26px] lg:leading-[1.3]">{withSubject("热点榜")}</h1>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-ink-4 lg:mt-1.5 lg:text-[13.5px] lg:text-ink-3">
+            过去 {hot.windowHours}{` 小时，${withSubject("圈")}讨论最多的 `}{hot.entries.length || 10} 件事
+            {hot.computedAt && (
+              <span className="lg:hidden">
+                {" · "}
+                <span className="num">{monthDayTime(hot.computedAt)}</span> 更新
+              </span>
+            )}
+          </p>
         </div>
         {hot.computedAt && (
-          <p className="text-[12px] text-ink-4">
+          <p className="hidden text-[12px] text-ink-4 lg:block">
             <span className="num">{monthDayTime(hot.computedAt)}</span> 更新 · 按讨论热度排序
           </p>
         )}

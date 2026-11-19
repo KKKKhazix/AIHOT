@@ -4,7 +4,7 @@ import type { ReportIndexEntry, ReportIndexResponse } from "@aihot/contracts/sit
 import { SITE, withSubject } from "@aihot/site";
 import { apiGet, cachedPage } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { archiveLd, pageMeta } from "../lib/seo";
+import { archiveLd, breadcrumbLd, pageMeta } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
 import { weekdayShort } from "../lib/format";
 import { ReportLayout } from "../features/report/ReportLayout";
@@ -24,7 +24,20 @@ export async function loader({ request }: { request: Request }) {
 
 export function meta({ loaderData }: { loaderData?: { index: ReportIndexEntry[] } }) {
   const entries = (loaderData?.index ?? []).map((e: ReportIndexEntry) => ({ path: `/daily/${e.key}`, name: e.title ? `${e.key} · ${e.title}` : `${SITE.name} 日报 · ${e.key}` }));
-  return pageMeta({ title: `${withSubject("日报")} · 历史存档`, description: `${SITE.name} 历史日报，按日期归档。`, path: "/daily/archive", image: "/og/pages/daily.png", jsonLd: archiveLd("/daily/archive", `${SITE.name} 日报 · 历史存档`, entries) });
+  return pageMeta({
+    title: `${withSubject("日报")} · 历史存档`,
+    description: `${SITE.name} 历史日报，按日期归档。`,
+    path: "/daily/archive",
+    image: "/og/pages/daily.png",
+    jsonLd: [
+      archiveLd("/daily/archive", `${SITE.name} 日报 · 历史存档`, entries),
+      breadcrumbLd([
+        { name: SITE.name, path: "/" },
+        { name: withSubject("日报"), path: "/daily" },
+        { name: "历史存档", path: "/daily/archive" },
+      ]),
+    ],
+  });
 }
 
 export default function DailyArchive() {

@@ -357,10 +357,12 @@ export async function loadTopicPage(slug: string, page: number, now?: Date): Pro
     currentSeats(recheck, at, [topic]),
   ]);
   const groupName = TOPIC_GROUPS.find((g) => g.key === topic.group)?.name ?? "";
+  const items = rows.map(toFeedItemSummary);
   return {
     topic: { ...summarize(topic, seats, index.at, brands, live), groupName, poolTotal: pool },
     modules: Object.fromEntries(parts.map((part) => [part.name, part.part(live)])),
-    items: rows.map(toFeedItemSummary),
+    items,
+    tagTopics: tagTopics([...new Set(items.flatMap((i) => i.tags))]),
     page,
     pageCount,
     pageSize: TOPIC_PAGE_SIZE,

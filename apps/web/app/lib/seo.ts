@@ -2,7 +2,7 @@
 // with the feed filters they carry. The site's name and wording come from site/site.ts;
 //; its address from SITE_URL.
 import type { MetaDescriptor } from "react-router";
-import { REPORT_NAMES, reportDateLabel, type ReportDetail, type StoryDetail, type TimelineFilters } from "@aihot/contracts/site";
+import { REPORT_NAMES, reportDateLabel, STORY_INDEX_MIN_REPORTS, type ReportDetail, type StoryDetail, type TimelineFilters } from "@aihot/contracts/site";
 import { isCategoryKey, isChannelKey } from "@aihot/contracts/taxonomy";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
 
@@ -158,6 +158,7 @@ function siteOrganization() {
  */
 export function siteLd() {
   const base = siteUrl();
+  const alternateNames = (SITE as { alternateNames?: readonly string[] }).alternateNames;
   return [
     organizationLd(),
     {
@@ -165,6 +166,7 @@ export function siteLd() {
       "@type": "WebSite",
       "@id": `${base}/#website`,
       name: SITE.name,
+      ...(alternateNames?.length ? { alternateName: alternateNames } : {}),
       url: base,
       description: SITE_DESCRIPTION,
       inLanguage: SITE.locale,
@@ -313,6 +315,7 @@ export function storyLd(story: StoryDetail) {
     url,
     name: story.title,
     ...(description ? { description } : {}),
+    image: `${base}/og/stories/${story.publicId}.png`,
     inLanguage: SITE.locale,
     isPartOf: { "@id": `${base}/#website` },
     publisher: siteOrganization(),
@@ -327,6 +330,25 @@ export function storyLd(story: StoryDetail) {
       },
     } : {}),
   };
+}
+
+/**
+ * An indexable event page with a site-authored digest also carries a NewsArticle node, dated by the
+ * digest's own time (never a third-party report's publication time).
+ */
+export function storyArticleLd(story: StoryDetail) {
+  if (story.reportCount < STORY_INDEX_MIN_REPORTS || !story.digest || !story.digestUpdatedAt) return null;
+  const updated = [story.latestAt, story.digestUpdatedAt]
+    .filter((at): at is string => !!at).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+  return articleLd({
+    path: `/story/${story.publicId}`,
+    headline: story.title,
+    description: story.digest,
+    publishedAt: story.digestUpdatedAt,
+    modifiedAt: updated && updated !== story.digestUpdatedAt ? updated : undefined,
+    image: `/og/stories/${story.publicId}.png`,
+    section: story.topics.map((t) => t.name),
+  });
 }
 
 /** A topic page: the collection, when a report last reached it, and the lists its parts show. */

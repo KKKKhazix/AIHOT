@@ -32,7 +32,7 @@ function hrefWith(base: string, params: URLSearchParams, patch: Record<string, s
 function filterOptions(base: string, params: URLSearchParams, noneLabel: string) {
   const option = (key: string, label: string, patch: Record<string, string | null>) => {
     const to = hrefWith(base, params, patch);
-    // Filtered feed views are noindex and blocked in robots.txt; keep crawler focus on the unfiltered list.
+    // Filtered feed views are noindex; keep crawler focus on the unfiltered list.
     return { key, label, to, rel: to.includes("?") ? "nofollow" : undefined };
   };
   return [

@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { after, before, test } from "node:test";
 import * as cheerio from "cheerio";
-import { reportDateLabel, type FeedItemSummary, type ReportCitation, type ReportDetail, type ReportKind, type SiteItemDetail, type StoryDetail } from "@aihot/contracts/site";
+import { reportDateLabel, type FeedItemSummary, type ReportCitation, type ReportDetail, type ReportKind, type SiteItemDetail, type StoryDetail, type TopicPage } from "@aihot/contracts/site";
 import { SEO_TITLES, SITE, withSubject } from "@aihot/site";
 import { articleLd, readFilters, reportLd } from "../apps/web/app/lib/seo.ts";
 import { dateLine } from "../apps/web/app/features/report/format.ts";
@@ -49,8 +49,19 @@ const leadless = (): ReportDetail => ({ ...report("daily"), key: "2026-10-05", l
   sections: [{ label: "模型", summary: null, items: [citation(false)] }], highlights: [{ ...citation(true), itemId: "metadata-pick", title: "同一时段值得一看的报道" }] });
 const report = (kind: ReportKind): ReportDetail => ({ kind, key: kind === "daily" ? "2026-10-04" : kind === "weekly" ? "2026-W40" : "2026-10", issueNumber: 1, title: `${SITE.name} 测试刊物`, generatedAt: at, lead: { title: "本期已验证的重要变化", leadParagraph: "本期的导读与依据。" }, leadItemId: item.id, overview: null, highlights: [citation(true)], sections: [], flashes: [], cover: null, metrics: {}, readingMinutes: 1, prev: null, next: null, mentions: [] });
 const story: StoryDetail = { publicId: "metadata-story", title: "测试事件的最新进展", status: "settled", reportCount: 1, sourceCount: 1, firstReportAt: at, latestAt: at, digest: "当前可核实的事件综述。", digestUpdatedAt: "2026-10-04T09:00:00.000Z", summary: null, excerpt: null, latest: null, latestReport: null, whyHot: { participants48h: 0, newParticipants6h: 0, recentReports24h: 0, observationComplete: true, rank: null }, developments: [], officialReports: [], timeline: [{ id: item.id, title: item.title, summary: item.summary, source: { name: item.source.name, firstParty: true }, publishedAt: at, selected: true }], heat: [], related: [], topics: [], mentions: [] };
-/** The same event once a second report joined it. */
+/** Multiple reports from the same source still stay noindex. */
+const sameSourceStory: StoryDetail = { ...story, publicId: "metadata-story-same-source", reportCount: 3, sourceCount: 1 };
+/** The same event once a second distinct source joined it. */
 const severalReports: StoryDetail = { ...story, publicId: "metadata-story-several", reportCount: 2, sourceCount: 2 };
+const topicPage = (pageNum: number): TopicPage => ({
+  topic: { slug: "openai", name: "OpenAI", group: "company", groupName: "公司", definition: "OpenAI 最新动态。", brand: null, total: 45, poolTotal: 60, recent: 5, latest: { title: item.title, at }, indexable: true },
+  modules: {},
+  items: [item],
+  tagTopics: {},
+  page: pageNum,
+  pageCount: 3,
+  pageSize: 20,
+});
 let web: WebServer;
 const api = createServer((req, res) => {
   const url = new URL(req.url!, "http://local");
@@ -62,9 +73,11 @@ const api = createServer((req, res) => {
   if (path === "/api/site/hot") return send({ computedAt: at, windowHours: 48, entries: [] });
   if (path === "/api/site/timeline") return send({ filters: readFilters(url.searchParams), cards: [{ key: item.id, anchorAt: at, item, group: null }], nextCursor: null, hot: null, dayCounts: { "2026-10-04": 1 } });
   if (path === "/api/site/pool") return send({ filters: { ...readFilters(url.searchParams), q: url.searchParams.get("q"), tab: url.searchParams.get("tab") ?? "time" }, items: [item], page: Number(url.searchParams.get("page") ?? 1), pageCount: 3, total: 100, todayCount: 1, freshness: at });
+  if (path === "/api/site/topics/openai") return send(topicPage(Number(url.searchParams.get("page") ?? 1)));
   const article = /^\/api\/site\/items\/([^/]+?)(?:\/original)?$/.exec(path)?.[1];
   if (article && details[article]) return send(details[article]);
   if (path === `/api/site/stories/${story.publicId}`) return send(story);
+  if (path === `/api/site/stories/${sameSourceStory.publicId}`) return send(sameSourceStory);
   if (path === `/api/site/stories/${severalReports.publicId}`) return send(severalReports);
   const match = /^\/api\/site\/reports\/(daily|weekly|monthly)\/(.+)$/.exec(path);
   if (match) {
@@ -120,9 +133,22 @@ test("全部动态's later pages leave search to its first page and keep their l
   assert.ok($("main").text().includes(item.title), "the page itself is unchanged");
 });
 
-test("an event page stands in search once it gathers more than one report", async () => {
+test("topic archive pages leave search to the topic's first page while keeping their links followed", async () => {
+  const first = await page("/topics/openai");
+  assert.equal(first("meta[name=robots]").attr("content"), "max-image-preview:large");
+  assert.equal(first("link[rel=canonical]").attr("href"), `${web.origin}/topics/openai`);
+  const second = await page("/topics/openai/page/2");
+  assert.equal(second("meta[name=robots]").attr("content"), "noindex, follow");
+  assert.equal(second("link[rel=canonical]").attr("href"), `${web.origin}/topics/openai/page/2`);
+  assert.ok(second("main").text().includes(item.title), "the archive page still renders its reports");
+});
+
+test("an event page stands in search once covered by at least two distinct sources", async () => {
   const single = await page(`/story/${story.publicId}`);
   assert.equal(single("meta[name=robots]").attr("content"), "noindex, follow", "one report: its own article page stands for it");
+  const sameSource = await page(`/story/${sameSourceStory.publicId}`);
+  assert.equal(sameSource("meta[name=robots]").attr("content"), "noindex, follow", "multiple reports from one source: stay on their articles");
+  assert.equal(structured(sameSource).find((entry) => entry["@type"] === "NewsArticle"), undefined);
   const several = await page(`/story/${severalReports.publicId}`);
   assert.equal(several("meta[name=robots]").attr("content"), "max-image-preview:large");
   assert.equal(several("meta[name=googlebot]").length, 0);

@@ -160,12 +160,12 @@ test('a revoked token or an unverified site fails the run', async () => {
   await assert.rejects(submitBaiduPush(DAY1_LATER), /400.*site error/);
 });
 
-async function material(id: string, at: string) {
-  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES ('baidu-editorial','baidu-editorial','rss','T1','editorial') ON CONFLICT DO NOTHING`;
+async function material(id: string, at: string, source = 'baidu-editorial') {
+  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES (${source},${source},'rss','T1','editorial') ON CONFLICT DO NOTHING`;
   await sql`INSERT INTO articles (id,source_id,identity_key,url,title,published_at,timeline_at,discovered_at,updated_at)
-    VALUES (${id},'baidu-editorial',${id},${`https://example.org/${id}`},'公开报道',${at},${at},${at},${at})`;
+    VALUES (${id},${source},${id},${`https://example.org/${id}`},'公开报道',${at},${at},${at},${at})`;
   await sql`INSERT INTO publications (article_id,source_id,title,summary,url,timeline_at,discovered_at,sort_at,selected,eligible,indexable,visible_after,updated_at,channel,category)
-    VALUES (${id},'baidu-editorial','公开报道','公开摘要',${`https://example.org/${id}`},${at},${at},${at},true,true,true,${at},${at},'news','ai-models')`;
+    VALUES (${id},${source},'公开报道','公开摘要',${`https://example.org/${id}`},${at},${at},${at},true,true,true,${at},${at},'news','ai-models')`;
 }
 
 test('the report goes first, then pages that answer lasting searches, then stories and single articles, newer before older', async () => {
@@ -173,13 +173,13 @@ test('the report goes first, then pages that answer lasting searches, then stori
   let lasting: string[] = [];
   pages(() => lasting);
   await submitBaiduPush(DAY1);
-  lasting = ['/about-new', '/topics/baidu-topic', '/topics/baidu-topic/page/2', '/leaderboard/prices'];
+  lasting = ['/about-new', '/topics/baidu-topic', '/leaderboard/prices'];
   await material('baidu-older', '2026-10-09T02:10:00Z');
-  await material('baidu-older-also', '2026-10-09T02:10:00Z');
+  await material('baidu-older-also', '2026-10-09T02:10:00Z', 'baidu-editorial-b');
   await material('baidu-newer', '2026-10-09T02:20:00Z');
-  await material('baidu-newer-also', '2026-10-09T02:20:00Z');
-  // Public ids sort against their age, so only the stories' own order puts the newer first. Each gathers two
-  // reports: a story of one has a noindex page and is never pushed.
+  await material('baidu-newer-also', '2026-10-09T02:20:00Z', 'baidu-editorial-b');
+  // Public ids sort against their age, so only the stories' own order puts the newer first. Each spans two
+  // distinct editorial sources: single-source clusters have a noindex page and are never pushed.
   const story = async (publicId: string, articles: string[], latest: string) => {
     const [row] = await sql<{ id: number }[]>`INSERT INTO stories (public_id,title,latest_at,created_at,updated_at)
       VALUES (${publicId},'事件',${latest},${latest},${latest}) RETURNING id`;
@@ -198,7 +198,6 @@ test('the report goes first, then pages that answer lasting searches, then stori
   assert.equal(sent[0], '/daily/2026-10-09', 'the one URL that learns the quota is the most valuable one');
   assert.ok(at('/leaderboard/prices') > 0 && at('/leaderboard/prices') < at('/topics/baidu-topic'));
   assert.ok(at('/topics/baidu-topic') < at(`/story/${publicId}`), 'pages for lasting searches before the day\'s news');
-  assert.equal(at('/topics/baidu-topic/page/2'), -1, 'topic archive pages never spend Baidu push quota');
   assert.ok(at(`/story/${publicId}`) > 0);
   assert.ok(at(`/story/${publicId}`) < at(`/story/${olderStory}`), 'the newer story first');
   assert.ok(at(`/story/${olderStory}`) < at('/items/baidu-newer'));

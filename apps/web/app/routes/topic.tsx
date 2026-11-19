@@ -73,7 +73,9 @@ export function meta({ loaderData }: Route.MetaArgs) {
     description: text,
     path,
     image: `/og/topics/${topic.slug}.png`,
-    noindex: !topic.indexable,
+    // The first page stands in search for the topic; archive pages (/page/2+) shift reports along, and
+    // their links stay followed so every report is still reached (aligned with /all?page=2+).
+    noindex: !topic.indexable || page > 1,
     jsonLd: page > 1
       ? crumbs
       : [

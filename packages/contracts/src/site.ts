@@ -58,7 +58,7 @@ export interface XPostView {
 export interface StoryRef {
   publicId: string;
   title: string;
-  /** The event page stands in search (reportCount >= STORY_INDEX_MIN_REPORTS). */
+  /** The event page stands in search (sourceCount >= STORY_INDEX_MIN_SOURCES). */
   indexable?: boolean;
 }
 
@@ -268,11 +268,12 @@ export interface StoryFactView {
 }
 
 /**
- * An event page stands for its reports in search once it gathers this many public reports (reportCount):
- * with fewer it only repeats its one report's page, so it is noindex and neither the sitemap nor change
- * notifications list it; with as many, its reports' own pages leave Google to it (2026-11-09).
+ * An event page stands for its reports in search once at least this many distinct public editorial sources
+ * cover it (sourceCount): single-source clusters only repeat that source's own pages, so the event page is
+ * noindex and neither the sitemap nor change notifications list it; with multiple sources, its reports' own
+ * pages leave Google to the event page (2026-11-20; previously 2 reports regardless of source).
  */
-export const STORY_INDEX_MIN_REPORTS = 2;
+export const STORY_INDEX_MIN_SOURCES = 2;
 
 export interface StoryDetail {
   publicId: string;

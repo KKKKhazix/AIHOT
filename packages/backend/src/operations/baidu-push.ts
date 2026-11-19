@@ -21,14 +21,16 @@ type Entry = Awaited<ReturnType<typeof loadDiscoveryEntries>>[number];
 // whole event's coverage, so they go before single articles; within each, newer first. A new model-board
 // page (a model, a board's prices) or topic answers searches for months and comes a few a week, so it goes
 // right after the report instead of waiting behind each day's news for good. Stories carry no date in the
-// full inventory, which lists them newest first; the sort is stable and keeps that order.
-const RANK: [RegExp, number][] = [[/^\/(daily|weekly|monthly)\//, 0], [/^\/leaderboard\//, 1], [/^\/topics\//, 2], [/^\/story\//, 3], [/^\/items\//, 4]];
+// full inventory, which lists them newest first; the sort is stable and keeps that order. Topic archive
+// pages (/topics/<slug>/page/N) are reached from the topic page itself and must not spend Baidu's small quota.
+const TOPIC_ARCHIVE = /^\/topics\/[^/]+\/page\//;
+const RANK: [RegExp, number][] = [[/^\/(daily|weekly|monthly)\//, 0], [/^\/leaderboard\//, 1], [/^\/topics\/[^/]+$/, 2], [/^\/story\//, 3], [/^\/items\//, 4]];
 const rank = (loc: string) => RANK.find(([pattern]) => pattern.test(loc))?.[1] ?? 5;
 const time = (e: Entry) => e.newsAt?.getTime() ?? e.lastmod?.getTime() ?? 0;
 
 export async function submitBaiduPush(now = new Date()) {
   const [row] = await sql<{ value: State }[]>`SELECT value FROM settings WHERE key = ${KEY}`;
-  const entries = await loadDiscoveryEntries(now);
+  const entries = (await loadDiscoveryEntries(now)).filter((e) => !TOPIC_ARCHIVE.test(e.loc));
   if (!row) {
     await save({ known: entries.map((e) => e.loc), day: "", remain: null });
     return { status: "baseline" as const, urls: 0, more: false };

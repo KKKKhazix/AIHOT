@@ -3,12 +3,26 @@ import type { StoryFollowup, StoryFollowupsResponse, StoryRef } from "@aihot/con
 import { MoreLink } from "../../components/ui/Page";
 import { relativeTime } from "../../lib/format";
 
-/** "事件后续": the other developments of the event this report belongs to, newest first, with a link to the whole event. */
+/**
+ * "事件后续": the other developments of the event this report belongs to, newest first, with a link to
+ * the whole event. When all reports belong to a single development yet the event stands in search, still
+ * link visibly to the event page so both readers and crawlers reach it without relying on <noscript>.
+ */
 export function StoryFollowups({ followups, story, currentId }: { followups: StoryFollowupsResponse | null; story: StoryRef; currentId: string }) {
   const items = followups?.items.filter((d) => d.representative.id !== currentId) ?? [];
-  return items.length > 0
-    ? <Followups items={items} more={followups!.more} story={story} />
-    : <noscript><a href={`/story/${story.publicId}`}>查看事件全部后续</a></noscript>;
+  if (items.length > 0) return <Followups items={items} more={followups!.more} story={story} />;
+  if (!story.indexable) return null;
+  return (
+    <section className="mt-10 border-t border-line pt-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="shrink-0 text-[14px] font-semibold text-ink">所属事件</h2>
+        <MoreLink to={`/story/${story.publicId}`}>查看事件全部</MoreLink>
+      </div>
+      <Link viewTransition to={`/story/${story.publicId}`} className="mt-2 block text-[14px] leading-snug text-ink-2 transition-colors hover:text-accent">
+        {story.title}
+      </Link>
+    </section>
+  );
 }
 
 function Followups({items, more, story}: {items: StoryFollowup[]; more: boolean; story: StoryRef}) {

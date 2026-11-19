@@ -180,6 +180,14 @@ export function thinPageCondition() {
     ELSE 0 END < ${THIN_PAGE_CHARS})`;
 }
 
+/** The article's own event (`st`, over ITEM_FROM) gathers STORY_INDEX_MIN_REPORTS public reports or more. */
+export function storyIndexableCondition(now: Date) {
+  return sql`(st.id IS NOT NULL AND (
+    SELECT count(DISTINCT p.article_id) FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id
+    JOIN publications p ON p.article_id = fa.article_id JOIN sources s ON s.id = p.source_id
+    WHERE f.story_id = st.id AND ${storyReportCondition(now)}) >= ${STORY_INDEX_MIN_REPORTS})`;
+}
+
 /**
  * The article's own event (`st`, over ITEM_FROM) gathers STORY_INDEX_MIN_REPORTS public reports or more, so the
  * event page stands for them in search. As with a thin page, Google is asked not to index the article
@@ -188,10 +196,7 @@ export function thinPageCondition() {
  * event page counts them; inside the count, `p` and `s` are the event's reports, not the article.
  */
 export function eventPageCondition(now: Date) {
-  return sql`(p.seo_indexed_at IS NULL AND st.id IS NOT NULL AND (
-    SELECT count(DISTINCT p.article_id) FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id
-    JOIN publications p ON p.article_id = fa.article_id JOIN sources s ON s.id = p.source_id
-    WHERE f.story_id = st.id AND ${storyReportCondition(now)}) >= ${STORY_INDEX_MIN_REPORTS})`;
+  return sql`(p.seo_indexed_at IS NULL AND ${storyIndexableCondition(now)})`;
 }
 
 /** The shared public article; its X post is added as each answer shows it. */

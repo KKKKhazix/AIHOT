@@ -10,7 +10,13 @@ import { markRead, useReadSet } from "../../lib/local-state";
 import { DayHeader, TimelineSlot } from "./Timeline";
 import { FeedItem } from "./FeedItem";
 
-export function DayList({ items, todayCount = null, headerAside }: { items: FeedItemSummary[]; todayCount?: number | null; headerAside?: React.ReactNode }) {
+export function DayList({ items, todayCount = null, headerAside, tagTopics, currentTopicSlug }: {
+  items: FeedItemSummary[];
+  todayCount?: number | null;
+  headerAside?: React.ReactNode;
+  tagTopics?: Record<string, string>;
+  currentTopicSlug?: string;
+}) {
   const readSet = useReadSet();
   const today = beijingDate(Date.now());
   const days = useMemo(() => byBeijingDay(items, (it) => it.timelineAt), [items]);
@@ -22,7 +28,7 @@ export function DayList({ items, todayCount = null, headerAside }: { items: Feed
           <ol className="lg:pt-1">
             {list.map((it) => (
               <TimelineSlot key={it.id} at={it.timelineAt}>
-                <FeedItem item={it} read={readSet.has(it.id)} onOpen={markRead} showTags at={it.timelineAt} />
+                <FeedItem item={it} read={readSet.has(it.id)} onOpen={markRead} showTags tagTopics={tagTopics} currentTopicSlug={currentTopicSlug} at={it.timelineAt} />
               </TimelineSlot>
             ))}
           </ol>

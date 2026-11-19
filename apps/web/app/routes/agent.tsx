@@ -3,10 +3,10 @@ import { IntentLink } from "../components/ui/IntentLink";
 import { useLoaderData, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/agent";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
-import { SEO_TITLES, SITE } from "@aihot/site";
+import { SEO_TITLES, SITE, withSubject } from "@aihot/site";
 import { apiGet, cachedPage } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { listPath, pageMeta, siteUrl } from "../lib/seo";
+import { breadcrumbLd, listPath, pageMeta, siteUrl } from "../lib/seo";
 import { IconArrowUpRight, IconChevronRight, IconCode, IconPlug, IconRss } from "../components/icons";
 import { Kicker } from "../components/ui/Kicker";
 import { AsideCard, ReadingLayout } from "../components/ui/Page";
@@ -73,14 +73,52 @@ export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>((url)
   return url.pathname + (params.size ? `?${params}` : "");
 });
 
+function tabMeta(tab: string, track: AgentTrack | undefined): { title: string; description: string } {
+  if (tab === FIRST) {
+    return {
+      title: SEO_TITLES.agent,
+      description: `把 ${SITE.name} 接进你的 Agent：${TRACKS.map((t) => t.name).join("、")} ${WAYS}种方式，匿名只读，无需 API Key，一分钟接好。`,
+    };
+  }
+  if (tab === "mcp") {
+    return {
+      title: `${withSubject("新闻")} MCP 服务：接入 Claude、Cursor 等客户端`,
+      description: `免费接入 ${SITE.name} 远程 MCP 服务（${mcpToolCount()} 个工具）：支持 Claude 桌面版、Cursor 等客户端，匿名只读、无需 API Key，实时获取${withSubject("精选")}、热点与日报。`,
+    };
+  }
+  if (tab === "rss") {
+    return {
+      title: `${withSubject("新闻")} RSS 订阅：精选、全部动态与日报 Feed`,
+      description: `订阅 ${SITE.name} 的${withSubject("资讯")} RSS（精选、全部动态、日报、周报、月报）：支持 Reeder、Folo、Inoreader、n8n，免费匿名订阅，无需注册。`,
+    };
+  }
+  if (tab === "api") {
+    return {
+      title: `${withSubject("新闻")}免费 REST API 与 OpenAPI 文档`,
+      description: `${SITE.name} 公开只读 REST API（v${V}）：匿名 GET 请求，无需 API Key，提供${withSubject("精选动态")}、全文搜索、热点与日报 JSON 接口及 OpenAPI 3.1 定义。`,
+    };
+  }
+  return {
+    title: track ? `${track.name} · ${SEO_TITLES.agent}` : SEO_TITLES.agent,
+    description: track ? `${SITE.name} ${track.name} 接入：${track.pitch}，适合${track.fit}。匿名只读，无需 API Key。` : `把 ${SITE.name} 接进你的 Agent。`,
+  };
+}
+
 export function meta({ location }: Route.MetaArgs) {
   const tab = tabKey(new URLSearchParams(location.search).get('tab'));
+  const track = TRACKS.find((t) => t.key === tab);
   const path = listPath("/agent", { tab: tab !== FIRST ? tab : null });
+  const copy = tabMeta(tab, track);
   return pageMeta({
-    title: SEO_TITLES.agent,
-    description: `把 ${SITE.name} 接进你的 Agent：${TRACKS.map((t) => t.name).join("、")} ${WAYS}种方式，匿名只读，无需 API Key，一分钟接好。`,
+    title: copy.title,
+    description: copy.description,
     path,
     image: "/og/pages/agent.png",
+    jsonLd: breadcrumbLd([
+      { name: SITE.name, path: "/" },
+      { name: "Agent 接入", path: "/agent" },
+      ...(tab !== FIRST && track ? [{ name: track.name, path }] : []),
+    ]),
   });
 }
 

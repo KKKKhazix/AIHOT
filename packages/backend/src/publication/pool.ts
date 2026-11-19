@@ -8,7 +8,7 @@ import {
   type ItemRow,
 } from "./items.ts";
 import { browsedCondition, listedCondition } from "./scope.ts";
-import { TOPICS } from "./topics.ts";
+import { tagTopics, TOPICS } from "./topics.ts";
 
 export const POOL_PAGE_SIZE = 40;
 export const POOL_MAX_PAGES = 50;
@@ -232,9 +232,11 @@ async function queryPool(query: PoolQuery, now: Date): Promise<PoolResponse> {
       (SELECT max(p.updated_at) FROM publications p WHERE p.eligible) AS updated_at`);
 
   const holders = await seatHolders(rows, now);
+  const items = rows.map((r) => (holders.has(r.id) ? { ...toFeedItemSummary(r), reason: null, sameEvent: holders.get(r.id)! } : toFeedItemSummary(r)));
   return {
     filters: { channel: query.channel, category: query.category, tag: query.tag, q, tab },
-    items: rows.map((r) => (holders.has(r.id) ? { ...toFeedItemSummary(r), reason: null, sameEvent: holders.get(r.id)! } : toFeedItemSummary(r))),
+    items,
+    tagTopics: tagTopics([...new Set(items.flatMap((i) => i.tags))]),
     page,
     pageCount: Math.min(POOL_MAX_PAGES, Math.max(1, Math.ceil(total / POOL_PAGE_SIZE))),
     total,

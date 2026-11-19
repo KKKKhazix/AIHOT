@@ -164,8 +164,26 @@ async function build(at: Date): Promise<Record<string, string>> {
   const news = entries.flatMap((e) => (e.newsAt && e.newsAt.getTime() >= since ? [{ ...e, lastmod: e.newsAt }] : []))
     .sort((a, b) => b.lastmod.getTime() - a.lastmod.getTime());
   const files: Record<string, string> = { [NEWS]: urlset(news) };
-  for (const [section, list] of Map.groupBy(entries, sectionOf)) files[`${section}.xml`] = urlset(list);
-  const body = Object.keys(files).map((file) => `<sitemap>\n<loc>${escapeXml(siteUrl(`/sitemaps/${file}`))}</loc>\n</sitemap>`).join("\n");
+  const sectionLastmod = new Map<string, Date>();
+  const latestOf = (list: Entry[]) => {
+    let max: Date | null = null;
+    for (const e of list) if (e.lastmod && (!max || e.lastmod > max)) max = e.lastmod;
+    return max;
+  };
+  const newsLatest = latestOf(news);
+  if (newsLatest) sectionLastmod.set(NEWS, newsLatest);
+  for (const [section, list] of Map.groupBy(entries, sectionOf)) {
+    const file = `${section}.xml`;
+    files[file] = urlset(list);
+    const max = latestOf(list);
+    if (max) sectionLastmod.set(file, max);
+  }
+  const body = Object.keys(files).map((file) => {
+    const parts = [`<loc>${escapeXml(siteUrl(`/sitemaps/${file}`))}</loc>`];
+    const last = sectionLastmod.get(file);
+    if (last) parts.push(`<lastmod>${last.toISOString()}</lastmod>`);
+    return `<sitemap>\n${parts.join("\n")}\n</sitemap>`;
+  }).join("\n");
   files[INDEX] = `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</sitemapindex>\n`;
   return files;
 }

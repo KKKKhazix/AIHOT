@@ -58,6 +58,8 @@ export interface XPostView {
 export interface StoryRef {
   publicId: string;
   title: string;
+  /** The event page stands in search (reportCount >= STORY_INDEX_MIN_REPORTS). */
+  indexable?: boolean;
 }
 
 /** What every site answer about an article carries; a card and a page each add the X post in their own form. */
@@ -140,6 +142,8 @@ export interface TimelineResponse {
 export interface PoolResponse {
   filters: TimelineFilters & { q: string | null; tab: "time" | "relevance" };
   items: FeedItemSummary[];
+  /** Of the items' tags, each that is a topic's own, with that topic's slug. */
+  tagTopics?: Record<string, string>;
   page: number;
   pageCount: number;
   total: number;
@@ -520,6 +524,8 @@ export interface TopicPage {
   /** The site's modules' parts of the page, under their names; each module's web part draws its own. */
   modules: Record<string, unknown>;
   items: FeedItemSummary[];
+  /** Of the items' tags, each that is a topic's own, with that topic's slug. */
+  tagTopics?: Record<string, string>;
   page: number;
   pageCount: number;
   pageSize: number;

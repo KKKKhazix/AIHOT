@@ -5,7 +5,7 @@ import type { SiteContact, SiteStats } from "@aihot/contracts/site";
 import { ABOUT, POLICY, REPORTS, SEO_TITLES, SITE, subjectAfter } from "@aihot/site";
 import { apiGet, cachedPage } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { organizationLd, pageMeta } from "../lib/seo";
+import { breadcrumbLd, organizationLd, pageMeta } from "../lib/seo";
 import { Kicker } from "../components/ui/Kicker";
 import { buttonClass } from "../components/ui/Controls";
 import { IconArrowRight } from "../components/icons";
@@ -26,7 +26,17 @@ export async function loader({ request }: { request: Request }) {
 }
 
 export function meta() {
-  return pageMeta({ title: SEO_TITLES.about, rawTitle: true, description: ABOUT.description, path: "/about", image: "/og/pages/about.png", jsonLd: organizationLd() });
+  return pageMeta({
+    title: SEO_TITLES.about,
+    rawTitle: true,
+    description: ABOUT.description,
+    path: "/about",
+    image: "/og/pages/about.png",
+    jsonLd: [
+      organizationLd(),
+      breadcrumbLd([{ name: SITE.name, path: "/" }, { name: `关于 ${SITE.name}`, path: "/about" }]),
+    ],
+  });
 }
 
 const NO_SOURCES: RiverSource[] = [];

@@ -21,6 +21,8 @@ const items: SiteItemDetail[] = [
   itemDetail({ id: "links-none", title: "没进日报" }),
   // Tagged with a company its title does not name: that company's topic is the tag's, not the article's.
   itemDetail({ id: "links-tags", title: "带标签", topics: [agent], tags: ["Agent", "OpenAI", "框架"], tagTopics: { Agent: "agent", OpenAI: "openai" } }),
+  itemDetail({ id: "links-story-indexable", title: "多报道单事实事件", story: { publicId: "links-this-year", title: "测试事件", indexable: true } }),
+  itemDetail({ id: "links-story-single", title: "单报道事件", story: { publicId: "links-lone", title: "单报道", indexable: false } }),
 ];
 // A minute ago: this year's, unless the test runs in the first minute of one.
 const recent = new Date(Date.now() - 60_000).toISOString();
@@ -35,6 +37,15 @@ const stories = [story("links-this-year", recent), story("links-last-year", "202
 let web: WebServer;
 before(async () => {
   web = await startWebServer(fakeApi((url) => {
+    if (url.pathname === "/api/site/pool") {
+      return {
+        filters: { channel: "all", category: null, tag: null, q: null, tab: "time" },
+        items: [{ id: "links-tags", title: "带标签", summary: "摘要", reason: null, source: { name: "Fixture" }, publishedAt: FIXTURE_AT, timelineAt: FIXTURE_AT, category: "ai-models", tags: ["Agent", "OpenAI", "框架"], score: 80, selected: true, channel: "news", x: null }],
+        tagTopics: { Agent: "agent", OpenAI: "openai" },
+        page: 1, pageCount: 1, total: 1, todayCount: 1, freshness: FIXTURE_AT,
+      };
+    }
+    if (/^\/api\/site\/stories\/[^/]+\/followups$/.test(url.pathname)) return { items: [], more: false };
     const item = items.find((i) => url.pathname === `/api/site/items/${i.id}`);
     if (item) return item;
     return stories.find((s) => url.pathname === `/api/site/stories/${s.publicId}`);
@@ -82,6 +93,26 @@ test("a tag that is a topic's own leads to the topic page, and not beside that t
   assert.deepEqual(hrefs("#OpenAI"), ["/topics/openai", "/topics/openai"]);
   assert.deepEqual(hrefs("#框架"), [`/all?tag=${encodeURIComponent("框架")}`, `/all?tag=${encodeURIComponent("框架")}`]);
   assert.equal($("a[href^='/all?tag=Agent']").length, 0);
+  // Non-topic filter links carry nofollow while topic links remain crawlable.
+  assert.ok($(`a[href="/all?tag=${encodeURIComponent("框架")}"]`).toArray().every((el) => $(el).attr("rel") === "nofollow"));
+  assert.ok($('a[href="/topics/openai"]').toArray().every((el) => !$(el).attr("rel")));
+
+  const pool = await page("/all");
+  assert.equal(pool('a[href="/topics/agent"]').text(), "#Agent");
+  assert.equal(pool('a[href="/topics/openai"]').text(), "#OpenAI");
+  assert.equal(pool(`a[href="/all?tag=${encodeURIComponent("框架")}"]`).attr("rel"), "nofollow");
+  assert.equal(pool('a[href="/all?category=ai-models"]').first().attr("rel"), "nofollow");
+});
+
+test("an article in an indexable event visibly links to the event page even without other facts; a single-report event does not", async () => {
+  const multi = await page("/items/links-story-indexable");
+  const links = multi('a[href="/story/links-this-year"]');
+  assert.ok(links.length > 0, "multi-report event is visibly linked");
+  assert.ok(links.toArray().some((el) => multi(el).text().includes("测试事件")), "anchor text names the event");
+  assert.equal(multi("noscript a[href^='/story/']").length, 0);
+
+  const single = await page("/items/links-story-single");
+  assert.equal(single('a[href="/story/links-lone"]').length, 0, "noindex single-report event is not linked");
 });
 
 test("an event page says when it was first reported, by the Beijing day and its year when not this one", async () => {

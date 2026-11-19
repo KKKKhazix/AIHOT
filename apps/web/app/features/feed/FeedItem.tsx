@@ -25,18 +25,30 @@ export interface FeedItemProps {
   onOpen?: (id: string) => void;
   /** Show category and tags under the text (全部动态, topics, search). */
   showTags?: boolean;
+  /** Tags that belong to a topic page: those link to /topics/<slug> instead of a noindex filter. */
+  tagTopics?: Record<string, string>;
+  /** Current topic page's slug, so cards there do not repeat a self-link tag. */
+  currentTopicSlug?: string;
   /** The time the item sits at in its list; phones show it in the source line (desktop: on the rail). */
   at?: string;
 }
 
-export const FeedItem = memo(function FeedItem({ item, group, filters, read = false, onOpen, showTags = false, at }: FeedItemProps) {
+export const FeedItem = memo(function FeedItem({ item, group, filters, read = false, onOpen, showTags = false, tagTopics, currentTopicSlug, at }: FeedItemProps) {
   const isX = item.channel === "x" && !!item.x;
   const open = () => {
     rememberPreview(item);
     onOpen?.(item.id);
   };
   const showSources = !!group && (group.additionalSourceCount > 0 || group.reportCount > 1);
-  const tags = showTags ? item.tags.slice(0, 3) : [];
+  const tags = showTags
+    ? item.tags
+        .filter((t) => !currentTopicSlug || tagTopics?.[t] !== currentTopicSlug)
+        .slice(0, 3)
+        .map((t) => {
+          const slug = tagTopics?.[t];
+          return { tag: t, to: slug ? `/topics/${slug}` : `/all?tag=${encodeURIComponent(t)}`, nofollow: !slug };
+        })
+    : [];
 
   return (
     <article className="relative min-w-0 lg:card lg:card-hover lg:px-[18px] lg:pb-[14px] lg:pt-[15px]" data-item-id={item.id}>
@@ -88,13 +100,13 @@ export const FeedItem = memo(function FeedItem({ item, group, filters, read = fa
       {(tags.length > 0 || (showTags && item.category)) && (
         <div className="relative z-10 mt-2 hidden flex-wrap gap-x-2.5 gap-y-1 text-[12px] text-ink-4 lg:flex">
           {showTags && item.category && (
-            <Link to={`/all?category=${item.category}`} className="hover:text-accent">
+            <Link to={`/all?category=${item.category}`} rel="nofollow" className="hover:text-accent">
               {CATEGORY_LABELS[item.category]}
             </Link>
           )}
-          {tags.map((t) => (
-            <Link key={t} to={`/all?tag=${encodeURIComponent(t)}`} className="hover:text-accent">
-              #{t}
+          {tags.map(({ tag, to, nofollow }) => (
+            <Link key={tag} to={to} rel={nofollow ? "nofollow" : undefined} className="hover:text-accent">
+              #{tag}
             </Link>
           ))}
         </div>

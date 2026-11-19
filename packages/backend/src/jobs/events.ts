@@ -19,7 +19,7 @@ export async function registerEventJobs(boss: PgBoss) {
     }
     return result;
   });
-  await work(boss, QUEUES.digest, { localConcurrency: 3, pollingIntervalSeconds: 5 }, ({ storyId }) => composeStoryDigest(storyId));
+  await work(boss, QUEUES.digest, { localConcurrency: Math.max(1, Number(process.env.DIGEST_CONCURRENCY ?? 3) || 3), pollingIntervalSeconds: 5 }, ({ storyId }) => composeStoryDigest(storyId));
 }
 
 /**

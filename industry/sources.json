@@ -1076,6 +1076,22 @@
       "syndicate_fulltext": false
     },
     {
+      "id": "rss-openaiopc-selected",
+      "name": "OpenAIOPC 社区 · OPC日报精选",
+      "kind": "rss",
+      "config": {
+        "feedUrl": "https://www.openaiopc.com/feed/opc-selected.xml",
+        "summaryIsBody": true,
+        "_aihot": { "initialBackfillLimit": 10 }
+      },
+      "tier": "T2",
+      "participation_mode": "editorial",
+      "interval_minutes": 120,
+      "tags": ["全国", "OPC日报"],
+      "site_fulltext": false,
+      "syndicate_fulltext": false
+    },
+    {
       "id": "rss-wechat-empty-3885548244",
       "name": "待确认公众号 3885548244",
       "kind": "rss",

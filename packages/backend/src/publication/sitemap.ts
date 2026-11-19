@@ -4,8 +4,8 @@
 // of that original lifetime.
 import { mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { STORY_INDEX_MIN_REPORTS } from "@aihot/contracts/site";
-import { ABOUT, ACCESS, AGENT, POLICY, SITE } from "@aihot/site";
+import { REPORT_NAMES, reportDateLabel, STORY_INDEX_MIN_SOURCES, type ReportKind } from "@aihot/contracts/site";
+import { ABOUT, ACCESS, AGENT, POLICY, SITE, withSubject } from "@aihot/site";
 import { config, REPO_ROOT } from "../config.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { loadChangelog } from "../site/meta.ts";
@@ -16,17 +16,24 @@ import { shared } from "../lib/cache.ts";
 import { escapeXml } from "../lib/text.ts";
 import { siteUrl } from "./links.ts";
 import { evidenceCondition, listedCondition, selectedCondition, storyReportCondition } from "./scope.ts";
+import { issueLead, unavailableHeadlineIds } from "./reports.ts";
 import { storyTexts } from "./story-text.ts";
 import { topicPageCounts } from "./topics.ts";
 import { serverModules, type SitemapEntry } from "../modules.ts";
 
 const MAX_URLS = 45_000;
+/** Google News Sitemap limit per file. */
+const MAX_NEWS_URLS = 1000;
 const TTL_MS = 5 * 60 * 1000;
 const CACHE_FILE = path.join(config.dataDir, "sitemap-last.json");
 const INDEX = "sitemap.xml";
 /** The news section's window: what appeared or changed this long ago or since. */
 const NEWS_WINDOW_MS = 48 * 60 * 60 * 1000;
 const NEWS = "news.xml";
+/** ISO 639 code for <news:language> (Google News specifies lowercase zh-cn / zh-tw for Chinese). */
+const NEWS_LANGUAGE = SITE.locale.toLowerCase().startsWith("zh-")
+  ? SITE.locale.toLowerCase()
+  : SITE.locale.split("-")[0]!.toLowerCase();
 
 /** The index under `sitemap.xml`, each section under `<section>.xml`. */
 interface SitemapDocument { files: Record<string, string>; expiresAt: number }
@@ -34,7 +41,7 @@ interface SitemapDocument { files: Record<string, string>; expiresAt: number }
 let lastGood: SitemapDocument | null = null;
 
 /** `newsAt`: the page's own date, which puts it in the news section while recent (and dates it there only). */
-type Entry = SitemapEntry & { section?: string; newsAt?: Date | null };
+type Entry = SitemapEntry & { section?: string; newsAt?: Date | null; newsTitle?: string | null };
 
 /**
  * One inventory for XML discovery and change notifications. A sitemap bounds what it advertises;
@@ -50,7 +57,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
            md5(string_agg(p.article_id || ':' || p.revision::text, ',' ORDER BY p.timeline_at DESC, p.article_id)
              FILTER (WHERE ${listedCondition(at)})) AS listed
     FROM publications p WHERE ${listedCondition(at)}`;
-  const reports = await sql<{ kind: string; key: string; t: Date | null; changed: Date; revision: string }[]>`
+  const reports = await sql<{ kind: ReportKind; key: string; t: Date | null; changed: Date; revision: string }[]>`
     SELECT r.kind, r.key,
       CASE WHEN citations.revision IS NULL THEN greatest(r.updated_at, r.generated_at) END AS t,
       greatest(r.updated_at, r.generated_at) AS changed,
@@ -78,24 +85,45 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
     { loc: "/privacy", revision: sha256(stableJson([POLICY.privacy, await readFile(path.join(REPO_ROOT, "site/pages/privacy.md"), "utf8")])), changefreq: "monthly", priority: 0.4 },
     { loc: "/changelog", revision: sha256(stableJson(loadChangelog())), changefreq: "weekly", priority: 0.5 },
   );
-  for (const r of reports) entries.push({ loc: `/${r.kind}/${r.key}`, lastmod: r.t, newsAt: r.changed, revision: r.revision, changefreq: "monthly", priority: 0.6 });
+  // Resolve visible headlines only for reports inside the news window so withdrawn leads never leak into news.xml.
+  const recentReportHeads = new Map<string, string>();
+  const recentKeys = limits ? reports.filter((r) => r.changed.getTime() >= at.getTime() - NEWS_WINDOW_MS) : [];
+  if (recentKeys.length) {
+    const rows = await sql<{ kind: ReportKind; key: string; content: Record<string, any> }[]>`
+      SELECT r.kind, r.key, r.content FROM reports r
+      JOIN jsonb_to_recordset(${sql.json(recentKeys.map((r) => ({ kind: r.kind, key: r.key })))}) AS wanted(kind text, key text)
+        ON wanted.kind = r.kind AND wanted.key = r.key`;
+    const dailies = rows.filter((r) => r.kind === "daily");
+    const periodics = rows.filter((r) => r.kind !== "daily");
+    const [goneDaily, gonePeriodic] = await Promise.all([
+      dailies.length ? unavailableHeadlineIds(dailies, "daily") : Promise.resolve(new Set<string>()),
+      periodics.length ? unavailableHeadlineIds(periodics, "periodic") : Promise.resolve(new Set<string>()),
+    ]);
+    for (const r of rows) {
+      const lead = issueLead(r.content, r.kind === "daily" ? "daily" : "periodic", r.kind === "daily" ? goneDaily : gonePeriodic)?.title.trim();
+      const label = `${withSubject(REPORT_NAMES[r.kind])}｜${reportDateLabel(r.kind, r.key)}`;
+      recentReportHeads.set(`${r.kind}/${r.key}`, lead ? `${label}：${lead}` : label);
+    }
+  }
+  for (const r of reports) {
+    entries.push({ loc: `/${r.kind}/${r.key}`, lastmod: r.t, newsAt: r.changed, newsTitle: recentReportHeads.get(`${r.kind}/${r.key}`), revision: r.revision, changefreq: "monthly", priority: 0.6 });
+  }
   for (const t of topics) {
     if (!t.indexable) continue;
+    // A topic's archive pages (/page/2+) are noindex, follow and reached from the topic page: neither the
+    // sitemap nor change notifications list them.
     entries.push({ loc: `/topics/${t.slug}`, revision: t.revision, changefreq: "daily", priority: 0.6 });
-    // A topic's archive pages are reached from the topic page, the one that stands for the topic in
-    // search: the sitemap leaves them out, notifications still say when they change.
-    if (!limits) for (let p = 2; p <= t.pages; p++) entries.push({ loc: `/topics/${t.slug}/page/${p}`, revision: t.revision });
   }
-  // A story needs listed evidence of its own, and STORY_INDEX_MIN_REPORTS reports: with fewer its page is
-  // noindex everywhere, so neither the sitemap nor notifications list it. Its identity follows current
-  // readable reports as well as the digest, so a correction or regrouping is visible even when latest_at
-  // does not advance.
-  const stories = await sql<{ id: number; public_id: string; revision: string }[]>`
-    SELECT st.id, st.public_id::text, md5(concat_ws('|', st.title, st.summary, st.digest, st.digest_updated_at::text,
+  // A story needs listed evidence of its own and at least STORY_INDEX_MIN_SOURCES distinct public sources:
+  // single-source clusters are noindex everywhere, so neither the sitemap nor notifications list them. Its
+  // identity follows current readable reports as well as the digest, so a correction or regrouping is visible
+  // even when latest_at does not advance.
+  const stories = await sql<{ id: number; public_id: string; title: string; revision: string }[]>`
+    SELECT st.id, st.public_id::text, st.title, md5(concat_ws('|', st.title, st.summary, st.digest, st.digest_updated_at::text,
       st.version::text, members.revision)) AS revision
     FROM stories st JOIN LATERAL (
       SELECT md5(string_agg(concat_ws(':', p.article_id, p.revision::text, fa.role, f.updated_at::text, s.name),
-        ',' ORDER BY p.article_id, f.id)) AS revision, count(DISTINCT p.article_id) AS reports
+        ',' ORDER BY p.article_id, f.id)) AS revision, count(DISTINCT p.source_id) AS sources
       FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
       JOIN sources s ON s.id = p.source_id
       WHERE f.story_id = st.id AND ${storyReportCondition(at)}
@@ -103,7 +131,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
     WHERE st.merged_into IS NULL AND EXISTS (
       SELECT 1 FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
       WHERE f.story_id = st.id AND ${evidenceCondition()} AND ${listedCondition(at)})
-      AND members.reports >= ${STORY_INDEX_MIN_REPORTS}
+      AND members.sources >= ${STORY_INDEX_MIN_SOURCES}
     ORDER BY st.latest_at DESC NULLS LAST, st.id DESC`;
   // Dated as the page's dateModified is (storyLd): its latest public report, or a newer digest that still stands.
   // Only for the sitemap: notifications already follow the content's identity.
@@ -112,7 +140,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
     const text = texts?.get(Number(s.id));
     const dates = [text?.latest?.at, text?.digestUpdatedAt].filter((d): d is Date => !!d);
     const lastmod = dates.length ? new Date(Math.max(...dates.map(Number))) : null;
-    entries.push({ loc: `/story/${s.public_id}`, lastmod, newsAt: lastmod, revision: s.revision, changefreq: "daily", priority: 0.5 });
+    entries.push({ loc: `/story/${s.public_id}`, lastmod, newsAt: lastmod, newsTitle: limits ? s.title : undefined, revision: s.revision, changefreq: "daily", priority: 0.5 });
   }
   for (const m of serverModules()) if (m.sitemap?.entries) entries.push(...(await m.sitemap.entries()).map((e) => ({ ...e, section: m.name })));
   // Material/translation timestamps can also record a retry or a state repair. Hash the content;
@@ -120,15 +148,15 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
   // A selection's release is the one date of its own, and it dates the page only in the news section.
   // Thin pages, and articles whose event page stands for them, stay out of the sitemap but not out of
   // notifications: other engines index them.
-  const items = await sql<{ id: string; revision: string; released: Date | null }[]>`
-    SELECT p.article_id AS id,
+  const items = await sql<{ id: string; title: string; revision: string; released: Date | null }[]>`
+    SELECT p.article_id AS id, p.title,
       md5(concat_ws('|', p.revision::text, a.content_hash, a.cover::text, tr.title, tr.body_html, tr.body_text, tr.complete::text, qt.text_zh,
         s.name, s.icon_url, st.public_id::text, st.title)) AS revision,
       CASE WHEN p.selected THEN p.visible_after END AS released
     ${ITEM_FROM}
     WHERE ${storyReportCondition(at)} AND p.indexable ${limits ? sql`AND NOT ${thinPageCondition()} AND NOT ${eventPageCondition(at)}` : sql``}
     ORDER BY p.timeline_at DESC, p.article_id DESC ${limits ? sql`LIMIT ${Math.max(0, limits.urls - entries.length)}` : sql``}`;
-  for (const it of items) entries.push({ loc: `/items/${it.id}`, newsAt: it.released, revision: it.revision, changefreq: "monthly", priority: 0.5 });
+  for (const it of items) entries.push({ loc: `/items/${it.id}`, newsAt: it.released, newsTitle: limits ? it.title : undefined, revision: it.revision, changefreq: "monthly", priority: 0.5 });
   return limits ? entries.slice(0, limits.urls) : entries;
 }
 
@@ -154,6 +182,35 @@ function urlset(entries: Entry[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`;
 }
 
+function newsUrlset(entries: Array<Entry & { lastmod: Date }>): string {
+  const pubName = escapeXml(SITE.name);
+  const pubLang = escapeXml(NEWS_LANGUAGE);
+  const body = entries
+    .map((e) => {
+      const iso = e.lastmod.toISOString();
+      const title = e.newsTitle?.trim();
+      const parts = [
+        `<loc>${escapeXml(siteUrl(e.loc))}</loc>`,
+        `<lastmod>${iso}</lastmod>`,
+      ];
+      if (title) {
+        parts.push(
+          `<news:news>`,
+          `<news:publication>`,
+          `<news:name>${pubName}</news:name>`,
+          `<news:language>${pubLang}</news:language>`,
+          `</news:publication>`,
+          `<news:publication_date>${iso}</news:publication_date>`,
+          `<news:title>${escapeXml(title)}</news:title>`,
+          `</news:news>`,
+        );
+      }
+      return `<url>\n${parts.join("\n")}\n</url>`;
+    })
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">\n${body}\n</urlset>\n`;
+}
+
 async function build(at: Date): Promise<Record<string, string>> {
   const entries = await loadDiscoveryEntries(at, { urls: MAX_URLS });
   // What is new, newest first, from the pages the other sections list: events by their latest report or
@@ -162,8 +219,9 @@ async function build(at: Date): Promise<Record<string, string>> {
   // only says that it is new. The file stays in the index when nothing is new.
   const since = at.getTime() - NEWS_WINDOW_MS;
   const news = entries.flatMap((e) => (e.newsAt && e.newsAt.getTime() >= since ? [{ ...e, lastmod: e.newsAt }] : []))
-    .sort((a, b) => b.lastmod.getTime() - a.lastmod.getTime());
-  const files: Record<string, string> = { [NEWS]: urlset(news) };
+    .sort((a, b) => b.lastmod.getTime() - a.lastmod.getTime())
+    .slice(0, MAX_NEWS_URLS);
+  const files: Record<string, string> = { [NEWS]: newsUrlset(news) };
   const sectionLastmod = new Map<string, Date>();
   const latestOf = (list: Entry[]) => {
     let max: Date | null = null;

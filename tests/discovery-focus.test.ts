@@ -1,16 +1,19 @@
 // Where search engines' fetches go, specified before the implementation:
-// - topic archive pages (/topics/<slug>/page/N) fill the sitemap, though they are reached from the topic page;
+// - topic archive pages (/topics/<slug>/page/N) are noindex, follow and reached from the topic page, so
+//   neither the sitemap nor change notifications list them (2026-11-20);
 // - nothing tells an engine what is new, so today's events, selections and reports queue behind old URLs;
 // - pages whose own text is only a summary's worth are advertised to Google, which spends its fetches on them;
 // - keeping those pages from Google also keeps them from the engines that index them, or from notifications;
 // - the news section's dates leak into the notification inventory, so every URL looks changed;
-// - an article whose event already gathers several reports competes at Google with that event's page (2026-11-09).
+// - an article whose event is covered by at least two distinct editorial sources competes at Google with that
+//   event's page, while single-source clusters leave indexing to their own articles (2026-11-20).
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { sql, closeDb } from "@aihot/backend/db";
 import { loadDiscoveryEntries } from "@aihot/backend/publication/sitemap";
+import { SITE } from "@aihot/site";
 import { buildApp } from "../apps/api/src/app.ts";
 
 const app = await buildApp();
@@ -21,10 +24,12 @@ const now = Date.now();
 const ago = (hours: number) => new Date(now - hours * HOUR);
 const key = tag();
 const source = `focus-${key}`;
+const sourceB = `focus-${key}-b`;
 const id = (name: string) => `${source}-${name}`;
 
 interface Report {
   at: Date;
+  source?: string;
   channel?: "news" | "x";
   bodyMode?: "full" | "summary";
   body?: string;
@@ -34,18 +39,20 @@ interface Report {
   indexable?: boolean;
   manual?: boolean;
   tags?: string[];
+  visibility?: "public" | "withdrawn";
 }
 
 async function report(name: string, r: Report) {
   const article = id(name);
+  const src = r.source ?? source;
   const xPost = r.post === undefined ? null : { text: r.post, handle: "fixture", authorName: "Fixture" };
   await sql`INSERT INTO articles (id,source_id,identity_key,url,title,timeline_at,discovered_at,body_status,body_text,body_html,x_post,x_article)
-    VALUES (${article},${source},${article},${`https://example.org/${article}`},'Fixture',${r.at},${r.at},${r.body === undefined ? "none" : "ok"},
+    VALUES (${article},${src},${article},${`https://example.org/${article}`},'Fixture',${r.at},${r.at},${r.body === undefined ? "none" : "ok"},
       ${r.body ?? null},${r.body === undefined ? null : `<p>${r.body}</p>`},${xPost ? sql.json(xPost) : null},${r.article ? sql.json({ text: r.article }) : null})`;
   await sql`INSERT INTO publications (article_id,source_id,title,summary,url,timeline_at,discovered_at,sort_at,selected,eligible,indexable,
-      visible_after,channel,category,body_mode,tags,seo_indexed_at)
-    VALUES (${article},${source},'公开报道','一段转述原文的摘要。',${`https://example.org/${article}`},${r.at},${r.at},${r.at},${r.selected ?? true},true,
-      ${r.indexable ?? true},${r.at},${r.channel ?? "news"},'ai-models',${r.bodyMode ?? (r.body === undefined && !r.article ? "summary" : "full")},
+      visibility,visible_after,channel,category,body_mode,tags,seo_indexed_at)
+    VALUES (${article},${src},'公开报道','一段转述原文的摘要。',${`https://example.org/${article}`},${r.at},${r.at},${r.at},${r.selected ?? true},true,
+      ${r.indexable ?? true},${r.visibility ?? "public"},${r.at},${r.channel ?? "news"},'ai-models',${r.bodyMode ?? (r.body === undefined && !r.article ? "summary" : "full")},
       ${r.tags ?? []},${r.manual ? r.at : null})`;
   return article;
 }
@@ -65,7 +72,9 @@ const ids: Record<string, string> = {};
 const stories: Record<string, string> = {};
 
 before(async () => {
-  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES (${source},'Focus','rss','T1','editorial')`;
+  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES
+    (${source},'Focus','rss','T1','editorial'),
+    (${sourceB},'Focus B','rss','T1','editorial')`;
   // A topic of three pages, all of it older than the news window.
   for (let n = 0; n < 45; n++) await report(`topic-${n}`, { at: ago(240 + n), body: long, tags: ["entity:minimax"] });
   Object.assign(ids, {
@@ -78,15 +87,18 @@ before(async () => {
     postArticle: await report("post-article", { at: ago(1), channel: "x", bodyMode: "full", post: "A long read:", article: long }),
     manual: await report("manual", { at: ago(1), manual: true, selected: false }),
     hidden: await report("hidden", { at: ago(1), indexable: false, selected: false }),
+    withdrawn: await report("withdrawn", { at: ago(1), body: long, visibility: "withdrawn" }),
     old: await report("old", { at: ago(72), body: long }),
     storyA: await report("story-a", { at: ago(2), body: long, selected: false, indexable: false }),
-    storyB: await report("story-b", { at: ago(1), body: long, selected: false, indexable: false }),
+    storyB: await report("story-b", { at: ago(1), source: sourceB, body: long, selected: false, indexable: false }),
     lone: await report("lone", { at: ago(1), body: long, selected: false, indexable: false }),
     staleA: await report("stale-a", { at: ago(80), body: long, selected: false, indexable: false }),
-    staleB: await report("stale-b", { at: ago(79), body: long, selected: false, indexable: false }),
+    staleB: await report("stale-b", { at: ago(79), source: sourceB, body: long, selected: false, indexable: false }),
     pairA: await report("pair-a", { at: ago(1), body: long }),
-    pairB: await report("pair-b", { at: ago(2), body: long }),
+    pairB: await report("pair-b", { at: ago(2), source: sourceB, body: long }),
     pairManual: await report("pair-manual", { at: ago(3), body: long, manual: true }),
+    sameSourceA: await report("same-source-a", { at: ago(1), body: long }),
+    sameSourceB: await report("same-source-b", { at: ago(2), body: long }),
     single: await report("single", { at: ago(1), body: long }),
   });
   Object.assign(stories, {
@@ -94,11 +106,17 @@ before(async () => {
     lone: await story([ids.lone!]),
     stale: await story([ids.staleA!, ids.staleB!]),
     pair: await story([ids.pairA!, ids.pairB!, ids.pairManual!], true),
+    sameSource: await story([ids.sameSourceA!, ids.sameSourceB!], true),
     single: await story([ids.single!], true),
   });
-  // A daily that cites an article: the reports section leaves it undated (a cited article can change it).
+  // A daily that cites an article (including a withdrawn lead that must not leak into news.xml).
   await sql`INSERT INTO reports (kind,key,window_start,window_end,content,generated_at,updated_at) VALUES
-    ('daily','2099-01-02',${ago(25)},${ago(1)},${sql.json({ highlights: [{ itemId: ids.long }] })},${ago(1)},${ago(1)}),
+    ('daily','2099-01-02',${ago(25)},${ago(1)},${sql.json({
+      leadItemId: ids.withdrawn,
+      lead: { title: "已撤下的头条不应泄露" },
+      highlights: [{ itemId: ids.long }],
+      sections: [{ items: [{ itemId: ids.withdrawn, title: "已撤下的头条不应泄露" }, { itemId: ids.long, title: "公开报道" }] }],
+    })},${ago(1)},${ago(1)}),
     ('daily','2099-01-01',${ago(97)},${ago(73)},'{}',${ago(73)},${ago(73)}),
     ('weekly','2099-W01',${ago(169)},${ago(1)},'{}',${ago(1)},${ago(1)})`;
 });
@@ -111,12 +129,13 @@ async function file(name: string) {
   return res.body;
 }
 
-test("the sitemap leaves a topic's archive pages to the topic page; notifications keep them", async () => {
+test("neither the sitemap nor notifications list a topic's archive pages", async () => {
   const topics = urls(await file("topics"));
   assert.ok(topics.includes("/topics/minimax"));
   assert.ok(!topics.some((path) => path.startsWith("/topics/minimax/page/")), "archive pages are reached from the topic page");
   const inventory = (await loadDiscoveryEntries(new Date())).map((e) => e.loc);
-  assert.ok(inventory.includes("/topics/minimax/page/2") && inventory.includes("/topics/minimax/page/3"), "engines are still told when they change");
+  assert.ok(inventory.includes("/topics/minimax"));
+  assert.ok(!inventory.some((path) => path.startsWith("/topics/minimax/page/")), "archive pages are noindex: no engine is asked to fetch them");
 });
 
 test("a page whose own text is a summary's worth is kept from Google only, and from the sitemap", async () => {
@@ -143,36 +162,47 @@ test("a page whose own text is a summary's worth is kept from Google only, and f
   }
 });
 
-test("an article whose event gathers several reports is left to the event page at Google, and only there", async () => {
+test("an article whose event spans at least two sources is left to the event page at Google, while single-source clusters keep their own articles", async () => {
   const listed = urls(await file("items"));
   const inventory = new Set((await loadDiscoveryEntries(new Date())).map((e) => e.loc));
-  // A full article otherwise indexed everywhere; an editor's mark keeps it; an event of one report has no page in search.
-  const expected: Record<string, boolean> = { pairA: true, pairB: true, pairManual: false, single: false };
+  // A full article otherwise indexed everywhere; an editor's mark keeps it; single-source clusters (1 or 2 reports) stay on their articles.
+  const expected: Record<string, boolean> = { pairA: true, pairB: true, pairManual: false, sameSourceA: false, sameSourceB: false, single: false };
   for (const [name, googleNoindex] of Object.entries(expected)) {
     const res = await app.inject(`/api/site/items/${ids[name]}`);
     assert.equal(res.statusCode, 200, name);
-    const detail = res.json() as { indexable: boolean; googleNoindex: boolean; story: { publicId: string } | null };
+    const detail = res.json() as { indexable: boolean; googleNoindex: boolean; story: { publicId: string; indexable?: boolean } | null };
     assert.ok(detail.story, `${name}: the page names its event`);
     assert.deepEqual({ indexable: detail.indexable, googleNoindex: detail.googleNoindex }, { indexable: true, googleNoindex }, name);
     assert.equal(listed.includes(`/items/${ids[name]}`), !googleNoindex, `${name}: the sitemap agrees with the page`);
     assert.ok(inventory.has(`/items/${ids[name]}`), `${name}: engines that index it are still notified`);
   }
   const events = urls(await file("stories"));
-  assert.ok(events.includes(`/story/${stories.pair}`), "the event page stands for its reports");
+  assert.ok(events.includes(`/story/${stories.pair}`), "the multi-source event page stands for its reports");
+  assert.ok(!events.includes(`/story/${stories.sameSource}`), "a single-source multi-report cluster is left to its reports' pages");
   assert.ok(!events.includes(`/story/${stories.single}`), "an event of one report is left to that report's page");
   assert.ok(inventory.has(`/story/${stories.pair}`));
+  assert.ok(!inventory.has(`/story/${stories.sameSource}`), "its page is noindex: no engine is asked to fetch it");
   assert.ok(!inventory.has(`/story/${stories.single}`), "its page is noindex: no engine is asked to fetch it");
 });
 
-test("the news section lists the last 48 hours of events, selections and reports, dated", async () => {
+test("the news section lists the last 48 hours of events, selections and reports with Google News metadata", async () => {
   const index = (await app.inject("/sitemap.xml")).body;
   assert.ok(urls(index).includes("/sitemaps/news.xml"));
   const xml = await file("news");
+  assert.match(xml, /xmlns:news="http:\/\/www\.google\.com\/schemas\/sitemap-news\/0\.9"/);
   const news = urls(xml);
+  const newsBlock = (path: string) => new RegExp(`<url>\\n<loc>[^<]*${path}</loc>([\\s\\S]*?)</url>`).exec(xml)?.[1] ?? "";
   for (const path of [`/items/${ids.long}`, `/story/${stories.fresh}`, "/daily/2099-01-02", "/weekly/2099-W01"]) {
     assert.ok(news.includes(path), path);
     assert.ok(lastmod(xml, path), `${path} carries its date`);
+    const block = newsBlock(path);
+    assert.ok(block.includes(`<news:name>${SITE.name}</news:name>`), `${path} names the publication`);
+    assert.match(block, /<news:language>[a-z]{2}(?:-[a-z]{2})?<\/news:language>/, `${path} declares ISO language`);
+    assert.ok(block.includes(`<news:publication_date>${lastmod(xml, path)}</news:publication_date>`), `${path} publication_date matches`);
+    assert.match(block, /<news:title>[^<]+<\/news:title>/, `${path} carries a non-empty news title`);
   }
+  assert.ok(!newsBlock("/daily/2099-01-02").includes("已撤下的头条不应泄露"), "a withdrawn daily lead never leaks into news.xml");
+  assert.ok(newsBlock("/daily/2099-01-02").includes("公开报道"), "daily news title advances to the next live citation");
   assert.equal(lastmod(xml, `/items/${ids.long}`), ago(1).toISOString(), "a selection is dated by its release");
   assert.equal(lastmod(index, "/sitemaps/news.xml"), lastmod(xml, `/items/${ids.long}`), "sitemap index carries the shard's latest lastmod");
   assert.ok(lastmod(index, "/sitemaps/stories.xml"), "dated shards carry lastmod in the sitemap index");
@@ -180,6 +210,7 @@ test("the news section lists the last 48 hours of events, selections and reports
   for (const path of [`/items/${ids.old}`, `/story/${stories.stale}`, "/daily/2099-01-01"]) assert.ok(!news.includes(path), `${path} is older than 48 hours`);
   assert.ok(!news.includes(`/items/${ids.noBody}`), "only what the other sections list: not a page kept from Google");
   assert.ok(!news.includes(`/story/${stories.lone}`), "only what the other sections list: not a one-report event");
+  assert.ok(!news.includes(`/story/${stories.sameSource}`), "only what the other sections list: not a single-source cluster");
   assert.ok(!news.includes(`/items/${ids.manual}`), "a page an editor marked for indexing is not a selection");
 });
 
@@ -197,5 +228,5 @@ test("the news section is served even when nothing is new", async (t) => {
   assert.ok(urls(index).includes("/sitemaps/news.xml"), "an address engines learned does not come and go");
   const xml = await file("news");
   assert.equal(urls(xml).length, 0);
-  assert.match(xml, /<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/);
+  assert.match(xml, /<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9" xmlns:news="http:\/\/www\.google\.com\/schemas\/sitemap-news\/0\.9">/);
 });

@@ -2,7 +2,7 @@
 // with the feed filters they carry. The site's name and wording come from site/site.ts;
 //; its address from SITE_URL.
 import type { MetaDescriptor } from "react-router";
-import { REPORT_NAMES, reportDateLabel, STORY_INDEX_MIN_REPORTS, type ReportDetail, type StoryDetail, type TimelineFilters } from "@aihot/contracts/site";
+import { REPORT_NAMES, reportDateLabel, STORY_INDEX_MIN_SOURCES, type ReportDetail, type StoryDetail, type TimelineFilters } from "@aihot/contracts/site";
 import { isCategoryKey, isChannelKey } from "@aihot/contracts/taxonomy";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
 
@@ -337,7 +337,7 @@ export function storyLd(story: StoryDetail) {
  * digest's own time (never a third-party report's publication time).
  */
 export function storyArticleLd(story: StoryDetail) {
-  if (story.reportCount < STORY_INDEX_MIN_REPORTS || !story.digest || !story.digestUpdatedAt) return null;
+  if (story.sourceCount < STORY_INDEX_MIN_SOURCES || !story.digest || !story.digestUpdatedAt) return null;
   const updated = [story.latestAt, story.digestUpdatedAt]
     .filter((at): at is string => !!at).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
   return articleLd({

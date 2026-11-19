@@ -1,0 +1,9 @@
+[Unit]
+Description=OPCHOT watchdog every 30 minutes
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+
+[Install]
+WantedBy=timers.target

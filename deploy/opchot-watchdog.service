@@ -1,0 +1,11 @@
+[Unit]
+Description=OPCHOT local watchdog (health/freshness/errors)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Environment=OPCHOT_STATUS_DIR=/opt/1panel/backup/opchot/status
+Environment=ALERT_QUIET_MINUTES=360
+ExecStart=/opt/opchot/deploy/opchot-watchdog.sh

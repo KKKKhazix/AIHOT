@@ -1,0 +1,11 @@
+[Unit]
+Description=OPCHOT database backup (pg_dump + verify + rotate)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Environment=OPCHOT_BACKUP_DIR=/opt/1panel/backup/opchot
+Environment=OPCHOT_BACKUP_RETAIN_DAYS=14
+ExecStart=/opt/opchot/deploy/backup-db.sh

@@ -6,7 +6,8 @@
 set -uo pipefail
 
 STATUS_DIR="${OPCHOT_STATUS_DIR:-/opt/1panel/backup/opchot/status}"
-QUIET_MIN="${ALERT_QUIET_MINUTES:-360}"
+# 采集存活阈值：超过这么久没有新采集到的内容才算异常（默认 24h，按日采集正常）
+QUIET_MIN="${WATCHDOG_QUIET_MIN:-1440}"
 API="http://127.0.0.1:3000"
 mkdir -p "$STATUS_DIR"
 chmod 700 "$STATUS_DIR" 2>/dev/null || true
@@ -15,18 +16,20 @@ NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 HEALTH="$(curl -s -m 10 "$API/api/health" 2>/dev/null || echo '{}')"
 case "$HEALTH" in *'"ok":true'*) HEALTH_OK=true ;; *) HEALTH_OK=false ;; esac
 
-# 采集新鲜度：最近一条内容的时间
-LATEST="$(curl -s -m 10 "$API/api/v1/items?mode=all&window=30d&limit=1" 2>/dev/null || echo '{}')"
-LATEST_AT="$(printf '%s' "$LATEST" | grep -o '"publishedAt":"[^"]*"' | head -1 | cut -d'"' -f4)"
+# 采集新鲜度：window 仅支持 24h/7d；用 discoveredAt（采集时间）最大值，
+# 比 publishedAt（原文发布时间）更能反映采集是否存活。
+ITEMS="$(curl -s -m 10 "$API/api/v1/items?mode=all&window=7d&limit=50" 2>/dev/null || echo '{}')"
+LATEST_PUB="$(printf '%s' "$ITEMS" | grep -o '"publishedAt":"[^"]*"' | head -1 | cut -d'"' -f4)"
+MAX_TS=0
+for d in $(printf '%s' "$ITEMS" | grep -o '"discoveredAt":"[^"]*"' | cut -d'"' -f4); do
+  ts="$(date -d "$d" +%s 2>/dev/null || echo 0)"
+  [ "$ts" -gt "$MAX_TS" ] && MAX_TS="$ts"
+done
 FRESH_OK=true
 AGE_MIN=""
-if [ -n "$LATEST_AT" ]; then
-  LATEST_TS="$(date -d "$LATEST_AT" +%s 2>/dev/null || echo 0)"
-  NOW_TS="$(date +%s)"
-  if [ "$LATEST_TS" -gt 0 ]; then
-    AGE_MIN=$(( (NOW_TS - LATEST_TS) / 60 ))
-    [ "$AGE_MIN" -gt "$QUIET_MIN" ] && FRESH_OK=false
-  fi
+if [ "$MAX_TS" -gt 0 ]; then
+  AGE_MIN=$(( ($(date +%s) - MAX_TS) / 60 ))
+  [ "$AGE_MIN" -gt "$QUIET_MIN" ] && FRESH_OK=false
 else
   FRESH_OK=false
 fi
@@ -44,20 +47,20 @@ cat > "$STATUS_FILE" <<JSON
   "status": "$STATUS",
   "healthOk": $HEALTH_OK,
   "freshOk": $FRESH_OK,
-  "latestPublishedAt": "${LATEST_AT:-}",
-  "ageMinutes": ${AGE_MIN:-null},
+  "latestPublishedAt": "${LATEST_PUB:-}",
+  "collectAgeMinutes": ${AGE_MIN:-null},
   "quietThresholdMinutes": $QUIET_MIN,
   "containers": "$CONTAINERS",
   "workerErrors24h": ${ERR_COUNT:-0}
 }
 JSON
 chmod 600 "$STATUS_FILE" 2>/dev/null || true
-echo "[$NOW] watchdog status=$STATUS health=$HEALTH_OK fresh=$FRESH_OK age=${AGE_MIN:-?}m errors24h=${ERR_COUNT:-0}" >> "$STATUS_DIR/watchdog.log"
+echo "[$NOW] watchdog status=$STATUS health=$HEALTH_OK fresh=$FRESH_OK collectAge=${AGE_MIN:-?}m errors24h=${ERR_COUNT:-0}" >> "$STATUS_DIR/watchdog.log"
 
 # 预留外部告警接口（默认禁用）。配置 OPCHOT_ALERT_WEBHOOK 后异常时推送。
 if [ -n "${OPCHOT_ALERT_WEBHOOK:-}" ] && [ "$STATUS" != "ok" ]; then
   curl -s -m 10 -X POST -H 'Content-Type: application/json' \
-    -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"OPCHOT 告警: $STATUS health=$HEALTH_OK fresh=$FRESH_OK age=${AGE_MIN:-?}m errors=${ERR_COUNT:-0}\"}}" \
+    -d "{\"msg_type\":\"text\",\"content\":{\"text\":\"OPCHOT 告警: $STATUS health=$HEALTH_OK fresh=$FRESH_OK collectAge=${AGE_MIN:-?}m errors=${ERR_COUNT:-0}\"}}" \
     "$OPCHOT_ALERT_WEBHOOK" >/dev/null 2>&1 || true
 fi
 

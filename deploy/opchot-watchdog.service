@@ -7,5 +7,5 @@ Requires=docker.service
 Type=oneshot
 User=root
 Environment=OPCHOT_STATUS_DIR=/opt/1panel/backup/opchot/status
-Environment=ALERT_QUIET_MINUTES=360
+Environment=WATCHDOG_QUIET_MIN=1440
 ExecStart=/opt/opchot/deploy/opchot-watchdog.sh

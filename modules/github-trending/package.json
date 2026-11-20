@@ -1,0 +1,9 @@
+{
+  "name": "@aihot/github-trending",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "cheerio": "1.2.0",
+    "undici": "8.12.3"
+  }
+}

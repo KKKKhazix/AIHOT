@@ -1,0 +1,29 @@
+# 个人工作台：host 网络让容器可达 WSL 回环上的 magpie(3425) 与 Clash(7890)。
+# db 只监听回环，避免局域网暴露。api 改 3002、web 改 3001（门户占 3000）。
+services:
+  db:
+    network_mode: host
+    command: ["postgres", "-c", "listen_addresses=127.0.0.1"]
+  setup:
+    network_mode: host
+    environment:
+      DATABASE_URL: postgres://aihot:${POSTGRES_PASSWORD:-aihot}@127.0.0.1:5432/aihot
+      API_BASE_URL: http://127.0.0.1:3002
+  api:
+    network_mode: host
+    environment:
+      DATABASE_URL: postgres://aihot:${POSTGRES_PASSWORD:-aihot}@127.0.0.1:5432/aihot
+      API_BASE_URL: http://127.0.0.1:3002
+      API_HOST: 127.0.0.1
+      API_PORT: "3002"
+  worker:
+    network_mode: host
+    environment:
+      DATABASE_URL: postgres://aihot:${POSTGRES_PASSWORD:-aihot}@127.0.0.1:5432/aihot
+      API_BASE_URL: http://127.0.0.1:3002
+  web:
+    network_mode: host
+    environment:
+      API_BASE_URL: http://127.0.0.1:3002
+      WEB_HOST: 127.0.0.1
+      WEB_PORT: "3001"

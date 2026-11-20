@@ -84,7 +84,7 @@ export async function reconcileMaterialSource(db: Db, articleId: string, observe
   await db`UPDATE articles SET source_id = ${publisher.id}, author = ${author}, updated_at = now()
     ${needsProcessing ? sql`, processing_state = 'new', processing_queued_at = NULL, ${groupingReset()}` : sql``}
     WHERE id = ${articleId}`;
-  await audit("system", "article.attribution", `article:${articleId}`, "唯一 T1 原发信源与已验证 URL 范围一致（显式配置或已观察官网列表）",
+  await audit("system", "article.attribution", `content:${articleId}`, "唯一 T1 原发信源与已验证 URL 范围一致（显式配置或已观察官网列表）",
     { sourceId: article.source_id, author: article.author }, { sourceId: publisher.id, author }, { db });
   // This changes attribution and the public seat, not the judgement or selection threshold.
   const published = await publishArticleTx(db as Parameters<typeof publishArticleTx>[0], articleId);

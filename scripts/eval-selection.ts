@@ -135,8 +135,8 @@ for (const model of models) {
     const pred = decide(x);
     const gold = x.r.gold.decision;
     if (pred === null || gold === "either") continue;
-    if (pred === "select" && gold === "reject") mistakes.push({ kind: "FP", title: x.r.material.title, score: shownScore(x.scores), stratum: x.r.samplingContext?.samplingStratum ?? null });
-    else if (pred === "reject" && gold === "select") mistakes.push({ kind: "FN", title: x.r.material.title, score: shownScore(x.scores), relevance: x.relevance, stratum: x.r.samplingContext?.samplingStratum ?? null });
+    if (pred === "select" && gold === "reject") mistakes.push({ kind: "FP", caseId: x.r.caseId, title: x.r.material.title, score: shownScore(x.scores), stratum: x.r.samplingContext?.samplingStratum ?? null });
+    else if (pred === "reject" && gold === "select") mistakes.push({ kind: "FN", caseId: x.r.caseId, title: x.r.material.title, score: shownScore(x.scores), relevance: x.relevance, stratum: x.r.samplingContext?.samplingStratum ?? null });
   }
   const usage = await usageFor(results.flatMap((x) => x.receiptIds));
   const summary = {

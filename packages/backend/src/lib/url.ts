@@ -117,6 +117,29 @@ export function ipv6Groups(s: string): number[] | null {
   return groups.length === 8 && groups.every((g) => Number.isFinite(g)) ? groups : null;
 }
 
+/** RFC 5952 canonical IPv6 (lowercase, longest zero-run >1 compressed) or canonical dotted IPv4; null if invalid. */
+export function canonicalIp(address: string): string | null {
+  const s = address.trim();
+  const v4 = parseIpv4(s);
+  if (v4) return v4.join(".");
+  const groups = ipv6Groups(s);
+  if (!groups) return null;
+  let bestStart = -1, bestLen = 0, curStart = -1, curLen = 0;
+  for (let i = 0; i < 8; i++) {
+    if (groups[i] === 0) {
+      if (curStart === -1) curStart = i;
+      curLen++;
+      if (curLen > bestLen) { bestStart = curStart; bestLen = curLen; }
+    } else {
+      curStart = -1;
+      curLen = 0;
+    }
+  }
+  const hex = groups.map((g) => g.toString(16));
+  if (bestLen < 2) return hex.join(":");
+  return `${hex.slice(0, bestStart).join(":")}::${hex.slice(bestStart + bestLen).join(":")}`;
+}
+
 function embeddedIpv4(hi: number, lo: number): [number, number, number, number] {
   return [hi >> 8, hi & 0xff, lo >> 8, lo & 0xff];
 }

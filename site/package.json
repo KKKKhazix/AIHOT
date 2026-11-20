@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "sideEffects": false,
+  "dependencies": {
+    "@aihot/github-trending": "*"
+  },
   "exports": {
     ".": "./site.ts",
     "./models": "./models.ts",

@@ -114,6 +114,8 @@
 
 `init-env` 默认按 DeepSeek 配置。用千问、智谱等别家，照 `.env.example` 里的例子改 `.env` 的 `LLM_BASE_URL`、`LLM_MODEL` 和 `LLM_EXTRA_JSON`；用推理模型（先想再答）时，还要设 `LLM_REASONING_TOKENS` 给推理留出输出额度。
 
+使用 OpenDesign Go 套餐的工作空间 Key 时，按[部署文档的配置示例](docs/deploy.md#opendesign-go)填写；同样复用现有 OpenAI 兼容接口。
+
 ```bash
 git clone https://github.com/KKKKhazix/AIHOT.git myhot
 cd myhot

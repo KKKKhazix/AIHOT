@@ -30,6 +30,21 @@ docker compose up -d --build
 
 `docker compose` 会起五个容器：`db`（PostgreSQL 17）、`setup`（每次启动先跑数据库迁移和种子数据，然后退出）、`api`、`worker`（抓取、模型处理、定时任务）、`web`（网页）。`web` 只接收网站地址、API 地址等网页配置，通过 HTTP 读取 API；数据库、模型和管理员密钥，以及数据卷，只交给后端容器。
 
+### OpenDesign Go
+
+已有 [OpenDesign Go 套餐](https://go.open-design.ai/)的用户，可以按 [API 接入指南](https://open-design.ai/help/cloud-api/)创建工作空间 Key。运行 `init-env.ts` 后，在启动容器前编辑 `.env` 的模型配置：
+
+```dotenv
+LLM_BASE_URL=https://amr-link.open-design.ai/v1
+LLM_API_KEY=YOUR_WORKSPACE_API_KEY
+LLM_MODEL=YOUR_MODEL_ID
+LLM_EXTRA_JSON={}
+```
+
+将两个占位符替换为自己的 Key 和该工作空间 `/models` 返回的准确模型 ID，不加供应商前缀。清空默认 DeepSeek 的额外参数后，再按所选模型的接口文档添加需要的参数；推理模型仍须设置 `LLM_REASONING_TOKENS`，支持 JSON 模式与否按 `.env.example` 配置。默认模型通过 Chat Completions 调用，不使用 Responses 或 Messages 地址。
+
+这不会替换 `site/models.ts` 或后台为某一步单独选择的具名模型。修改已有部署的环境变量后，重新运行 `docker compose up -d` 以更新容器环境。Key 只留在后端 `.env`，不要提交到 Git；套餐额度由 OpenDesign 管理。这里仅配置文本模型，不说明套餐包含向量、视觉或其他付费服务。
+
 ### 在中国大陆的服务器上
 
 - 构建时 npm 走国内镜像：`docker compose build --build-arg NPM_REGISTRY=https://registry.npmmirror.com`，然后 `docker compose up -d`。

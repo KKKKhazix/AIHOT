@@ -168,7 +168,7 @@ test("a later verified publisher repairs source and author, preserving judgement
   assert.equal(p!.visible_after.toISOString(), before!.visible_after.toISOString());
   assert.equal(p!.revision, before!.revision + 1);
   assert.equal((await sql`SELECT 1 FROM article_discoveries WHERE article_id = ${articleId}`).length, 2);
-  assert.equal((await sql`SELECT 1 FROM audit_log WHERE action = 'article.attribution' AND subject = ${`article:${articleId}`}`).length, 1);
+  assert.equal((await sql`SELECT 1 FROM audit_log WHERE action = 'article.attribution' AND subject = ${`content:${articleId}`}`).length, 1);
   assert.equal((await sql`SELECT 1 FROM analyses WHERE article_id = ${articleId}`).length, 1);
   await upsertMaterial({ sourceId: media, url, title: "Aggregator changed title", author: "Another submitter", via: "fetch" });
   assert.equal((await sql`SELECT source_id FROM articles WHERE id = ${articleId}`)[0]!.source_id, official);

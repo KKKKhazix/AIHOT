@@ -10,11 +10,21 @@ export interface Entry<T> {
 }
 export type Entries<T> = Record<string, Entry<T>>;
 
+/** Deterministic JSON with sorted object keys, invariant to property order and PostgreSQL jsonb key reordering. */
+export function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v) => {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      return Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+    }
+    return v;
+  });
+}
+
 // A total order on entries, so both sides of a merge pick the same one whatever order they meet in.
 function wins<T>(e: Entry<T>, other: Entry<T>): boolean {
   if (e.t !== other.t) return e.t > other.t;
   if ((e.v === null) !== (other.v === null)) return e.v === null;
-  return JSON.stringify(e.v) > JSON.stringify(other.v);
+  return stableJson(e.v) > stableJson(other.v);
 }
 
 export function mergeEntries<T>(a: Entries<T>, b: Entries<T>): Entries<T> {

@@ -158,3 +158,37 @@ test("bad admin input is a client error and never starts processing", async () =
   const [state] = await sql`SELECT processing_state FROM articles WHERE id = ${id}`;
   assert.equal(state!.processing_state, "analyzed");
 });
+
+test("contentChain sees provenance audits, isolates selected deliveries, tag override keeps entity:* and modelsOverview prices retired models by recorded service", async () => {
+  const { contentChain } = await import("@aihot/backend/admin/content");
+  const { modelsOverview } = await import("@aihot/backend/admin/models");
+  const { audit } = await import("@aihot/backend/audit");
+  const id = await article();
+  await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, summary_zh, tags, subjects, selected)
+            VALUES (${id}, 1, 'rule', 'pass', '摘要', ARRAY['模型发布'], ARRAY['openai'], false)`;
+  await sql`INSERT INTO editorial_overrides (article_id, fields, reason, updated_by)
+            VALUES (${id}, ${sql.json({ tags: ["开源/仓库"] })}, '人工改标签', 'test')`;
+  await publishArticle(id);
+  const [pub] = await sql<{ tags: string[] }[]>`SELECT tags FROM publications WHERE article_id = ${id}`;
+  assert.ok(pub!.tags.includes("开源/仓库") && pub!.tags.includes("entity:openai"), "manual display tags keep entity:* topic membership");
+
+  await audit("system", "article.attribution", `content:${id}`, "provenance", { sourceId: "old" }, { sourceId: "new" });
+  const target = `test-other-delivery-${T}`;
+  await sql`INSERT INTO notify_targets (key, purpose, kind, enabled) VALUES (${target}, 'content', 'log', false)`;
+  await sql`INSERT INTO deliveries (target_key, subject_kind, subject_id, dedupe_key, status)
+            VALUES (${target}, 'other_kind', ${id}, ${`other:${id}`}, 'sent')`;
+  const chain = await contentChain(id);
+  assert.ok(chain!.history.some((h) => h.action === "article.attribution"), "provenance audit is visible on contentChain");
+  assert.equal(chain!.deliveries.length, 0, "unrelated subject_kind deliveries do not leak into contentChain");
+
+  await sql`INSERT INTO service_prices (service, model, currency, input_per_mtok, output_per_mtok)
+            VALUES ('deepseek', ${`retired-${T}`}, 'CNY', 2, 4) ON CONFLICT DO NOTHING`;
+  const [rcpt] = await sql<{ id: number }[]>`INSERT INTO receipts (logical_key, service, purpose, subject, status, request)
+            VALUES (${`retired:${T}`}, 'deepseek', 'summarize_article', ${`article:${id}`}, 'received', ${sql.json({ promptVersion: "v1" })}) RETURNING id`;
+  await sql`INSERT INTO receipt_attempts (receipt_id, attempt, service, status, origin, model, latency_ms, usage)
+            VALUES (${rcpt!.id}, 1, 'deepseek', 'received', 'live', ${`retired-${T}`}, 100, ${sql.json({ prompt_tokens: 1_000_000, completion_tokens: 500_000 })})`;
+  const overview = await modelsOverview(7);
+  const row = overview.capabilities.find((c) => c.key === "summarize")?.usage.find((u) => u.model === `retired-${T}`);
+  assert.equal(row?.service, "deepseek");
+  assert.deepEqual(row?.estimate, { amount: 4, currency: "CNY" });
+});

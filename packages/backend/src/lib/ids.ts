@@ -24,12 +24,4 @@ export function shortHash(value: string, length = 16): string {
   return sha256(value).slice(0, length);
 }
 
-/** Stable JSON (sorted keys) for hashing request identities and payloads. */
-export function stableJson(value: unknown): string {
-  return JSON.stringify(value, (_key, v) => {
-    if (v && typeof v === "object" && !Array.isArray(v)) {
-      return Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
-    }
-    return v;
-  });
-}
+export { stableJson } from "@aihot/contracts/sync";

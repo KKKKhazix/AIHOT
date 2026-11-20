@@ -293,7 +293,10 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   const title = pickString(f.title, original?.title ?? zhTitle ?? (!suppressOriginal && (isChineseTitle || article.x_post) ? collapseWhitespace(article.title) : null));
   const summary = pickString(f.summary, original ? original.summary : analysis?.summary_zh ?? null);
   const category = pickString(f.category, analysis?.category ?? null);
-  const tags = Array.isArray(f.tags) ? (f.tags as string[]) : [...new Set([...(analysis?.tags ?? []), ...(analysis?.subjects ?? []).map((s) => `entity:${s}`)])];
+  const entityTags = (analysis?.subjects ?? []).map((s) => `entity:${s}`);
+  const tags = Array.isArray(f.tags)
+    ? [...new Set([...(f.tags as string[]), ...((f.tags as string[]).some((t) => t.startsWith("entity:")) ? [] : entityTags)])]
+    : [...new Set([...(analysis?.tags ?? []), ...entityTags])];
   const score = f.score === null || typeof f.score === "number" ? f.score : analysis?.score ?? null;
   const relevance = typeof f.relevance === "string" ? (f.relevance as string) : analysis?.relevance ?? null;
   const judgedSelected = typeof f.selected === "boolean" ? (f.selected as boolean) : analysis?.selected ?? null;

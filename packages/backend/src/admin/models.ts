@@ -11,6 +11,7 @@ import { audit } from "../audit.ts";
 
 interface UsageRow {
   purpose: string;
+  service: string;
   model: string | null;
   prompt_version: string | null;
   calls: number;
@@ -36,7 +37,7 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
     modelSources(),
     modelCircuits(),
     sql<UsageRow[]>`
-      SELECT r.purpose, a.model, r.request->>'promptVersion' AS prompt_version, count(*)::int AS calls,
+      SELECT r.purpose, a.service, a.model, r.request->>'promptVersion' AS prompt_version, count(*)::int AS calls,
              count(*) FILTER (WHERE a.status = 'received')::int AS ok,
              count(*) FILTER (WHERE a.status = 'failed')::int AS failed,
              count(*) FILTER (WHERE a.status = 'unknown')::int AS unknown,
@@ -49,22 +50,20 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
              sum(a.cost) FILTER (WHERE a.cost_basis = 'actual') AS actual_cost, max(a.currency) AS currency
       FROM receipt_attempts a JOIN receipts r ON r.id = a.receipt_id
       WHERE a.started_at >= ${since} AND a.origin = 'live' AND a.model IS NOT NULL
-      GROUP BY 1, 2, 3 ORDER BY 1, 4 DESC`,
+      GROUP BY 1, 2, 3, 4 ORDER BY 1, 5 DESC`,
     sql<{ service: string; model: string; currency: string; input_per_mtok: string | null; cached_per_mtok: string | null; output_per_mtok: string | null }[]>`
       SELECT service, model, currency, input_per_mtok, cached_per_mtok, output_per_mtok FROM service_prices`,
     sql<BeforeJson<AdminModels["history"][number]>[]>`
-      SELECT created_at AS at, actor, subject, reason, before, after FROM audit_log WHERE action = 'models.switch' ORDER BY created_at DESC LIMIT 30`,
+      SELECT id::int AS id, created_at AS at, actor, subject, reason, before, after FROM audit_log WHERE action = 'models.switch' ORDER BY created_at DESC LIMIT 30`,
     sql<{ id: string; label: string; sample_size: number; prompt_version: string | null; models: string[]; summary: unknown; created_at: Date }[]>`
       SELECT id, label, sample_size, prompt_version, models,
              (SELECT coalesce(jsonb_object_agg(key, value - 'sweep'), '{}'::jsonb) FROM jsonb_each(r.summary)) AS summary,
              created_at FROM selectbench_runs r ORDER BY created_at DESC LIMIT 8`,
   ]);
-  const serviceOf = (model: string) => Object.values(MODELS).find((m) => m.model === model || m.key === model)?.service ?? null;
   // Cached prompt tokens at the cache price, the rest at the input price; calls that carry their own cost
-  // are not estimated again.
+  // are not estimated again. Match directly on the attempt's recorded service, never by guessing from MODELS.
   const priced = (u: UsageRow) => {
-    const service = u.model ? serviceOf(u.model) : null;
-    const p = prices.find((x) => x.service === service && x.model === u.model) ?? prices.find((x) => x.service === service && x.model === "");
+    const p = prices.find((x) => x.service === u.service && x.model === u.model) ?? prices.find((x) => x.service === u.service && x.model === "");
     if (!p || (!p.input_per_mtok && !p.output_per_mtok)) return null;
     const cached = Number(u.tokens_cached ?? 0);
     const fresh = Number(u.tokens_in_uncosted ?? 0) - cached;
@@ -88,6 +87,7 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
         .filter((u) => c.purposes.includes(u.purpose))
         .map((u) => ({
           purpose: u.purpose,
+          service: u.service,
           model: u.model,
           promptVersion: u.prompt_version,
           calls: u.calls,

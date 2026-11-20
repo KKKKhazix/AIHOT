@@ -74,7 +74,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
                 <DataTable
                   dense
                   rows={c.usage}
-                  rowKey={(u) => `${u.purpose}|${u.model}|${u.promptVersion}`}
+                  rowKey={(u) => `${u.purpose}|${u.service}|${u.model}|${u.promptVersion}`}
                   columns={[
                     { key: "m", label: "模型", render: (u) => <span className="whitespace-nowrap font-mono text-[12px]">{u.model}</span> },
                     { key: "v", label: "提示版本", render: (u) => <span className="whitespace-nowrap font-mono text-[11.5px] text-ink-3">{u.promptVersion ?? "—"}</span> },
@@ -120,7 +120,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
             <DataTable
               dense
               rows={m.history}
-              rowKey={(h) => `${h.at}|${h.subject}`}
+              rowKey={(h) => String(h.id)}
               columns={[
                 { key: "at", label: "时间", render: (h) => <span className="num whitespace-nowrap">{bj(h.at)}</span> },
                 { key: "c", label: "能力", render: (h) => labelOf(h.subject) },

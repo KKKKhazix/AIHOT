@@ -10,6 +10,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { load } from "cheerio";
+import { stableJson } from "@aihot/contracts/sync";
 import { readable, type PageRules } from "@aihot/backend/content/extract";
 import { guardedFetch, languageHeaders } from "@aihot/backend/lib/http-fetch";
 
@@ -44,7 +45,6 @@ interface Result {
 }
 
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
-const json = (value: unknown) => JSON.stringify(value);
 const readJson = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8"));
 const writeJson = (file: string, value: unknown) => {
   mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
@@ -58,7 +58,7 @@ async function save(urls: string, out: string) {
     const [address, settings] = line.split("\t");
     const url = new URL(address.trim()).href;
     const rules: PageRules = settings ? JSON.parse(settings) : {};
-    const id = createHash("sha256").update(url + "\n" + json(rules)).digest("hex");
+    const id = createHash("sha256").update(url + "\n" + stableJson(rules)).digest("hex");
     if (pages.some(page => page.id === id)) continue;
     const page: SavedPage = { id, url, rules, fetchedAt: new Date().toISOString(), status: null };
     const target = new URL(url);
@@ -125,9 +125,12 @@ function run(pages: string, out: string) {
 // Counts preserve repeated paragraphs and repeated media: losing one copy is still a change.
 function added<T>(before: T[], after: T[]): T[] {
   const remaining = new Map<string, number>();
-  for (const item of before) remaining.set(json(item), (remaining.get(json(item)) ?? 0) + 1);
+  for (const item of before) {
+    const key = stableJson(item);
+    remaining.set(key, (remaining.get(key) ?? 0) + 1);
+  }
   return after.filter(item => {
-    const key = json(item), count = remaining.get(key) ?? 0;
+    const key = stableJson(item), count = remaining.get(key) ?? 0;
     if (count) { remaining.set(key, count - 1); return false; }
     return true;
   });
@@ -153,10 +156,10 @@ function diff(a: string, b: string) {
     const x = first.body, y = second.body;
     if (!x || !y) unreadable++;
     if (first.error !== second.error) lines.push(`- 抽取出错：${second.url}：${first.error ?? "无"} → ${second.error ?? "无"}`);
-    if (json(x) === json(y)) { if (first.error === second.error) unchanged++; continue; }
+    if (stableJson(x) === stableJson(y)) { if (first.error === second.error) unchanged++; continue; }
     const textChanged = x?.text !== y?.text;
     const media = (body: Body | null) => body && [body.images, body.captions, body.videos, body.cover];
-    const mediaChanged = json(media(x)) !== json(media(y));
+    const mediaChanged = stableJson(media(x)) !== stableJson(media(y));
     if (textChanged) words++;
     else if (mediaChanged) mediaOnly++;
     else layout++;
@@ -172,9 +175,9 @@ function diff(a: string, b: string) {
     changes("段落", x?.paragraphs ?? [], y?.paragraphs ?? [], clip);
     changes("图片", x?.images ?? [], y?.images ?? [], url => url);
     changes("视频", videoSources(x), videoSources(y), url => url);
-    if (json(x?.captions) !== json(y?.captions)) changes("图注", x?.captions ?? [], y?.captions ?? [], caption => `${clip(caption.text)}${caption.media.length ? `（${caption.media.join(", ")}）` : ""}`);
-    if (json(x?.videos) !== json(y?.videos) && !removedVideos.length && !added(videoSources(x), videoSources(y)).length) lines.push("  - 视频顺序或海报变化");
-    if (json(x?.cover) !== json(y?.cover)) lines.push(`  - 封面：${json(x?.cover ?? null)} → ${json(y?.cover ?? null)}`);
+    if (stableJson(x?.captions) !== stableJson(y?.captions)) changes("图注", x?.captions ?? [], y?.captions ?? [], caption => `${clip(caption.text)}${caption.media.length ? `（${caption.media.join(", ")}）` : ""}`);
+    if (stableJson(x?.videos) !== stableJson(y?.videos) && !removedVideos.length && !added(videoSources(x), videoSources(y)).length) lines.push("  - 视频顺序或海报变化");
+    if (stableJson(x?.cover) !== stableJson(y?.cover)) lines.push(`  - 封面：${stableJson(x?.cover ?? null)} → ${stableJson(y?.cover ?? null)}`);
   }
   lines.push("", `汇总：没变 ${unchanged} 篇；只变版式 ${layout} 篇；字变了 ${words} 篇；仅媒体变化 ${mediaOnly} 篇；少了图片 ${lostImages} 篇；少了视频 ${lostVideos} 篇。`,
     `样本：新增 ${after.filter(page => !old.has(page.id)).length} 篇；移除 ${before.filter(page => !next.has(page.id)).length} 篇；任一次未提取到正文 ${unreadable} 篇。`);

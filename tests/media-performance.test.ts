@@ -252,7 +252,7 @@ test("responsive URLs and web body candidates retain exact signatures and stable
   assert.doesNotMatch(proxyBodyImages(html, true), /srcset=/);
 });
 
-test("image HTTP responses keep earlier URLs valid, reject tampering before fetching and do not vary on Accept", async () => {
+test("image HTTP responses serve signed URLs, reject tampering and unsigned modes before fetching and do not vary on Accept", async () => {
   const { default: Fastify } = await import("fastify");
   const { registerMedia } = await import("../apps/api/src/routes/media.ts");
   const { signature } = await import("@aihot/backend/media/imgproxy");

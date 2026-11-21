@@ -50,7 +50,7 @@ function Figure({ n, unit }: { n: number; unit: string }) {
   const f = figure(n);
   return (
     <div className="flex items-baseline gap-1.5">
-      <span className="num text-[30px] font-black leading-none tracking-[-0.03em] text-ink xl:text-[36px]">{f.value}</span>
+      <span className="num text-ui-title-5 font-black leading-none tracking-[-0.03em] text-ink xl:text-ui-display-2">{f.value}</span>
       <span className="text-ui-label text-ink-3">
         {f.unit}
         {unit}
@@ -153,13 +153,13 @@ function Maker({ maker, contact }: { maker: NonNullable<typeof ABOUT.maker>; con
     <section aria-labelledby="maker" className="mt-20 grid gap-10 xl:mt-28 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16">
       <div>
         <Kicker>做这个站的人</Kicker>
-        <h2 id="maker" className="mt-4 flex items-center gap-3.5 text-[26px] font-black leading-[1.3] tracking-[-0.02em] text-ink xl:gap-4 xl:text-[34px]">
+        <h2 id="maker" className="mt-4 flex items-center gap-3.5 text-ui-title-2 font-black leading-[1.3] tracking-[-0.02em] text-ink xl:gap-4 xl:text-ui-display-1">
           {contact?.makerAvatar && <MakerFace src={contact.makerAvatar} />}
           <span>
             嗨，我是 <span className="whitespace-nowrap text-accent">{maker.name}</span>
           </span>
         </h2>
-        <div className="mt-5 space-y-4 text-[15.5px] leading-[1.9] text-ink-2 xl:text-[16.5px]">
+        <div className="mt-5 space-y-4 text-ui-body-plus leading-[1.9] text-ink-2 xl:text-ui-body-xl">
           {maker.greeting.map((line) => (
             <p key={line}>{line}</p>
           ))}
@@ -222,12 +222,12 @@ export default function AboutPage() {
       <header className="grid items-end gap-8 pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:pt-0">
         <div>
           <Kicker>{ABOUT.kicker}</Kicker>
-          <h1 data-page-title="" className="mt-5 text-[34px] font-black leading-[1.18] tracking-[-0.03em] text-ink [text-wrap:balance] sm:text-[46px] xl:text-[56px] 2xl:text-[64px]">
+          <h1 data-page-title="" className="mt-5 text-ui-display-1 font-black leading-[1.18] tracking-[-0.03em] text-ink [text-wrap:balance] sm:text-ui-display-6 xl:text-ui-display-8 2xl:text-ui-display-9">
             {ABOUT.headline[0]}
             <br />
             <span className="text-accent">{ABOUT.headline[1]}</span>
           </h1>
-          <p className="mt-5 max-w-[36em] text-[15.5px] leading-[1.85] text-ink-3 xl:text-[17px]">
+          <p className="mt-5 max-w-[36em] text-ui-body-plus leading-[1.85] text-ink-3 xl:text-ui-subheading-sm">
             {ABOUT.lead.split("{sources}").map((part, i) => (
               <Fragment key={i}>
                 {i > 0 && (stats ? <>{" "}<span className="num font-semibold text-ink">{stats.sources}</span>{" "}</> : ABOUT.sourcesFallback)}
@@ -268,7 +268,7 @@ export default function AboutPage() {
             >
               <div className="flex items-baseline gap-2.5">
                 <span className="num text-ui-caption font-bold tracking-[0.12em] text-accent">{s.no}</span>
-                <h3 className="text-[17px] font-bold text-ink">{s.title}</h3>
+                <h3 className="text-ui-subheading-sm font-bold text-ink">{s.title}</h3>
               </div>
               {s.figure && <div className="mt-4">{s.figure}</div>}
               <p className="mt-3 text-ui-body-sm leading-[1.8] text-ink-3">{s.text}</p>

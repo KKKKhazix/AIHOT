@@ -51,7 +51,7 @@ export default function SelectBenchRun({ loaderData: d }: Route.ComponentProps) 
           return (
             <button key={m} onClick={() => set("model", m)} className={`rounded-panel p-4 text-left ring-1 transition-colors ${m === model ? "bg-accent-softer ring-accent/40" : "bg-surface ring-line hover:bg-bg-sunk/60"}`}>
               <div className="text-ui-label-lg font-semibold text-ink">{m}</div>
-              <div className="num mt-1.5 text-[22px] font-semibold tracking-tight text-ink">有效输出 F1 {pct(s.f1)}</div>
+              <div className="num mt-1.5 text-ui-heading-lg-sm font-semibold tracking-tight text-ink">有效输出 F1 {pct(s.f1)}</div>
               <div className="num mt-0.5 text-ui-caption text-ink-3">有效输出准确 {pct(s.accuracy)} · 覆盖 {pct(s.coverage)} · 完整准确 {pct(s.completeAccuracy)}</div>
               <div className="num mt-0.5 text-ui-caption text-ink-3">精确 {pct(s.precision)} · 召回 {pct(s.recall)} · 金标入选 {pct(s.goldSelectRate)}</div>
               <div className="num mt-0.5 text-ui-caption text-ink-4">误选 {s.fp ?? "—"} · 漏选 {s.fn ?? "—"} · {s.decisiveErrors !== undefined ? <>决定失败 {s.decisiveErrors}{s.eitherErrors ? ` · 两可失败 ${s.eitherErrors}` : ""}</> : <>失败 {s.errors ?? 0}</>}</div>
@@ -99,7 +99,7 @@ export default function SelectBenchRun({ loaderData: d }: Route.ComponentProps) 
                     <tr className="cursor-pointer border-b border-line/70 hover:bg-bg-sunk/50" onClick={() => setOpen(open === r.case_id ? null : r.case_id)}>
                       <td className="max-w-[420px] px-3 py-2.5">
                         <div className="line-clamp-2 text-ink">{r.title}</div>
-                        <div className="mt-0.5 text-[11.5px] text-ink-4">{r.stratum ?? "—"} · {r.case_id}</div>
+                        <div className="mt-0.5 text-ui-caption-md text-ink-4">{r.stratum ?? "—"} · {r.case_id}</div>
                       </td>
                       <td className="px-3 py-2.5"><Badge tone={GOLD[r.gold]?.[1] ?? "muted"}>{GOLD[r.gold]?.[0] ?? r.gold}</Badge></td>
                       {d.run.models.map((m) => <td key={m} className="px-3 py-2.5">{verdict(r.by_model[m], r.gold)}</td>)}
@@ -114,7 +114,7 @@ export default function SelectBenchRun({ loaderData: d }: Route.ComponentProps) 
                                 <div key={m} className="rounded-control bg-surface p-3 ring-1 ring-line">
                                   <div className="mb-1 flex items-center justify-between text-ui-caption text-ink-3"><span className="font-medium text-ink-2">{m}</span>{x?.category && <span>{CATEGORY_LABELS[x.category as keyof typeof CATEGORY_LABELS] ?? x.category}</span>}</div>
                                   <div className="text-ui-caption-lg leading-relaxed text-ink-2">{x?.error ?? x?.reason ?? "（没有理由）"}</div>
-                                  <div className="mt-1 text-[11.5px] text-ink-4">相关性 {x?.relevance ?? "—"}{x?.receiptId ? ` · 回执 #${x.receiptId}` : ""}</div>
+                                  <div className="mt-1 text-ui-caption-md text-ink-4">相关性 {x?.relevance ?? "—"}{x?.receiptId ? ` · 回执 #${x.receiptId}` : ""}</div>
                                 </div>
                               );
                             })}

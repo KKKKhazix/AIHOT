@@ -23,7 +23,7 @@ function QrSlot({ slot, label, src }: { slot: "wechatQr" | "feishuQr"; label: st
       {src ? <img src={src} alt={label} className="size-28 rounded-card bg-white object-contain p-1.5 ring-1 ring-line" /> : <div className="flex size-28 shrink-0 items-center justify-center rounded-card bg-surface text-sm text-ink-4 ring-1 ring-line">未设置</div>}
       <div>
         <div className="text-ui-body-sm font-medium text-ink">{label}</div>
-        <div className="mt-0.5 break-all font-mono text-[11.5px] text-ink-4">{src}</div>
+        <div className="mt-0.5 break-all font-mono text-ui-caption-md text-ink-4">{src}</div>
         <input
           ref={input}
           type="file"
@@ -114,7 +114,7 @@ export default function SettingsAdmin({ loaderData: s }: Route.ComponentProps) {
             rows={s.targets}
             rowKey={(t) => t.key}
             columns={[
-              { key: "k", label: "目的地", render: (t) => <div><div className="font-medium text-ink">{t.note ?? t.key}</div><div className="font-mono text-[11.5px] text-ink-4">{t.key} · {t.config_ref}</div></div> },
+              { key: "k", label: "目的地", render: (t) => <div><div className="font-medium text-ink">{t.note ?? t.key}</div><div className="font-mono text-ui-caption-md text-ink-4">{t.key} · {t.config_ref}</div></div> },
               { key: "e", label: "状态", render: (t) => (t.enabled ? <Badge tone="ok">启用于 {bj(t.enabled_at)}</Badge> : <Badge>停用</Badge>) },
               { key: "d", label: "7 天投递", align: "right", render: (t) => num(t.deliveries_7d) },
               { key: "a", label: "", align: "right", render: (t) => <TargetToggle t={t} /> },

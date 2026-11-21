@@ -56,7 +56,7 @@ export function TabBar({ changelogVersion }: { changelogVersion: string | null }
                 if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: scrollBehavior() });
                 else if (revalidator.state === "idle") void revalidator.revalidate();
               }}
-              className={`relative flex flex-col items-center justify-center gap-[2px] text-[10.5px] transition-colors ${on ? "font-semibold text-accent" : "text-ink-3 active:text-ink"}`}
+              className={`relative flex flex-col items-center justify-center gap-[2px] text-ui-micro-8 transition-colors ${on ? "font-semibold text-accent" : "text-ink-3 active:text-ink"}`}
             >
               <Icon size={23} />
               <span>{t.label}</span>

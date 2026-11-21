@@ -10,7 +10,7 @@ export function AdminPage({ title, subtitle, actions, children }: { title: React
     <div className="mx-auto w-full max-w-[1320px] px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pt-8">
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-[22px] font-semibold tracking-tight text-ink sm:text-ui-heading-lg">{title}</h1>
+          <h1 className="text-ui-heading-lg-sm font-semibold tracking-tight text-ink sm:text-ui-heading-lg">{title}</h1>
           {subtitle && <p className="mt-1 text-ui-label-lg leading-relaxed text-ink-3">{subtitle}</p>}
         </div>
         {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
@@ -44,7 +44,7 @@ export function Stat({ label, value, hint, tone }: { label: ReactNode; value: Re
   return (
     <div className="rounded-panel bg-surface px-4 py-3.5 ring-1 ring-line">
       <div className="text-ui-caption-lg text-ink-3">{label}</div>
-      <div className={`num mt-1 text-[22px] font-semibold tracking-tight ${color}`}>{value}</div>
+      <div className={`num mt-1 text-ui-heading-lg-sm font-semibold tracking-tight ${color}`}>{value}</div>
       {hint && <div className="mt-0.5 text-ui-caption text-ink-4">{hint}</div>}
     </div>
   );
@@ -62,7 +62,7 @@ const TONES: Record<Tone, string> = {
 
 export function Badge({ tone = "muted", children, title }: { tone?: Tone; children: ReactNode; title?: string }) {
   return (
-    <span title={title} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium ring-1 ${TONES[tone]}`}>
+    <span title={title} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-ui-caption-md font-medium ring-1 ${TONES[tone]}`}>
       {children}
     </span>
   );
@@ -231,7 +231,7 @@ export function FilterChips({ param, options, resets = [] }: { param: string; op
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-ui-caption-lg transition-colors ${active ? "bg-ink text-bg" : "bg-surface text-ink-2 ring-1 ring-line hover:bg-bg-sunk"}`}
           >
             {o.label}
-            {o.count !== undefined && <span className={`num text-[11.5px] ${active ? "text-bg/70" : "text-ink-4"}`}>{o.count}</span>}
+            {o.count !== undefined && <span className={`num text-ui-caption-md ${active ? "text-bg/70" : "text-ink-4"}`}>{o.count}</span>}
           </Link>
         );
       })}
@@ -262,7 +262,7 @@ export function Json({ value, collapsed = true, label = "原始数据" }: { valu
   return (
     <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="group rounded-control bg-bg-sunk/70 ring-1 ring-line">
       <summary className="cursor-pointer select-none px-3 py-1.5 text-ui-caption text-ink-3 hover:text-ink-2">{label}</summary>
-      {open && <pre className="max-h-[420px] overflow-auto px-3 pb-3 font-mono text-[11.5px] leading-relaxed text-ink-2">{JSON.stringify(value, null, 2)}</pre>}
+      {open && <pre className="max-h-[420px] overflow-auto px-3 pb-3 font-mono text-ui-caption-md leading-relaxed text-ink-2">{JSON.stringify(value, null, 2)}</pre>}
     </details>
   );
 }

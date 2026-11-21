@@ -157,7 +157,7 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
                       {an.title_zh && <div className="mt-2 font-medium text-ink">{an.title_zh}</div>}
                       {an.reason_zh && <div className="mt-1 text-ui-caption-lg leading-relaxed text-ink-3">{an.reason_zh}</div>}
                       {an.receipts.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5 text-[11.5px]">
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-ui-caption-md">
                           {an.receipts.map((r) => (
                             <span key={r.id} className="num rounded-mark bg-surface px-1.5 py-0.5 text-ink-3 ring-1 ring-line">
                               回执 #{r.id} · {r.status} · {r.model ?? r.service}{r.cost !== null ? ` · ${money(r.cost)}` : ""}
@@ -271,7 +271,7 @@ export default function ContentItem({ loaderData }: Route.ComponentProps) {
                 ["原标题", a.title],
                 ["作者", a.author],
                 ["语言", a.language],
-                ["身份键", <span className="break-all font-mono text-[11.5px]">{a.identity_key}</span>],
+                ["身份键", <span className="break-all font-mono text-ui-caption-md">{a.identity_key}</span>],
               ]}
             />
           </Card>

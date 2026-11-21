@@ -67,7 +67,7 @@ function TopicCard({ t }: { t: TopicSummary }) {
         </span>
       )}
       <span className="min-w-0 flex-1 lg:flex lg:flex-col">
-        <span className="flex items-center gap-2.5 text-[15.5px] font-semibold text-ink transition-colors group-hover:text-accent lg:text-ui-body lg:font-bold">
+        <span className="flex items-center gap-2.5 text-ui-body-plus font-semibold text-ink transition-colors group-hover:text-accent lg:text-ui-body lg:font-bold">
           {t.brand && (
             <span className="hidden lg:flex">
               <BrandMark brand={t.brand} size={22} />
@@ -78,7 +78,7 @@ function TopicCard({ t }: { t: TopicSummary }) {
         <span className="mt-0.5 line-clamp-1 text-ui-caption-lg leading-[1.6] text-ink-4 lg:mt-1.5 lg:line-clamp-2 lg:flex-1 lg:text-ui-label lg:leading-[1.65] lg:text-ink-2">
           {t.latest?.title ?? t.definition}
         </span>
-        <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-ink-4 lg:mt-3 lg:justify-between">
+        <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-ui-caption-md text-ink-4 lg:mt-3 lg:justify-between">
           {t.latest && <time dateTime={t.latest.at} suppressHydrationWarning>{relativeTime(t.latest.at)}</time>}
           <span>
             {t.recent > 0 ? (

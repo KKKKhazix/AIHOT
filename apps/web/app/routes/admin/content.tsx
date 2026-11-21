@@ -40,7 +40,7 @@ export default function Content({ loaderData }: Route.ComponentProps) {
                 render: (r) => (
                   <div className="min-w-[320px]">
                     <Link to={`/admin/content/${r.id}`} className="font-medium text-ink hover:text-accent" onClick={(e) => e.stopPropagation()}>{r.title}</Link>
-                    <div className="font-mono text-[11.5px] text-ink-4">{r.id}</div>
+                    <div className="font-mono text-ui-caption-md text-ink-4">{r.id}</div>
                   </div>
                 ),
               },

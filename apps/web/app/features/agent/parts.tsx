@@ -8,9 +8,9 @@ import { IconChevronDown } from "../../components/icons";
 export function PanelHead({ label, title, children }: { label: string; title: string; children?: ReactNode }) {
   return (
     <header>
-      <div className="mono text-[11.5px] uppercase tracking-[0.14em] text-ink-4">{label}</div>
-      <h2 className="mt-1.5 text-[22px] font-semibold leading-[1.35] text-ink">{title}</h2>
-      {children && <p className="mt-2 text-[14.5px] leading-[1.8] text-ink-3">{children}</p>}
+      <div className="mono text-ui-caption-md uppercase tracking-[0.14em] text-ink-4">{label}</div>
+      <h2 className="mt-1.5 text-ui-heading-lg-sm font-semibold leading-[1.35] text-ink">{title}</h2>
+      {children && <p className="mt-2 text-ui-body-sm-plus leading-[1.8] text-ink-3">{children}</p>}
     </header>
   );
 }
@@ -25,7 +25,7 @@ export function Step({ n, title, children }: { n: number; title: string; childre
     <li className="relative grid grid-cols-[28px_minmax(0,1fr)] gap-x-3.5 before:absolute before:bottom-[-26px] before:left-[13.5px] before:top-9 before:w-px before:bg-line last:before:hidden">
       <span className="num grid size-7 place-items-center rounded-full bg-accent-soft text-ui-label font-semibold text-accent">{n}</span>
       <div className="min-w-0 pt-[3px]">
-        <h3 className="text-[15.5px] font-semibold leading-snug text-ink">{title}</h3>
+        <h3 className="text-ui-body-plus font-semibold leading-snug text-ink">{title}</h3>
         {children && <div className="mt-1.5 text-ui-body-sm leading-[1.8] text-ink-2">{children}</div>}
       </div>
     </li>
@@ -69,7 +69,7 @@ export function Tips({ items }: { items: Array<{ title: string; text: ReactNode 
       {items.map((t, i) => (
         <li key={t.title} className="well rounded-panel p-4">
           <div className="mono text-ui-caption-sm text-ink-4">0{i + 1}</div>
-          <div className="mt-1 text-[14.5px] font-semibold text-ink">{t.title}</div>
+          <div className="mt-1 text-ui-body-sm-plus font-semibold text-ink">{t.title}</div>
           <p className="mt-1 text-ui-label leading-[1.7] text-ink-3">{t.text}</p>
         </li>
       ))}
@@ -103,7 +103,7 @@ export function Details({ items }: { items: Array<{ title: string; body: ReactNo
     <div className="mt-10 border-b border-line">
       {items.map((it) => (
         <details key={it.title} className="disclosure group border-t border-line">
-          <summary className="flex items-center justify-between gap-3 py-3.5 text-[14.5px] font-medium text-ink transition-colors hover:text-accent">
+          <summary className="flex items-center justify-between gap-3 py-3.5 text-ui-body-sm-plus font-medium text-ink transition-colors hover:text-accent">
             {it.title}
             <IconChevronDown size={16} className="shrink-0 text-ink-4 transition-transform duration-200 group-open:rotate-180" />
           </summary>

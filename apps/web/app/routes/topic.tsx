@@ -107,7 +107,7 @@ export default function TopicRoute() {
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 pb-5 pt-3 lg:pt-1">
         <div className="min-w-0 max-w-[760px]">
           <p className="text-ui-caption font-semibold tracking-[0.08em] text-accent">{topic.groupName}</p>
-          <h1 data-page-title="" className="mt-1.5 flex items-center gap-3 text-ui-heading-lg font-bold leading-[1.3] tracking-[-0.01em] text-ink lg:text-[26px]">
+          <h1 data-page-title="" className="mt-1.5 flex items-center gap-3 text-ui-heading-lg font-bold leading-[1.3] tracking-[-0.01em] text-ink lg:text-ui-title-2">
             {topic.brand && <BrandMark brand={topic.brand} size={34} />}
             <span>
               {topic.name}{" "}

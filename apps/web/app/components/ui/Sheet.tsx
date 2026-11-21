@@ -145,7 +145,7 @@ export function Sheet({ open, onClose, title, children, label, centered = false 
             <span aria-hidden="true" className={`mx-auto mt-[7px] block h-[5px] w-9 rounded-full bg-line-strong ${centered ? "sm:invisible" : ""}`} />
             {title && (
               <div className="flex min-h-12 items-center gap-3 pl-5 pr-2">
-                <h2 id={titleId} className="min-w-0 flex-1 text-[17px] font-bold leading-snug text-ink">
+                <h2 id={titleId} className="min-w-0 flex-1 text-ui-subheading-sm font-bold leading-snug text-ink">
                   {title}
                 </h2>
                 <button type="button" aria-label="关闭" onClick={onClose} className="grid size-11 shrink-0 place-items-center rounded-full text-ink-3">

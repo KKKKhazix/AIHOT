@@ -199,7 +199,7 @@ export default function FeedbackPage() {
           <div className="anim-pop-in mx-auto flex size-14 items-center justify-center rounded-full bg-accent text-accent-contrast">
             <IconCheck size={26} />
           </div>
-          <h1 className="mt-6 text-[22px] font-semibold text-ink">收到了，谢谢你</h1>
+          <h1 className="mt-6 text-ui-heading-lg-sm font-semibold text-ink">收到了，谢谢你</h1>
           <p className="mt-2 text-ui-body-sm text-ink-3">
             反馈编号 <span className="mono font-semibold text-ink">#{state.id}</span>，需要回复时我们会引用这个编号。
           </p>
@@ -220,7 +220,7 @@ export default function FeedbackPage() {
     <ReadingLayout aside={<FeedbackAside tips={guide?.tips ?? TIPS} />}>
       <header>
         <h1 data-page-title="" className="text-ui-heading-lg font-semibold leading-[1.3] text-ink">{guide?.title ?? "说说你的想法"}</h1>
-        <p className="mt-2 text-[14.5px] leading-relaxed text-ink-3">{guide?.lead ?? SITE.feedbackLead}</p>
+        <p className="mt-2 text-ui-body-sm-plus leading-relaxed text-ink-3">{guide?.lead ?? SITE.feedbackLead}</p>
       </header>
 
       <form
@@ -253,7 +253,7 @@ export default function FeedbackPage() {
                 value={draft.content}
                 onChange={(e) => setDraft({ ...draft, content: e.target.value })}
                 placeholder={guide?.example ?? SITE.feedbackExample}
-                className={`${field} block resize-y px-4 pb-8 pt-3.5 text-ui-body-lg leading-relaxed sm:text-[14.5px]`}
+                className={`${field} block resize-y px-4 pb-8 pt-3.5 text-ui-body-lg leading-relaxed sm:text-ui-body-sm-plus`}
               />
               <span className="mono pointer-events-none absolute bottom-3 right-4 text-ui-caption-sm text-ink-4">
                 {draft.content.length} / {MAX_TEXT}
@@ -265,7 +265,7 @@ export default function FeedbackPage() {
             <label htmlFor="fb-email" className={label}>
               邮箱 <span className="font-normal text-ink-4">（选填）</span>
             </label>
-            <input id="fb-email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder={SITE.feedbackEmailHint} className={`${field} h-11 px-4 text-ui-body-lg sm:text-[14.5px]`} />
+            <input id="fb-email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder={SITE.feedbackEmailHint} className={`${field} h-11 px-4 text-ui-body-lg sm:text-ui-body-sm-plus`} />
           </div>
 
           <div>
@@ -277,7 +277,7 @@ export default function FeedbackPage() {
                 <img src={shot.url} alt="截图预览" className="h-16 w-24 shrink-0 rounded-control border border-line bg-surface object-cover" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-ui-label font-medium text-ink-2">{shot.file.name}</div>
-                  <div className="mono mt-0.5 text-[11.5px] text-ink-4">{(shot.file.size / 1024 / 1024).toFixed(2)} MB</div>
+                  <div className="mono mt-0.5 text-ui-caption-md text-ink-4">{(shot.file.size / 1024 / 1024).toFixed(2)} MB</div>
                 </div>
                 <button type="button" aria-label="移除截图" onClick={() => setShot(null)} className="grid size-8 shrink-0 place-items-center rounded-full text-ink-4 transition-colors hover:bg-surface hover:text-ink">
                   <IconClose size={15} />

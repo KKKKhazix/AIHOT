@@ -97,7 +97,7 @@ export default function AdminLayout({ loaderData }: Route.ComponentProps) {
         <nav className="scrollbar-thin flex-1 space-y-4 overflow-y-auto">
           {groups.map((g) => (
             <div key={g.group}>
-              <div className="mb-1 px-3 text-[11.5px] font-medium tracking-wide text-ink-4">{g.group}</div>
+              <div className="mb-1 px-3 text-ui-caption-md font-medium tracking-wide text-ink-4">{g.group}</div>
               <div className="space-y-0.5">
                 {g.items.map((i) => (
                   <NavItem key={i.to} {...i} counts={counts} countsKey={countsKey} />

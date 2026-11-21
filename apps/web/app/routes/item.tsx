@@ -259,7 +259,7 @@ function ItemPreview({ preview }: { preview: FeedItemSummary }) {
             </span>
           )}
         </div>
-        {isPost ? <h1 className="sr-only">{preview.title}</h1> : <h1 data-page-title="" className="text-[26px] font-bold leading-[1.38] tracking-[-0.01em] text-ink">{preview.title}</h1>}
+        {isPost ? <h1 className="sr-only">{preview.title}</h1> : <h1 data-page-title="" className="text-ui-title-2 font-bold leading-[1.38] tracking-[-0.01em] text-ink">{preview.title}</h1>}
         {preview.summary && (
           <section className={isPost ? "mt-4" : "mt-7"}>
             <div className="mb-2 text-ui-caption font-semibold text-accent">{isPost && preview.summary.replace(/\s+/g, " ").trim() === preview.title ? "原文" : "AI 导读"}</div>
@@ -560,7 +560,7 @@ function ItemView({ item, followups }: Loaded) {
               </span>
             )}
           </div>
-          {isPost ? <h1 className="sr-only">{item.title}</h1> : <h1 data-page-title="" className="text-[26px] font-bold leading-[1.38] tracking-[-0.01em] text-ink lg:text-[32px] lg:leading-[1.34] xl:text-[36px] xl:leading-[1.3]">{item.title}</h1>}
+          {isPost ? <h1 className="sr-only">{item.title}</h1> : <h1 data-page-title="" className="text-ui-title-2 font-bold leading-[1.38] tracking-[-0.01em] text-ink lg:text-ui-title-6 lg:leading-[1.34] xl:text-ui-display-2 xl:leading-[1.3]">{item.title}</h1>}
           {!isPost && item.originalTitle && <p className="mt-2.5 text-ui-body-sm leading-relaxed text-ink-4">{item.originalTitle}</p>}
 
           {item.summary && (!isPost || item.summary.replace(/\s+/g, " ").trim() !== item.title) && (

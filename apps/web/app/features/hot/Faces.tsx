@@ -21,7 +21,7 @@ export function Faces({ participants, total, size = 24, interactive = true }: { 
         </span>
       ))}
       {rest > 0 && (
-        <span className="-ml-1.5 inline-flex items-center justify-center rounded-full bg-bg-sunk px-1.5 text-[10.5px] font-medium text-ink-3 ring-2 ring-surface dark:bg-bg-muted" style={{ height: size, minWidth: size }}>
+        <span className="-ml-1.5 inline-flex items-center justify-center rounded-full bg-bg-sunk px-1.5 text-ui-micro-8 font-medium text-ink-3 ring-2 ring-surface dark:bg-bg-muted" style={{ height: size, minWidth: size }}>
           +{rest}
         </span>
       )}
@@ -87,7 +87,7 @@ function FacesButton({ participants, total, names, children }: { participants: H
       {open && createPortal(
         <span ref={popup} id={id} role="dialog" aria-label="参与讨论的来源" style={at} className="fixed z-50 max-h-[240px] w-[240px] overflow-y-auto rounded-control border border-line bg-raised p-3 text-ui-caption-lg leading-relaxed text-ink-2 shadow-[var(--shadow-pop)]">
           <span className="block">{listed.map((p) => p.name).join("、")}</span>
-          {more > 0 && <span className="mt-2 block text-[11.5px] text-ink-4">另有 {more} 位未列出</span>}
+          {more > 0 && <span className="mt-2 block text-ui-caption-md text-ink-4">另有 {more} 位未列出</span>}
         </span>, document.body
       )}
     </span>

@@ -140,14 +140,14 @@ export function HeatChart({ points: all }: { points: HeatPoint[] }) {
       <div className="flex flex-col-reverse gap-4 sm:flex-row sm:items-start sm:justify-between">
         <dl className="grid grid-cols-3 gap-x-5 sm:flex sm:gap-x-10">
           <Stat label="可比范围当前">
-            <span className="mono text-[22px] font-semibold leading-none tracking-[-0.02em] text-ink">{Math.round(last.p!.heat)}</span>
+            <span className="mono text-ui-heading-lg-sm font-semibold leading-none tracking-[-0.02em] text-ink">{Math.round(last.p!.heat)}</span>
           </Stat>
           <Stat label="可比范围峰值">
-            <span className="mono text-[22px] font-semibold leading-none tracking-[-0.02em] text-ink">{Math.round(peak.p!.heat)}</span>
+            <span className="mono text-ui-heading-lg-sm font-semibold leading-none tracking-[-0.02em] text-ink">{Math.round(peak.p!.heat)}</span>
             <span className="num text-ui-caption text-ink-4">{monthDayTime(new Date(peak.t).toISOString())}</span>
           </Stat>
           <Stat label="近 24 小时变化">
-            <span className={`mono text-[22px] font-semibold leading-none tracking-[-0.02em] ${change === null ? "text-ink-4" : change > 0 ? "text-hot" : "text-ink"}`}>
+            <span className={`mono text-ui-heading-lg-sm font-semibold leading-none tracking-[-0.02em] ${change === null ? "text-ink-4" : change > 0 ? "text-hot" : "text-ink"}`}>
               {change === null ? "–" : `${change > 0 ? "+" : ""}${change}%`}
             </span>
           </Stat>

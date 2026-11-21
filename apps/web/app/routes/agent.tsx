@@ -211,7 +211,7 @@ export default function AgentPage() {
     <ReadingLayout aside={aside}>
       <header className="lg:pt-5">
         <Kicker>AGENT 接入</Kicker>
-        <h1 data-page-title="" className="mt-4 text-[28px] font-semibold leading-[1.3] text-ink sm:text-[32px]">{`把 ${SITE.name} 接进你的 Agent`}</h1>
+        <h1 data-page-title="" className="mt-4 text-ui-title-4 font-semibold leading-[1.3] text-ink sm:text-ui-title-6">{`把 ${SITE.name} 接进你的 Agent`}</h1>
         <p className="mt-3 max-w-[40em] text-ui-body leading-[1.8] text-ink-3">{`${TRACKS.map((t) => t.short).join("、")} ${WAYS}种方式读的是同一份数据：精选、热点、日报、周报和月报，按你用的工具选一种就行。全部匿名只读，不用注册，也不用 API Key。`}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <span className={`${chip} ${healthy ? "text-ok" : "text-hot"}`}>
@@ -248,7 +248,7 @@ export default function AgentPage() {
                 </span>
                 {t.badge && <span className="inline-flex h-[18px] items-center rounded-full bg-accent-soft px-2 text-ui-caption-sm font-medium text-accent">{t.badge}</span>}
               </span>
-              <span className="mt-3 text-[15.5px] font-semibold text-ink">{t.name}</span>
+              <span className="mt-3 text-ui-body-plus font-semibold text-ink">{t.name}</span>
               <span className="mt-1 text-ui-label leading-snug text-ink-2">{t.pitch}</span>
               <span className="mt-2 hidden text-ui-caption leading-snug text-ink-4 sm:block">{t.fit}</span>
             </a>

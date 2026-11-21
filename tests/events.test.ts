@@ -135,6 +135,8 @@ test("merging facts moves reports, roles, heat and attached posts, and an emptie
   assert.deepEqual([Number(published!.fact_id), Number(published!.story_id)], [into.fact, into.story]);
   const [emptied] = await sql<{ merged_into: number | null }[]>`SELECT merged_into FROM stories WHERE id = ${from.story}`;
   assert.equal(Number(emptied!.merged_into), into.story);
+  const [alias] = await sql`SELECT a.story_id FROM stories old JOIN story_aliases a ON a.public_id = old.public_id WHERE old.id = ${from.story}`;
+  assert.equal(Number(alias?.story_id), into.story, "合并后将旧公开编号指向存续事件，保留读者原链接");
   for (const id of [moved, post]) assert.equal((await sql`SELECT 1 FROM story_signals WHERE story_id = ${into.story} AND article_id = ${id}`).length, 1, "heat follows");
   const [decision] = await sql<{ fact_id: number; story_id: number }[]>`SELECT fact_id, story_id FROM grouping_decisions WHERE article_id = ${post}`;
   assert.deepEqual([Number(decision!.fact_id), Number(decision!.story_id)], [into.fact, into.story], "recall finds the post's fact through its decision");

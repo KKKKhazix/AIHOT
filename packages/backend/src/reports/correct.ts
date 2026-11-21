@@ -45,7 +45,9 @@ export async function correctReportClassification(tx: Tx, articleId: string, rea
       let target = groups.find(g => groupSectionKey(g, labelKey) === targetKey);
       if (!target) { target = { key: targetKey, [labelKey]: label, [entriesKey]: [] }; groups.push(target); }
       target[entriesKey]!.push(...moving);
-      if (!daily) { from.summary = null; target.summary = null; }
+      // The section it left may have named it, so that introduction goes. The target's names only entries that are
+      // still there, so it stays; a section created here has none.
+      if (!daily) { from.summary = null; if (!("summary" in target)) target.summary = null; }
     }
     const arranged = groups.filter(g => g[entriesKey]?.length).sort((a, b) => SECTION_KEY_ORDER.indexOf(groupSectionKey(a, labelKey)!) - SECTION_KEY_ORDER.indexOf(groupSectionKey(b, labelKey)!));
     if (daily) {

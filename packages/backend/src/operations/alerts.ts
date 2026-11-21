@@ -122,7 +122,8 @@ async function contentCollection(now: number, open: AlertState): Promise<Finding
  * at no other time more than 11.5%. Fewer than 50 failing sources are each one's own follow-up.
  * A provider's own server error (`<service> HTTP 5xx:`, receipts.ts assertAccepted) proved the way out works:
  * 2026-11-21 SocialData's search answered 500 for hours while every website fetched, and its X accounts alone
- * were half the sources. Such an outage is told once and then daily: nobody here can make it heal sooner. A 4xx
+ * were half the sources. Such an outage is told once and then daily: nobody here can make it heal sooner, but only
+ * when the provider's errors are many on their own; a few of them must not relabel a failing way out. A 4xx
  * (a refused key, a used-up budget) is ours to fix and stays in the hourly count.
  */
 const FAILING_SHARE = 0.15;
@@ -146,7 +147,7 @@ async function sourcesFailing(now: number, open: AlertState): Promise<Finding[]>
     WHERE status = 'failed' GROUP BY 1 ORDER BY 2 DESC`;
   const detail = `失败信源占 ${Math.round((r.failing / r.fetched) * 100)}%（门槛 ${FAILING_SHARE * 100}% 且至少 ${FAILING_SOURCES} 个），其中服务商回了错误的 ${r.answered} 个；常见错误：${errors.slice(0, 3).map((e) => `${e.error || "（无）"} ×${e.n}`).join("；")}`;
   const since = new Date(Math.min(...errors.map((e) => e.first.getTime())));
-  if (many(r.failing - r.answered)) return [{
+  if (many(r.failing - r.answered) || !many(r.answered)) return [{
     key: "content.fetch",
     level: "now",
     title: "大量信源抓取失败，这些信源的新文章进不来",

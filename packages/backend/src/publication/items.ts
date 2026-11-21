@@ -61,7 +61,7 @@ export const ITEM_COLUMNS = sql`
   p.selected, p.seat, p.channel, p.discovered_at, p.timeline_at, p.visibility,
   p.body_mode, p.suppress_original, p.indexable, p.fact_id, s.id AS source_id, s.participation_mode AS source_mode,
   CASE WHEN NOT p.suppress_original THEN a.x_post END AS x_post,
-  CASE WHEN p.body_mode = 'full' AND NOT p.suppress_original THEN a.x_article - 'html' END AS x_article,
+  CASE WHEN p.body_mode = 'full' THEN a.x_article - 'html' END AS x_article,
   a.author, a.language,
   CASE WHEN NOT p.suppress_original AND s.kind = 'x_search' AND ${sourceOwnsPost(sql`s.config`, sql`a.x_post`)} THEN s.icon_url END AS author_avatar_url,
   st.public_id::text AS story_public_id, st.title AS story_title,
@@ -210,7 +210,7 @@ export const THIN_PAGE_CHARS = 300;
  */
 export function thinPageCondition() {
   const post = POLICY.xPostIsFullText
-    ? sql`p.channel = 'x' AND NOT p.suppress_original AND p.body_mode = 'full'`
+    ? sql`p.channel = 'x' AND p.body_mode = 'full'`
     : sql`p.channel = 'x' AND NOT p.suppress_original`;
   return sql`(p.seo_indexed_at IS NULL AND CASE
     WHEN ${post} THEN char_length(CASE WHEN a.x_post IS NULL THEN coalesce(a.body_text, '') ELSE coalesce(a.x_post->>'text', '') END)

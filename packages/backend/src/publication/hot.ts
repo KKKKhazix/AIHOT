@@ -53,7 +53,6 @@ async function queryLatestHotRanking(): Promise<HotRanking | null> {
 
 interface Extras {
   facesById: Map<string, { name: string; icon: string | null }>;
-  facesByName: Map<string, string | null>;
   texts: Map<number, { summary: string | null; latest: string | null }>;
 }
 
@@ -75,7 +74,6 @@ async function queryExtras(ranking: HotRanking): Promise<Extras> {
   ]);
   return {
     facesById: new Map(faces.map((f) => [f.id, { name: f.name, icon: f.icon_url ?? f.avatar }])),
-    facesByName: new Map(faces.map((f) => [f.name, f.icon_url ?? f.avatar])),
     texts: new Map([...texts].map(([id, t]) => [id, { summary: t.digest ?? t.summary, latest: t.latest?.title ?? null }])),
   };
 }
@@ -85,13 +83,13 @@ async function queryExtras(ranking: HotRanking): Promise<Extras> {
  * (精选组 by tier, a real face before an initial within a tier, then 氛围组), the digest and the latest turn.
  */
 export async function rankingExtras(ranking: HotRanking) {
-  const { facesById, facesByName, texts } = await readExtras(ranking);
+  const { facesById, texts } = await readExtras(ranking);
   return {
     participants: (e: HotEntry): HotParticipant[] => {
       const people = e.participants
         .map((p, i) => {
-          const live = p.sourceId ? facesById.get(p.sourceId) : undefined;
-          return { p, i, name: live?.name ?? p.name, icon: live ? live.icon : (facesByName.get(p.name) ?? null) };
+          const live = facesById.get(p.sourceId);
+          return { p, i, name: live?.name ?? p.name, icon: live?.icon ?? null };
         })
         .sort((x, y) => Number(y.p.kind === "editorial") - Number(x.p.kind === "editorial") || tierRank(x.p.tier) - tierRank(y.p.tier) || Number(!!y.icon) - Number(!!x.icon) || x.i - y.i);
       // A publisher's blog and its X account share a public name: listed once, with the first face.
@@ -102,7 +100,7 @@ export async function rankingExtras(ranking: HotRanking) {
       }
       // Every name stays for the tooltip; only visible faces carry image URLs.
       return [...named].map(([name, { p, icon }], i): HotParticipant => {
-        const person: HotParticipant = { ...(p.sourceId ? { sourceId: p.sourceId } : {}), name, kind: p.kind };
+        const person: HotParticipant = { sourceId: p.sourceId, name, kind: p.kind };
         if (p.kind === "editorial" && i < HOT_FACE_LIMIT) {
           person.iconUrl = proxiedImage(icon, "avatar");
           const srcSet = proxiedImageSet(icon, "avatar");

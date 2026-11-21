@@ -399,10 +399,13 @@ export function awaitingRelease(receipt: ReturnType<typeof sql> = sql`receipts`)
  * Releases an unknown receipt: marked failed, so the next attempt of its request calls again (who
  * releases and when: operations/recover.ts). Null when the receipt is not, or no longer, unknown.
  */
-export async function releaseUnknownReceipt(db: Db, id: number, error: string): Promise<{ subject: string | null; purpose: string } | null> {
+export async function releaseUnknownReceipt(db: Db, id: number, error: string, opts: { autoReleased?: boolean } = {}): Promise<{ subject: string | null; purpose: string } | null> {
   const [released] = await db<{ subject: string | null; purpose: string }[]>`
     UPDATE receipts SET status = 'failed', error = ${error}, updated_at = now() WHERE id = ${id} AND status = 'unknown' RETURNING subject, purpose`;
-  if (released) await db`UPDATE receipt_attempts SET status = 'failed', error = ${error} WHERE receipt_id = ${id} AND status = 'unknown'`;
+  if (released) {
+    await db`UPDATE receipt_attempts SET status = 'failed', error = ${error}, auto_released = ${opts.autoReleased === true}
+             WHERE receipt_id = ${id} AND status = 'unknown'`;
+  }
   return released ?? null;
 }
 

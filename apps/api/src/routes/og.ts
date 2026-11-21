@@ -103,6 +103,9 @@ export function registerOg(app: FastifyInstance) {
     const file = (req.params as { file: string }).file;
     if (!file.endsWith(".png")) return notFound(reply);
     const found = await resolveStory(file.slice(0, -4));
+    if (found.kind === "merged") {
+      return reply.code(308).header("Location", `/og/stories/${found.target}.png`).header("Cache-Control", CONTENT_IMAGE_CACHE).send();
+    }
     if (found.kind !== "found") return notFound(reply);
     const s = await loadStoryDetail(found.storyId);
     if (!s) return notFound(reply);

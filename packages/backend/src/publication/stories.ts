@@ -88,7 +88,7 @@ function reportView(r: ReportRow): StoryReportView {
     id: r.id,
     title: r.title,
     summary: r.summary,
-    source: { name: publicSourceName(r.source_name), firstParty: r.first_party },
+    source: { id: r.source_id, name: publicSourceName(r.source_name), firstParty: r.first_party },
     publishedAt: r.at.toISOString(),
     selected: r.selected,
   };
@@ -168,7 +168,7 @@ export async function loadStoryDetail(storyId: number, now = new Date()): Promis
   const latestAt = latest.at;
   // Without a digest or a summary of its own, the story opens with its first development's representative report.
   const origin = developments[developments.length - 1]?.representative;
-  const excerpt = !text.digest && !text.summary && origin?.summary ? { text: origin.summary, sourceName: publicSourceName(origin.source_name) } : null;
+  const excerpt = !text.digest && !text.summary && origin?.summary ? { itemId: origin.id, text: origin.summary, sourceId: origin.source_id, sourceName: publicSourceName(origin.source_name) } : null;
   return {
     publicId: s.public_id,
     title: s.title,
@@ -296,6 +296,7 @@ export async function v1HotTopics() {
     return {
       rank: e.rank,
       id: e.representativeItemId ?? e.storyPublicId,
+      storyPublicId: e.storyPublicId,
       title: e.title,
       source: { name: e.representativeSource ?? e.sourceNames[0] ?? SITE.name },
       links,
@@ -340,7 +341,7 @@ export async function v1Story(storyId: number) {
         id: r.id,
         title: r.title,
         summary: r.summary,
-        source: { name: r.source_name, firstParty: r.first_party },
+        source: { id: r.source_id, name: r.source_name, firstParty: r.first_party },
         publishedAt: r.at.toISOString(),
         links: { aihot: itemUrl(r.id), original: r.url },
       })),

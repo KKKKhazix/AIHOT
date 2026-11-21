@@ -420,7 +420,7 @@ test("v1 story matches the website's content and fallback ordering", async () =>
   assert.equal(v1.latest, site.latest);
   assert.equal(site.latestReport.id, second);
   assert.deepEqual(v1.reports.map(({ links: { original: _, ...links }, ...r }: any) => ({ ...r, links })), site.timeline.slice(0, 50).map((r: any) => ({ id: r.id, title: r.title, summary: r.summary,
-    source: { name: r.source.name, firstParty: r.source.firstParty }, publishedAt: r.publishedAt, links: { aihot: `${config.siteUrl}/items/${r.id}` } })));
+    source: { id: r.source.id, name: r.source.name, firstParty: r.source.firstParty }, publishedAt: r.publishedAt, links: { aihot: `${config.siteUrl}/items/${r.id}` } })));
 });
 
 // An event's public id is kept by search engines and installed clients: once merged, it must lead to the
@@ -432,6 +432,9 @@ test("a merged event's old public id answers 308 to the surviving event", async 
   const res = await app.inject({ method: "GET", url: `/api/v1/stories/${merged}` });
   assert.equal(res.statusCode, 308, "a merged public id is a permanent redirect, not a 404");
   assert.equal(res.headers.location, `/api/v1/stories/${current}`, "relative Location to the surviving event");
+  const og = await app.inject({ method: "GET", url: `/og/stories/${merged}.png` });
+  assert.equal(og.statusCode, 308, "a merged story OG image redirects to the surviving story");
+  assert.equal(og.headers.location, `/og/stories/${current}.png`);
 });
 
 test('event neighbors disappear when their last readable evidence is withdrawn', async () => {

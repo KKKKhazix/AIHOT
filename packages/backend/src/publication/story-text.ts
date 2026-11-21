@@ -3,7 +3,7 @@
 // public and unchanged; the latest development is the newest listed evidence.
 import { sql } from "../db.ts";
 import { evidenceCondition, listedCondition } from "./scope.ts";
-import { digestInputsHash, digestReports } from "./story-evidence.ts";
+import { digestInputsHashMatches, digestReports } from "./story-evidence.ts";
 
 export interface StoryText {
   digest: string | null;
@@ -16,8 +16,8 @@ export interface StoryText {
 
 export async function storyTexts(storyIds: number[], now = new Date()): Promise<Map<number, StoryText>> {
   if (storyIds.length === 0) return new Map();
-  const rows = await sql<{ id: number; digest: string | null; digest_updated_at: Date | null; article_ids: string[] | null; inputs_hash: string | null; current: boolean; summary: string | null; latest_id: string | null; latest_title: string; latest_at: Date }[]>`
-    SELECT st.id, st.digest, st.digest_updated_at, saved.article_ids, saved.inputs_hash,
+  const rows = await sql<{ id: number; digest: string | null; digest_updated_at: Date | null; digest_version: number | null; article_ids: string[] | null; inputs_hash: string | null; current: boolean; summary: string | null; latest_id: string | null; latest_title: string; latest_at: Date }[]>`
+    SELECT st.id, st.digest, st.digest_updated_at, st.digest_version, saved.article_ids, saved.inputs_hash,
       CASE WHEN EXISTS (
         SELECT 1 FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
         WHERE f.story_id = st.id AND p.summary = st.summary AND ${evidenceCondition()} AND ${listedCondition(now)}
@@ -29,7 +29,9 @@ export async function storyTexts(storyIds: number[], now = new Date()): Promise<
       ) AS current,
       latest.id AS latest_id, latest.title AS latest_title, latest.at AS latest_at
     FROM stories st LEFT JOIN LATERAL (
-      SELECT article_ids, inputs_hash, digest FROM story_digests WHERE story_id = st.id ORDER BY version DESC LIMIT 1
+      SELECT article_ids, inputs_hash, digest FROM story_digests
+      WHERE story_id = st.id AND (st.digest_version IS NULL OR version = st.digest_version)
+      ORDER BY version DESC LIMIT 1
     ) saved ON true LEFT JOIN LATERAL (
       SELECT p.article_id AS id, p.title, coalesce(p.published_at, p.discovered_at) AS at
       FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
@@ -42,7 +44,7 @@ export async function storyTexts(storyIds: number[], now = new Date()): Promise<
     // New reports may extend an event without changing the evidence behind its saved digest.
     const saved = new Set(r.article_ids ?? []);
     const current = r.current && saved.size > 0 && !!r.inputs_hash
-      && digestInputsHash(reports.filter((p) => Number(p.story_id) === Number(r.id) && saved.has(p.id))) === r.inputs_hash;
+      && digestInputsHashMatches(reports.filter((p) => Number(p.story_id) === Number(r.id) && saved.has(p.id)), r.inputs_hash, r.digest_version);
     return [Number(r.id), {
       digest: current ? r.digest : null,
       digestUpdatedAt: current ? r.digest_updated_at : null,

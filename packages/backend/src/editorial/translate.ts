@@ -399,7 +399,7 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
          -- A post with a saved long article is translated as that article: its translation is not the post's words.
          AND coalesce(o.x_article->>'text', '') = '') AS own_zh
     FROM publications p JOIN articles a ON a.id = p.article_id
-    CROSS JOIN LATERAL (SELECT substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') AS tweet_id) q
+    CROSS JOIN LATERAL (SELECT coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')) AS tweet_id) q
     LEFT JOIN quote_translations qt ON qt.tweet_id = q.tweet_id
     WHERE p.channel = 'x' AND p.selected AND p.visibility = 'public' AND p.body_mode = 'full' AND NOT p.suppress_original
       AND p.discovered_at > now() - make_interval(days => ${opts.days ?? 3})
@@ -409,7 +409,7 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
   const suppressCiting = async (tweetId: string, receiptIds: number[], reason: string) => {
     const cited = await sql<{ id: string; revision: number }[]>`
       SELECT a.id, a.revision FROM articles a JOIN publications p ON p.article_id = a.id
-      WHERE substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') = ${tweetId} AND NOT p.suppress_original`;
+      WHERE coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')) = ${tweetId} AND NOT p.suppress_original`;
     for (const { id, revision } of cited) await suppressFromTranslation(id, revision, [], reason);
     if (receiptIds.length) {
       await sql.begin(async (tx) => {
@@ -469,7 +469,7 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
       if (saved.length) {
         const cited = await tx<{ id: string }[]>`
           SELECT a.id FROM articles a JOIN publications p ON p.article_id = a.id
-          WHERE substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') = ${r.tweet_id}`;
+          WHERE coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')) = ${r.tweet_id}`;
         for (const { id } of cited) await emit("articleChanged", { id, kind: "body", reason: "quoted post translation" }, tx);
       }
       for (const id of new Set(allReceipts)) await completeReceipt(tx, id);

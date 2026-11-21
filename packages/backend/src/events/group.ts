@@ -67,7 +67,7 @@ interface ArticleRow {
   discovered_at: Date;
   grouped_at: Date | null;
   body_text: string | null;
-  x_post: { tweetId?: string; replyTo?: string | null; quoted?: { url?: string } | null } | null;
+  x_post: { tweetId?: string; replyTo?: string | null; quoted?: { tweetId?: string | null; url?: string } | null } | null;
   source_id: string;
   source_name: string;
   signal_group_id: string | null;
@@ -752,7 +752,7 @@ async function reclaimWaiting(tweetId: string): Promise<number> {
   const posts = await sql<{ id: string }[]>`
     SELECT a.id FROM articles a JOIN sources s ON s.id = a.source_id
     WHERE a.discovered_at > now() - make_interval(hours => ${WAIT_HOURS}) AND ${unattachedSignal}
-      AND (a.x_post->>'replyTo' = ${tweetId} OR substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)') = ${tweetId})`;
+      AND (a.x_post->>'replyTo' = ${tweetId} OR coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')) = ${tweetId})`;
   for (const p of posts) await enqueue(QUEUES.group, { articleId: p.id, signalOnly: true }, { singletonKey: p.id, priority: groupingPriority({ signal: true, historical: false }) });
   return posts.length;
 }

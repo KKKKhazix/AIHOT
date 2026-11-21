@@ -267,6 +267,11 @@ test("old story addresses and grouping targets reach the survivor after a long s
   for (const publicId of [original!.public_id, alias]) assert.deepEqual(await resolveStory(publicId), { kind: "merged", target: survivor!.public_id });
   assert.deepEqual(await resolveStory(survivor!.public_id), { kind: "found", storyId: last.story, publicId: survivor!.public_id });
   assert.equal(await liveStory(first.story), last.story);
+  // Multi-hop merges flatten merged_into and story_aliases directly onto the surviving story.
+  const [flattened] = await sql<{ merged_into: number | null }[]>`SELECT merged_into FROM stories WHERE id = ${first.story}`;
+  assert.equal(Number(flattened!.merged_into), last.story);
+  const [flattenedAlias] = await sql<{ story_id: number }[]>`SELECT story_id FROM story_aliases WHERE public_id = ${alias}`;
+  assert.equal(Number(flattenedAlias!.story_id), last.story);
   const [publication] = await sql`SELECT story_id FROM publications WHERE article_id = ${moved}`;
   assert.equal(publication!.story_id, last.story);
 });

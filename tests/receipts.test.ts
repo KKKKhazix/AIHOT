@@ -310,6 +310,10 @@ test("an unknown outcome is released automatically once, so a lost answer costs 
   await age();
   await autoReleaseUnknownReceipts();
   assert.equal(await status(), "failed");
+  const [releasedAttempt] = await sql<{ auto_released: boolean }[]>`
+    SELECT a.auto_released FROM receipt_attempts a JOIN receipts r ON r.id = a.receipt_id
+    WHERE r.subject = ${req.subject} ORDER BY a.id DESC LIMIT 1`;
+  assert.equal(releasedAttempt!.auto_released, true, "auto-release records structured auto_released flag");
   await assert.rejects(paidRequest(req, lost));
   assert.equal(sent, 2, "one repeat after the release");
 

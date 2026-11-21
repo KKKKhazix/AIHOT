@@ -46,7 +46,7 @@ export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
       </div>
       <ol>
         {entries.slice(0, 5).map((e, i) => (
-          <li key={e.rank} className={i >= 3 ? "max-sm:hidden" : undefined}>
+          <li key={e.storyPublicId ?? e.itemId ?? e.rank} className={i >= 3 ? "max-sm:hidden" : undefined}>
             <Link viewTransition
               to={hrefOf(e)}
               className="group -mx-2 grid min-h-10 sm:min-h-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-3 rounded-tile px-2 py-1.5 transition-colors hover:bg-bg-sunk/70 active:bg-bg-sunk sm:grid-cols-[20px_minmax(0,1fr)_120px_64px_20px] sm:gap-x-4 sm:py-2 dark:hover:bg-bg-muted/40"

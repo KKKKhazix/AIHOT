@@ -27,8 +27,8 @@ export interface HotEntry {
   representativeItemId: string | null;
   representativeUrl: string | null;
   representativeSource: string | null;
-  /** 精选组 first by tier, then 氛围组; tier is absent on rankings stored by older versions. */
-  participants: Array<{ name: string; kind: "editorial" | "signal"; tier?: string }>;
+  /** 精选组 first by tier, then 氛围组; sourceId and tier may be absent on rankings stored by older versions. */
+  participants: Array<{ sourceId?: string; name: string; kind: "editorial" | "signal"; tier?: string }>;
 }
 
 /** Participants in the 精选组 order: T1 before T1.5 before T2, then everything else. */
@@ -208,8 +208,8 @@ export async function computeHotRanking(at = new Date()): Promise<{ id: number; 
     const members = [...byFact.values()].sort((a, b) => sourceCount(b) - sourceCount(a) || firstSeen(a) - firstSeen(b) || a[0]!.fact_id - b[0]!.fact_id)[0]!;
     const selected = members.filter((report) => report.selected);
     const rep = pickRepresentative(selected.length ? selected : members);
-    const participants = await sql<{ name: string; kind: "editorial" | "signal"; tier: string; at: Date }[]>`
-      SELECT DISTINCT ON (cs.participant_key) s.name, cs.kind, s.tier, cs.observed_at AS at
+    const participants = await sql<{ source_id: string; name: string; kind: "editorial" | "signal"; tier: string; at: Date }[]>`
+      SELECT DISTINCT ON (cs.participant_key) s.id AS source_id, s.name, cs.kind, s.tier, cs.observed_at AS at
       FROM ${currentSignals()} cs JOIN sources s ON s.id = cs.source_id
       WHERE cs.story_id = ${r.story_id} AND cs.observed_at > ${at}::timestamptz - make_interval(hours => ${HEAT_WINDOW_HOURS}) AND cs.observed_at <= ${at}
       ORDER BY cs.participant_key, (cs.kind = 'editorial') DESC, cs.observed_at DESC`;
@@ -251,7 +251,7 @@ export async function computeHotRanking(at = new Date()): Promise<{ id: number; 
       // Faces go to the 精选组 by tier, the most recently active first within a tier (ordered before the cap).
       participants: participants
         .sort((x, y) => Number(y.kind === "editorial") - Number(x.kind === "editorial") || tierRank(x.tier) - tierRank(y.tier) || y.at.getTime() - x.at.getTime())
-        .slice(0, 40).map(({ name, kind, tier }) => ({ name, kind, tier })),
+        .slice(0, 40).map(({ source_id, name, kind, tier }) => ({ sourceId: source_id, name, kind, tier })),
     });
   }
   const [row] = await sql<{ id: number }[]>`

@@ -102,7 +102,7 @@ test("mentions cannot choose a timeline origin, anchor, representative, or a lat
   await report(t1, g, { title: "未入选官网稿", hours: 4, selected: false, score: 30 });
   const q = { channel: "all" as const, category: null, tag: key, now };
   const timeline = await loadTimeline(q);
-  const card = timeline.cards.find(c => c.key === `f${g.factId}`)!;
+  const card = timeline.cards.find(c => c.key === `f:${g.factPublicId}`)!;
   assert.equal(card.item.id, official);
   assert.equal(card.anchorAt, at(3).toISOString());
   assert.ok(timeline.cards.some(c => c.key === `a${earlyMention}`) && timeline.cards.some(c => c.key === `a${lateMention}`), "a stale mention projection stays an independent selected article");
@@ -327,6 +327,12 @@ test("a story summary is visible only while a current public report supports tho
   const s = await source("summary-evidence", "T1");
   const g = await story();
   const id = await report(s, g, { title: "当前可核实的事实摘要", hours: 2, selected: false });
+  const composed = await composeStoryDigest(g.storyId);
+  const [initialStory] = await sql<{ digest_version: number | null }[]>`SELECT digest_version FROM stories WHERE id = ${g.storyId}`;
+  assert.equal(initialStory!.digest_version, composed.version);
+  // Adding an internal admin remark in sources.name must not invalidate the published digest.
+  await sql`UPDATE sources SET name = name || '（编辑部备注）' WHERE id = ${s}`;
+  assert.ok((await storyTexts([g.storyId], now)).get(g.storyId)!.digest, "admin parenthetical note keeps digest valid");
   await sql`UPDATE stories SET summary = '当前可核实的事实摘要' WHERE id = ${g.storyId}`;
   assert.equal((await storyTexts([g.storyId], now)).get(g.storyId)!.summary, "当前可核实的事实摘要");
   await overrideFields(id, { fields: { summary: "已更正事实摘要" }, reason: "correct supporting report", version: 0 }, "test");

@@ -85,7 +85,8 @@ function Day({ date, releases, id }: { date: string; releases: Release[]; id?: s
       <ol>
         {releases.map((r) => (
           <li
-            key={`${r.date}-${r.time}-${r.title}`}
+            key={r.id ?? `${r.date}-${r.time}-${r.title}`}
+            id={r.id ? `r-${r.id}` : undefined}
             className={`grid gap-x-8 gap-y-2 border-b border-line-soft py-5 last:border-b-0 sm:grid-cols-[88px_minmax(0,1fr)] ${r.urgent ? "-mx-5 border-l-4 border-l-hot bg-hot-soft pl-4 pr-5 lg:-mx-7 lg:pl-6 lg:pr-7" : ""}`}
           >
             <div className="flex items-center gap-3 sm:block">
@@ -124,7 +125,7 @@ function FeatureDay({ date, releases, Drawing }: { date: string; releases: Relea
   return (
     <>
       {features.map((r, i) => (
-        <Drawing key={`${r.date}-${r.time}`} release={r} id={i === 0 ? `d-${date}` : undefined} />
+        <Drawing key={r.id ?? `${r.date}-${r.time}`} release={r} id={i === 0 ? `d-${date}` : (r.id ? `r-${r.id}` : undefined)} />
       ))}
       {plain.length > 0 && <Day date={date} releases={plain} />}
     </>

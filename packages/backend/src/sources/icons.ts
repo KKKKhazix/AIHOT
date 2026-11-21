@@ -20,7 +20,7 @@ async function refreshXAvatars(): Promise<number> {
       SELECT DISTINCT ON (a.source_id) a.source_id, a.x_post->>'avatarUrl' AS avatar
       FROM articles a JOIN sources xs ON xs.id = a.source_id AND xs.kind = 'x_search'
       WHERE a.x_post ? 'avatarUrl'
-        AND ${sourceOwnsPost(sql`xs.config`, sql`a.x_post->>'handle'`)}
+        AND ${sourceOwnsPost(sql`xs.config`, sql`a.x_post`)}
       ORDER BY a.source_id, a.discovered_at DESC
     ) x
     WHERE s.id = x.source_id AND s.icon_url IS DISTINCT FROM x.avatar

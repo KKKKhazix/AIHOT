@@ -38,7 +38,7 @@ async function queryLatestHotRanking(): Promise<HotRanking | null> {
       FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
       WHERE f.story_id = st.id AND ${evidenceCondition()} AND ${listedCondition(now)}
     ) latest ON true
-    WHERE f.story_id IN ${sql(entries.map((entry) => entry.storyId))} AND p.article_id IN ${sql(entries.map((entry) => entry.representativeItemId ?? ""))}
+    WHERE f.story_id IN ${sql(entries.map((entry) => entry.storyId))} AND st.merged_into IS NULL AND p.article_id IN ${sql(entries.map((entry) => entry.representativeItemId ?? ""))}
       AND ${evidenceCondition()} AND ${listedCondition(now)}
     ORDER BY f.story_id, p.article_id, (fa.role = 'primary') DESC, f.id` : [];
   const valid = new Map(current.map((report) => [`${report.story_id}:${report.article_id}`, report]));
@@ -52,7 +52,8 @@ async function queryLatestHotRanking(): Promise<HotRanking | null> {
 }
 
 interface Extras {
-  faces: Map<string, string | null>;
+  facesById: Map<string, { name: string; icon: string | null }>;
+  facesByName: Map<string, string | null>;
   texts: Map<number, { summary: string | null; latest: string | null }>;
 }
 
@@ -63,8 +64,8 @@ async function queryExtras(ranking: HotRanking): Promise<Extras> {
   const [faces, texts] = await Promise.all([
     // A participant's face: the source's icon, else the avatar on that account's latest post in the story.
     // A null lookup key skips the article read; an ON guard can still fetch it before filtering.
-    sql<{ name: string; icon_url: string | null; avatar: string | null }[]>`
-      SELECT DISTINCT ON (s.id) s.name, s.icon_url, a.x_post->>'avatarUrl' AS avatar
+    sql<{ id: string; name: string; icon_url: string | null; avatar: string | null }[]>`
+      SELECT DISTINCT ON (s.id) s.id, s.name, s.icon_url, a.x_post->>'avatarUrl' AS avatar
       FROM story_signals ss JOIN sources s ON s.id = ss.source_id
       LEFT JOIN articles a ON a.id = CASE WHEN s.icon_url IS NULL THEN ss.article_id END AND a.x_post ? 'avatarUrl'
         AND NOT EXISTS (SELECT 1 FROM publications p WHERE p.article_id = a.id AND (p.suppress_original OR p.visibility <> 'public'))
@@ -73,7 +74,8 @@ async function queryExtras(ranking: HotRanking): Promise<Extras> {
     storyTexts(ids),
   ]);
   return {
-    faces: new Map(faces.map((f) => [f.name, f.icon_url ?? f.avatar])),
+    facesById: new Map(faces.map((f) => [f.id, { name: f.name, icon: f.icon_url ?? f.avatar }])),
+    facesByName: new Map(faces.map((f) => [f.name, f.icon_url ?? f.avatar])),
     texts: new Map([...texts].map(([id, t]) => [id, { summary: t.digest ?? t.summary, latest: t.latest?.title ?? null }])),
   };
 }
@@ -83,21 +85,24 @@ async function queryExtras(ranking: HotRanking): Promise<Extras> {
  * (精选组 by tier, a real face before an initial within a tier, then 氛围组), the digest and the latest turn.
  */
 export async function rankingExtras(ranking: HotRanking) {
-  const { faces, texts } = await readExtras(ranking);
+  const { facesById, facesByName, texts } = await readExtras(ranking);
   return {
     participants: (e: HotEntry): HotParticipant[] => {
       const people = e.participants
-        .map((p, i) => ({ p, i, icon: faces.get(p.name) ?? null }))
+        .map((p, i) => {
+          const live = p.sourceId ? facesById.get(p.sourceId) : undefined;
+          return { p, i, name: live?.name ?? p.name, icon: live ? live.icon : (facesByName.get(p.name) ?? null) };
+        })
         .sort((x, y) => Number(y.p.kind === "editorial") - Number(x.p.kind === "editorial") || tierRank(x.p.tier) - tierRank(y.p.tier) || Number(!!y.icon) - Number(!!x.icon) || x.i - y.i);
       // A publisher's blog and its X account share a public name: listed once, with the first face.
       const named = new Map<string, (typeof people)[number]>();
       for (const person of people) {
-        const name = publicSourceName(person.p.name);
+        const name = publicSourceName(person.name);
         if (!named.has(name)) named.set(name, person);
       }
       // Every name stays for the tooltip; only visible faces carry image URLs.
       return [...named].map(([name, { p, icon }], i): HotParticipant => {
-        const person: HotParticipant = { name, kind: p.kind };
+        const person: HotParticipant = { ...(p.sourceId ? { sourceId: p.sourceId } : {}), name, kind: p.kind };
         if (p.kind === "editorial" && i < HOT_FACE_LIMIT) {
           person.iconUrl = proxiedImage(icon, "avatar");
           const srcSet = proxiedImageSet(icon, "avatar");

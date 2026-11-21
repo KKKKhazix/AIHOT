@@ -7,9 +7,10 @@ import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { ReportKind } from "@aihot/contracts/site";
-import { isoWeekLabel } from "@aihot/contracts/time";
+import { beijingAt, isoWeekLabel } from "@aihot/contracts/time";
 import { closeDb, sql } from "@aihot/backend/db";
 import { listReports, loadReport, loadReportMonth, loadReportNavigation, reportIndexRows, v1Daily } from "@aihot/backend/publication/reports";
+import { composeDaily } from "@aihot/backend/reports/compose";
 import { buildApp } from "../apps/api/src/app.ts";
 
 const T = tag();
@@ -120,7 +121,7 @@ test("issue numbers count the whole series across the navigation's 400-issue lim
     assert.equal((await loadReport("weekly", weekly[crossing]!))!.issueNumber, baseline.weekly + crossing + 1, "a new year goes on counting");
   });
 
-  await t.test("an issue added or deleted before another moves its number", async () => {
+  await t.test("legacy rows without issue_number fall back to position, while persisted issue_number stays fixed", async () => {
     const earlier = day(-2);
     const key = daily[99]!;
     const number = (await loadReport("daily", key))!.issueNumber;
@@ -132,5 +133,28 @@ test("issue numbers count the whole series across the navigation's 400-issue lim
     assert.equal((await loadReport("daily", key))!.issueNumber, number);
     refresh();
     assert.equal((await listReports("daily")).find((entry) => entry.key === key)!.issueNumber, number);
+
+    // Issues saved through composeDaily receive a persisted issue_number that does not shift on earlier inserts/deletes or regeneration.
+    const composedKey = day(900);
+    const judgedAt = new Date(beijingAt(composedKey, "07:00").getTime());
+    await sql`INSERT INTO sources (id, name, kind, tier) VALUES (${`ord-${T}`}, 'Ordinal fixture', 'rss', 'T2') ON CONFLICT (id) DO NOTHING`;
+    await sql`INSERT INTO articles (id, source_id, identity_key, url, title, discovered_at, timeline_at)
+      VALUES (${`ord-art-${T}`}, ${`ord-${T}`}, ${`ord-art-${T}`}, ${`https://example.test/ord-${T}`}, 'Quiet day judged item', ${judgedAt}, ${judgedAt})`;
+    await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, score, selected, created_at)
+      VALUES (${`ord-art-${T}`}, 1, 'rule', 'pass', 40, false, ${judgedAt})`;
+    await sql`INSERT INTO publications (article_id, source_id, title, url, discovered_at, timeline_at, sort_at, visible_after, eligible, selected, visibility, channel, score)
+      VALUES (${`ord-art-${T}`}, ${`ord-${T}`}, 'Quiet day judged item', ${`https://example.test/ord-${T}`}, ${judgedAt}, ${judgedAt}, ${judgedAt}, ${judgedAt}, true, false, 'public', 'news', 40)`;
+    await composeDaily(composedKey);
+    const fixed = (await loadReport("daily", composedKey))!.issueNumber;
+    assert.equal(fixed, baseline.daily + daily.length + 1);
+    await insert("daily", [earlier]);
+    refresh();
+    assert.equal((await loadReport("daily", composedKey))!.issueNumber, fixed);
+    assert.equal((await listReports("daily")).find((entry) => entry.key === composedKey)!.issueNumber, fixed);
+    await composeDaily(composedKey, "regenerate");
+    assert.equal((await loadReport("daily", composedKey))!.issueNumber, fixed, "regeneration preserves issue_number");
+    await sql`DELETE FROM reports WHERE kind = 'daily' AND key = ${earlier} AND content->>'fixtureTag' = ${T}`;
+    refresh();
+    assert.equal((await loadReport("daily", composedKey))!.issueNumber, fixed);
   });
 });

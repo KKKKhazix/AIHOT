@@ -76,7 +76,7 @@ export function caseFromStory(story: { publicId: string; title: string; hasDiges
 export function toDigestInput(row: DigestEvalCase) {
   return {
     story: { title: row.story.title, digest: row.story.previousDigest },
-    reports: row.reports.map((report): Omit<DigestReport, "story_id"> => ({
+    reports: row.reports.map((report): Omit<DigestReport, "story_id" | "source_id"> => ({
       id: report.id,
       title: report.title,
       summary: report.summary,

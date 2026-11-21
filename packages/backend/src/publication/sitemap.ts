@@ -122,7 +122,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
     SELECT st.id, st.public_id::text, st.title, md5(concat_ws('|', st.title, st.summary, st.digest, st.digest_updated_at::text,
       st.version::text, members.revision)) AS revision
     FROM stories st JOIN LATERAL (
-      SELECT md5(string_agg(concat_ws(':', p.article_id, p.revision::text, fa.role, f.updated_at::text, s.name),
+      SELECT md5(string_agg(concat_ws(':', p.article_id, p.revision::text, fa.role, f.updated_at::text, p.source_id, regexp_replace(s.name, '（[^（）]*）', '', 'g')),
         ',' ORDER BY p.article_id, f.id)) AS revision, count(DISTINCT p.source_id) AS sources
       FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
       JOIN sources s ON s.id = p.source_id
@@ -151,7 +151,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
   const items = await sql<{ id: string; title: string; revision: string; released: Date | null }[]>`
     SELECT p.article_id AS id, p.title,
       md5(concat_ws('|', p.revision::text, a.content_hash, a.cover::text, tr.title, tr.body_html, tr.body_text, tr.complete::text, qt.text_zh,
-        s.name, s.icon_url, st.public_id::text, st.title)) AS revision,
+        p.source_id, regexp_replace(s.name, '（[^（）]*）', '', 'g'), s.icon_url, st.public_id::text, st.title)) AS revision,
       CASE WHEN p.selected THEN p.visible_after END AS released
     ${ITEM_FROM}
     WHERE ${storyReportCondition(at)} AND p.indexable ${limits ? sql`AND NOT ${thinPageCondition()} AND NOT ${eventPageCondition(at)}` : sql``}

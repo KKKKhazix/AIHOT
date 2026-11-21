@@ -21,11 +21,12 @@ export interface MediaItem {
 
 export interface XPostData {
   tweetId: string;
+  authorUserId?: string | null;
   authorName: string;
   handle: string;
   avatarUrl?: string | null;
   text: string;
-  quoted?: { authorName: string; handle: string; text: string; url: string; media?: MediaItem[] } | null;
+  quoted?: { tweetId?: string | null; authorUserId?: string | null; authorName: string; handle: string; text: string; url: string; media?: MediaItem[] } | null;
   media?: MediaItem[];
   lang?: string | null;
   replyTo?: string | null;

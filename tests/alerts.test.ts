@@ -116,6 +116,11 @@ test("many sources failing within the hour is announced while the rest still col
     assert.equal(outage?.level, "today");
     assert.equal(outage?.owner, "only");
     assert.match(outage!.title, /^SocialData 出故障/);
+    // 50 failing, one of them the provider's: the way out is what fails, still hourly.
+    await sql`INSERT INTO fetch_runs (source_id, started_at, finished_at, status, error)
+      SELECT id, ${new Date(resumed + 90_000)}, ${new Date(resumed + 90_000)}, 'failed', 'Client network socket disconnected before secure TLS connection was established' FROM unnest(${ids.slice(0, 49)}::text[]) id`;
+    await run(ids.slice(50, 60), "ok", -(9 * 60 + 1.5));
+    assert.equal((await fetching(resumed + 100_000))?.level, "now");
     // A refused key is ours to fix: hourly, as any failure of the way out.
     await sql`INSERT INTO fetch_runs (source_id, started_at, finished_at, status, error)
       SELECT id, ${new Date(resumed + 120_000)}, ${new Date(resumed + 120_000)}, 'failed', 'socialdata HTTP 401: {"message":"Unauthenticated."}' FROM unnest(${ids.slice(0, 60)}::text[]) id`;

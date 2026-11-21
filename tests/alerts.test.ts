@@ -109,6 +109,17 @@ test("many sources failing within the hour is announced while the rest still col
     assert.equal((await fetching(resumed))?.key, "content.fetch", "resumed: the others fetched first prove nothing about these");
     await run(ids.slice(0, 60), "ok", -538);
     assert.equal(await fetching(resumed), undefined, "a source whose next fetch worked no longer counts");
+    // A provider that answers with errors is its own outage, told once and then daily (2026-11-21 SocialData).
+    await sql`INSERT INTO fetch_runs (source_id, started_at, finished_at, status, error)
+      SELECT id, ${new Date(resumed)}, ${new Date(resumed)}, 'failed', 'socialdata HTTP 500: {"status":"error"}' FROM unnest(${ids.slice(0, 60)}::text[]) id`;
+    const outage = await fetching(resumed + 60_000);
+    assert.equal(outage?.level, "today");
+    assert.equal(outage?.owner, "only");
+    assert.match(outage!.title, /^SocialData 出故障/);
+    // A refused key is ours to fix: hourly, as any failure of the way out.
+    await sql`INSERT INTO fetch_runs (source_id, started_at, finished_at, status, error)
+      SELECT id, ${new Date(resumed + 120_000)}, ${new Date(resumed + 120_000)}, 'failed', 'socialdata HTTP 401: {"message":"Unauthenticated."}' FROM unnest(${ids.slice(0, 60)}::text[]) id`;
+    assert.equal((await fetching(resumed + 180_000))?.level, "now");
   } finally {
     await sql`DELETE FROM sources WHERE id IN ${sql(ids)}`;
     process.env.COLLECT_ENABLED = "false";

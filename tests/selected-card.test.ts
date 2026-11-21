@@ -28,7 +28,7 @@ const SPACE = { title: "OpenAI 演示 ChatGPT Space 团队协作用法", summary
 
 async function selected(category: string, reason: string | null, copy = SPACE) {
   const { articleId } = await upsertMaterial({ sourceId: SOURCE, url: `https://example.org/${T}/${category}`,
-    title: `${T} ${category}`, bodyText: "Body.", bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+    title: `${T} ${category}`, bodyText: "Body.", bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
     VALUES (${articleId},1,'rule','pass',${category},${copy.title},${copy.summary},${reason},90,true)`;
   await sql`UPDATE articles SET grouping_status='complete',grouped_at=now(),selection_adds_value=true WHERE id=${articleId}`;

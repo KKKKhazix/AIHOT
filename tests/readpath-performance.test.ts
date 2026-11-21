@@ -131,7 +131,6 @@ test('unchanged pool and timeline revalidate with 304 while a content change ret
   for (const path of [`/api/site/pool?tag=${T}`, `/api/site/timeline?tag=${T}`]) {
     const first = await app.inject({ method: 'GET', url: path });
     assert.equal(first.statusCode, 200, path);
-    await new Promise((resolve) => setTimeout(resolve, 3));
     const same = await app.inject({ method: 'GET', url: path, headers: { 'if-none-match': String(first.headers.etag) } });
     assert.equal(same.statusCode, 304, path);
     assert.equal(same.body, '');

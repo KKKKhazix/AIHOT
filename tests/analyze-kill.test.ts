@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 // A hard-killed analysis must distinguish a lost paid answer from one already saved.
 // These are real processes and PostgreSQL transactions with a local model protocol substitute;
 // they do not test provider quality, machine power loss, or a browser journey.
@@ -5,7 +6,6 @@ import { gate, pointModels, stub, tag } from "./setup.ts";
 import { analysisStep, SELECTING_SCORE, type AnalysisStep } from "./analysis-steps.ts";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
 import { after, before, test } from "node:test";
 import { sql, closeDb } from "@aihot/backend/db";
 import { stopBoss } from "@aihot/backend/jobs/queue";
@@ -71,11 +71,7 @@ function worker(articleId: string) {
 }
 
 async function until(check: () => Promise<boolean>, label: string) {
-  const deadline = Date.now() + 15_000;
-  while (!(await check())) {
-    if (Date.now() > deadline) assert.fail(`timeout waiting for ${label}`);
-    await delay(20);
-  }
+  await pollFor(check, label, 15_000);
 }
 
 async function finish(articleId: string) {
@@ -96,7 +92,7 @@ async function article(scenario: string) {
   const { articleId } = await upsertMaterial({
     sourceId: SOURCE, url: `https://example.org/analyze-kill-${T}/${scenario}`, title: `AI model release ${T} ${scenario}`,
     bodyText: `An AI lab released a new model with benchmarks and prices. ${T} ${scenario} ` + "The release explains model capabilities and evaluation results. ".repeat(10),
-    bodyStatus: "ok", language: "en", via: "fetch", publishedAt: new Date(),
+    bodyStatus: "ok", language: "en", via: "fetch", publishedAt: new Date(Date.now() - 60_000),
   });
   return articleId;
 }

@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -121,14 +122,11 @@ test('ordinary clients leave timer dispatch to the designated worker', async () 
   await boss.createQueue('__pgboss__send-it');
   const id = await boss.send('__pgboss__send-it', { name: 'ownership.target', key: '', data: {}, options: {} });
   assert.ok(id);
-  await new Promise(resolve => setTimeout(resolve, 6500));
+  assert.ok(!boss.getWipData({ includeInternal: true }).some(worker => worker.name === "__pgboss__send-it"));
   assert.equal((await sql`SELECT state FROM pgboss.job WHERE id=${id}`)[0]!.state, 'created');
   assert.equal((await sql`SELECT count(*)::int AS count FROM pgboss.job WHERE name='ownership.target'`)[0]!.count, 0);
   await stopBoss();
   await getBoss({ supervise: true });
-  const deadline = Date.now() + 12000;
-  while ((await sql`SELECT count(*)::int AS count FROM pgboss.job WHERE name='ownership.target'`)[0]!.count === 0 && Date.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
+  await pollFor(async () => (await sql`SELECT count(*)::int AS count FROM pgboss.job WHERE name='ownership.target'`)[0]!.count > 0, "designated worker to forward the timer", 12_000);
   assert.equal((await sql`SELECT count(*)::int AS count FROM pgboss.job WHERE name='ownership.target'`)[0]!.count, 1);
 });

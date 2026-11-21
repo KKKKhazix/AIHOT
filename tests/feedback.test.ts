@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 // Feedback reaches the internal Feishu chat with its screenshot even when Feishu fails at first: a
 // failed upload or send is tried again, only the Feishu image key is kept, a screenshot that cannot be
 // uploaded for a day, or that Feishu refuses outright, is dropped (the text still goes), screenshots left
@@ -184,7 +185,7 @@ test("a browser retry creates one feedback and forwards one notification", async
   const results = await Promise.all(Array.from({ length: 4 }, () => submitFeedback(input)));
   assert.equal(new Set(results.map(r => r.id)).size, 1);
   const id = results[0]!.id;
-  for (let i = 0; i < 100 && !(await state(id)).forwarded; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  await pollFor(async () => (await state(id)).forwarded, "feedback forwarding");
   assert.ok((await state(id)).forwarded);
   assert.equal(feishu.sent.filter(m => m.title === `反馈 #${id}`).length, 1);
   assert.ok(JSON.stringify(sentFor(id)?.content).includes(input.content));

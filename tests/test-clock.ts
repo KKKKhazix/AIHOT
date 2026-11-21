@@ -13,7 +13,7 @@ const current = String.raw`(?:now\s*\(\s*\)|current_timestamp|clock_timestamp\s*
 const sqlClock = String.raw`(?:${current}|\$\{\s*${clock}\s*\})`;
 const value = new RegExp(String.raw`\b(?:${fields})\s*:\s*${clock}(?!\s*[+-]|\.getTime\(\)\s*[+-])`, "g");
 const due = new RegExp(String.raw`\b(?:${sqlFields})\s*=\s*${sqlClock}(?!\s*[+-])`, "gi");
-const sleeps = /\b(?:waitForTimeout|sleep|delay)\s*\(\s*(?:\d|[\w$]+\s*\))|\bsetTimeout\s*\(\s*(?:\d|(?:resolve|res|r|done)\s*,|\(\s*\)\s*=>\s*(?:resolve|res|r|done)\(\s*\)\s*,)|\btime\.sleep\s*\(/g;
+const sleeps = /\b(?:waitForTimeout|sleep|delay)\s*\(\s*(?:\d|[\w$]+\s*\))|(?<!test\.)\bsetTimeout\s*\(\s*(?:\d|(?:resolve|res|r|done)\s*,|\(\s*\)\s*=>\s*(?:resolve|res|r|done)\(\s*\)\s*,)|\btime\.sleep\s*\(/g;
 const numberId = /\b(?:\w*[Ii]d|ID|key|tag)\s*[:=]\s*(?:String\()?Date\.now\(\)(?!\s*[-+/])|`[^`\n]*\$\{Date\.now\(\)(?:\.toString\([^)]*\))?\}[^`\n]*`/g;
 
 function positions(text: string, pattern: RegExp, fix: string, add: (offset: number, fix: string) => void) {

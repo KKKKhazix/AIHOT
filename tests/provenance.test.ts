@@ -32,7 +32,7 @@ test("the first external discovery uses a paused verified publisher, keeps the r
   const official = await source("T1", { publisherUrlPrefixes: [scope], fetchPublicContent: true }, { enabled: false });
   const media = await source("T2");
   const url = `${scope}/release`;
-  const input = { sourceId: media, items: [{ url, title: "Release", author: "HN submitter", publishedAt: new Date().toISOString() }] };
+  const input = { sourceId: media, items: [{ url, title: "Release", author: "HN submitter", publishedAt: new Date(Date.now() - 60_000).toISOString() }] };
   assert.equal((await ingestItems(input)).created, 1);
   const [a] = await sql`SELECT * FROM articles WHERE url = ${url}`;
   assert.deepEqual([a!.source_id, a!.author, a!.revision, a!.body_status], [official, null, 1, "pending"]);
@@ -47,7 +47,7 @@ test("a repeated signal discovery adopts a newly registered publisher and resume
   const scope = `https://${tag()}.example/news`;
   const signal = await source("T2", {}, { mode: "hot_signal" });
   const url = `${scope}/release`;
-  const first = await upsertMaterial({ sourceId: signal, url, title: "Original", bodyText: "Preserved body", via: "fetch", publishedAt: new Date() });
+  const first = await upsertMaterial({ sourceId: signal, url, title: "Original", bodyText: "Preserved body", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await queueProcessing(first.articleId);
   assert.deepEqual((await jobs(first.articleId)).map((j) => [j.name, j.data.signalOnly]), [[QUEUES.group, true]]);
   assert.equal((await settleNonEditorial(first.articleId)).group, true);
@@ -74,7 +74,7 @@ for (const entrance of ["publisher", "source-mode"] as const) test(`${entrance} 
   const scope = `https://${tag()}.example/news`;
   const signal = await source("T1", {}, { mode: "hot_signal" });
   const make = async (name: string) => (await upsertMaterial({ sourceId: signal, url: `${scope}/${name}`,
-    title: `Release ${name}`, bodyText: "Preserved original material", via: "fetch", publishedAt: new Date() })).articleId;
+    title: `Release ${name}`, bodyText: "Preserved original material", via: "fetch", publishedAt: new Date(Date.now() - 60_000) })).articleId;
   const fresh = await make("new");
   await settleNonEditorial(fresh);
   assert.equal((await groupArticle(fresh, { signalOnly: true })).verdict, "signal-unmatched");

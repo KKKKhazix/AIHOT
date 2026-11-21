@@ -634,7 +634,7 @@ test("a revision that lets the owner's article into selection replaces their pos
   relation = "SAME_OCCURRENCE";
   const [row] = await sql<{ url: string }[]>`SELECT url FROM articles WHERE id = ${article}`;
   const revised = text + "文章补全";
-  await upsertMaterial({ sourceId: ownArticles, url: row!.url, title: revised, bodyText: revised, bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+  await upsertMaterial({ sourceId: ownArticles, url: row!.url, title: revised, bodyText: revised, bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,title_zh,summary_zh,category,score,selected,output)
     VALUES(${article},2,'rule','pass',${revised},${revised},'ai-products',80,true,${sql.json({ scope: "single", fact: { title: revised, subject: text, action: "发布", object: text } })})`;
   const result = await groupArticle(article);
@@ -671,7 +671,7 @@ test("a revision of a report that stayed out does not bring its card back", asyn
   assert.equal((await state(post)).selected, false);
   const [row] = await sql<{ url: string }[]>`SELECT url FROM articles WHERE id = ${post}`;
   const revised = text + "帖子改了措辞";
-  await upsertMaterial({ sourceId: ownPosts, url: row!.url, title: revised, bodyText: revised, bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+  await upsertMaterial({ sourceId: ownPosts, url: row!.url, title: revised, bodyText: revised, bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,title_zh,summary_zh,category,score,selected,output)
     VALUES(${post},2,'rule','pass',${revised},${revised},'ai-products',80,true,${sql.json({ scope: "single", fact: { title: revised, subject: text, action: "发布", object: text } })})`;
   assert.equal((await groupArticle(post)).verdict, "kept");

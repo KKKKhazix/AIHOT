@@ -1,10 +1,10 @@
+import { pollFor } from "./poll.ts";
 // Failure cases: concurrent claims duplicate a fact; an ambiguous webhook reply looks delivered;
 // a retry bypasses target disable/withdrawal; a mirror sends after the first target awaited a withdrawal.
 // A lost reply must still suppress regrouped siblings; enabling a group must not replay older items.
 import { gate, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { deliverContent, resendDelivery } from "@aihot/backend/notify/deliver";
@@ -96,9 +96,9 @@ async function selectedItem() {
   const id = `delivery-item-${tag()}`;
   await sql`INSERT INTO sources (id, name, kind, tier) VALUES (${TARGET}, 'Delivery test', 'rss', 'T1') ON CONFLICT DO NOTHING`;
   await sql`INSERT INTO articles (id, source_id, identity_key, url, title, discovered_at, timeline_at)
-    VALUES (${id}, ${TARGET}, ${id}, 'https://example.com/delivery', ${id}, now(), now())`;
+    VALUES (${id}, ${TARGET}, ${id}, 'https://example.com/delivery', ${id}, now() - interval '1 minute', now() - interval '1 minute')`;
   await sql`INSERT INTO publications (article_id, title, source_id, channel, url, published_at, discovered_at, timeline_at, sort_at, eligible, selected, visible_after, visibility)
-    VALUES (${id}, ${id}, ${TARGET}, 'news', 'https://example.com/delivery', now(), now(), now(), now(), true, true, now() - interval '1 minute', 'public')`;
+    VALUES (${id}, ${id}, ${TARGET}, 'news', 'https://example.com/delivery', now() - interval '1 minute', now() - interval '1 minute', now() - interval '1 minute', now() - interval '1 minute', true, true, now() - interval '1 minute', 'public')`;
   return id;
 }
 
@@ -215,16 +215,13 @@ test("concurrent sibling claims reserve a target once, including the pending del
     subjectKind: "test", subjectId, dedupeKey: subjectId, contentAt: new Date(), card: { id: 999 }, siblings: subjects,
   })));
   try {
-    const deadline = performance.now() + 5000;
-    while (true) {
+    await pollFor(async () => {
       const [row] = await sql<{ n: number }[]>`WITH RECURSIVE waiting(pid) AS (
         SELECT pid FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))
         UNION SELECT a.pid FROM pg_stat_activity a JOIN waiting w ON w.pid = ANY(pg_blocking_pids(a.pid))
       ) SELECT count(*)::int AS n FROM waiting`;
-      if (row!.n >= 2) break;
-      assert.ok(performance.now() < deadline, "both target claims reach the held delivery table");
-      await delay(10);
-    }
+      return row!.n >= 2;
+    }, "concurrent requests to reach the database lock");
   } finally { release.open(); await holding; }
   await done;
   assert.equal(requests.length - before, 1);

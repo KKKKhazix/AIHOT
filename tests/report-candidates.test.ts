@@ -1,8 +1,8 @@
+import { pollFor } from "./poll.ts";
 import { editionAt, gate, tag } from "./setup.ts";
 // A selected item released across the daily edition time must appear in the next issue exactly once.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { setTimeout as delay } from "node:timers/promises";
 import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
@@ -94,11 +94,10 @@ test("reports assign delayed and boundary releases to the period readers first s
 
 /** Observe an actual PostgreSQL lock wait before advancing the clock or releasing the transaction. */
 async function waitForBlocked(blocker: number, operation: Promise<unknown>) {
-  const deadline = performance.now() + 5_000;
-  while (!(await sql`SELECT 1 FROM pg_stat_activity WHERE ${blocker} = ANY(pg_blocking_pids(pid))`)[0]) {
-    if (performance.now() >= deadline) assert.fail("operation did not wait for the held transaction");
-    await Promise.race([operation.then(() => assert.fail("operation finished before the held transaction committed")), delay(10)]);
-  }
+  await Promise.race([
+    pollFor(async () => (await sql`SELECT 1 FROM pg_stat_activity WHERE ${blocker} = ANY(pg_blocking_pids(pid))`)[0], "held transaction to block the operation"),
+    operation.then(() => assert.fail("operation finished before the held transaction committed")),
+  ]);
 }
 
 for (const lock of ["article", "fact seat", "report snapshot"] as const) {

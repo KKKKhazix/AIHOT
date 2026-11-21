@@ -38,7 +38,7 @@ const embeddings = await embeddingsStub();
 let factId: number;
 
 async function report(suffix: string, composite = false) {
-  const { articleId } = await upsertMaterial({ sourceId, url: `https://example.org/group-${T}/${suffix}`, title: `新模型发布${T}`, bodyText: "今日发布新模型和价格。", bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+  const { articleId } = await upsertMaterial({ sourceId, url: `https://example.org/group-${T}/${suffix}`, title: `新模型发布${T}`, bodyText: "今日发布新模型和价格。", bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,title_zh,summary_zh,score,selected,output)
     VALUES (${articleId},1,'rule','pass','ai-models',${`新模型发布${T} ${suffix}`},${`新模型发布和价格${T} ${suffix}`},80,true,${sql.json({ scope: composite ? "composite" : "single", fact: { title: "新模型发布", subject: "实验室", action: "发布", object: "模型" } })})`;
   await sql`UPDATE articles SET processing_state='analyzed' WHERE id=${articleId}`;
@@ -308,7 +308,7 @@ for (const lateFailure of [false, true]) test(`an old grouping ${lateFailure ? "
   const rejected = assert.rejects(grouping);
   try {
     await asked.promise;
-    await upsertMaterial({ sourceId, url: `https://example.org/group-${T}/${suffix}`, title: `Corrected material ${T}`, bodyText: "A different product and corrected report.", bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+    await upsertMaterial({ sourceId, url: `https://example.org/group-${T}/${suffix}`, title: `Corrected material ${T}`, bodyText: "A different product and corrected report.", bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
     release.open();
     await rejected;
   } finally { release.open(); globalThis.fetch = originalFetch; }
@@ -325,7 +325,7 @@ for (const change of ["revision", "regroup"] as const) test(`${change} withdraws
   await groupArticle(id);
   assert.equal((await sql`SELECT selected FROM publications WHERE article_id=${id}`)[0]!.selected, true);
   if (change === "revision") {
-    await upsertMaterial({ sourceId, url: `https://example.org/group-${T}/${suffix}`, title: `Changed original ${T}`, bodyText: "New corrected material.", bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+    await upsertMaterial({ sourceId, url: `https://example.org/group-${T}/${suffix}`, title: `Changed original ${T}`, bodyText: "New corrected material.", bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   } else {
     await sql.begin(tx => requestRegroup(id, `request-${T}`, tx));
   }

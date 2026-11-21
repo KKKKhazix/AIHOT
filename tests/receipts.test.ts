@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 // Paid requests: an answer already received is reused, every request actually sent counts against the
 // budget (retries of one logical request included), a lost answer is bought again at most once, an
 // answer cut off at the output limit says so, and the valve stops calls before they are sent.
@@ -110,13 +111,11 @@ test("stale recovery waiting on a response transaction preserves its committed a
   });
   await locked.promise;
   const waitingOn = async (query: string) => {
-    for (let i = 0; i < 500; i++) {
+    await pollFor(async () => {
       const waiting = await sql`SELECT 1 FROM pg_stat_activity
         WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE ${query}`;
-      if (waiting.length) return;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    throw new Error(`transaction never waited on ${query}`);
+      return waiting.length;
+    }, `transaction never waited on ${query}`);
   };
   let sweep: Promise<number> | undefined;
   try {
@@ -227,14 +226,11 @@ test("concurrent distinct requests cannot both spend the last service budget slo
     ));
   };
   const waitForBlocked = async (count: number) => {
-    const deadline = Date.now() + 5_000;
-    for (;;) {
+    await pollFor(async () => {
       const rows = await sql`SELECT pid FROM pg_stat_activity
         WHERE datname = current_database() AND wait_event_type = 'Lock' AND state = 'active'`;
-      if (rows.length === count) return;
-      assert.ok(Date.now() < deadline, `expected ${count} requests at the database barrier, saw ${rows.length}`);
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+      return rows.length === count;
+    }, `the ${count} blocked requests`);
   };
   try {
     request("first");

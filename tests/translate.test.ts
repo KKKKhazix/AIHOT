@@ -58,7 +58,7 @@ const app = await buildApp();
 const material = (price: string) =>
   upsertMaterial({
     sourceId: SOURCE, url: URL_, title: `Price update ${T}`, language: "en", bodyText: `The price is ${price} dollars (${T}).`,
-    bodyHtml: `<p>The price is ${price} dollars (${T}).</p>`, bodyStatus: "ok", via: "fetch", publishedAt: new Date(), discoveredAt: new Date(Date.now() + 600_000),
+    bodyHtml: `<p>The price is ${price} dollars (${T}).</p>`, bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() + 600_000),
   });
 
 async function detail(id: string) {
@@ -84,7 +84,7 @@ test("Japanese bodies with kanji are translated with or without a language hint"
   // send it to a paid provider nor let it take the single batch slot from Japanese behind it.
   const { articleId: chinese } = await upsertMaterial({ sourceId: SOURCE, url: `${URL_}-chinese`, title: '新的模型已发布',
     bodyText: '这是已经用中文写好的完整正文。', bodyHtml: '<p>这是已经用中文写好的完整正文。</p>',
-    bodyStatus: 'ok', via: 'fetch', publishedAt: new Date(), discoveredAt: new Date(Date.now() + 600_000) });
+    bodyStatus: 'ok', via: 'fetch', publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() + 600_000) });
   await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
     VALUES (${chinese},1,'rule','pass','ai-models','新的模型已发布','摘要','理由',90,true)`;
   await publishArticle(chinese, { releasedAt: new Date(Date.now() - 60_000) });
@@ -93,7 +93,7 @@ test("Japanese bodies with kanji are translated with or without a language hint"
   for (const language of ["ja", null]) {
     const text = `新しい人工知能モデルを公開しました。日本語の性能が向上しています。${T}`;
     const { articleId } = await upsertMaterial({ sourceId: SOURCE, url: `${URL_}-japanese-${language}`, title: `新しい人工知能モデル ${T}`,
-      language, bodyText: text, bodyHtml: `<p>${text}</p>`, bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+      language, bodyText: text, bodyHtml: `<p>${text}</p>`, bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
     await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
       VALUES (${articleId},1,'rule','pass','ai-models','发布新模型','摘要','理由',90,true)`;
     await publishArticle(articleId, { releasedAt: new Date(Date.now() - 60_000) });
@@ -112,7 +112,7 @@ test("a presentation-only source update repairs original and translated bodies w
   const beforeHtml = `<p>The model introduces useful improvements ${T}.</p><p>Read <a href="https://example.com/old">the documentation</a>.</p>`;
   const afterHtml = `<div><p>The model introduces useful improvements ${T}.</p><figure><a href="https://example.com/chart"><img src="https://example.com/chart.png" alt="Chart"></a></figure><p>Read <a href="https://example.com/docs">the documentation</a>.</p></div>`;
   const material = { sourceId: SOURCE, url: `${URL_}-presentation`, title: `Display repair ${T}`, language: "en", bodyText: text, bodyHtml: beforeHtml,
-    bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date() };
+    bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date(Date.now() - 60_000) };
   const { articleId } = await upsertMaterial(material);
   await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
     VALUES (${articleId},1,'rule','pass','ai-models','模型改进','摘要','理由',90,true)`;
@@ -157,7 +157,7 @@ test("a layout refresh follows image identity when translated text moved its pic
   const text = `Compare charts A and B ${T}.`;
   const input = { sourceId: SOURCE, url: `${URL_}-reordered-media`, title: `Compare charts ${T}`, language: "en", bodyText: text,
     bodyHtml: `<p>Compare <img src="https://example.com/a.png"> charts <img src="https://example.com/b.png"> A and B ${T}.</p>`,
-    bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date() };
+    bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date(Date.now() - 60_000) };
   const { articleId } = await upsertMaterial(input);
   await sql`INSERT INTO translations(article_id,lang,revision,body_html,body_text,complete,origin)
     VALUES (${articleId},'zh',1,'<p>乙图<img src="https://example.com/b.png">与甲图<img src="https://example.com/a.png">。</p>','乙图与甲图。',true,'model')`;
@@ -169,7 +169,7 @@ test("a layout refresh follows image identity when translated text moved its pic
 test("a translation finishing during a layout refresh cannot restore the missing image", async () => {
   const text = `The price is ten dollars (layout-race-${T}).`;
   const input = { sourceId: SOURCE, url: `${URL_}-inflight-layout`, title: `Layout race ${T}`, language: "en", bodyText: text,
-    bodyHtml: `<p>${text}</p>`, bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date() };
+    bodyHtml: `<p>${text}</p>`, bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date(Date.now() - 60_000) };
   const { articleId } = await upsertMaterial(input);
   await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
     VALUES (${articleId},1,'rule','pass','ai-models','模型价格','摘要','理由',90,true)`;
@@ -226,7 +226,7 @@ test("links and images inside a paragraph survive the translation, or the paragr
     `<p>A paragraph the model <a href="https://example.com/kept">never keeps</a> whole ${T}.</p>`;
   const { articleId: id } = await upsertMaterial({
     sourceId: SOURCE, url: `${URL_}-links`, title: `Links ${T}`, language: "en", bodyText: `Explaining Neuroglancer. ${T}`, bodyHtml: html,
-    bodyStatus: "ok", via: "fetch", publishedAt: new Date(), discoveredAt: new Date(Date.now() + 1_200_000),
+    bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() + 1_200_000),
   });
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, reason_zh, score, selected)
             VALUES (${id}, 1, 'rule', 'pass', 'ai-models', ${`链接-${T}`}, '摘要', '理由', 90, true)`;
@@ -247,7 +247,7 @@ test("the length cap counts what the model is sent, not the addresses of links i
   const href = `https://example.com/${"x".repeat(1600)}`;
   const html = Array.from({ length: 40 }, (_v, i) => `<p>Cited paragraph ${i} with <a href="${href}">its source</a> (${T}).</p>`).join("");
   const { articleId } = await upsertMaterial({ sourceId: SOURCE, url: `${URL_}-long-links`, title: `Long links ${T}`, language: "en",
-    bodyText: html.replace(/<[^>]+>/g, ""), bodyHtml: html, bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+    bodyText: html.replace(/<[^>]+>/g, ""), bodyHtml: html, bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
     VALUES (${articleId},1,'rule','pass','ai-models','长链接','摘要','理由',90,true)`;
   await publishArticle(articleId, { releasedAt: new Date(Date.now() - 60_000) });
@@ -258,11 +258,12 @@ test("the length cap counts what the model is sent, not the addresses of links i
 });
 
 test("the post a selected X post quotes is translated once and shown with the item", async () => {
-  const tweetId = `7${Date.now()}`;
+  const tweetId = "79000000000008";
+  const postIdForFixture = "89000000000008";
   const { articleId: id } = await upsertMaterial({
-    sourceId: SOURCE, url: `https://x.com/bcherny/status/8${Date.now()}`, title: `Sonnet ${T}`, language: "en", bodyText: "Try it!", bodyStatus: "ok",
-    via: "fetch", publishedAt: new Date(), discoveredAt: new Date(Date.now() + 1_800_000),
-    xPost: { tweetId: `8${Date.now()}`, authorName: "Boris", handle: "bcherny", text: "Try it!", quoted: { authorName: "Anthropic", handle: "AnthropicAI", text: `Introducing Claude Sonnet 5.5 ${T}`, url: `https://x.com/AnthropicAI/status/${tweetId}` } },
+    sourceId: SOURCE, url: `https://x.com/bcherny/status/${postIdForFixture}`, title: `Sonnet ${T}`, language: "en", bodyText: "Try it!", bodyStatus: "ok",
+    via: "fetch", publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() + 1_800_000),
+    xPost: { tweetId: postIdForFixture, authorName: "Boris", handle: "bcherny", text: "Try it!", quoted: { authorName: "Anthropic", handle: "AnthropicAI", text: `Introducing Claude Sonnet 5.5 ${T}`, url: `https://x.com/AnthropicAI/status/${tweetId}` } },
   });
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, reason_zh, score, selected)
             VALUES (${id}, 1, 'rule', 'pass', 'ai-models', ${`引用-${T}`}, '摘要', '理由', 90, true)`;
@@ -284,10 +285,11 @@ test("the post a selected X post quotes is translated once and shown with the it
 test("an unusable X translation gets a bounded fresh attempt instead of terminal skipped", async () => {
   const marker = `alignment-x-${T}`;
   const text = `A new model release with practical improvements and detailed availability notes ${marker}. This post explains the new behavior and user-visible changes.`;
+  const postIdForFixture = "99000000000009";
   const { articleId: id } = await upsertMaterial({
-    sourceId: SOURCE, url: `https://x.com/example/status/9${Date.now()}`, title: `Alignment X ${T}`, language: "en",
-    bodyText: text, bodyStatus: "ok", via: "fetch", publishedAt: new Date(), discoveredAt: new Date(Date.now() + 3_600_000),
-    xPost: { tweetId: `9${Date.now()}`, authorName: "Test", handle: "example", text },
+    sourceId: SOURCE, url: `https://x.com/example/status/${postIdForFixture}`, title: `Alignment X ${T}`, language: "en",
+    bodyText: text, bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() + 3_600_000),
+    xPost: { tweetId: postIdForFixture, authorName: "Test", handle: "example", text },
   });
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, reason_zh, score, selected)
             VALUES (${id}, 1, 'rule', 'pass', 'ai-models', ${`校验-X-${T}`}, '摘要', '理由', 90, true)`;
@@ -316,7 +318,7 @@ test("fully unusable body translations stop after three recorded attempts", asyn
   const { articleId: id } = await upsertMaterial({
     sourceId: SOURCE, url: `${URL_}-alignment`, title: `Alignment body ${T}`, language: "en",
     bodyText: text, bodyHtml: `<p>${text}</p>`, bodyStatus: "ok", via: "fetch",
-    publishedAt: new Date(), discoveredAt: new Date(Date.now() + 7_200_000),
+    publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() + 7_200_000),
   });
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, reason_zh, score, selected)
             VALUES (${id}, 1, 'rule', 'pass', 'ai-models', ${`校验正文-${T}`}, '摘要', '理由', 90, true)`;
@@ -339,10 +341,10 @@ test("fully unusable body translations stop after three recorded attempts", asyn
 test("a received alignment retry survives a failed translation commit without paying again", async () => {
   const marker = `alignment-recovery-${T}`;
   const post = `This detailed English announcement ${marker} describes a new public release and its availability. The main changes are supported by documented examples and clear usage notes.`;
-  const tweetId = `9${Date.now()}`;
+  const tweetId = "99000000000011";
   const { articleId: id } = await upsertMaterial({
     sourceId: SOURCE, url: `https://x.com/example/status/${tweetId}`, title: `Recovery ${T}`, language: "en",
-    bodyText: post, bodyStatus: "ok", via: "fetch", publishedAt: new Date(), discoveredAt: new Date(Date.now() + 10_800_000),
+    bodyText: post, bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() + 10_800_000),
     xPost: { tweetId, authorName: "Test", handle: "example", text: post },
   });
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, reason_zh, score, selected)
@@ -391,7 +393,7 @@ test("an overloaded provider and a timed-out request use up no attempts: after t
   const { articleId: id } = await upsertMaterial({
     sourceId: SOURCE, url: `${URL_}-timeout`, title: `Timeout ${T}`, language: "en",
     bodyText: `A paragraph whose answer is lost ${T}.`, bodyHtml: `<p>A paragraph whose answer is lost ${T}.</p>`,
-    bodyStatus: "ok", via: "fetch", publishedAt: new Date(), discoveredAt: new Date(Date.now() + 14_400_000),
+    bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() + 14_400_000),
   });
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, reason_zh, score, selected)
             VALUES (${id}, 1, 'rule', 'pass', 'ai-models', ${`超时-${T}`}, '摘要', '理由', 90, true)`;
@@ -434,7 +436,7 @@ test("account 429 pauses translation without spending the article attempts", asy
   const { articleId: id } = await upsertMaterial({
     sourceId: SOURCE, url: `${URL_}-account`, title: `Account limit ${T}`, language: "en",
     bodyText: `A paragraph waiting for account access ${T}.`, bodyHtml: `<p>A paragraph waiting for account access ${T}.</p>`,
-    bodyStatus: "ok", via: "fetch", publishedAt: new Date(), discoveredAt: new Date(Date.now()+20_000_000),
+    bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now()+20_000_000),
   });
   await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
     VALUES(${id},1,'rule','pass','ai-models','账户等待','摘要','理由',90,true)`;
@@ -465,7 +467,7 @@ test("a selected X long article is translated as its page shows it: the article,
     VALUES(${source},'Saved long article','x_search','T1','editorial',true,true,'2100-01-01')`;
   const intro = `This introduction comes with a long article. ${T}`;
   const { articleId: long } = await upsertMaterial({sourceId: source, url: `https://x.com/fixture/status/${T}`, title: intro,
-    language: 'en', bodyText: intro, bodyStatus: 'ok', via: 'fetch', publishedAt: new Date(), discoveredAt: new Date(Date.now()+30_000_000),
+    language: 'en', bodyText: intro, bodyStatus: 'ok', via: 'fetch', publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now()+30_000_000),
     xPost: {tweetId: T, authorName: 'Fixture', handle: 'fixture', text: `${intro} https://x.com/i/article/2119000000000000001`}});
   const html = `<h2>Pricing ${T}</h2><p>The price is twenty dollars ${T}.</p><figure><img src="https://pbs.twimg.com/media/long-${T}.jpg" alt=""></figure>`;
   await sql`UPDATE articles SET x_article=${sql.json({title:'Saved long article',text:`Pricing. The price is twenty dollars ${T}.`,html})} WHERE id=${long}`;
@@ -491,17 +493,17 @@ test("a selected X long article is translated as its page shows it: the article,
 });
 
 test("a post quoting a long-article post gets the quoted words translated, not the article's translation", async () => {
-  const longTweet = `6${Date.now()}`;
+  const longTweet = "69000000000015";
   const { articleId: long } = await upsertMaterial({sourceId: SOURCE, url: `https://x.com/writer/status/${longTweet}`, title: `Long piece ${T}`, language: 'en',
-    bodyText: `My long piece ${T}`, bodyStatus: 'ok', via: 'fetch', publishedAt: new Date(), discoveredAt: new Date(),
+    bodyText: `My long piece ${T}`, bodyStatus: 'ok', via: 'fetch', publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() - 60_000),
     xPost: {tweetId: longTweet, authorName: 'Writer', handle: 'writer', text: `My long piece ${T} https://x.com/i/article/2119000000000000002`}});
   await sql`UPDATE articles SET x_article=${sql.json({title:'Long piece',text:`The whole long piece ${T}.`,html:`<p>The whole long piece ${T}.</p>`})} WHERE id=${long}`;
   // The long article's own translation covers the article, not the short post quoted below.
   await sql`INSERT INTO translations(article_id,lang,revision,title,body_html,body_text,complete,origin)
     VALUES(${long},'zh',1,'长文','<p>整篇长文的译文。</p>','整篇长文的译文。',true,'model')`;
-  const quotingTweet = `5${Date.now()}`;
+  const quotingTweet = "59000000000015";
   const { articleId: quoting } = await upsertMaterial({sourceId: SOURCE, url: `https://x.com/reader/status/${quotingTweet}`, title: `Quoting ${T}`, language: 'en',
-    bodyText: 'Worth reading', bodyStatus: 'ok', via: 'fetch', publishedAt: new Date(), discoveredAt: new Date(Date.now()+1_900_000),
+    bodyText: 'Worth reading', bodyStatus: 'ok', via: 'fetch', publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now()+1_900_000),
     xPost: {tweetId: quotingTweet, authorName: 'Reader', handle: 'reader', text: 'Worth reading',
       quoted: {authorName: 'Writer', handle: 'writer', text: `My long piece ${T} is out now`, url: `https://x.com/writer/status/${longTweet}`}}});
   await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
@@ -534,7 +536,7 @@ test("a failed old translation does not consume or overwrite the corrected revis
   for (const newerAttempt of [false, true]) {
     const input = {sourceId:SOURCE,url:`${URL_}-late-failure-${newerAttempt}`,title:`Corrected translation ${T}`,
       language:"en",bodyText:`The price is ten dollars ${T}.`,bodyHtml:`<p>The price is ten dollars ${T}.</p>`,
-      bodyStatus:"ok" as const,via:"fetch" as const,publishedAt:new Date(),discoveredAt:new Date(Date.now()+40_000_000)};
+      bodyStatus:"ok" as const,via:"fetch" as const,publishedAt:new Date(Date.now() - 60_000),discoveredAt:new Date(Date.now()+40_000_000)};
     const {articleId:id}=await upsertMaterial(input);
     await sql`INSERT INTO analyses(article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
       VALUES(${id},1,'rule','pass','ai-models','价格更正','摘要','理由',90,true)`;
@@ -610,7 +612,7 @@ for (const misaligned of [false, true]) test(`SIGTERM finishes the sent ${misali
   active = { asked: gate(), hold: gate(), calls: 0, misaligned };
   const first = misaligned ? `First paragraph ${T}.` : `First paragraph ${T}. ${'English text '.repeat(170)}`;
   const second = misaligned ? `Second paragraph ${T}.` : `Second paragraph ${T}. ${'More English '.repeat(170)}`;
-  const { articleId } = await upsertMaterial({ sourceId: SHUTDOWN_SOURCE, url: `https://example.org/translation-shutdown-${T}/${misaligned}`, title: `Shutdown ${T}`, bodyHtml: `<p>${first}</p><p>${second}</p>`, bodyText: first + second, bodyStatus: 'ok', language: 'en', via: 'fetch', publishedAt: new Date(), discoveredAt: new Date(Date.now() + 86_400_000) });
+  const { articleId } = await upsertMaterial({ sourceId: SHUTDOWN_SOURCE, url: `https://example.org/translation-shutdown-${T}/${misaligned}`, title: `Shutdown ${T}`, bodyHtml: `<p>${first}</p><p>${second}</p>`, bodyText: first + second, bodyStatus: 'ok', language: 'en', via: 'fetch', publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() + 86_400_000) });
   await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
     VALUES (${articleId},1,'rule','pass','ai-models',${`终止测试${T}`},'摘要','理由',90,true)`;
   await publishArticle(articleId, { releasedAt: new Date(Date.now() - 60_000) });
@@ -639,7 +641,7 @@ for (const misaligned of [false, true]) test(`SIGTERM finishes the sent ${misali
 
 test('a batch the provider refuses after SIGTERM is an interruption, not a translation attempt', async () => {
   active = { asked: gate(), hold: gate(), calls: 0, misaligned: false, refused: true };
-  const { articleId } = await upsertMaterial({ sourceId: SHUTDOWN_SOURCE, url: `https://example.org/translation-shutdown-${T}/refused`, title: `Refused ${T}`, bodyHtml: `<p>Refused paragraph ${T}.</p><p>Another refused paragraph ${T}.</p>`, bodyText: `Refused paragraph ${T}. Another refused paragraph ${T}.`, bodyStatus: 'ok', language: 'en', via: 'fetch', publishedAt: new Date(), discoveredAt: new Date(Date.now() + 86_400_000) });
+  const { articleId } = await upsertMaterial({ sourceId: SHUTDOWN_SOURCE, url: `https://example.org/translation-shutdown-${T}/refused`, title: `Refused ${T}`, bodyHtml: `<p>Refused paragraph ${T}.</p><p>Another refused paragraph ${T}.</p>`, bodyText: `Refused paragraph ${T}. Another refused paragraph ${T}.`, bodyStatus: 'ok', language: 'en', via: 'fetch', publishedAt: new Date(Date.now() - 60_000), discoveredAt: new Date(Date.now() + 86_400_000) });
   await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,title_zh,summary_zh,reason_zh,score,selected)
     VALUES (${articleId},1,'rule','pass','ai-models',${`拒绝测试${T}`},'摘要','理由',90,true)`;
   await publishArticle(articleId, { releasedAt: new Date(Date.now() - 60_000) });

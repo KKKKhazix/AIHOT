@@ -323,7 +323,7 @@ test("item pages follow one rule: unsummarised editorial items keep one, hot_sig
   await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, site_fulltext, syndicate_fulltext, next_fetch_at)
             VALUES (${SIGNAL}, 'Test signal', 'rss', 'T1', 'hot_signal', true, false, '2100-01-01')`;
   const material = (sourceId: string, name: string) =>
-    upsertMaterial({ sourceId, url: `https://example.com/${T}-${name}`, title: `${name} ${T}`, bodyText: BODY, bodyHtml: `<p>${BODY}</p>`, bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+    upsertMaterial({ sourceId, url: `https://example.com/${T}-${name}`, title: `${name} ${T}`, bodyText: BODY, bodyHtml: `<p>${BODY}</p>`, bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   // An editorial item the model never summarised, and a hot_signal item carrying an imported summary.
   const { articleId: plain } = await material(SOURCE, "plain");
   await publishArticle(plain);

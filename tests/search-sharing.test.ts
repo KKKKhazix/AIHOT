@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 // Failure modes: identical simultaneous searches exhaust capacity, a shared answer crosses filters
 // or clocks, completed/failed work stays cached, or distinct searches evade the capacity limit.
 import { tag, gate } from './setup.ts';
@@ -35,7 +36,7 @@ async function blocked<T>(read: () => Promise<T>): Promise<T> {
   await ready.promise;
   const pending = read();
   // Hold the first SQL while the concurrent requests reach the same unfinished read.
-  await new Promise(resolve => setTimeout(resolve, 100));
+  await pollFor(async () => (await sql`SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'`).length > 0, "the concurrent operation to reach the database lock");
   release.open(); await lock;
   return pending;
 }

@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 // Event grouping invariants: an editor's decision made while the model is deciding stands; a
 // revision keeps its membership without asking the model; an explicit regroup drops the automatic
 // membership at once and decides again; a story's root is its earliest fact that still holds reports;
@@ -198,7 +199,7 @@ test("grouping merges no fact holding an editor's placement, nor one being corre
     await tx`DELETE FROM fact_articles WHERE article_id = ${contested}`;
     await tx`INSERT INTO fact_articles (fact_id, article_id, role, manual) VALUES (${elsewhere.fact}, ${contested}, 'report', true)`;
     merging = mergeFactInto(from.fact, into.fact, "test", "grouping");
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await pollFor(async () => (await sql`SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'`).length > 0, "the concurrent operation to reach the database lock");
   });
   await merging!;
   const memberships = await sql<{ fact_id: number }[]>`SELECT fact_id FROM fact_articles WHERE article_id = ${contested}`;
@@ -413,7 +414,7 @@ test("detaching a discussion post removes its signal even though it has no fact 
   const source = `${SOURCE}-discussion`;
   await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES (${source},'Discussion','x_search','T2','hot_signal')`;
   const { articleId } = await upsertMaterial({ sourceId: source, url: "https://x.com/example/status/999000112", title: "Reaction",
-    publishedAt: new Date(), bodyText: "Reaction", bodyStatus: "ok", via: "fetch",
+    publishedAt: new Date(Date.now() - 60_000), bodyText: "Reaction", bodyStatus: "ok", via: "fetch",
     xPost: { tweetId: "999000112", handle: "example", authorName: "Example", text: "Reaction", replyTo: "999000111" } });
   assert.equal((await groupArticle(articleId, { signalOnly: true })).storyId, root.storyId);
   await detachFromFact(articleId, "unrelated reaction", "test-editor");
@@ -429,7 +430,7 @@ test("a manual detach during a discussion judgement wins just as it does for an 
   const source = `${SOURCE}-discussion-race`;
   await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES (${source},'Discussion race','rss','T2','hot_signal')`;
   const { articleId } = await upsertMaterial({ sourceId: source, url: `https://example.org/${source}`, title: reaction,
-    publishedAt: new Date(), bodyText: reaction, bodyStatus: "ok", via: "fetch" });
+    publishedAt: new Date(Date.now() - 60_000), bodyText: reaction, bodyStatus: "ok", via: "fetch" });
   hold = gate(); asked = gate();
   const pending = groupArticle(articleId, { signalOnly: true });
   await Promise.race([asked.promise, pending.then(() => assert.fail("expected a signal judgement"))]);

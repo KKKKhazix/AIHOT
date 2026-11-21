@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 // Backups restore: a real database dump and file archive (uploads and feedback screenshots) are
 // unpacked and read back; the object store is a stand-in inside this process. A missing uploads directory
 // needs no file archive, an unreadable one is not; a file archive that fails still ships the database and
@@ -340,11 +341,10 @@ for (const phase of ["pg_dump", "tar"] as const) {
     child.on("message", message => messages.push(message as typeof messages[number]));
     const exited = once(child, "exit");
     const wait = async (condition: () => boolean | Promise<boolean>) => {
-      const deadline = Date.now() + 15_000;
-      while (!await condition()) {
-        assert.ok(child.exitCode === null && child.signalCode === null && Date.now() < deadline, `backup phase not reached: ${stderr} ${JSON.stringify(messages)}`);
-        await new Promise(resolve => setTimeout(resolve, 20));
-      }
+      await pollFor(async () => {
+        assert.ok(child.exitCode === null && child.signalCode === null, `backup phase not reached: ${stderr} ${JSON.stringify(messages)}`);
+        return condition();
+      }, "backup phase", 15_000);
     };
     let held: number | undefined;
     try {

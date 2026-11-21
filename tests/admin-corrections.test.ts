@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 import { createHmac } from "node:crypto";
 import { config } from "@aihot/backend/config";
 import { tag } from "./setup.ts";
@@ -23,7 +24,7 @@ if (!ADMIN) registerAdmin(app);
 after(async () => { await app.close(); await stopBoss(); await closeDb(); });
 
 async function article() {
-  return (await upsertMaterial({ sourceId, url: `https://example.com/${tag()}`, title: "审查材料", bodyText: "正文", bodyStatus: "ok", via: "fetch", publishedAt: new Date() })).articleId;
+  return (await upsertMaterial({ sourceId, url: `https://example.com/${tag()}`, title: "审查材料", bodyText: "正文", bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) })).articleId;
 }
 
 test("concurrent source intake creates one source for the same feed", async () => {
@@ -36,12 +37,10 @@ test("concurrent source intake creates one source for the same feed", async () =
   try {
     // Hold inserts until all four requests have reached a lock: reproduce simultaneous clicks,
     // independently of how quickly the database happens to execute their duplicate checks.
-    for (let i = 0; ; i++) {
+    await pollFor(async () => {
       const [waiting] = await sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`;
-      if (waiting!.n === 4) break;
-      assert.ok(i < 200, "all concurrent requests reached the database");
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+      return waiting!.n === 4;
+    }, "concurrent requests to reach the database lock");
   } finally {
     await blocker`ROLLBACK`;
     blocker.release();

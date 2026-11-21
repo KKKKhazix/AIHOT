@@ -45,7 +45,7 @@ after(async () => {
 test("one model runs the prefilter, both scores, the writing and the structure", async () => {
   const { articleId } = await upsertMaterial({
     sourceId: SOURCE, url: `https://example.com/${T}`, title: `A product launch ${T}`, bodyText: `A company launched a product with pricing and availability. ${T} `.repeat(6),
-    bodyStatus: "ok", via: "fetch", publishedAt: new Date(),
+    bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000),
   } as never);
   const res = await analyzeArticle(articleId);
   assert.equal(res!.output!.selected, true);

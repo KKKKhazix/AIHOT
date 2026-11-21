@@ -32,7 +32,7 @@ test("API startup is quiet and an unexpected error retains the request, stack an
     app.get("/api/busy-site", siteHandler(async () => { throw new SearchBusyError(5); }));
     app.get("/api/stream", async (_req, reply) => reply.type("text/plain").send(Readable.from((async function* () {
       yield "started";
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise(resolve => setImmediate(resolve));
       throw new Error("stream exploded");
     })())));
     const res = await app.inject({ method: "GET", url: "/api/log-check?token=private-query", headers: { authorization: "Bearer private-auth", cookie: "private-cookie" } });

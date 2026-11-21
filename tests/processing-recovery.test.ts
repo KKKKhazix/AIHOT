@@ -1,8 +1,8 @@
+import { pollFor } from "./poll.ts";
 // Recovery must finish the same evaluation that failed, and commit the release, queue and audit together.
 import { gate, pointModels, Reply, stub, tag } from "./setup.ts";
 import { analysisStep, SELECTING_SCORE } from "./analysis-steps.ts";
 import assert from "node:assert/strict";
-import { setTimeout as delay } from "node:timers/promises";
 import { after, afterEach, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { groupArticle } from "@aihot/backend/events/group";
@@ -51,7 +51,7 @@ afterEach(async () => {
 async function article(name: string) {
   return (await upsertMaterial({ sourceId: SOURCE, url: `https://example.org/${T}/${name}`, title: `AI model ${T} ${name}`,
     bodyText: `AI lab release ${T} ${name}. ` + "The new model includes benchmark and price details. ".repeat(12),
-    bodyStatus: "ok", via: "fetch", backfill: "test fixture", publishedAt: new Date() })).articleId;
+    bodyStatus: "ok", via: "fetch", backfill: "test fixture", publishedAt: new Date(Date.now() - 60_000) })).articleId;
 }
 
 /** Wakes this process's analysis workers to fetch now, instead of waiting out their polling interval. */
@@ -64,11 +64,7 @@ async function wakeAnalysis() {
 const queuedMinuteAgo = () => sql`UPDATE pgboss.job SET start_after = start_after - interval '1 minute' WHERE name = ${QUEUES.analyze} AND state = 'created'`;
 
 async function waitFor(check: () => Promise<boolean>) {
-  const deadline = Date.now() + 15_000;
-  while (!(await check())) {
-    assert.ok(Date.now() < deadline, "queue did not settle");
-    await delay(20);
-  }
+  await pollFor(check, "queue to settle", 15_000);
 }
 
 test("a failed audit rolls back the receipt release and the processing job", async () => {
@@ -193,7 +189,7 @@ test("a late refusal for an old revision preserves the new revision's completed 
   await asked.promise;
   try {
     await upsertMaterial({ sourceId: SOURCE, url: `https://example.org/${T}/revision-race`, title: `Corrected ${T}`,
-      bodyText: "A different corrected article body. ".repeat(30), bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+      bodyText: "A different corrected article body. ".repeat(30), bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
     heldFailure = null;
     original = true;
     assert.equal((await processArticle(id)).state, "block");

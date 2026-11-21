@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { sourceFiles, type Violation } from "./source-debt.ts";
+import { sourceFiles, type Violation } from "./source-checks.ts";
 
 const root = path.resolve(import.meta.dirname, "..");
 const boundary = "按编号区分先后，或给测试数据明确的过去时间；写入与读取边界不要分两次取此刻";
@@ -76,7 +76,7 @@ export function clockViolations(source: string): Violation[] {
   return hits;
 }
 
-export function clockDebt() {
+export function clockViolationsByFile() {
   const files = sourceFiles("*test*", "tests/**").filter(file => /(?:^|\/)(?:tests?\/|test_[^/]+\.py$)|\.(?:test|spec)\.[^/]+$/.test(file)
     && /\.(?:[cm]?[jt]sx?|py)$/.test(file) && !file.endsWith("/test-clock.ts"));
   return new Map(files.map(file => [file, clockViolations(readFileSync(path.join(root, file), "utf8"))]));

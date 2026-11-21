@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { sourceFiles, type Violation } from "./source-debt.ts";
+import { sourceFiles, type Violation } from "./source-checks.ts";
 
 const css = readFileSync(new URL("../apps/web/app/app.css", import.meta.url), "utf8");
 const scale = new Map([...css.matchAll(/--(text-ui-[\w-]+):\s*([\d.]+)px;/g)].map(m => [m[2]!, m[1]!]));
@@ -13,7 +13,7 @@ const writtenSize = new RegExp([
   String.raw`\bfontSize\s*(?::\s*|=\s*\{?\s*)(?:["']\d*\.?\d+(?:px)?["']|\d*\.?\d+(?=\s*[,}]))`,
 ].join("|"), "g");
 
-export function fontSizeDebt() {
+export function fontSizeViolations() {
   const result = new Map<string, Violation[]>();
   for (const file of sourceFiles("apps/web", "modules/*/web.*", "modules/*/web/**")) {
     if (!/\.(?:[jt]sx?|css)$/.test(file) || /\/(?:tests?|__tests__)\//.test(file)) continue;

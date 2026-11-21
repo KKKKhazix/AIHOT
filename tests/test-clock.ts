@@ -22,11 +22,10 @@ function positions(text: string, pattern: RegExp, fix: string, add: (offset: num
 
 export function clockViolations(source: string): Violation[] {
   const text = source.replace(/^\s*(?:\/\/|\/\*|\*|#)[^\n]*/gm, comment => comment.replace(/[^\n]/g, " "));
-  const lines = source.split("\n");
   const hits: Violation[] = [];
   const add = (at: number, fix: string) => {
     const line = text.slice(0, at).split("\n").length;
-    hits.push({ line, code: `${fix.slice(0, 2)} ${lines[line - 1]!.trim()}`, fix });
+    hits.push({ line, fix });
   };
   positions(text, value, boundary, add);
   for (const update of text.matchAll(/\bUPDATE\s+[\w.]+\s+(?:AS\s+\w+\s+)?SET\s+([^;`]*?)(?=\bWHERE\b|\bRETURNING\b|[;`]|$)/gi)) {

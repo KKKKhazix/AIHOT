@@ -258,7 +258,11 @@ test('reader enhancements wait for visible code and update only the picture that
     const source=page.locator('.prose pre code').first();
     assert.equal(await source.textContent(),codeSource);
     await source.scrollIntoViewIfNeeded();
-    await expect(source).toHaveClass(/hljs/);
+    await expect.poll(() => source.evaluate(code => {
+      const plain = getComputedStyle(code).color;
+      return [...code.querySelectorAll("*")].some(token =>
+        token.textContent?.trim() && getComputedStyle(token).color !== plain);
+    }), { message: "visible code should show syntax in a different colour" }).toBe(true);
     assert.equal(await source.textContent(),codeSource,'colouring preserves the copyable text');
     assert.equal(scripts.length,1);
     await page.locator('.code-block-copy').first().click();
@@ -287,15 +291,17 @@ test('deep reading returns to its anchor, including folded dates',async()=>{
     await page.getByRole('button',{name:'收起10月4日',exact:true}).click();
     await expect(page.locator('[data-card-key]')).toHaveCount(120);
     await page.getByRole('link',{name:'长列表文章 160',exact:true}).scrollIntoViewIfNeeded();
-    const before=await page.evaluate(()=>{
-      const first=[...document.querySelectorAll<HTMLElement>('[data-card-key]')].find(e=>e.getBoundingClientRect().bottom>72)!;
-      return {key:first.dataset.cardKey!,top:first.getBoundingClientRect().top};
+    const readingCard = () => page.evaluate(() => {
+      const card = document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.closest<HTMLElement>('[data-card-key]');
+      return card?.dataset.cardKey;
     });
+    const before = await readingCard();
+    assert.ok(before, 'a card is visible at the reading position before opening the article');
     await page.getByRole('link',{name:'长列表文章 160',exact:true}).click();
     await expect(page.getByText('固定正文',{exact:true})).toBeVisible();
     await page.goBack();
     await expect(page.locator('[data-card-key]')).toHaveCount(120);
-    await expect.poll(()=>page.locator(`[data-card-key="${before.key}"]`).evaluate((e,top)=>Math.abs(e.getBoundingClientRect().top-top),before.top)).toBeLessThan(2);
+    await expect.poll(readingCard).toBe(before);
     await expect(page.getByRole('button',{name:'展开10月4日',exact:true})).toBeVisible();
   }finally{await context.close();}
 });

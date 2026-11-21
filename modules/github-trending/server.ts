@@ -15,12 +15,14 @@ const run = (period: Period) => async () => {
 
 const PERIODS: Period[] = ["daily", "weekly", "monthly"];
 
+const collecting = () => process.env.COLLECT_ENABLED === "true";
+
 export default defineServerModule({
   name: "github-trending",
   schedules: [
-    { name: "github-trending-daily", cron: "30 7 * * *", run: run("daily"), missed: "once" },
-    { name: "github-trending-weekly", cron: "0 9 * * 1", run: run("weekly"), missed: "once" },
-    { name: "github-trending-monthly", cron: "30 9 1 * *", run: run("monthly"), missed: "once" },
+    { name: "github-trending-daily", cron: "30 7 * * *", run: run("daily"), missed: "once", when: collecting },
+    { name: "github-trending-weekly", cron: "0 9 * * 1", run: run("weekly"), missed: "once", when: collecting },
+    { name: "github-trending-monthly", cron: "30 9 1 * *", run: run("monthly"), missed: "once", when: collecting },
   ],
   http(app) {
     app.get("/api/github-trending", async (req, reply) => {

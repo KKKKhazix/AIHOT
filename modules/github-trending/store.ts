@@ -2,11 +2,13 @@ import type { Db } from "@aihot/backend/db";
 import type { Period, TrendingRow } from "./parse.ts";
 
 export async function saveSnapshot(db: Db, period: Period, rows: TrendingRow[], capturedAt: Date = new Date()): Promise<void> {
-  for (const r of rows) {
-    await db`
-      INSERT INTO github_trending_snapshots (period, captured_at, rank, repo, description, language, stars, stars_period, url)
-      VALUES (${period}, ${capturedAt}, ${r.rank}, ${r.repo}, ${r.description}, ${r.language}, ${r.stars}, ${r.starsPeriod}, ${r.url})`;
-  }
+  if (rows.length === 0) return;
+  const values = rows.map((r) => ({
+    period, captured_at: capturedAt, rank: r.rank, repo: r.repo, description: r.description,
+    language: r.language, stars: r.stars, stars_period: r.starsPeriod, url: r.url,
+  }));
+  // One statement, so a failing row leaves no half-written snapshot behind.
+  await db`INSERT INTO github_trending_snapshots ${db(values, "period", "captured_at", "rank", "repo", "description", "language", "stars", "stars_period", "url")}`;
 }
 
 interface Snapshot { capturedAt: string; rows: TrendingRow[] }

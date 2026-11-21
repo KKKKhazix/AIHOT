@@ -34,3 +34,11 @@ test("latest picks newest capture; snapshotAt reads an old one", async () => {
 test("periods are isolated; empty period returns null", async () => {
   assert.equal(await latestSnapshot(sql, "monthly"), null);
 });
+
+test("a failing row leaves no partial snapshot", async () => {
+  await assert.rejects(saveSnapshot(sql, "monthly", [
+    row(1, "ok/one"),
+    { ...row(2, "bad/two"), url: null as unknown as string },
+  ]));
+  assert.equal(await latestSnapshot(sql, "monthly"), null);
+});

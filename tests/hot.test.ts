@@ -285,8 +285,18 @@ test("faces are 精选组 sources by tier (T1, T1.5, T2), at most 6; 氛围组 o
   assert.deepEqual(signals, order.filter(i => inputs[i]!.kind === "signal").map(i => ({ name: faceName(i), kind: "signal" })), "no editorial faces means no image URLs at all");
   const external = (await v1HotTopics()).items[0]!;
   assert.equal(external.participantCount, 12);
+  assert.equal(external.storyPublicId, entries[0]!.storyPublicId);
   assert.deepEqual(external.sourceNames, entries[0]!.sourceNames, "machine clients keep every stored source name");
-  assert.deepEqual(Object.keys(external).sort(), ["rank", "id", "title", "source", "links", "sourceCount", "signalCount", "participantCount", "sourceNames", "latestAt"].sort(), "the external hot-topic contract is unchanged");
+  assert.deepEqual(Object.keys(external).sort(), ["rank", "id", "storyPublicId", "title", "source", "links", "sourceCount", "signalCount", "participantCount", "sourceNames", "latestAt"].sort(), "the external hot-topic contract adds storyPublicId");
+
+  // Renaming a source still resolves its icon when the stored participant carries sourceId.
+  const renamedEntry: HotEntry = {
+    ...entries[0]!,
+    participants: [{ sourceId: faceSourceId(5), name: `${faceName(5)} 旧名`, kind: "editorial", tier: "T1" }],
+  };
+  const resolved = extras.participants(renamedEntry);
+  assert.equal(resolved[0]!.sourceId, faceSourceId(5));
+  assert.equal(new URL(resolved[0]!.iconUrl!, "http://localhost").searchParams.get("u"), imageUrl(5));
 });
 
 test("search carries exactly the existing topic links and five visible hot links, including after a withdrawal", async () => {

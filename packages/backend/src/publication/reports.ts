@@ -39,8 +39,16 @@ async function availability(ids: string[]): Promise<Map<string, Availability>> {
   if (ids.length === 0) return out;
   const rows = await sql<{ id: string; available: boolean; summary: string | null; first_party: boolean; source_id: string; source_name: string | null; icon_url: string | null; story_id: string | null; at: Date | null }[]>`
     SELECT p.article_id AS id, (${listedCondition(new Date())}) AS available, p.summary, (s.tier = 'T1') AS first_party, p.source_id, s.name AS source_name, s.icon_url,
-      st.public_id::text AS story_id, coalesce(p.published_at, p.discovered_at) AS at
-    FROM publications p LEFT JOIN sources s ON s.id = p.source_id LEFT JOIN stories st ON st.id = p.story_id
+      live_st.public_id::text AS story_id, coalesce(p.published_at, p.discovered_at) AS at
+    FROM publications p LEFT JOIN sources s ON s.id = p.source_id
+    LEFT JOIN LATERAL (
+      WITH RECURSIVE chain AS (
+        SELECT id, public_id, merged_into FROM stories WHERE id = p.story_id
+        UNION ALL
+        SELECT st.id, st.public_id, st.merged_into FROM stories st JOIN chain c ON st.id = c.merged_into
+      )
+      SELECT public_id FROM chain WHERE merged_into IS NULL LIMIT 1
+    ) live_st ON p.story_id IS NOT NULL
     WHERE p.article_id IN ${sql(ids)}`;
   for (const r of rows) {
     out.set(r.id, {
@@ -69,12 +77,12 @@ async function unavailableIds(ids: string[]): Promise<Set<string>> {
 
 /**
  * Directory/feed metadata only: citation summaries and full report prose stay in the detail read. Issue
- * numbers count the whole series of the kind before the limit applies, so the 401st issue is numbered
- * 401 although the index keeps 400; a back-filled or deleted issue renumbers the ones after it.
+ * numbers come from the persisted `issue_number` assigned on publication, falling back to series order
+ * only for unbackfilled rows.
  */
 export async function reportIndexRows(kind: ReportKind, limit: number) {
   return sql<{ key: string; issue_number: number; content: Record<string, any>; generated_at: Date }[]>`
-    SELECT key, generated_at, (row_number() OVER (ORDER BY key))::int AS issue_number, jsonb_build_object(
+    SELECT key, generated_at, coalesce(issue_number, (row_number() OVER (ORDER BY key))::int) AS issue_number, jsonb_build_object(
       'lead', content->'lead', 'headline', content->'headline', 'title', content->'title',
       'leadItemId', content->'leadItemId', 'highlights', content->'highlights',
       CASE WHEN kind = 'daily' THEN 'sections' ELSE 'themes' END,
@@ -234,6 +242,7 @@ function citationFrom(raw: Record<string, any>, avail: Map<string, Availability>
     itemId: id,
     title: String(raw.title ?? ""),
     ...metadata,
+    sourceId: a?.sourceId ?? (typeof raw.sourceId === "string" ? raw.sourceId : null),
     sourceName: publicSourceName(metadata.sourceName),
     sourceIconUrl: a?.sourceIcon ? proxiedImage(a.sourceIcon, "avatar") : null,
     ...(iconSrcSet ? { sourceIconSrcSet: iconSrcSet } : {}),
@@ -350,8 +359,8 @@ function issueAvailability(c: Record<string, any>): Promise<Map<string, Availabi
 function issueAsShown(kind: ReportKind, c: Record<string, any>, avail: Map<string, Availability>) {
   const cite = (raw: Record<string, any>) => entryCitation(raw, avail);
   const sections: ReportDetail["sections"] = kind === "daily"
-    ? (c.sections ?? []).map((s: any) => ({ label: String(s.label), summary: null, items: (s.items ?? []).map(cite) }))
-    : (c.themes ?? []).map((t: any) => ({ label: String(t.heading), summary: sectionSummary(t, avail), items: (t.storyRefs ?? []).map(cite) }));
+    ? (c.sections ?? []).map((s: any) => ({ ...(typeof s.key === "string" ? { key: s.key } : {}), label: String(s.label), summary: null, items: (s.items ?? []).map(cite) }))
+    : (c.themes ?? []).map((t: any) => ({ ...(typeof t.key === "string" ? { key: t.key } : {}), label: String(t.heading), summary: sectionSummary(t, avail), items: (t.storyRefs ?? []).map(cite) }));
   const all = sections.flatMap((s) => s.items);
   // A thin daily's highlights also name the reports it was filled with (picks), which never lead it.
   const highlightable = [...all, ...(c.picks ?? []).map(cite)];
@@ -371,9 +380,10 @@ function issueAsShown(kind: ReportKind, c: Record<string, any>, avail: Map<strin
 }
 
 export async function loadReport(kind: ReportKind, key: string): Promise<ReportDetail | null> {
-  // Its number counts every issue of the kind up to it, as the index numbers them (reportIndexRows).
+  // Persisted issue_number stays fixed; fallback counts every issue up to it for unbackfilled rows.
   const [r] = await sql<(Pick<ReportRow, "content" | "generated_at"> & { issue_number: number })[]>`
-    SELECT r.content, r.generated_at, (SELECT count(*)::int FROM reports earlier WHERE earlier.kind = r.kind AND earlier.key <= r.key) AS issue_number
+    SELECT r.content, r.generated_at,
+      coalesce(r.issue_number, (SELECT count(*)::int FROM reports earlier WHERE earlier.kind = r.kind AND earlier.key <= r.key)) AS issue_number
     FROM reports r WHERE r.kind = ${kind} AND r.key = ${key}`;
   if (!r) return null;
   const c = r.content;
@@ -524,11 +534,15 @@ export async function dailyWithNotes(date: string | "latest") {
   const named: string[] = c.highlights?.length ? c.highlights : items.slice(0, 3).map((i: any) => i.itemId);
   const highlights = named.map((id) => [...items, ...picks].find((i: any) => i.itemId === id))
     .filter((i: any) => i && i.itemId !== lead?.itemId).slice(0, 3).filter(ok);
+  const sourceOf = (i: any) => {
+    const id = (i.itemId ? avail.get(i.itemId)?.sourceId : null) ?? (typeof i.sourceId === "string" ? i.sourceId : null);
+    return { ...(id ? { id } : {}), name: metadata(i).sourceName };
+  };
   const notes = new Map<string, DailyNote>();
   for (const i of raw.filter(ok)) {
     const related = (i.related ?? []).filter((x: any) => x.itemId && ok(x)).map((x: any) => ({ title: String(x.title), link: itemUrl(x.itemId) }));
     const otherSources = Number(i.sources) > 1 ? Number(i.sources) - 1 : 0;
-    if (otherSources || related.length || i.followUp) notes.set(links(i).aihot ?? links(i).original, { otherSources, related, followUp: i.followUp ?? null });
+    if (otherSources || related.length || i.followUp) notes.set(i.itemId ? String(i.itemId) : (links(i).aihot ?? links(i).original), { otherSources, related, followUp: i.followUp ?? null });
   }
   const body = {
     schemaVersion: 1 as const,
@@ -543,30 +557,33 @@ export async function dailyWithNotes(date: string | "latest") {
       sections: (c.sections ?? []).map((s: any) => ({
         label: String(s.label),
         items: (s.items ?? []).filter(ok).map((i: any) => ({
+          id: i.itemId ? String(i.itemId) : null,
           title: String(i.title),
           summary: String(metadata(i).summary ?? ""),
-          source: { name: metadata(i).sourceName },
+          source: sourceOf(i),
           links: links(i),
           attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),
         })),
       })),
       flashes: (c.flashes ?? []).filter(ok).map((i: any) => ({
+        id: i.itemId ? String(i.itemId) : null,
         title: String(i.title),
-        source: { name: metadata(i).sourceName },
+        source: sourceOf(i),
         links: links(i),
         publishedAt: metadata(i).publishedAt ?? r.generated_at.toISOString(),
         attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),
       })),
       highlights: highlights.map((i: any) => ({
+        id: i.itemId ? String(i.itemId) : null,
         title: String(i.title),
         summary: String(metadata(i).summary ?? ""),
-        source: { name: metadata(i).sourceName },
+        source: sourceOf(i),
         links: links(i),
         attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),
       })),
     },
   };
-  return { body, notes };
+  return { body, notes, leadItemId: lead?.itemId ?? null };
 }
 
 export async function v1Daily(date: string | "latest") {
@@ -687,11 +704,14 @@ export async function v1Period(kind: PeriodKind, key: string | "latest") {
         label: String(t.heading),
         summary: sectionSummary(t, avail),
         items: (t.storyRefs ?? []).filter(ok).map((i: any) => {
-          const metadata = citationMetadata(i, avail.get(i.itemId));
+          const a = i.itemId ? avail.get(i.itemId) : undefined;
+          const metadata = citationMetadata(i, a);
+          const sourceId = a?.sourceId ?? (typeof i.sourceId === "string" ? i.sourceId : null);
           return {
+            id: i.itemId ? String(i.itemId) : null,
             title: String(i.title),
             summary: String(metadata.summary ?? ""),
-            source: { name: metadata.sourceName },
+            source: { ...(sourceId ? { id: sourceId } : {}), name: metadata.sourceName },
             links: { aihot: i.itemId ? itemUrl(i.itemId) : null, original: metadata.sourceUrl },
             publishedAt: metadata.publishedAt,
             attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),

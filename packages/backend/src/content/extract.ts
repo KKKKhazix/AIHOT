@@ -795,7 +795,7 @@ export function readableDocument(document: Doc, url: string, rules: PageRules = 
   return { html: clean, text, images, via: "readability", ...date, cover: hasPicture(clean) ? null : declared };
 }
 
-export async function extractFromUrl(url: string, subject: string, rules: PageRules = {}, opts: { paidFallback?: boolean } = {}): Promise<ExtractedBody | null> {
+export async function extractFromUrl(url: string, subject: string, rules: PageRules = {}, opts: { paidFallback?: boolean; sourceId?: string } = {}): Promise<ExtractedBody | null> {
   if (isVideoPageUrl(url)) return null;
   const target = new URL(url);
   if (rules.bodyUrlSuffix) target.pathname += rules.bodyUrlSuffix;
@@ -819,7 +819,7 @@ export async function extractFromUrl(url: string, subject: string, rules: PageRu
     // fall through to Jina
   }
   // Outside the page's read: a failure of the store while checking the cover is no unreadable page.
-  if (read) return { ...read.body, cover: await articleCover(read.body.cover ?? null, url, read.pageUrl) };
+  if (read) return { ...read.body, cover: await articleCover(read.body.cover ?? null, url, read.pageUrl, opts.sourceId) };
   if (opts.paidFallback === false) return null;
   try {
     // The rendered text carries none of the page's metadata, so a body read this way has no cover.
@@ -848,12 +848,12 @@ export function pageFetchable(url: string, sourceKind: string): boolean {
 
 /** Fetches and stores the body of one article. Unconfirmed bodies are recorded as such. */
 export async function extractArticleBody(articleId: string): Promise<"ok" | "unconfirmed" | "skipped"> {
-  const [a] = await sql<{ id: string; url: string; body_status: string; revision: number; x_post: { tweetId?: string } | null; config: SourceRow["config"] }[]>`
-    SELECT a.id, a.url, a.body_status, a.revision, a.x_post, s.config
+  const [a] = await sql<{ id: string; source_id: string; url: string; body_status: string; revision: number; x_post: { tweetId?: string } | null; config: SourceRow["config"] }[]>`
+    SELECT a.id, a.source_id, a.url, a.body_status, a.revision, a.x_post, s.config
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId}`;
   if (!a || a.body_status === "ok") return "skipped";
   if (a.x_post?.tweetId) return extractXArticle(a.id, a.x_post.tweetId, a.revision);
-  const got = await extractFromUrl(a.url, `article:${a.id}`, pageRules(a.config));
+  const got = await extractFromUrl(a.url, `article:${a.id}`, pageRules(a.config), { sourceId: a.source_id });
   if (!got) {
     return markUnconfirmed(articleId, a.revision);
   }

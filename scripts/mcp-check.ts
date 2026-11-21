@@ -88,7 +88,8 @@ try {
   if (full) {
     for (const name of [T.daily, T.weekly, T.monthly]) await call(name, {});
     const hot = await call(T.hot, { limit: 1 });
-    const storyId = ((hot.structuredContent as { items?: Array<{ links?: { story?: string } }> }).items?.[0]?.links?.story ?? "").split("/").pop();
+    const firstHot = (hot.structuredContent as { items?: Array<{ storyPublicId?: string; links?: { story?: string } }> }).items?.[0];
+    const storyId = firstHot?.storyPublicId ?? (firstHot?.links?.story ?? "").split("/").pop();
     if (!storyId) throw new Error("--full needs a populated public story");
     await call(T.story, { public_id: storyId, report_limit: 3 });
   }

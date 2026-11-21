@@ -68,7 +68,7 @@ export function registerAgent(app: FastifyInstance) {
     strictQuery(req, []);
     const res = await dailyWithNotes("latest");
     if (!res) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "还没有发布过日报。" });
-    return markdown(req, reply, dailyAnswer(res.body.report, "http", res.notes), "agent-daily", V1_OPERATIONS.latestDaily.cacheControl);
+    return markdown(req, reply, dailyAnswer(res.body.report, "http", res.notes, res.leadItemId), "agent-daily", V1_OPERATIONS.latestDaily.cacheControl);
   }));
 
   app.get("/api/v1/agent/daily/:date", publicHandler(async (req, reply) => {
@@ -77,7 +77,7 @@ export function registerAgent(app: FastifyInstance) {
     if (!isValidDate(date)) throw new QueryError("date must be a real YYYY-MM-DD calendar date.");
     const res = await dailyWithNotes(date);
     if (!res) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `没有 ${date} 的日报；不要换一天冒充。`, cacheControl: "public, max-age=60" });
-    return markdown(req, reply, dailyAnswer(res.body.report, "http", res.notes), "agent-daily", V1_OPERATIONS.dailyByDate.cacheControl);
+    return markdown(req, reply, dailyAnswer(res.body.report, "http", res.notes, res.leadItemId), "agent-daily", V1_OPERATIONS.dailyByDate.cacheControl);
   }));
 
   for (const p of [

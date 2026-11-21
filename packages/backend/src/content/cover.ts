@@ -87,14 +87,18 @@ const samePage = (a: URL, b: URL) => a.origin === b.origin && a.pathname.replace
  * serves every article of the site but itself, so a run storing many of them reads it once. The other is the
  * latest one in the store.
  */
-async function otherArticlePicture(articleUrl: string): Promise<string | null> {
+async function otherArticlePicture(articleUrl: string, sourceId?: string): Promise<string | null> {
   const article = new URL(articleUrl);
-  const key = `other:${article.origin}`;
+  const key = sourceId ? `other:${sourceId}:${article.origin}` : `other:${article.origin}`;
   const known = sitePictures.get(key);
   if (known && Date.now() - known.at < SITE_PAGE_MS && !samePage(new URL(known.page), article)) return known.picture;
-  const rows = await sql<{ url: string }[]>`
-    SELECT url FROM articles WHERE starts_with(url, ${`${article.origin}/`}) AND url <> ${articleUrl}
-    ORDER BY discovered_at DESC LIMIT 5`;
+  const rows = sourceId
+    ? await sql<{ url: string }[]>`
+        SELECT url FROM articles WHERE source_id = ${sourceId} AND starts_with(url, ${`${article.origin}/`}) AND url <> ${articleUrl}
+        ORDER BY discovered_at DESC LIMIT 5`
+    : await sql<{ url: string }[]>`
+        SELECT url FROM articles WHERE starts_with(url, ${`${article.origin}/`}) AND url <> ${articleUrl}
+        ORDER BY discovered_at DESC LIMIT 5`;
   const other = rows.map((r) => URL.parse(r.url)).find((u) => u && !samePage(u, article));
   return other ? remember(key, other.toString()) : null;
 }
@@ -107,21 +111,21 @@ async function otherArticlePicture(articleUrl: string): Promise<string | null> {
  * (Apple's newsroom), or the one another of its articles declares too (arXiv's logo, on every paper while its
  * home page declares none).
  */
-export async function articleCover(cover: Cover | null, articleUrl: string, pageUrl: string): Promise<Cover | null> {
+export async function articleCover(cover: Cover | null, articleUrl: string, pageUrl: string, sourceId?: string): Promise<Cover | null> {
   if (!cover || URL.parse(articleUrl)?.hash) return null;
   const page = new URL(pageUrl);
   const own = pictureKey(cover.url);
   const segments = page.pathname.split("/").filter(Boolean);
   if ((await sitePagePicture(new URL("/", page).toString())) === own) return null;
   if (segments.length > 1 && (await sitePagePicture(new URL(`/${segments[0]}`, page).toString())) === own) return null;
-  return (await otherArticlePicture(articleUrl)) === own ? null : cover;
+  return (await otherArticlePicture(articleUrl, sourceId)) === own ? null : cover;
 }
 
 /**
  * The cover of an article whose body came without its page (a feed's text): the head of its page is read for it.
  * A page that cannot be read gives none; a failure of the store while checking it is no unreadable page.
  */
-export async function fetchArticleCover(articleUrl: string): Promise<Cover | null> {
+export async function fetchArticleCover(articleUrl: string, sourceId?: string): Promise<Cover | null> {
   let page: { cover: Cover | null; url: string };
   try {
     const res = await guardedFetch(articleUrl, PAGE_READ);
@@ -130,7 +134,7 @@ export async function fetchArticleCover(articleUrl: string): Promise<Cover | nul
   } catch {
     return null;
   }
-  return articleCover(page.cover, articleUrl, page.url);
+  return articleCover(page.cover, articleUrl, page.url, sourceId);
 }
 
 /** A body as it is shown: the cover first when the article's own body, `own`, has no picture (so both languages agree). */

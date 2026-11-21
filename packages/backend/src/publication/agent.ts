@@ -106,7 +106,7 @@ export function hotAnswer(res: HotTopics, limit: number, via: Via): string {
   const items = res.items.slice(0, limit);
   if (!items.length) return answer([`# ${SITE.name} 当前热点`, "", "热点榜暂时是空的。"], null, ["如实告诉用户暂时没有热点，可以改看最新精选。"]);
   const data = items.flatMap((t) => {
-    const publicId = t.links.story.split("/").pop()!;
+    const publicId = t.storyPublicId ?? t.links.story.split("/").pop()!;
     const sources = [...new Set(t.sourceNames.map(publicSourceName))];
     const names = sources.length > 6 ? `${sources.slice(0, 6).join("、")} 等` : sources.join("、");
     return [
@@ -157,10 +157,10 @@ export interface DailyReport {
   windowEnd: string;
   links: { aihot: string };
   lead: { title: string; leadParagraph: string } | null;
-  sections: { label: string; items: { title: string; summary: string; source: { name: string }; links: Links }[] }[];
-  flashes: { title: string; publishedAt: string; source: { name: string }; links: Links }[];
+  sections: { label: string; items: { id?: string | null; title: string; summary: string; source: { id?: string; name: string }; links: Links }[] }[];
+  flashes: { id?: string | null; title: string; publishedAt: string; source: { id?: string; name: string }; links: Links }[];
   /** 今日看点 as the page lists them after the lead; a thin issue's include reports outside its sections. */
-  highlights?: { title: string; summary: string; source: { name: string }; links: Links }[];
+  highlights?: { id?: string | null; title: string; summary: string; source: { id?: string; name: string }; links: Links }[];
 }
 
 /** A daily entry's note: other sources, the daily it follows, and the event's other developments. */
@@ -172,23 +172,26 @@ function noteLines(note: DailyNote | undefined): string[] {
   ];
 }
 
-export function dailyAnswer(r: DailyReport, via: Via, notes: Map<string, DailyNote> = new Map()): string {
+export function dailyAnswer(r: DailyReport, via: Via, notes: Map<string, DailyNote> = new Map(), leadItemId?: string | null): string {
   const data: string[] = [];
+  const itemKey = (it: { id?: string | null; links: Links }) => it.id ?? it.links.aihot ?? it.links.original;
   // The lead is the issue's first entry in its own words: name it, not its summary twice.
-  const own = r.sections.some((s) => s.items.some((it) => it.title === r.lead?.title && it.summary === r.lead?.leadParagraph));
+  const own = leadItemId
+    ? r.sections.some((s) => s.items.some((it) => it.id === leadItemId))
+    : r.sections.some((s) => s.items.some((it) => it.title === r.lead?.title && it.summary === r.lead?.leadParagraph));
   if (r.lead) data.push(own ? `头条：${r.lead.title}` : `导语：${r.lead.title}`, ...(own ? [] : [r.lead.leadParagraph]), "");
   for (const s of r.sections) {
     data.push(`【${s.label}】`);
     s.items.forEach((it, i) => {
       const link = it.links.aihot ?? it.links.original;
-      const note = notes.get(link);
+      const note = notes.get(itemKey(it)) ?? notes.get(link);
       data.push(`${i + 1}. [${linkText(it.title)}](${link}) · ${publicSourceName(it.source.name)}${note?.otherSources ? ` · 另外 ${note.otherSources} 家也报道了` : ""}`, ...(it.summary ? [`   ${it.summary}`] : []), ...noteLines(note));
     });
     data.push("");
   }
   // Highlights that are entries are listed above already; the rest are what a thin issue was filled with.
-  const listed = new Set(r.sections.flatMap((s) => s.items.map((it) => it.links.aihot ?? it.links.original)));
-  const more = (r.highlights ?? []).filter((h) => !listed.has(h.links.aihot ?? h.links.original));
+  const listed = new Set(r.sections.flatMap((s) => s.items.map(itemKey)));
+  const more = (r.highlights ?? []).filter((h) => !listed.has(itemKey(h)));
   if (more.length) {
     data.push("【今日看点】", ...more.flatMap((h) => [`- [${linkText(h.title)}](${h.links.aihot ?? h.links.original}) · ${publicSourceName(h.source.name)}`, ...(h.summary ? [`  ${h.summary}`] : [])]), "");
   }

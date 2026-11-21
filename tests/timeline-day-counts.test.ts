@@ -68,7 +68,7 @@ test("real grouped timeline pagination keeps whole-day counts across midnight", 
   const T = tag();
   const source = `day-counts-${T}`;
   const facts: number[] = [];
-  const groups: Array<{ anchor: number; key: string }> = [];
+  const groups: Array<{ anchor: number; gk: string; key: string }> = [];
   const midnight = beijingMidnight("2024-02-29").getTime();
   const now = new Date("2024-03-02T00:00:00Z");
   await sql`INSERT INTO sources(id,name,kind,tier) VALUES(${source},'Day counts','rss','T1')`;
@@ -85,20 +85,21 @@ test("real grouped timeline pagination keeps whole-day counts across midnight", 
   for (let index = 0; index < 52; index++) {
     const anchor = midnight + 10_000 - Math.floor(index / 2) * 1000;
     const id = await add(String(index), anchor);
-    groups.push({ anchor, key: `a${id}` });
+    groups.push({ anchor, gk: `a${id}`, key: `a${id}` });
   }
   const [story] = await sql<{ id: number }[]>`INSERT INTO stories(public_id,title,first_report_at,latest_at)
     VALUES(gen_random_uuid(),'Day story',${now},${now}) RETURNING id`;
   for (const storyId of [null, story!.id]) {
+    const publicId = `day-${T}-${facts.length}`;
     const [fact] = await sql<{ id: number }[]>`INSERT INTO facts(public_id,story_id,title)
-      VALUES(${`day-${T}-${facts.length}`},${storyId},'Day fact') RETURNING id`;
+      VALUES(${publicId},${storyId},'Day fact') RETURNING id`;
     facts.push(fact!.id);
     const anchor = storyId ? midnight : midnight - 86_400_000;
     await add(`group-${facts.length}-a`, anchor - 1, fact!.id, storyId);
     await add(`group-${facts.length}-b`, anchor, fact!.id, storyId);
-    groups.push({ anchor: anchor - 1, key: `f${fact!.id}` });
+    groups.push({ anchor: anchor - 1, gk: `f${fact!.id}`, key: `f:${publicId}` });
   }
-  groups.sort((a, b) => b.anchor - a.anchor || (a.key < b.key ? 1 : -1));
+  groups.sort((a, b) => b.anchor - a.anchor || (a.gk < b.gk ? 1 : -1));
   const seen: string[] = [];
   let cursor: string | null = null;
   for (let page = 0; page < 20; page++) {

@@ -82,9 +82,13 @@ test("the site's own share picture, a section's or another article's, and a chan
   assert.equal(await articleCover(null, `${news.url}/blog/post`, `${news.url}/blog/post`), null);
 
   const sourceId = `cover-papers-${T}`;
-  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at) VALUES (${sourceId}, 'Cover papers', 'rss', 'T1', 'editorial', '2100-01-01')`;
+  const otherSourceId = `cover-papers-other-${T}`;
+  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at) VALUES
+    (${sourceId}, 'Cover papers', 'rss', 'T1', 'editorial', '2100-01-01'),
+    (${otherSourceId}, 'Other source on shared host', 'rss', 'T1', 'editorial', '2100-01-01')`;
   await upsertMaterial({ sourceId, url: `${papers.url}/abs/2610.2`, title: "Another paper", bodyStatus: "pending", via: "fetch" });
-  assert.equal(await at(papers.url, "/abs/2610.1", "/static/browse/0.3.4/images/logo-fb.png"), null, "the picture another article of the site declares too");
+  assert.equal(await articleCover(cover(papers.url, "/static/browse/0.3.4/images/logo-fb.png"), `${papers.url}/abs/2610.1`, `${papers.url}/abs/2610.1`, sourceId), null, "the picture another article of the same source declares too");
+  assert.deepEqual(await articleCover(cover(papers.url, "/static/browse/0.3.4/images/logo-fb.png"), `${papers.url}/abs/2610.1`, `${papers.url}/abs/2610.1`, otherSourceId), cover(papers.url, "/static/browse/0.3.4/images/logo-fb.png"), "another source sharing a host is not conflated");
   assert.deepEqual(await at(papers.url, "/abs/2610.3", "/images/figure-1.png"), cover(papers.url, "/images/figure-1.png"));
 });
 

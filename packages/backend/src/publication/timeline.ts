@@ -134,14 +134,15 @@ export async function loadTimeline(q: TimelineQuery): Promise<Omit<TimelineRespo
     const rep = pickRepresentative(candidates);
     const reports = pool.filter((r) => r.fact_id === factId);
     const repSource = reports.find((r) => r.article_id === rep.id)?.source_id;
-    const group: GroupInfo = {
-      factId: factInfo.get(factId)?.public_id ?? String(factId),
+    const factPublicId = factInfo.get(factId)?.public_id ?? null;
+    const group: GroupInfo | null = factPublicId ? {
+      factId: factPublicId,
       additionalSourceCount: new Set(reports.filter((r) => r.source_id !== repSource).map((r) => r.source_id)).size,
       reportCount: new Set(reports.map((r) => r.article_id)).size,
       memberIds: [...new Set(candidates.map((m) => m.id))],
-    };
-    const showGroup = group.reportCount > 1;
-    planned.push({ key: g.gk, anchorAt: g.anchor_at.toISOString(), id: rep.id, group: showGroup ? group : null });
+    } : null;
+    const showGroup = !!group && group.reportCount > 1;
+    planned.push({ key: factPublicId ? `f:${factPublicId}` : `a${rep.id}`, anchorAt: g.anchor_at.toISOString(), id: rep.id, group: showGroup ? group : null });
   }
 
   // Recheck scope when hydrating: a withdrawal may commit after the narrow representative read.

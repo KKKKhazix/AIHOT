@@ -27,16 +27,18 @@ export function SourceLine({ item, className = "" }: { item: Pick<FeedItemSummar
 /** Up to four media thumbnails, kept small in lists (the detail page shows them larger). Videos are stills. */
 export function MediaThumbs({ media, className = "" }: { media: MediaView[]; className?: string }) {
   const [index, setIndex] = useState<number | null>(null);
-  const images = media.filter((m) => m.kind === "image").map((m) => ({ src: m.fullUrl ?? m.url, alt: m.alt }));
+  const imageItems = media.filter((m) => m.kind === "image");
+  const images = imageItems.map((m) => ({ src: m.fullUrl ?? m.url, alt: m.alt }));
   const shown = media.slice(0, 4);
   if (shown.length === 0) return null;
   return (
     <>
     <div className={`flex gap-1.5 overflow-hidden ${className}`}>
-      {shown.map((m) => {
+      {shown.map((m, i) => {
         const Wrapper = m.kind === "image" ? "button" : "span";
+        const imageIndex = m.kind === "image" ? imageItems.indexOf(m) : -1;
         return (
-        <Wrapper key={m.url} {...(m.kind === "image" ? { type: "button" as const, "aria-label": `查看图片${m.alt ? `：${m.alt}` : ""}`, onClick: (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setIndex(images.findIndex((image) => image.src === (m.fullUrl ?? m.url))); } } : {})} className={`relative ${m.kind === "image" ? "z-10 cursor-zoom-in" : ""} shrink-0 overflow-hidden rounded-control border border-line-soft bg-bg-sunk ${shown.length === 1 ? "max-w-[240px]" : "w-[112px]"}`}>
+        <Wrapper key={`${m.url}#${i}`} {...(m.kind === "image" ? { type: "button" as const, "aria-label": `查看图片${m.alt ? `：${m.alt}` : ""}`, onClick: (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setIndex(imageIndex); } } : {})} className={`relative ${m.kind === "image" ? "z-10 cursor-zoom-in" : ""} shrink-0 overflow-hidden rounded-control border border-line-soft bg-bg-sunk ${shown.length === 1 ? "max-w-[240px]" : "w-[112px]"}`}>
           <Picture src={m.poster ?? m.url} srcSet={m.srcSet} sizes={shown.length === 1 ? `${m.width && m.height ? Math.min(240, Math.ceil(112 * m.width / m.height)) : 240}px` : "112px"} width={m.width ?? undefined} height={m.height ?? undefined} alt={m.alt ?? ""} loading="lazy" decoding="async" className={`h-[112px] object-cover ${shown.length === 1 ? "w-auto max-w-[240px]" : "w-[112px]"}`} />
           {m.kind === "video" && (
             <span className="absolute inset-0 grid place-items-center" aria-hidden="true">

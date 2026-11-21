@@ -25,7 +25,7 @@ import { monthDay } from "../../lib/format.ts";
 import { EDITION, MOTTO, dateLine, dateMark, headline, metricItems, neighbourLabel, reportPath, shortDay } from "./format";
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const keyOf = (c: ReportCitation) => c.itemId ?? c.title;
+const keyOf = (c: ReportCitation) => c.itemId ?? (c.sourceUrl || c.title);
 const anchorOf = (c: ReportCitation) => (c.itemId ? `r-${c.itemId}` : null);
 const LINK = "inline-flex min-h-7 items-center gap-0.5 font-medium transition-colors hover:text-accent";
 /** What comes before `noun` at the end of `phrase` ("往期 AI " of "往期 AI 周报"), so the kind's name is its own text. */
@@ -238,7 +238,7 @@ function pagesOf(report: ReportDetail, leadStory: ReportCitation | null): Page[]
   const seen = new Set<string>(leadStory ? [keyOf(leadStory)] : []);
   return report.sections
     .map((s, i) => ({
-      id: `s-${i + 1}`,
+      id: s.key ? `s-${s.key}` : `s-${i + 1}`,
       label: s.label,
       summary: s.summary,
       items: s.items

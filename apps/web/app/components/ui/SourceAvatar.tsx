@@ -2,7 +2,7 @@ import { useState } from "react";
 import { sourceInitial } from "../../lib/format";
 
 /** Round avatar for X accounts (or a source icon); a tinted initial when there is no image. */
-export function SourceAvatar({ name, iconUrl, avatarUrl, iconSrcSet, avatarSrcSet, size = 18 }: { name: string; iconUrl?: string | null; avatarUrl?: string | null; iconSrcSet?: string; avatarSrcSet?: string; size?: number }) {
+export function SourceAvatar({ id, name, iconUrl, avatarUrl, iconSrcSet, avatarSrcSet, size = 18 }: { id?: string | null; name: string; iconUrl?: string | null; avatarUrl?: string | null; iconSrcSet?: string; avatarSrcSet?: string; size?: number }) {
   const [failed, setFailed] = useState(false);
   const src = avatarUrl ?? iconUrl;
   if (src && !failed) {
@@ -23,7 +23,7 @@ export function SourceAvatar({ name, iconUrl, avatarUrl, iconSrcSet, avatarSrcSe
     );
   }
   let h = 0;
-  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  for (const ch of id || name) h = (h * 31 + ch.charCodeAt(0)) % 360;
   return (
     <span
       aria-hidden="true"

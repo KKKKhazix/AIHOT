@@ -433,7 +433,7 @@ export async function fetchDetail(url: string, source: SourceRow, need: DetailNe
     try { body = readableDocument(page.document, page.url, pageRules(source.config)); }
     catch { /* A failed extraction must not discard the detail metadata. */ }
     // Outside it: a failure of the store while checking the cover fails the read, which is retried.
-    if (body) body = { ...body, cover: await articleCover(body.cover ?? null, url, page.url) };
+    if (body) body = { ...body, cover: await articleCover(body.cover ?? null, url, page.url, source.id) };
   }
   return { ...date, title, summary, body };
 }

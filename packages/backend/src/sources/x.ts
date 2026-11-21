@@ -21,6 +21,7 @@ export function toXPost(t: SdTweet): XPostData {
   const q = t.quoted_status ?? null;
   return {
     tweetId: t.id_str,
+    ...(t.user.id_str ? { authorUserId: t.user.id_str } : {}),
     authorName: t.user.name,
     handle: t.user.screen_name,
     avatarUrl: avatar(t.user.profile_image_url_https),
@@ -29,7 +30,11 @@ export function toXPost(t: SdTweet): XPostData {
     replyTo: t.in_reply_to_status_id_str ?? null,
     media: tweetMedia(t),
     quoted: q
-      ? { authorName: q.user.name, handle: q.user.screen_name, text: tweetText(q), url: `https://x.com/${q.user.screen_name}/status/${q.id_str}`, media: tweetMedia(q) }
+      ? {
+        ...(q.id_str ? { tweetId: q.id_str } : {}),
+        ...(q.user.id_str ? { authorUserId: q.user.id_str } : {}),
+        authorName: q.user.name, handle: q.user.screen_name, text: tweetText(q), url: `https://x.com/${q.user.screen_name}/status/${q.id_str}`, media: tweetMedia(q),
+      }
       : null,
   };
 }

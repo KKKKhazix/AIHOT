@@ -4,11 +4,18 @@ import { RELEASE } from "@aihot/industry/taxonomy";
 import type { Tx } from "../db.ts";
 import { isRelease } from "../editorial/vocabulary.ts";
 import { emit } from "../modules.ts";
-import { SECTION_ORDER, sectionOf } from "./edition.ts";
+import { SECTION_KEY_ORDER, SECTIONS, sectionKeyOf, sectionOf } from "./edition.ts";
 
-interface Entry { itemId: string; followUp?: string; firstParty?: boolean; role?: string; [key: string]: unknown }
-interface Group { label?: string; heading?: string; summary?: unknown; items?: Entry[]; storyRefs?: Entry[]; [key: string]: unknown }
+interface Entry { itemId: string; followUp?: string; firstParty?: boolean; official?: boolean; role?: string; [key: string]: unknown }
+interface Group { key?: string; label?: string; heading?: string; summary?: unknown; items?: Entry[]; storyRefs?: Entry[]; [key: string]: unknown }
 interface Content { sections?: Group[]; themes?: Group[]; metrics?: Record<string, number>; [key: string]: unknown }
+
+/** Resolves a stored group to its canonical section key, falling back to label for historical issues. */
+function groupSectionKey(group: Group, labelKey: "label" | "heading"): string | null {
+  if (typeof group.key === "string" && SECTION_KEY_ORDER.includes(group.key)) return group.key;
+  const label = group[labelKey];
+  return label ? (SECTIONS.find((s) => s.label === label)?.key ?? null) : null;
+}
 
 /** Moves the item to its new section in every issue that carries it; says whether any issue changed. */
 export async function correctReportClassification(tx: Tx, articleId: string, reason: string): Promise<boolean> {
@@ -28,17 +35,19 @@ export async function correctReportClassification(tx: Tx, articleId: string, rea
     const entriesKey = daily ? "items" : "storyRefs";
     const from = groups.find(g => g[entriesKey]?.some(e => e.itemId === articleId));
     // Older, hand-written theme headings are not taxonomy columns; do not reinterpret their prose.
-    if (!from || !SECTION_ORDER.includes(from[labelKey] ?? "")) continue;
+    const fromKey = from ? groupSectionKey(from, labelKey) : null;
+    if (!from || !fromKey) continue;
+    const targetKey = sectionKeyOf(item.category);
     const label = sectionOf(item.category);
-    if (from[labelKey] !== label) {
+    if (fromKey !== targetKey) {
       const moving = from[entriesKey]!.filter(e => e.itemId === articleId);
       from[entriesKey] = from[entriesKey]!.filter(e => e.itemId !== articleId);
-      let target = groups.find(g => g[labelKey] === label);
-      if (!target) { target = { [labelKey]: label, [entriesKey]: [] }; groups.push(target); }
+      let target = groups.find(g => groupSectionKey(g, labelKey) === targetKey);
+      if (!target) { target = { key: targetKey, [labelKey]: label, [entriesKey]: [] }; groups.push(target); }
       target[entriesKey]!.push(...moving);
       if (!daily) { from.summary = null; target.summary = null; }
     }
-    const arranged = groups.filter(g => g[entriesKey]?.length).sort((a, b) => SECTION_ORDER.indexOf(a[labelKey]!) - SECTION_ORDER.indexOf(b[labelKey]!));
+    const arranged = groups.filter(g => g[entriesKey]?.length).sort((a, b) => SECTION_KEY_ORDER.indexOf(groupSectionKey(a, labelKey)!) - SECTION_KEY_ORDER.indexOf(groupSectionKey(b, labelKey)!));
     if (daily) {
       content.sections = arranged;
       // The release figure (dailyMetrics) follows the new classification; without a RELEASE kind there is none.
@@ -49,7 +58,8 @@ export async function correctReportClassification(tx: Tx, articleId: string, rea
         const byId = new Map(rows.map(r => [r.article_id, r]));
         content.metrics = { ...content.metrics, modelsReleased: entries.filter(e => {
           const p = byId.get(e.itemId);
-          return p && isRelease(p.category, p.tags) && !e.followUp && (e.firstParty || e.role === "官方" || e.role === "X·官方");
+          const isOfficial = typeof e.official === "boolean" ? e.official : (e.firstParty || e.role === "官方" || e.role === "X·官方");
+          return p && isRelease(p.category, p.tags) && !e.followUp && isOfficial;
         }).length };
       }
     } else content.themes = arranged;

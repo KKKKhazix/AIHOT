@@ -16,7 +16,7 @@ export function Faces({ participants, total, size = 24, interactive = true }: { 
   const faces = (
     <>
       {shown.map((p, i) => (
-        <span key={p.name} className={`rounded-full ring-2 ring-surface ${i ? "-ml-1.5" : ""}`}>
+        <span key={p.sourceId ?? p.name} className={`rounded-full ring-2 ring-surface ${i ? "-ml-1.5" : ""}`}>
           <SourceAvatar name={p.name} iconUrl={p.iconUrl} iconSrcSet={p.iconSrcSet} size={size} />
         </span>
       ))}

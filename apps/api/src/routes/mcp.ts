@@ -91,7 +91,7 @@ const HOT_INPUT = z.strictObject({
   limit: z.number().int().min(1).max(10).default(10).describe("Maximum number of current topics, from 1 to 10."),
 });
 const STORY_INPUT = z.strictObject({
-  public_id: z.string().min(1).max(128).describe(`Opaque story public ID. Obtain it from the final path segment of ${T.hot} links.story; never guess it.`),
+  public_id: z.string().min(1).max(128).describe(`Opaque story public ID. Obtain it from ${T.hot} storyPublicId (or the final path segment of links.story); never guess it.`),
   report_limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of timeline reports, from 1 to 50."),
 });
 const DAILY_INPUT = z.strictObject({
@@ -175,7 +175,7 @@ function registerTools(server: McpServer) {
   server.registerTool(
     T.story,
     {
-      description: `Get the evolving timeline, latest development, AI digest, and related events for one public story. Only pass a public_id obtained from ${T.hot} links.story; never invent or infer IDs.`,
+      description: `Get the evolving timeline, latest development, AI digest, and related events for one public story. Only pass a public_id obtained from ${T.hot} storyPublicId; never invent or infer IDs.`,
       inputSchema: STORY_INPUT,
       annotations: ANNOTATIONS,
     },
@@ -200,7 +200,7 @@ function registerTools(server: McpServer) {
       if (args.date && !isValidDate(args.date)) return fail("invalid_request", `${args.date} 不是有效日期。`);
       const res = await recent(`daily:${args.date ?? "latest"}`, () => dailyWithNotes(args.date ?? "latest"));
       if (!res) return fail("not_found", args.date ? `没有 ${args.date} 的公开日报。` : "还没有公开日报。");
-      return ok(dailyAnswer(res.body.report, "mcp", res.notes), res.body);
+      return ok(dailyAnswer(res.body.report, "mcp", res.notes, res.leadItemId), res.body);
     }),
   );
 

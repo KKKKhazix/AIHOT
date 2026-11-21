@@ -277,7 +277,7 @@ function summarize(t: Topic, seats: TopicMember[], now: Date, brands: Map<string
     total: seats.length,
     recent,
     indexable: isIndexable(seats.length, recent),
-    latest: latest ? { title: latest.title, at: latest.at.toISOString() } : null,
+    latest: latest ? { id: latest.id, title: latest.title, at: latest.at.toISOString() } : null,
   };
 }
 

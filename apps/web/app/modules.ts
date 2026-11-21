@@ -113,8 +113,8 @@ export interface WebModule {
   account?: ComponentType<{ place: AccountPlace }>;
   /** The email of the reader signed in in this browser, or null (read after hydration). */
   signedInEmail?: () => string | null;
-  /** Desktop sidebar: entries in a section between the engine's 内容 and 更多; modules naming the same section share it. */
-  sidebar?: { section: string; items: NavItem[] };
+  /** Desktop sidebar: entries in a section between the engine's 内容 and 更多; modules sharing sectionKey (or section title) share it. */
+  sidebar?: { sectionKey?: string; section: string; items: NavItem[] };
   /** Phone tab bar: tabs before 我的. */
   tabs?: Tab[];
   /** The 我的 page: rows ahead of the engine's tools. */

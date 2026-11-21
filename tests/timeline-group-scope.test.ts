@@ -44,13 +44,13 @@ test("timeline grouping preserves evidence scope and filter-local anchors", asyn
   await add("unselected", -30, { selected: false });
   const filters = { channel: "all" as const, category: null, tag: prefix, now };
   const full = await loadTimeline(filters);
-  assert.deepEqual(full.cards.map(card => card.key), [...standalone.reverse().map(id => `a${id}`), `f${fact!.id}`]);
+  assert.deepEqual(full.cards.map(card => card.key), [...standalone.reverse().map(id => `a${id}`), `f:${prefix}`]);
   assert.equal(full.cards.at(-1)!.anchorAt, at.toISOString());
   assert.deepEqual(new Set(full.cards.at(-1)!.group!.memberIds), new Set([`${prefix}-old-report`, `${prefix}-x-report`]));
   const filtered = await loadTimeline({ ...filters, channel: "x" });
-  assert.deepEqual(filtered.cards.map(card => [card.key, card.anchorAt]), [[`f${fact!.id}`, new Date(+at + 10_000).toISOString()]]);
+  assert.deepEqual(filtered.cards.map(card => [card.key, card.anchorAt]), [[`f:${prefix}`, new Date(+at + 10_000).toISOString()]]);
   const news = await loadTimeline({ ...filters, channel: "news" });
-  assert.deepEqual(news.cards.find(card => card.key === `f${fact!.id}`)!.group!.memberIds, [`${prefix}-old-report`]);
+  assert.deepEqual(news.cards.find(card => card.key === `f:${prefix}`)!.group!.memberIds, [`${prefix}-old-report`]);
   const paged = [];
   let cursor: string | null = null;
   do {

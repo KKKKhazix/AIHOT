@@ -62,12 +62,12 @@ test("category corrections revise every standard report atomically without selec
     const c = saved!.content;
     assert.equal(c.leadItemId, articleId);
     if (r.kind === "daily") {
-      assert.deepEqual(c.sections, [{ label: "产品发布/更新", items: [entry] }]);
+      assert.deepEqual(c.sections, [{ key: "ai-products", label: "产品发布/更新", items: [entry] }]);
       assert.equal(c.metrics.modelsReleased, 0);
       assert.deepEqual(c.highlights, [articleId]);
       assert.equal(c.lead.title, "冻结头条");
     } else {
-      assert.deepEqual(c.themes, [{ heading: "产品发布/更新", summary: null, storyRefs: [entry] }]);
+      assert.deepEqual(c.themes, [{ key: "ai-products", heading: "产品发布/更新", summary: null, storyRefs: [entry] }]);
       assert.deepEqual(c.storyOrder, [articleId]);
       assert.equal(c.overview, "保留总述");
     }

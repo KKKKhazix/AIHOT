@@ -120,9 +120,14 @@ async function contentCollection(now: number, open: AlertState): Promise<Finding
  * worker down meanwhile, so only a fetch that works again is recovery. Production, 30 days to 2026-10-28:
  * the egress proxy dropped on 10-05, 10-17 and 10-26 and 23–37% of the sources were failing at the worst;
  * at no other time more than 11.5%. Fewer than 50 failing sources are each one's own follow-up.
+ * A provider's own server error (`<service> HTTP 5xx:`, receipts.ts assertAccepted) proved the way out works:
+ * 2026-11-21 SocialData's search answered 500 for hours while every website fetched, and its X accounts alone
+ * were half the sources. Such an outage is told once and then daily: nobody here can make it heal sooner. A 4xx
+ * (a refused key, a used-up budget) is ours to fix and stays in the hourly count.
  */
 const FAILING_SHARE = 0.15;
 const FAILING_SOURCES = 50;
+const PROVIDER_ANSWER = "^([a-z_]+) HTTP 5[0-9]{2}:";
 
 async function sourcesFailing(now: number, open: AlertState): Promise<Finding[]> {
   if (!collecting() && !open["content.fetch"]) return [];
@@ -131,21 +136,39 @@ async function sourcesFailing(now: number, open: AlertState): Promise<Finding[]>
       WHERE f.source_id = s.id AND f.status IN ('ok', 'failed') AND f.started_at <= ${new Date(now)}
       ORDER BY started_at DESC LIMIT 1) r
     WHERE s.enabled`;
-  const [r] = await sql<{ fetched: number; failing: number }[]>`
-    SELECT count(*)::int AS fetched, count(*) FILTER (WHERE status = 'failed')::int AS failing FROM (${latest}) l`;
-  if (!r || r.failing < FAILING_SOURCES || r.failing < r.fetched * FAILING_SHARE) return [];
+  const [r] = await sql<{ fetched: number; failing: number; answered: number }[]>`
+    SELECT count(*)::int AS fetched, count(*) FILTER (WHERE status = 'failed')::int AS failing,
+      count(*) FILTER (WHERE status = 'failed' AND error ~ ${PROVIDER_ANSWER})::int AS answered FROM (${latest}) l`;
+  const many = (n: number) => n >= FAILING_SOURCES && n >= r!.fetched * FAILING_SHARE;
+  if (!r || !many(r.failing)) return [];
   const errors = await sql<{ error: string; n: number; first: Date }[]>`
     SELECT left(coalesce(error, ''), 120) AS error, count(*)::int AS n, min(started_at) AS first FROM (${latest}) l
     WHERE status = 'failed' GROUP BY 1 ORDER BY 2 DESC`;
-  return [{
+  const detail = `失败信源占 ${Math.round((r.failing / r.fetched) * 100)}%（门槛 ${FAILING_SHARE * 100}% 且至少 ${FAILING_SOURCES} 个），其中服务商回了错误的 ${r.answered} 个；常见错误：${errors.slice(0, 3).map((e) => `${e.error || "（无）"} ×${e.n}`).join("；")}`;
+  const since = new Date(Math.min(...errors.map((e) => e.first.getTime())));
+  if (many(r.failing - r.answered)) return [{
     key: "content.fetch",
     level: "now",
     title: "大量信源抓取失败，这些信源的新文章进不来",
     impact: `最近抓取过的 ${r.fetched} 个信源里，${r.failing} 个最近一次抓取失败，读者暂时看不到它们的新文章`,
     heals: "服务器连外网的线路恢复后会按排程重新抓取，这段时间的新文章会晚到；线路不恢复就一直进不来",
     action: "转给 AI 检查出网代理和抓取错误",
-    detail: `失败信源占 ${Math.round((r.failing / r.fetched) * 100)}%（门槛 ${FAILING_SHARE * 100}% 且至少 ${FAILING_SOURCES} 个）；常见错误：${errors.slice(0, 3).map((e) => `${e.error || "（无）"} ×${e.n}`).join("；")}`,
-    since: new Date(Math.min(...errors.map((e) => e.first.getTime()))),
+    detail,
+    since,
+  }];
+  const services = [...new Set(errors.map((e) => e.error.match(new RegExp(PROVIDER_ANSWER))?.[1]).filter((s): s is string => !!s))];
+  const names = services.map(providerName).join("、");
+  const stops = services.map((s) => provider(s)?.stops).filter(Boolean).join("，");
+  return [{
+    key: "content.fetch",
+    level: "today",
+    owner: "only",
+    title: `${names} 出故障，${stops || "经它抓取的信源进不来"}`,
+    impact: `最近抓取过的 ${r.fetched} 个信源里，${r.failing} 个最近一次抓取失败，其中 ${r.answered} 个是 ${names} 那边出错，读者暂时看不到它们的新内容`,
+    heals: `会，${names} 恢复后按排程重新抓取，这段时间的新内容会晚到`,
+    action: "不用处理，是对方的故障；恢复后会再发一条通知",
+    detail,
+    since,
   }];
 }
 

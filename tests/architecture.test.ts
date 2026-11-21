@@ -110,6 +110,31 @@ test("the public scope and the composite rule are spelled once, in publication/s
   assert.deepEqual(found, [], "use the predicates of publication/scope.ts");
 });
 
+test("public article lists share their fields and browse predicate", () => {
+  const found: string[] = [];
+  for (const { file, text } of [...sources(BACKEND), ...sources("apps/api/src"), ...modules()]) {
+    // A SELECT can follow a CTE or contain an optional SQL fragment. Inspect each field list separately.
+    for (const match of text.matchAll(/(?:\bSELECT\s+|sql`)([^;`]*?)\bFROM\b|(?:\bSELECT\s+|sql`)([^;`]+?)`/gi)) {
+      const projection = match[1] ?? match[2]!;
+      if (/\bp\.article_id\s+AS\s+id\b/i.test(projection) && ["p.title", "p.summary", "p.url", "p.category", "p.published_at", "s.name"].every(c => projection.includes(c))
+        && !(file === `${BACKEND}/publication/items.ts` && text.slice(0, match.index).endsWith("PUBLIC_ITEM_COLUMNS = "))) {
+        found.push(`${file}:${text.slice(0, match.index).split("\n").length} 请引用 publication/items.ts 的 PUBLIC_ITEM_COLUMNS`);
+      }
+    }
+    if (file !== `${BACKEND}/publication/scope.ts` && /\bp\.score\s*(?:>=|>)\s*\$\{SELECTION\.browseFloor\}/.test(text)) {
+      found.push(`${file} 请使用 publication/scope.ts 的 browsedCondition`);
+    }
+  }
+  assert.deepEqual(found, [], found.join("\n"));
+});
+
+test("WeChat post identity is decoded only by lib/url.ts", () => {
+  const duplicates = [...sources(BACKEND), ...modules()].filter(({ file, text }) => file !== `${BACKEND}/lib/url.ts`
+    && /(?:searchParams\.(?:get|set)\(\s*["']__biz["']|\[\s*["']__biz["']\s*,\s*["']mid["']\s*,\s*["']idx["'])/.test(text));
+  assert.deepEqual(duplicates.map(({ file }) => file), [],
+    "使用 wechatPostUrl 读取公众号文章编号，使用 materialIdentityForUrl 查历史签名或短链；采集列表和入库统一用 resolveMaterialIdentity");
+});
+
 // Nothing kept that nothing uses. Stored state and settings outlive the code that used them, and an
 // unread field still costs a query; each check names what to delete. They compare names, so a column
 // whose name its table's code also uses for something else slips through. Tests, fixtures and local

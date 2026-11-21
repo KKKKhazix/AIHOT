@@ -2,7 +2,8 @@
 // items through these columns and views; which rows are public is decided by scope.ts.
 import { CATEGORY_KEYS, toPublicApiCategory, type CategoryKey, type ChannelKey, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { STORY_INDEX_MIN_SOURCES, type FeedItemSummary, type ItemSummary, type MediaView, type XPostView } from "@aihot/contracts/site";
-import { POLICY } from "@aihot/site";
+import { itemUrl } from "./links.ts";
+import { POLICY, SITE } from "@aihot/site";
 import { sql, type Db } from "../db.ts";
 import { isChineseText } from "../lib/text.ts";
 import { isEmptyOrLinkOnly, withXArticle } from "../content/posts.ts";
@@ -51,11 +52,14 @@ export interface ItemRow {
   quoted_zh: string | null;
 }
 
+/** The article fields shared by the website, API, Agent tools and both RSS formats. */
+export const PUBLIC_ITEM_COLUMNS = sql`p.article_id AS id, p.title, p.summary, p.url, p.category, p.published_at, s.name AS source_name`;
+
 /** Columns every item listing selects. Internal judgement details never leave this layer. */
 export const ITEM_COLUMNS = sql`
-  p.article_id AS id, p.title, p.original_title, p.summary, p.reason, p.category, p.tags, p.score,
-  p.selected, p.seat, p.channel, p.url, p.published_at, p.discovered_at, p.timeline_at, p.visibility,
-  p.body_mode, p.suppress_original, p.indexable, p.fact_id, s.id AS source_id, s.name AS source_name, s.participation_mode AS source_mode,
+  ${PUBLIC_ITEM_COLUMNS}, p.original_title, p.reason, p.tags, p.score,
+  p.selected, p.seat, p.channel, p.discovered_at, p.timeline_at, p.visibility,
+  p.body_mode, p.suppress_original, p.indexable, p.fact_id, s.id AS source_id, s.participation_mode AS source_mode,
   CASE WHEN NOT p.suppress_original THEN a.x_post END AS x_post,
   CASE WHEN p.body_mode = 'full' AND NOT p.suppress_original THEN a.x_article - 'html' END AS x_article,
   a.author, a.language,
@@ -68,8 +72,42 @@ export const ITEM_COLUMNS = sql`
 export type ApiItemRow = Pick<ItemRow, "id" | "title" | "original_title" | "summary" | "source_name" | "url" | "published_at" | "discovered_at" | "category" | "score" | "selected" | "reason">;
 /** `selected` is the machine meaning: the report holds its fact's selected seat (scope.ts seatedCondition). */
 export const API_ITEM_COLUMNS = sql`
-  p.article_id AS id, p.title, p.original_title, p.summary, s.name AS source_name, p.url,
-  p.published_at, p.discovered_at, p.category, p.score, (p.selected AND p.seat) AS selected, p.reason`;
+  ${PUBLIC_ITEM_COLUMNS}, p.original_title, p.discovered_at, p.score, (p.selected AND p.seat) AS selected, p.reason`;
+export interface V1ItemPayload {
+  id: string;
+  title: string;
+  originalTitle: string | null;
+  summary: string | null;
+  source: { name: string };
+  links: { aihot: string; original: string };
+  publishedAt: string | null;
+  discoveredAt: string;
+  category: string | null;
+  score: number | null;
+  selected: boolean;
+  reason: string | null;
+  attribution: { name: string; url: string };
+}
+
+export function rowToV1(p: ApiItemRow): V1ItemPayload {
+  const aihot = itemUrl(p.id);
+  return {
+    id: p.id,
+    title: p.title,
+    originalTitle: p.original_title,
+    summary: p.summary,
+    source: { name: p.source_name },
+    links: { aihot, original: p.url },
+    publishedAt: p.published_at ? p.published_at.toISOString() : null,
+    discoveredAt: p.discovered_at.toISOString(),
+    category: toPublicApiCategory(p.category),
+    score: p.score === null ? null : Math.round(Number(p.score)),
+    selected: p.selected,
+    reason: p.selected ? p.reason : null,
+    attribution: { name: SITE.name, url: aihot },
+  };
+}
+
 export const API_ITEM_FROM = sql`FROM publications p JOIN sources s ON s.id = p.source_id`;
 
 /** A translation of an older revision is left out: the original changed after it (the worker translates it again). */

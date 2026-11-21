@@ -9,7 +9,7 @@ import { CATEGORY_LABELS, isCategoryKey, PUBLIC_API_CATEGORY_KEYS, toPublicApiCa
 import { beijingDate, beijingTime, beijingWeekday } from "@aihot/contracts/time";
 import { serverModules } from "../modules.ts";
 import { siteUrl } from "./links.ts";
-import type { V1ItemPayload } from "./publish.ts";
+import type { V1ItemPayload } from "./items.ts";
 import type { DailyNote } from "./reports.ts";
 import { publicSourceName } from "./rules.ts";
 import type { v1HotTopics, v1Story } from "./stories.ts";

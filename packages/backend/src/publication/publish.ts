@@ -1,14 +1,12 @@
 // Publishing: derive the public projection of one article from its material, the latest judgement,
 // manual overrides and grouping, then record selected-set changes in the sync ledger.
 // Rebuilding only re-reads stored results; it never calls a model.
-import { toPublicApiCategory } from "@aihot/contracts/taxonomy";
-import { SITE } from "@aihot/site";
 import { one, sql, type Tx } from "../db.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { collapseWhitespace, isChineseText } from "../lib/text.ts";
 import type { XPostData } from "../content/materials.ts";
 import { originalPostCopy } from "../content/posts.ts";
-import { itemUrl } from "./links.ts";
+import { API_ITEM_COLUMNS, API_ITEM_FROM, rowToV1, type ApiItemRow, type V1ItemPayload } from "./items.ts";
 import { pickRepresentative, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity } from "./representative.ts";
 import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
 import { editorialPolicy, emit } from "../modules.ts";
@@ -92,22 +90,6 @@ interface PublicationRow {
   seo_excluded_at: Date | null;
 }
 
-export interface V1ItemPayload {
-  id: string;
-  title: string;
-  originalTitle: string | null;
-  summary: string | null;
-  source: { name: string };
-  links: { aihot: string; original: string };
-  publishedAt: string | null;
-  discoveredAt: string;
-  category: string | null;
-  score: number | null;
-  selected: boolean;
-  reason: string | null;
-  attribution: { name: string; url: string };
-}
-
 export interface PublishOptions {
   now?: Date;
   /** Historical import: the item was already public, so it is released at its discovery time. */
@@ -132,28 +114,6 @@ function pickString(override: unknown, fallback: string | null): string | null {
 
 function round1(n: number | null): number | null {
   return n === null || n === undefined ? null : Math.round(Number(n) * 10) / 10;
-}
-
-export function v1Payload(p: {
-  articleId: string; title: string; originalTitle: string | null; summary: string | null; sourceName: string; url: string;
-  publishedAt: Date | null; discoveredAt: Date; category: string | null; score: number | null; selected: boolean; reason: string | null;
-}): V1ItemPayload {
-  const aihot = itemUrl(p.articleId);
-  return {
-    id: p.articleId,
-    title: p.title,
-    originalTitle: p.originalTitle,
-    summary: p.summary,
-    source: { name: p.sourceName },
-    links: { aihot, original: p.url },
-    publishedAt: p.publishedAt ? p.publishedAt.toISOString() : null,
-    discoveredAt: p.discoveredAt.toISOString(),
-    category: toPublicApiCategory(p.category),
-    score: p.score === null ? null : Math.round(p.score),
-    selected: p.selected,
-    reason: p.selected ? p.reason : null,
-    attribution: { name: SITE.name, url: aihot },
-  };
 }
 
 /** Allocates the next ledger sequence under a transaction lock so sequence order equals commit order. */
@@ -199,19 +159,12 @@ async function settleSeats(tx: Tx, factId: number | null, self: string | null, n
 
 /** Brings one article's place in the selected sync ledger in line with its publication. */
 async function syncLedger(tx: Tx, articleId: string, now: Date): Promise<"upsert" | "remove" | null> {
-  const [p] = await tx<Array<{ selected: boolean; visibility: string; seat: boolean; suppress_original: boolean; title: string; original_title: string | null; summary: string | null;
-    url: string; published_at: Date | null; discovered_at: Date; category: string | null; score: string | number | null; reason: string | null;
-    source_name: string }>>`
-    SELECT p.selected, p.visibility, p.seat, p.suppress_original, p.title, p.original_title, p.summary, p.url, p.published_at, p.discovered_at, p.category,
-           p.score, p.reason, s.name AS source_name
-    FROM publications p JOIN sources s ON s.id = p.source_id WHERE p.article_id = ${articleId}`;
+  const [p] = await tx<(ApiItemRow & { visibility: string; suppress_original: boolean })[]>`
+    SELECT ${API_ITEM_COLUMNS}, p.visibility, p.suppress_original ${API_ITEM_FROM} WHERE p.article_id = ${articleId}`;
   if (!p) return null;
   const [state] = await tx<{ in_set: boolean; payload_hash: string | null }[]>`SELECT in_set, payload_hash FROM selected_state WHERE article_id = ${articleId}`;
-  if (p.selected && p.visibility === "public" && p.seat) {
-    const payload = v1Payload({
-      articleId, title: p.title, originalTitle: p.original_title, summary: p.summary, sourceName: p.source_name, url: p.url,
-      publishedAt: p.published_at, discoveredAt: p.discovered_at, category: p.category, score: p.score === null ? null : Number(p.score), selected: true, reason: p.reason,
-    });
+  if (p.selected && p.visibility === "public") {
+    const payload = rowToV1(p);
     const payloadHash = sha256(stableJson(payload));
     if (state?.in_set && state.payload_hash === payloadHash) return null;
     const seq = await appendLedger(tx, articleId, "upsert", payload, now);

@@ -48,7 +48,7 @@ export function selectedCondition(now: Date) {
  * reports of each fact, plus any independently displayed selected articles (publish.ts settleSeats).
  */
 export function seatedCondition(now: Date) {
-  return sql`p.visibility = 'public' AND p.selected AND p.seat AND p.visible_after <= ${now}`;
+  return sql`${selectedCondition(now)} AND p.seat`;
 }
 
 /** The report was published from a composite (multi-topic) analysis: it only mentions facts. */

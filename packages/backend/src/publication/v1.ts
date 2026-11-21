@@ -3,11 +3,10 @@ import type { PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { sql, type Db } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
 import { newShortId } from "../lib/ids.ts";
-import { publicCategoryCondition, API_ITEM_COLUMNS, API_ITEM_FROM, type ApiItemRow } from "./items.ts";
+import { publicCategoryCondition, API_ITEM_COLUMNS, API_ITEM_FROM, rowToV1, type V1ItemPayload, type ApiItemRow } from "./items.ts";
 import { browsedCondition, listedCondition, seatedCondition } from "./scope.ts";
 import { publicMatchCondition, searchTerms, withSearchCapacity } from "./pool.ts";
 import { sharedSearch } from "../lib/cache.ts";
-import { v1Payload, type V1ItemPayload } from "./publish.ts";
 
 export interface V1ItemsQuery {
   mode: "selected" | "all";
@@ -24,14 +23,6 @@ export interface V1ItemsResult {
   query: { mode: string; category: string | null; window: string; q: string | null; by: string; ordering: string };
   items: V1ItemPayload[];
   page: { count: number; hasMore: boolean; nextCursor: string | null };
-}
-
-export function rowToV1(row: ApiItemRow): V1ItemPayload {
-  return v1Payload({
-    articleId: row.id, title: row.title, originalTitle: row.original_title, summary: row.summary, sourceName: row.source_name,
-    url: row.url, publishedAt: row.published_at, discoveredAt: row.discovered_at, category: row.category,
-    score: row.score === null ? null : Number(row.score), selected: row.selected, reason: row.reason,
-  });
 }
 
 /** Search callers across HTTP and tools share one read. */

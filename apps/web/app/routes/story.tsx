@@ -72,10 +72,10 @@ function Panel({ id, title, sub, right, children, className = "" }: { id?: strin
     <section id={id} className={`card scroll-mt-[calc(var(--bar-h)+64px)] p-5 lg:p-6 ${className}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[17px] font-[650] leading-[1.5] text-ink">{title}</h2>
+          <h2 className="text-ui-subheading-sm font-[650] leading-[1.5] text-ink">{title}</h2>
           {sub && <p className="mt-0.5 text-ui-caption-lg text-ink-4">{sub}</p>}
         </div>
-        {right && <div className="shrink-0 text-[11.5px] text-ink-4">{right}</div>}
+        {right && <div className="shrink-0 text-ui-caption-md text-ink-4">{right}</div>}
       </div>
       <div className="mt-3.5">{children}</div>
     </section>
@@ -88,7 +88,7 @@ function RailCard({ title, right, children, className = "" }: { title: ReactNode
     <section className={`card p-5 lg:p-[22px] ${className}`}>
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-ui-body-sm font-[650] text-ink">{title}</h2>
-        {right && <span className="num text-[11.5px] text-ink-4">{right}</span>}
+        {right && <span className="num text-ui-caption-md text-ink-4">{right}</span>}
       </div>
       <div className="mt-2">{children}</div>
     </section>
@@ -114,7 +114,7 @@ function TimelineRow({ r }: { r: StoryReportView }) {
           <span className="min-w-0 truncate">{r.source.name}</span>
           {r.selected && <SelectedBadge />}
         </div>
-        <IntentLink viewTransition to={`/items/${r.id}`} className="mt-1 block text-ui-body-lg font-[650] leading-[1.6] text-ink transition-colors hover:text-accent lg:text-[15.5px]">
+        <IntentLink viewTransition to={`/items/${r.id}`} className="mt-1 block text-ui-body-lg font-[650] leading-[1.6] text-ink transition-colors hover:text-accent lg:text-ui-body-plus">
           {r.title}
         </IntentLink>
         {r.summary && (
@@ -205,7 +205,7 @@ export default function StoryPage() {
           热点事件
           <Badge tone={status.tone}>{status.label}</Badge>
         </div>
-        <h1 data-page-title="" className="mt-2.5 text-[27px] font-bold leading-[1.5] tracking-[-0.01em] text-ink lg:mt-3 lg:text-[36px] lg:font-[730]">{story.title}</h1>
+        <h1 data-page-title="" className="mt-2.5 text-ui-title-3 font-bold leading-[1.5] tracking-[-0.01em] text-ink lg:mt-3 lg:text-ui-display-2 lg:font-[730]">{story.title}</h1>
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-ui-caption-lg text-ink-3">
           <span className="inline-flex items-center gap-1.5">
             <IconDoc size={15} className="text-ink-4" />
@@ -366,7 +366,7 @@ export default function StoryPage() {
                   <li key={r.publicId}>
                     <Link viewTransition to={`/story/${r.publicId}`} className="group flex items-baseline gap-3 py-3">
                       <span className="shrink-0 text-ui-caption text-ink-4">{r.relation === "storyline" ? "同一故事线" : "相关事件"}</span>
-                      <span className="min-w-0 flex-1 text-[14.5px] font-medium text-ink-2 transition-colors group-hover:text-accent">{r.title}</span>
+                      <span className="min-w-0 flex-1 text-ui-body-sm-plus font-medium text-ink-2 transition-colors group-hover:text-accent">{r.title}</span>
                       <IconChevronRight size={14} className="shrink-0 self-center text-ink-4" />
                     </Link>
                   </li>
@@ -403,7 +403,7 @@ export default function StoryPage() {
               <ul className="mt-1 divide-y divide-line-soft">
                 {story.officialReports.slice(0, 5).map((r) => (
                   <li key={r.id} className="py-3">
-                    <div className="truncate text-[11.5px] text-ink-4">{r.source.name}</div>
+                    <div className="truncate text-ui-caption-md text-ink-4">{r.source.name}</div>
                     <Link viewTransition to={`/items/${r.id}`} className="group mt-1 block text-ui-label-lg font-semibold leading-[1.6] text-ink transition-colors hover:text-accent">
                       {r.title}
                       <IconChevronRight size={13} className="ml-0.5 inline -translate-y-px text-ink-4 transition-transform group-hover:translate-x-0.5" />

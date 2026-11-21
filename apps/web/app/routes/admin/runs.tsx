@@ -112,7 +112,7 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
               { key: "n", label: "队列", render: (j) => <span className="font-mono text-ui-caption-lg">{j.name}</span> },
               { key: "c", label: "失败", align: "right", render: (j) => num(j.failed) },
               { key: "l", label: "最近", render: (j) => <Time at={j.last} /> },
-              { key: "o", label: "最近错误", render: (j) => <span className="line-clamp-2 font-mono text-[11.5px] text-ink-3">{j.last_output}</span> },
+              { key: "o", label: "最近错误", render: (j) => <span className="line-clamp-2 font-mono text-ui-caption-md text-ink-3">{j.last_output}</span> },
             ]}
           />
         </Card>
@@ -184,7 +184,7 @@ export default function RunsAdmin({ loaderData }: Route.ComponentProps) {
             rowKey={(e) => e.error}
             empty="没有处理失败"
             columns={[
-              { key: "e", label: "错误", render: (e) => <span className="font-mono text-[11.5px] text-ink-2">{e.error}</span> },
+              { key: "e", label: "错误", render: (e) => <span className="font-mono text-ui-caption-md text-ink-2">{e.error}</span> },
               { key: "n", label: "条数", align: "right", render: (e) => num(e.n) },
               { key: "x", label: "示例", render: (e) => <Link className="text-accent" to={`/admin/content/${e.example}`}>查看</Link> },
               { key: "l", label: "最近", render: (e) => <Time at={e.last} /> },

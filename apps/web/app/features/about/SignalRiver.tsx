@@ -560,7 +560,7 @@ export function SignalRiver({
       <canvas ref={canvasRef} aria-hidden="true" className="absolute inset-0 size-full" />
       <div ref={labelRef} hidden className="pointer-events-none absolute left-0 top-0 z-10 max-w-[240px] rounded-control bg-surface px-2.5 py-1.5 shadow-[0_6px_20px_rgba(0,0,0,0.08)] ring-1 ring-line">
         <div className="truncate text-ui-caption-lg font-semibold text-ink" />
-        <div className="mt-0.5 truncate text-[11.5px] text-ink-4" />
+        <div className="mt-0.5 truncate text-ui-caption-md text-ink-4" />
       </div>
       {children}
     </div>

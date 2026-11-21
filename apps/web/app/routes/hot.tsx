@@ -103,7 +103,7 @@ function HeatPanel({ e }: { e: HotEntryView }) {
   const peakAt = e.spark.findIndex((v) => v === peak);
   return (
     <div className="order-first flex aspect-[2/1] flex-col rounded-panel bg-accent-softer p-4 ring-1 ring-inset ring-line-soft xl:order-none xl:aspect-[16/10] dark:bg-accent-soft">
-      <div className="flex items-baseline justify-between text-[11.5px] text-ink-4">
+      <div className="flex items-baseline justify-between text-ui-caption-md text-ink-4">
         <span className="font-semibold text-ink-3">24 小时热度</span>
         <span>
           峰值 <span className="mono text-ink-2">{Math.round(peak)}</span>
@@ -131,7 +131,7 @@ function Lead({ e }: { e: HotEntryView }) {
       </div>
       <div className={`mt-4 grid gap-5 ${e.cover || panel ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,0.72fr)] xl:gap-7" : ""}`}>
         <div className="min-w-0">
-          <h2 className="text-[21px] font-bold leading-[1.4] tracking-[-0.01em] text-ink sm:text-[23px] lg:text-[25px] lg:leading-[1.38]">
+          <h2 className="text-ui-heading-plus font-bold leading-[1.4] tracking-[-0.01em] text-ink sm:text-ui-heading-lg-md lg:text-ui-title-1 lg:leading-[1.38]">
             <StoryLink e={e} className="group-hover:text-accent" />
           </h2>
           {e.summary && <p className="mt-3 line-clamp-3 text-ui-body-sm leading-[1.75] text-ink-3">{shortAddresses(e.summary)}</p>}
@@ -163,8 +163,8 @@ function Lead({ e }: { e: HotEntryView }) {
         <div className="flex w-full shrink-0 items-end justify-between gap-5 sm:ml-auto sm:w-auto sm:justify-end">
           {!panel && <Sparkline values={e.spark} className="h-10 w-[140px]" />}
           <div className="text-right">
-            <div className="mono text-[34px] font-semibold leading-none tracking-[-0.03em] text-ink">{Math.round(e.heat)}</div>
-            <div className="mt-1 text-[11.5px] text-ink-4">热度指数</div>
+            <div className="mono text-ui-display-1 font-semibold leading-none tracking-[-0.03em] text-ink">{Math.round(e.heat)}</div>
+            <div className="mt-1 text-ui-caption-md text-ink-4">热度指数</div>
           </div>
         </div>
       </div>
@@ -206,7 +206,7 @@ function Runner({ e }: { e: HotEntryView }) {
 function Row({ e }: { e: HotEntryView }) {
   return (
     <li className="group relative grid grid-cols-[30px_minmax(0,1fr)] items-start gap-x-3 px-4 py-3 transition-colors hover:bg-bg-sunk/70 sm:px-5 wide:grid-cols-[44px_minmax(0,1fr)_auto_104px_76px] wide:items-center wide:gap-x-6 wide:px-6 wide:py-3.5 dark:hover:bg-bg-muted/40">
-      <span className={`mono text-ui-body-lg font-semibold leading-[24px] wide:text-[17px] ${rankColor(e.rank)}`} aria-label={`热度排名第 ${e.rank} 位`}>
+      <span className={`mono text-ui-body-lg font-semibold leading-[24px] wide:text-ui-subheading-sm ${rankColor(e.rank)}`} aria-label={`热度排名第 ${e.rank} 位`}>
         {pad(e.rank)}
       </span>
       <div className="min-w-0">
@@ -225,7 +225,7 @@ function Row({ e }: { e: HotEntryView }) {
             <span className="num">{e.sourceCount}</span> 个来源
           </span>
           <span className="ml-auto flex items-center gap-2">
-            <span className="mono text-[17px] font-semibold leading-none text-ink">{Math.round(e.heat)}</span>
+            <span className="mono text-ui-subheading-sm font-semibold leading-none text-ink">{Math.round(e.heat)}</span>
             <Delta trend={e.trend} pct={e.trendPct} />
           </span>
         </div>
@@ -274,7 +274,7 @@ export default function HotPage() {
             </span>
             实时热度
           </div>
-          <h1 data-page-title="" className="text-[30px] font-bold leading-[1.25] tracking-[-0.01em] text-ink lg:mt-1.5 lg:text-[26px] lg:leading-[1.3]">{withSubject("热点榜")}</h1>
+          <h1 data-page-title="" className="text-ui-title-5 font-bold leading-[1.25] tracking-[-0.01em] text-ink lg:mt-1.5 lg:text-ui-title-2 lg:leading-[1.3]">{withSubject("热点榜")}</h1>
           <p className="mt-1 text-ui-caption-lg leading-relaxed text-ink-4 lg:mt-1.5 lg:text-ui-label-lg lg:text-ink-3">
             过去 {hot.windowHours}{` 小时，${withSubject("圈")}讨论最多的 `}{hot.entries.length || 10} 件事
             {hot.computedAt && (

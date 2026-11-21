@@ -8,7 +8,7 @@ const VARIANTS: Record<Variant, string> = {
 };
 
 type Size = "md" | "lg";
-const SIZES: Record<Size, string> = { md: "h-11 px-4 text-ui-label-lg lg:h-9", lg: "h-11 px-5 text-[14.5px]" };
+const SIZES: Record<Size, string> = { md: "h-11 px-4 text-ui-label-lg lg:h-9", lg: "h-11 px-5 text-ui-body-sm-plus" };
 
 /** The pill button's classes, for links that look like buttons. */
 export function buttonClass(variant: Variant = "secondary", size: Size = "md"): string {

@@ -155,7 +155,7 @@ export function IssueDots({ kind, reportKey, issueNumber, index, className = "" 
         <span className="num">{grid.note}</span>
       </div>
       {grid.heads && (
-        <div className="mt-2 grid text-center text-[10px] leading-none text-ink-4" style={{ gridTemplateColumns: `repeat(${grid.columns}, minmax(0, 1fr))` }}>
+        <div className="mt-2 grid text-center text-ui-micro-7 leading-none text-ink-4" style={{ gridTemplateColumns: `repeat(${grid.columns}, minmax(0, 1fr))` }}>
           {grid.heads.map((h) => (
             <span key={h}>{h}</span>
           ))}

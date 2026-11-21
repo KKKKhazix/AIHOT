@@ -91,7 +91,7 @@ function Day({ date, releases, id }: { date: string; releases: Release[]; id?: s
           >
             <div className="flex items-center gap-3 sm:block">
               <span className="mono block text-ui-caption-lg text-ink-3">{r.time}</span>
-              <span className="inline-flex items-center gap-1.5 text-[11.5px] text-ink-4 sm:mt-1.5">
+              <span className="inline-flex items-center gap-1.5 text-ui-caption-md text-ink-4 sm:mt-1.5">
                 <span className={`size-1.5 rounded-full ${r.urgent ? "bg-hot" : KIND_DOT[r.kind]}`} aria-hidden="true" />
                 {r.kind}
               </span>

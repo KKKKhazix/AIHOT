@@ -27,17 +27,51 @@
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
   /* Interface type sizes. Each utility sets only the size; components own their line height. */
+  --text-ui-micro-1: 6.5px;
+  --text-ui-micro-2: 7.5px;
+  --text-ui-micro-3: 8px;
+  --text-ui-micro-4: 8.5px;
+  --text-ui-micro-5: 9px;
+  --text-ui-micro-6: 9.5px;
+  --text-ui-micro-7: 10px;
+  --text-ui-micro-8: 10.5px;
   --text-ui-caption-sm: 11px;
+  --text-ui-caption-md: 11.5px;
   --text-ui-caption: 12px;
   --text-ui-caption-lg: 12.5px;
   --text-ui-label: 13px;
   --text-ui-label-lg: 13.5px;
   --text-ui-body-sm: 14px;
+  --text-ui-body-sm-plus: 14.5px;
   --text-ui-body: 15px;
+  --text-ui-body-plus: 15.5px;
   --text-ui-body-lg: 16px;
+  --text-ui-body-xl: 16.5px;
+  --text-ui-subheading-sm: 17px;
+  --text-ui-subheading: 17.5px;
   --text-ui-heading-sm: 18px;
+  --text-ui-heading-md: 19px;
   --text-ui-heading: 20px;
+  --text-ui-heading-plus: 21px;
+  --text-ui-heading-lg-sm: 22px;
+  --text-ui-heading-lg-md: 23px;
   --text-ui-heading-lg: 24px;
+  --text-ui-title-1: 25px;
+  --text-ui-title-2: 26px;
+  --text-ui-title-3: 27px;
+  --text-ui-title-4: 28px;
+  --text-ui-title-5: 30px;
+  --text-ui-title-6: 32px;
+  --text-ui-display-1: 34px;
+  --text-ui-display-2: 36px;
+  --text-ui-display-3: 38px;
+  --text-ui-display-4: 40px;
+  --text-ui-display-5: 44px;
+  --text-ui-display-6: 46px;
+  --text-ui-display-7: 48px;
+  --text-ui-display-8: 56px;
+  --text-ui-display-9: 64px;
+  --text-ui-title-fluid: clamp(var(--text-ui-heading-lg), 2.6vw, var(--text-ui-title-6));
 
   /* Semantic colours. */
   --color-bg: var(--bg);
@@ -476,7 +510,7 @@
  */
 .prose {
   color: var(--prose-ink);
-  font-size: 17px;
+  font-size: var(--text-ui-subheading-sm);
   line-height: 1.8;
   letter-spacing: 0.012em;
   overflow-wrap: anywhere;

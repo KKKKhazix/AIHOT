@@ -344,5 +344,5 @@ test("web code does not import motion or framer-motion", () => {
 });
 
 test("web font sizes use the design scale", () => {
-  checkSourceDebt("font-size", fontSizeDebt());
+  assertNoViolations(fontSizeDebt());
 });

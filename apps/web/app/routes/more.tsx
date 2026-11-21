@@ -78,7 +78,7 @@ export default function MorePage() {
   return (
     <div className="mx-auto max-w-[var(--page-max-reading)] pb-8">
       <PhoneBar title="我的" />
-      <h1 data-page-title="" className="pb-3 pt-0.5 text-[30px] font-bold leading-[1.25] tracking-[-0.01em] text-ink lg:pb-4 lg:pt-1 lg:text-[22px]">我的</h1>
+      <h1 data-page-title="" className="pb-3 pt-0.5 text-ui-title-5 font-bold leading-[1.25] tracking-[-0.01em] text-ink lg:pb-4 lg:pt-1 lg:text-ui-heading-lg-sm">我的</h1>
       <div className="wide:grid wide:grid-cols-2 wide:items-start wide:gap-x-4 2xl:grid-cols-3">
         <Group>
           {Account && <Account place="me" />}

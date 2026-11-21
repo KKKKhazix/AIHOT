@@ -41,7 +41,7 @@ export function PhoneBar({ back, title, leading, center, actions }: {
             title && (
               <span
                 aria-hidden={!titleShown}
-                className={`truncate text-[15.5px] font-semibold text-ink transition-[opacity,transform] duration-200 ${titleShown ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"}`}
+                className={`truncate text-ui-body-plus font-semibold text-ink transition-[opacity,transform] duration-200 ${titleShown ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"}`}
               >
                 {title}
               </span>

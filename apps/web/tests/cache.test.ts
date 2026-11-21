@@ -235,7 +235,7 @@ test("a signed-in admin is sent past the sign-in page", { skip: !ADMIN && "this 
       await away.text();
     }
     const anonymous = await fetch(`${signedIn.origin}/admin/login?return=%2Fadmin`, { redirect: "manual" });
-    assert.equal(anonymous.status, 200, "without a session the page still offers the ways in");
+    assert.equal(anonymous.status, 200, "without a session the page still offers the password sign-in");
     await anonymous.text();
   } finally {
     await signedIn.stop();

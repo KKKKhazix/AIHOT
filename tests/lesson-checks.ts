@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { sourceFiles, type Violation } from "./source-debt.ts";
+import { sourceFiles, type Violation } from "./source-checks.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (file: string) => readFileSync(new URL(file, root), "utf8");

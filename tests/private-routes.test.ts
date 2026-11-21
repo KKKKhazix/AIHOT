@@ -38,9 +38,8 @@ test("an unrelated malformed cookie leaves a real admin session usable without a
   assert.equal((await sessionPrincipal(headers.cookie))?.name, "Cookie test");
   const me = await app.inject({ url: "/api/admin/preview", headers });
   if (!ADMIN) {
-    // No admin sign-in here: the session is not a way into gray pages, and admin routes do not exist.
+    // No admin sign-in here: the session is not a way into gray pages (its missing routes: preview.standalone.test.ts).
     assert.equal(me.statusCode, 401);
-    for (const url of ["/api/admin/me", "/api/auth/login", "/api/auth/options"]) assert.equal((await app.inject({ url, headers })).statusCode, 404);
     return;
   }
   assert.equal(me.statusCode, 200);
@@ -61,8 +60,7 @@ test("an unrelated malformed cookie leaves a real admin session usable without a
     assert.equal(skipped.headers.location, location, target!.slice(0, 40));
   }
   const write = await app.inject({ method: "POST", url: "/api/admin/sources", headers, payload: {} });
-  if (ADMIN) assert.equal(write.statusCode, 403, "the usable session still needs CSRF for writes");
-  else assert.equal(write.statusCode, 404, "a site without admin pages has no admin API");
+  assert.equal(write.statusCode, 403, "the usable session still needs CSRF for writes");
 
   // The form parser now in front of sign-out keeps its size limit, and refuses before the session is touched.
   const oversized = await app.inject({ method: "POST", url: "/api/auth/logout", headers: { ...headers, "content-type": "application/x-www-form-urlencoded" }, payload: `x=${"a".repeat(20_000)}` });

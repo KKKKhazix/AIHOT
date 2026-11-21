@@ -4,17 +4,17 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { assertNoViolations } from "./source-debt.ts";
+import { assertNoViolations } from "./source-checks.ts";
 import { presentationAssertions, rawLoaderPaths } from "./lesson-checks.ts";
-import { clockDebt } from "./test-clock.ts";
+import { clockViolationsByFile } from "./test-clock.ts";
 import { after, test } from "node:test";
-import { fontSizeDebt } from "./font-size.ts";
+import { fontSizeViolations } from "./font-size.ts";
 import { closeDb, sql } from "@aihot/backend/db";
 
 after(closeDb);
 
 test("test fixtures and identities do not depend on the wall clock", () => {
-  assertNoViolations(clockDebt());
+  assertNoViolations(clockViolationsByFile());
 });
 
 test("page loaders identify document and data requests by the same pathname", async () => {
@@ -344,5 +344,5 @@ test("web code does not import motion or framer-motion", () => {
 });
 
 test("web font sizes use the design scale", () => {
-  assertNoViolations(fontSizeDebt());
+  assertNoViolations(fontSizeViolations());
 });

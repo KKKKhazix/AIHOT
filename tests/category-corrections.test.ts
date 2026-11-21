@@ -79,3 +79,25 @@ test("category corrections revise every standard report atomically without selec
   assert.equal(restored!.content.sections[0].label, "模型发布/更新");
   assert.equal(restored!.content.metrics.modelsReleased, 1);
 });
+
+test("a correction keeps the introduction of the section it moves into", async () => {
+  const sourceId = `category-intro-${tag()}`;
+  await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES (${sourceId},'Category intro fixture','rss','T2','editorial')`;
+  const { articleId } = await upsertMaterial({ sourceId, url: `https://example.com/${sourceId}`, title: "推理工具更新", bodyText: "正文", bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+  await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,tags,title_zh,summary_zh,score,selected)
+    VALUES (${articleId},1,'rule','pass','ai-models',ARRAY['模型发布'],'推理工具更新','工具更新摘要',70,true)`;
+  await publishArticle(articleId, { releasedAt: new Date() });
+  const moved = { itemId: articleId, title: "推理工具更新", summary: "工具更新摘要" };
+  const other = (n: number, title: string) => ({ itemId: `${articleId}-${n}`, title, summary: `${title}摘要` });
+  const themes = [
+    { heading: "模型发布/更新", summary: "本周模型导读", storyRefs: [moved, other(1, "模型甲"), other(2, "模型乙"), other(3, "模型丙")] },
+    { heading: "产品发布/更新", summary: "本周产品导读", storyRefs: [other(4, "产品甲"), other(5, "产品乙"), other(6, "产品丙")] },
+  ];
+  await sql`INSERT INTO reports (kind,key,window_start,window_end,content,generated_at)
+    VALUES ('weekly','2097-W02',now(),now(),${sql.json({ headline: "冻结头条", leadItemId: articleId, storyOrder: [articleId], overview: "保留总述", themes, metrics: { totalStories: 7 } } as never)},now())`;
+  await overrideFields(articleId, { fields: { category: "ai-products" }, version: 0, reason: "工具不是模型" }, "test-category");
+  const [saved] = await sql`SELECT content FROM reports WHERE kind='weekly' AND key='2097-W02'`;
+  const intros = Object.fromEntries((saved!.content.themes as Array<{ heading: string; summary: string | null }>).map(g => [g.heading, g.summary]));
+  // The section it left may name it, so its introduction goes; the target's names only what is still there.
+  assert.deepEqual(intros, { "模型发布/更新": null, "产品发布/更新": "本周产品导读" });
+});

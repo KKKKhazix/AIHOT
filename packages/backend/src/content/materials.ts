@@ -2,7 +2,7 @@
 // It owns identity, revisions and the timeline rule, so no entrance can bypass them.
 import { sql, type Db, type Tx } from "../db.ts";
 import { newArticleId, sha256, stableJson } from "../lib/ids.ts";
-import { identityKeyForUrl, normalizeUrl, wechatPostUrl } from "../lib/url.ts";
+import { identityKeyForUrl, isWechatArticleAddress, normalizeUrl, wechatPostUrl } from "../lib/url.ts";
 import { collapseWhitespace, decodeEntities } from "../lib/text.ts";
 import { publishArticleTx } from "../publication/publish.ts";
 import { groupingReset, reconcileMaterialSource } from "./provenance.ts";
@@ -199,6 +199,12 @@ export function identityKeyFor(m: MaterialInput): string {
   return `src:${m.sourceId}:${sha256(m.url + "\u0001" + m.title).slice(0, 32)}`;
 }
 
+/** Listings and writes resolve a publisher's URL to the same stored article. Explicit non-URL identities keep their namespace. */
+export async function resolveMaterialIdentity(m: MaterialInput, db: Db = sql): Promise<string> {
+  const requested = identityKeyFor(m);
+  return requested === identityKeyForUrl(m.url) ? await materialIdentityForUrl(m.url, db) ?? requested : requested;
+}
+
 /** Shared URL lookup for collection, external reports and administration. Historical WeChat keys
  * included sn; reuse the earliest stored post without rewriting its public id or access URL.
  * A browser-verified access URL also joins a short-only import to its confirmed publisher ID. */
@@ -206,7 +212,7 @@ export async function materialIdentityForUrl(url: string, db: Db = sql, verified
   const key = identityKeyForUrl(url), normalized = normalizeUrl(url);
   if (!key || !normalized) return key;
   const u = new URL(normalized);
-  if (u.hostname !== "mp.weixin.qq.com" || u.username || u.password || !/^\/s(?:\/[^/]+)?$/.test(u.pathname)) return key;
+  if (!isWechatArticleAddress(u)) return key;
   const access = new URL(verifiedAccessUrl ?? normalized);
   const post = wechatPostUrl(normalized), short = access.pathname.startsWith("/s/") ? access.origin + access.pathname : null;
   const [known] = await db<{ identity_key: string }[]>`SELECT identity_key FROM (
@@ -272,9 +278,7 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
     publishedAt: m.publishedAt && Number.isFinite(m.publishedAt.getTime()) ? m.publishedAt : null,
     sourceUpdatedAt: m.sourceUpdatedAt && Number.isFinite(m.sourceUpdatedAt.getTime()) ? m.sourceUpdatedAt : null,
   };
-  const requestedIdentity = identityKeyFor(m);
-  const identityKey = requestedIdentity === identityKeyForUrl(m.url)
-    ? await materialIdentityForUrl(m.url, db) ?? requestedIdentity : requestedIdentity;
+  const identityKey = await resolveMaterialIdentity(m, db);
   const discoveredAt = m.discoveredAt ?? new Date();
   const title = collapseWhitespace(m.title).slice(0, 1000) || m.url;
 

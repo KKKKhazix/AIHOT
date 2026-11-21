@@ -49,11 +49,15 @@ export function tweetIdFromUrl(url: string): string | null {
   return m ? m[1]! : null;
 }
 
+export function isWechatArticleAddress(u: URL): boolean {
+  return /^https?:$/.test(u.protocol) && u.hostname === "mp.weixin.qq.com" && !u.username && !u.password && /^\/s(?:\/[^/]+)?$/.test(u.pathname);
+}
+
 /** Page-confirmed account and post identifiers, independent of the signature or short access path. */
 export function wechatPostUrl(url: string): string | null {
   let u: URL;
   try { u = new URL(url); } catch { return null; }
-  if (!/^https?:$/.test(u.protocol) || u.hostname !== "mp.weixin.qq.com" || u.username || u.password || !/^\/s(?:\/[^/]+)?$/.test(u.pathname)) return null;
+  if (!isWechatArticleAddress(u)) return null;
   const post = new URL("https://mp.weixin.qq.com/s");
   for (const key of ["__biz", "mid", "idx"]) {
     const value = u.searchParams.get(key);

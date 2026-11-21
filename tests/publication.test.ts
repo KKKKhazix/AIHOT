@@ -8,6 +8,8 @@ import { randomUUID } from "node:crypto";
 import * as cheerio from "cheerio";
 import { marked } from "marked";
 import { after, before, test } from "node:test";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { MCP_TOOL_NAMES } from "@aihot/contracts/mcp";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { overrideFields, setVisibility } from "@aihot/backend/admin/content";
@@ -17,7 +19,6 @@ import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle, republishSource } from "@aihot/backend/publication/publish";
 import { computeHotRanking } from "@aihot/backend/events/hot";
 import { latestHotRanking } from "@aihot/backend/publication/hot";
-import { itemFeed } from "@aihot/backend/publication/feeds";
 import { loadPool } from "@aihot/backend/publication/pool";
 import { digestReports } from "@aihot/backend/publication/story-evidence";
 import { v1Items } from "@aihot/backend/publication/v1";
@@ -625,16 +626,24 @@ test("browsing 全部动态 on every exit leaves out items below the floor, whic
   const ours = (ids: string[]) => ids.filter((i) => i.startsWith(`${T}-floor-`)).sort();
   const now = new Date();
 
-  const pool = await loadPool({ channel: "all", category: null, tag: `${T}-floor`, now });
-  assert.deepEqual(ours(pool.items.map((i) => i.id)), shown, "web list");
+  const pool = JSON.parse((await get(`/api/site/pool?tag=${T}-floor`)).body);
+  assert.deepEqual(ours(pool.items.map((i: { id: string }) => i.id)), shown, "网页列表请通过 loadPool 使用 browsedCondition");
   assert.equal(pool.total, shown.length, "web page count");
-  const v1 = await v1Items({ mode: "all", window: "24h", by: "timeline", category: null, q: null, limit: 100, cursor: null }, now);
-  assert.deepEqual(ours(v1.items.map((i) => i.id)), shown, "v1 and MCP");
+  const v1 = JSON.parse((await get("/api/v1/items?mode=all&limit=50")).body);
+  assert.deepEqual(ours(v1.items.map((i: { id: string }) => i.id)), shown, "公开接口请通过 v1Items 使用 browsedCondition");
+  const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const client = new Client({ name: "publication-test", version: "1.0.0" });
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL("/api/mcp", address)));
+    const result = await client.callTool({ name: MCP_TOOL_NAMES.latest, arguments: { mode: "all", limit: 30 } });
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(ours((result.structuredContent as { items: { id: string }[] }).items.map(i => i.id)), shown, "MCP 最新动态请读取 v1Items");
+  } finally { await client.close(); }
   const agent = await get("/api/v1/agent/latest?mode=all&limit=30");
   assert.equal(agent.status, 200);
-  assert.ok(agent.body.includes(id("edge")) && !agent.body.includes(id("low")), "Agent latest");
-  const rss = await itemFeed("all", null, { now });
-  assert.ok(rss.includes(id("edge")) && rss.includes(id("unscored")) && !rss.includes(id("low")), "all RSS");
+  assert.ok(shown.every(item => agent.body.includes(item)) && !agent.body.includes(id("low")), "Agent 最新动态请读取 v1Items");
+  const rss = (await get("/feed/all.xml")).body;
+  assert.ok(rss.includes(id("edge")) && rss.includes(id("unscored")) && !rss.includes(id("low")), "全部动态 RSS 请使用 browsedCondition");
 
   const found = await loadPool({ channel: "all", category: null, tag: `${T}-floor`, q: id("low"), now });
   assert.deepEqual(ours(found.items.map((i) => i.id)), [id("low")], "web search");

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { assertNoViolations, checkSourceDebt } from "./source-debt.ts";
+import { assertNoViolations } from "./source-debt.ts";
 import { presentationAssertions, rawLoaderPaths } from "./lesson-checks.ts";
 import { clockDebt } from "./test-clock.ts";
 import { after, test } from "node:test";
@@ -27,7 +27,7 @@ test("page loaders identify document and data requests by the same pathname", as
 });
 
 test("browser assertions describe visible behavior", () => {
-  checkSourceDebt("presentation-assertions", presentationAssertions());
+  assertNoViolations(presentationAssertions());
 });
 
 const ROOT = path.resolve(import.meta.dirname, "..");

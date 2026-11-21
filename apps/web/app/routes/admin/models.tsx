@@ -46,7 +46,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
               title={
                 <span className="inline-flex flex-wrap items-center gap-2">
                   {c.label}
-                  <span className="font-mono text-[12px] font-normal text-ink-3 [overflow-wrap:anywhere]">{c.current.model}</span>
+                  <span className="font-mono text-ui-caption font-normal text-ink-3 [overflow-wrap:anywhere]">{c.current.model}</span>
                   <Badge tone={c.current.source === "admin" ? "accent" : "muted"}>{SOURCE_LABEL[c.current.source]}</Badge>
                   {c.current.invalid && <Badge tone="bad">配置的 {c.current.invalid} 不存在，未生效</Badge>}
                   {c.fallback && <span className="text-xs font-normal text-ink-3">
@@ -76,7 +76,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
                   rows={c.usage}
                   rowKey={(u) => `${u.purpose}|${u.service}|${u.model}|${u.promptVersion}`}
                   columns={[
-                    { key: "m", label: "模型", render: (u) => <span className="whitespace-nowrap font-mono text-[12px]">{u.model}</span> },
+                    { key: "m", label: "模型", render: (u) => <span className="whitespace-nowrap font-mono text-ui-caption">{u.model}</span> },
                     { key: "v", label: "提示版本", render: (u) => <span className="whitespace-nowrap font-mono text-[11.5px] text-ink-3">{u.promptVersion ?? "—"}</span> },
                     { key: "p", label: "用途", render: (u) => <span className="whitespace-nowrap font-mono text-[11.5px] text-ink-3">{u.purpose}</span> },
                     { key: "c", label: "调用", align: "right", render: (u) => num(u.calls) },
@@ -124,7 +124,7 @@ export default function ModelsAdmin({ loaderData: m }: Route.ComponentProps) {
               columns={[
                 { key: "at", label: "时间", render: (h) => <span className="num whitespace-nowrap">{bj(h.at)}</span> },
                 { key: "c", label: "能力", render: (h) => labelOf(h.subject) },
-                { key: "m", label: "变化", render: (h) => <span className="font-mono text-[12px]">{h.before?.model ?? "—"} → {h.after?.model ?? "—"}</span> },
+                { key: "m", label: "变化", render: (h) => <span className="font-mono text-ui-caption">{h.before?.model ?? "—"} → {h.after?.model ?? "—"}</span> },
                 { key: "r", label: "原因", render: (h) => <span className="text-ink-3">{h.reason}</span> },
                 { key: "a", label: "操作人", render: (h) => h.actor },
               ]}

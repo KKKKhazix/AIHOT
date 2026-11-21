@@ -99,7 +99,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
           {s.uses.map((u) => <Badge key={u} tone="info">{useLabels[u] ?? u}</Badge>)}
         </span>
       }
-      subtitle={<span className="font-mono text-[12px]">{s.id}</span>}
+      subtitle={<span className="font-mono text-ui-caption">{s.id}</span>}
       actions={
         <>
           <Button
@@ -128,7 +128,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
         <Stat
           label="健康"
           value={
-            <span className="inline-flex items-center gap-2 text-[18px]">
+            <span className="inline-flex items-center gap-2 text-ui-heading-sm">
               <Dot tone={s.enabled ? healthTone(s.health) : "muted"} />
               {s.enabled ? HEALTH_LABEL[s.health] ?? s.health : "已暂停"}
             </span>
@@ -139,17 +139,17 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
         <Stat label="近 7 天" value={num(stats.last7d)} />
         <Stat label="入选精选" value={num(stats.selected)} />
       </div>
-      {s.last_error && s.health !== "ok" && <div className="mb-5 rounded-card bg-hot-soft px-4 py-3 text-[13px] text-hot ring-1 ring-hot/20">{s.last_error}</div>}
+      {s.last_error && s.health !== "ok" && <div className="mb-5 rounded-card bg-hot-soft px-4 py-3 text-ui-label text-hot ring-1 ring-hot/20">{s.last_error}</div>}
 
       {preview && (
         <Card className="mb-5" title={`预览：${preview.count} 条（${preview.ms}ms，未入库）`} right={<button onClick={() => setPreview(null)}>收起</button>}>
           {preview.items.length ? (
             <ul className="space-y-2.5">
               {preview.items.map((i) => (
-                <li key={i.url} className="text-[13px]">
+                <li key={i.url} className="text-ui-label">
                   <a href={i.url} target="_blank" rel="noreferrer" className="font-medium text-ink hover:text-accent">{i.title}</a>
-                  <div className="text-[12px] text-ink-4">{i.publishedAt ? bj(i.publishedAt, true) : "无发布时间"} · {i.url}</div>
-                  {i.excerpt && <div className="mt-0.5 line-clamp-2 text-[12.5px] text-ink-3">{i.excerpt}</div>}
+                  <div className="text-ui-caption text-ink-4">{i.publishedAt ? bj(i.publishedAt, true) : "无发布时间"} · {i.url}</div>
+                  {i.excerpt && <div className="mt-0.5 line-clamp-2 text-ui-caption-lg text-ink-3">{i.excerpt}</div>}
                 </li>
               ))}
             </ul>
@@ -183,7 +183,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
               </Field>
               {Object.keys(useLabels).length > 0 && (
                 <Field label="其他用途">
-                  <div className="flex flex-wrap gap-x-4 gap-y-2 pt-1.5 text-[13px] text-ink-2">
+                  <div className="flex flex-wrap gap-x-4 gap-y-2 pt-1.5 text-ui-label text-ink-2">
                     {Object.entries(useLabels).map(([u, label]) => (
                       <label key={u} className="inline-flex items-center gap-2">
                         <input
@@ -218,7 +218,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
               <Field label="标签（逗号分隔）">
                 <Input value={draft.tags} onChange={(e) => setDraft({ ...draft, tags: e.target.value })} />
               </Field>
-              <div className="flex flex-col justify-end gap-2 text-[13px] text-ink-2">
+              <div className="flex flex-col justify-end gap-2 text-ui-label text-ink-2">
                 {([
                   ["site_fulltext", "站内可展示全文"],
                   ["syndicate_fulltext", "对外接口可带全文"],
@@ -232,12 +232,12 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
             </div>
             <div className="mt-4">
               <Field label="采集配置（JSON）">
-                <Textarea className="font-mono !text-[12px]" rows={Math.min(18, draft.config.split("\n").length + 1)} value={draft.config} onChange={(e) => setDraft({ ...draft, config: e.target.value })} spellCheck={false} />
+                <Textarea className="font-mono !text-ui-caption" rows={Math.min(18, draft.config.split("\n").length + 1)} value={draft.config} onChange={(e) => setDraft({ ...draft, config: e.target.value })} spellCheck={false} />
               </Field>
-              {configError && <div className="mt-1 text-[12.5px] text-hot">{configError}</div>}
+              {configError && <div className="mt-1 text-ui-caption-lg text-hot">{configError}</div>}
             </div>
             <div className="mt-4 flex items-center justify-end gap-2">
-              {changes > 0 && <span className="text-[12.5px] text-ink-3">{changes} 项改动未保存</span>}
+              {changes > 0 && <span className="text-ui-caption-lg text-ink-3">{changes} 项改动未保存</span>}
               <Button tone="ghost" disabled={!changes} onClick={() => setDraft(draftOf(s))}>还原</Button>
               <Button tone="primary" disabled={!changes} onClick={() => patch() && setDialog("save")}>保存</Button>
             </div>
@@ -301,7 +301,7 @@ export default function SourceDetail({ loaderData }: Route.ComponentProps) {
           </Card>
           <Card title="修改记录">
             {history.length ? (
-              <ul className="space-y-3 text-[12.5px]">
+              <ul className="space-y-3 text-ui-caption-lg">
                 {history.map((h, i) => (
                   <li key={i}>
                     <div className="text-ink-2"><span className="font-medium">{h.action}</span> · {h.actor} · {bj(h.created_at)}</div>

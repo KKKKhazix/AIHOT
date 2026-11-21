@@ -5,14 +5,29 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { checkSourceDebt } from "./source-debt.ts";
+import { presentationAssertions, rawLoaderPaths } from "./lesson-checks.ts";
 import { clockDebt } from "./test-clock.ts";
 import { after, test } from "node:test";
+import { fontSizeDebt } from "./font-size.ts";
 import { closeDb, sql } from "@aihot/backend/db";
 
 after(closeDb);
 
 test("test fixtures and identities do not depend on the wall clock", () => {
   checkSourceDebt("test-clock", clockDebt());
+});
+
+test("page loaders identify document and data requests by the same pathname", async () => {
+  const { pagePathname } = await import("../apps/web/app/lib/api.server.ts");
+  for (const [document, data] of [["/", "/_.data"], ["/example", "/example.data"], ["/example/2026-11", "/example/2026-11.data"]]) {
+    for (const path of [document, data]) assert.equal(pagePathname(new Request(`https://example.org${path}?page=2`)), document);
+  }
+  const found = rawLoaderPaths();
+  assert.deepEqual(found, [], found.join("\n"));
+});
+
+test("browser assertions describe visible behavior", () => {
+  checkSourceDebt("presentation-assertions", presentationAssertions());
 });
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -249,6 +264,12 @@ const webLines = () => [...sources("apps/web/app", WEB_CODE), ...moduleWeb(WEB_C
     .map((line, i) => ({ file, at: `${file}:${i + 1}`, line: line.replace(/\/\*.*?\*\//g, "").replace(/(^|\s)\/\/.*$/, "") }))
     .filter(({ line }) => !/^\s*(\/\/|\/\*|\*)/.test(line)));
 
+test("navigation visibility is defined in shell/nav.ts", () => {
+  const outside = webLines().filter(({ file, line }) => file !== "apps/web/app/components/shell/nav.ts"
+    && /\b(?:NAV\.hidden|inNav\s*\()/.test(line)).map(({ at }) => at);
+  assert.deepEqual(outside, [], "请从 shell/nav.ts 引用导航项的可见状态，需要新的入口时在那里按站点设置定义一次");
+});
+
 // Corners come from the radius scale in app.css (mark 5, control 8, tile 10, card 12, panel 14, sheet 16
 // pixels) or are pills (full); none takes a corner away. Before the scale, 77 hand-written radii in 12
 // sizes from 4 to 20 pixels gave the same kind of box different corners. A radius worked out from a
@@ -320,4 +341,8 @@ test("admin page loaders use adminPageGet and GRAY_HEADERS", async () => {
 test("web code does not import motion or framer-motion", () => {
   const found = violations([...sources("apps/web"), ...moduleWeb(), ...sources("site")], (_file, spec) => /^(?:motion|framer-motion)(?:$|\/)/.test(spec));
   assert.deepEqual(found, [], "animate with Presence.tsx, CSS keyframes or the Web Animations API instead of motion");
+});
+
+test("web font sizes use the design scale", () => {
+  checkSourceDebt("font-size", fontSizeDebt());
 });

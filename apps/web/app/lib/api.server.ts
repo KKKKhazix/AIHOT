@@ -7,6 +7,12 @@ import { logError } from "./errors.server.ts";
 /** Where the api listens (API_BASE_URL, set by the deployment); development uses the default. */
 export const API_BASE_URL = process.env.API_BASE_URL || "http://127.0.0.1:3001";
 
+/** Document requests and React Router's data requests identify the same page. */
+export function pagePathname(request: Request): string {
+  const path = new URL(request.url).pathname;
+  return path === "/_.data" ? "/" : path.replace(/\.data$/, "");
+}
+
 /** An api answer other than 2xx. A merged story answers 308 with the story it now lives in. */
 class ApiError extends Error {
   readonly status: number;

@@ -101,21 +101,21 @@ export default function TopicRoute() {
   return (
     <div className="pb-6">
       <PhoneBar back={{ to: UP.to, label: UP.back }} title={topic.name} />
-      <Link to={UP.to} className="hidden items-center gap-1.5 py-2 text-[13px] text-ink-3 transition-colors hover:text-accent lg:inline-flex">
+      <Link to={UP.to} className="hidden items-center gap-1.5 py-2 text-ui-label text-ink-3 transition-colors hover:text-accent lg:inline-flex">
         <IconArrowLeft size={14} /> 返回{UP.back}
       </Link>
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 pb-5 pt-3 lg:pt-1">
         <div className="min-w-0 max-w-[760px]">
-          <p className="text-[12px] font-semibold tracking-[0.08em] text-accent">{topic.groupName}</p>
-          <h1 data-page-title="" className="mt-1.5 flex items-center gap-3 text-[24px] font-bold leading-[1.3] tracking-[-0.01em] text-ink lg:text-[26px]">
+          <p className="text-ui-caption font-semibold tracking-[0.08em] text-accent">{topic.groupName}</p>
+          <h1 data-page-title="" className="mt-1.5 flex items-center gap-3 text-ui-heading-lg font-bold leading-[1.3] tracking-[-0.01em] text-ink lg:text-[26px]">
             {topic.brand && <BrandMark brand={topic.brand} size={34} />}
             <span>
               {topic.name}{" "}
               <span className="whitespace-nowrap font-semibold text-ink-4">最新动态</span>
             </span>
           </h1>
-          <p className="mt-1.5 text-pretty text-[13.5px] leading-relaxed text-ink-3">{topic.definition}</p>
-          <p className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-ink-4">
+          <p className="mt-1.5 text-pretty text-ui-label-lg leading-relaxed text-ink-3">{topic.definition}</p>
+          <p className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-ui-caption-lg text-ink-4">
             <span>
               <span className="num font-semibold text-ink-2">{topic.total.toLocaleString("zh-CN")}</span>{` ${REPORTS.metricUnits.selectedCount}`}
             </span>
@@ -127,7 +127,7 @@ export default function TopicRoute() {
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-4 text-[12px] text-ink-4">
+        <div className="flex items-center gap-4 text-ui-caption text-ink-4">
           {topic.latest && (
             <span>
               <time dateTime={topic.latest.at} className="num">{monthDayTime(topic.latest.at)}</time> 更新

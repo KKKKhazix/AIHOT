@@ -10,8 +10,8 @@ export function AdminPage({ title, subtitle, actions, children }: { title: React
     <div className="mx-auto w-full max-w-[1320px] px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pt-8">
       <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-[22px] font-semibold tracking-tight text-ink sm:text-[24px]">{title}</h1>
-          {subtitle && <p className="mt-1 text-[13.5px] leading-relaxed text-ink-3">{subtitle}</p>}
+          <h1 className="text-[22px] font-semibold tracking-tight text-ink sm:text-ui-heading-lg">{title}</h1>
+          {subtitle && <p className="mt-1 text-ui-label-lg leading-relaxed text-ink-3">{subtitle}</p>}
         </div>
         {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
       </header>
@@ -28,8 +28,8 @@ export function Card({ title, right, children, className = "", pad = true, scrol
     <section className={`rounded-panel bg-surface ring-1 ring-line ${scrollable ? "flex max-h-120 min-h-0 min-w-0 flex-col" : ""} ${className}`}>
       {(title || right) && (
         <div className={`flex items-center justify-between gap-3 border-b border-line px-4 py-3 ${scrollable ? "shrink-0" : ""}`}>
-          <h2 className="text-[14px] font-semibold text-ink">{title}</h2>
-          {right && <div className="flex items-center gap-2 text-[12.5px] text-ink-3">{right}</div>}
+          <h2 className="text-ui-body-sm font-semibold text-ink">{title}</h2>
+          {right && <div className="flex items-center gap-2 text-ui-caption-lg text-ink-3">{right}</div>}
         </div>
       )}
       <div className={`${pad ? "p-4" : ""} ${scrollable ? "flex min-h-0 flex-1 flex-col" : ""}`}>
@@ -43,9 +43,9 @@ export function Stat({ label, value, hint, tone }: { label: ReactNode; value: Re
   const color = tone === "bad" ? "text-hot" : tone === "warn" ? "text-amber" : tone === "ok" ? "text-ok" : "text-ink";
   return (
     <div className="rounded-panel bg-surface px-4 py-3.5 ring-1 ring-line">
-      <div className="text-[12.5px] text-ink-3">{label}</div>
+      <div className="text-ui-caption-lg text-ink-3">{label}</div>
       <div className={`num mt-1 text-[22px] font-semibold tracking-tight ${color}`}>{value}</div>
-      {hint && <div className="mt-0.5 text-[12px] text-ink-4">{hint}</div>}
+      {hint && <div className="mt-0.5 text-ui-caption text-ink-4">{hint}</div>}
     </div>
   );
 }
@@ -104,9 +104,9 @@ export function DataTable<T>({ rows, columns, rowKey, empty = "暂无数据", on
   if (!rows.length) return <Empty>{empty}</Empty>;
   return (
     <div className={scrollable ? "min-h-0 flex-1 overflow-auto" : "overflow-x-auto"} tabIndex={scrollable ? 0 : undefined}>
-      <table className="w-full min-w-[640px] border-collapse text-left text-[13px]">
+      <table className="w-full min-w-[640px] border-collapse text-left text-ui-label">
         <thead>
-          <tr className="border-b border-line text-[12px] text-ink-3">
+          <tr className="border-b border-line text-ui-caption text-ink-3">
             {columns.map((c) => (
               <th key={c.key} className={`whitespace-nowrap px-3 py-2 font-medium ${scrollable ? "sticky top-0 z-10 bg-surface" : ""} ${c.align === "right" ? "text-right" : ""} ${c.className ?? ""}`}>
                 {c.label}
@@ -135,7 +135,7 @@ export function DataTable<T>({ rows, columns, rowKey, empty = "暂无数据", on
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="px-4 py-10 text-center text-[13px] text-ink-4">{children}</div>;
+  return <div className="px-4 py-10 text-center text-ui-label text-ink-4">{children}</div>;
 }
 
 type ButtonTone = "primary" | "secondary" | "danger" | "ghost";
@@ -160,7 +160,7 @@ export function Button({
       {...rest}
       disabled={rest.disabled || busy}
       className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-[opacity,background-color,transform] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45 ${
-        size === "sm" ? "h-7 px-2.5 text-[12.5px]" : "h-9 px-3.5 text-[13.5px]"
+        size === "sm" ? "h-7 px-2.5 text-ui-caption-lg" : "h-9 px-3.5 text-ui-label-lg"
       } ${BTN[tone]} ${className}`}
     >
       {busy && <span className="size-3 animate-spin rounded-full border-[1.5px] border-current border-r-transparent" />}
@@ -174,7 +174,7 @@ export function ButtonLink({ to, children, tone = "secondary", size = "md" }: { 
     <Link
       to={to}
       className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-[opacity,background-color] ${
-        size === "sm" ? "h-7 px-2.5 text-[12.5px]" : "h-9 px-3.5 text-[13.5px]"
+        size === "sm" ? "h-7 px-2.5 text-ui-caption-lg" : "h-9 px-3.5 text-ui-label-lg"
       } ${BTN[tone]}`}
     >
       {children}
@@ -182,15 +182,15 @@ export function ButtonLink({ to, children, tone = "secondary", size = "md" }: { 
   );
 }
 
-const INPUT = "w-full rounded-control bg-surface px-3 py-2 text-[13.5px] text-ink ring-1 ring-line-strong outline-none transition-shadow placeholder:text-ink-4 focus:ring-2 focus:ring-accent";
+const INPUT = "w-full rounded-control bg-surface px-3 py-2 text-ui-label-lg text-ink ring-1 ring-line-strong outline-none transition-shadow placeholder:text-ink-4 focus:ring-2 focus:ring-accent";
 
 export function Field({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
   const id = useId();
   return (
     <label htmlFor={id} className="block">
-      <span className="mb-1 block text-[12.5px] font-medium text-ink-2">{label}</span>
+      <span className="mb-1 block text-ui-caption-lg font-medium text-ink-2">{label}</span>
       <span className="[&>*]:w-full" id={id}>{children}</span>
-      {hint && <span className="mt-1 block text-[12px] text-ink-4">{hint}</span>}
+      {hint && <span className="mt-1 block text-ui-caption text-ink-4">{hint}</span>}
     </label>
   );
 }
@@ -228,7 +228,7 @@ export function FilterChips({ param, options, resets = [] }: { param: string; op
             key={o.value || "all"}
             to={`?${next}`}
             preventScrollReset
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] transition-colors ${active ? "bg-ink text-bg" : "bg-surface text-ink-2 ring-1 ring-line hover:bg-bg-sunk"}`}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-ui-caption-lg transition-colors ${active ? "bg-ink text-bg" : "bg-surface text-ink-2 ring-1 ring-line hover:bg-bg-sunk"}`}
           >
             {o.label}
             {o.count !== undefined && <span className={`num text-[11.5px] ${active ? "text-bg/70" : "text-ink-4"}`}>{o.count}</span>}
@@ -249,7 +249,7 @@ export function Pager({ page, hasMore }: { page: number; hasMore: boolean }) {
   };
   if (page <= 1 && !hasMore) return null;
   return (
-    <div className="mt-4 flex items-center justify-center gap-2 text-[13px]">
+    <div className="mt-4 flex items-center justify-center gap-2 text-ui-label">
       {page > 1 && <ButtonLink to={to(page - 1)} size="sm">上一页</ButtonLink>}
       <span className="num px-2 text-ink-3">第 {page} 页</span>
       {hasMore && <ButtonLink to={to(page + 1)} size="sm">下一页</ButtonLink>}
@@ -261,7 +261,7 @@ export function Json({ value, collapsed = true, label = "原始数据" }: { valu
   const [open, setOpen] = useState(!collapsed);
   return (
     <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="group rounded-control bg-bg-sunk/70 ring-1 ring-line">
-      <summary className="cursor-pointer select-none px-3 py-1.5 text-[12px] text-ink-3 hover:text-ink-2">{label}</summary>
+      <summary className="cursor-pointer select-none px-3 py-1.5 text-ui-caption text-ink-3 hover:text-ink-2">{label}</summary>
       {open && <pre className="max-h-[420px] overflow-auto px-3 pb-3 font-mono text-[11.5px] leading-relaxed text-ink-2">{JSON.stringify(value, null, 2)}</pre>}
     </details>
   );
@@ -324,8 +324,8 @@ export function ReasonDialog({
             if (closed !== false) onClose();
           }}
         >
-          <h2 className="text-[16px] font-semibold text-ink">{title}</h2>
-          {description && <div className="mt-1.5 text-[13px] leading-relaxed text-ink-3">{description}</div>}
+          <h2 className="text-ui-body-lg font-semibold text-ink">{title}</h2>
+          {description && <div className="mt-1.5 text-ui-label leading-relaxed text-ink-3">{description}</div>}
           {children && <div className="mt-4 space-y-3">{children}</div>}
           {requireReason && (
             <div className="mt-4">
@@ -348,7 +348,7 @@ export function ReasonDialog({
 
 export function KV({ items }: { items: Array<[ReactNode, ReactNode]> }) {
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-ui-label">
       {items.map(([k, v], i) => (
         <div key={i} className="contents">
           <dt className="text-ink-3">{k}</dt>

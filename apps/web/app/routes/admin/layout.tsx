@@ -71,11 +71,11 @@ function NavItem({ to, label, count, counts, countsKey, tone }: AdminNavEntry & 
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `flex items-center justify-between rounded-control px-3 py-[7px] text-[13.5px] transition-colors ${isActive ? "bg-surface font-medium text-ink shadow-sm ring-1 ring-line" : "text-ink-3 hover:text-ink"}`
+        `flex items-center justify-between rounded-control px-3 py-[7px] text-ui-label-lg transition-colors ${isActive ? "bg-surface font-medium text-ink shadow-sm ring-1 ring-line" : "text-ink-3 hover:text-ink"}`
       }
     >
       <span>{label}</span>
-      <NavCount counts={counts} countsKey={countsKey} name={count} className={`num min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold leading-5 ${tone === "bad" ? "bg-hot text-white" : "bg-accent-soft text-accent"}`} />
+      <NavCount counts={counts} countsKey={countsKey} name={count} className={`num min-w-5 rounded-full px-1.5 text-center text-ui-caption-sm font-semibold leading-5 ${tone === "bad" ? "bg-hot text-white" : "bg-accent-soft text-accent"}`} />
     </NavLink>
   );
 }
@@ -92,7 +92,7 @@ export default function AdminLayout({ loaderData }: Route.ComponentProps) {
       <aside className="sticky top-0 hidden h-dvh w-[216px] shrink-0 flex-col border-r border-line bg-bg-sunk/50 px-3 py-4 lg:flex">
         <a href="/" className="mb-5 flex items-center gap-2 px-2">
           <RingMark className="size-6 text-accent" />
-          <span className="text-[15px] font-semibold tracking-tight text-ink">{`${SITE.name} 后台`}</span>
+          <span className="text-ui-body font-semibold tracking-tight text-ink">{`${SITE.name} 后台`}</span>
         </a>
         <nav className="scrollbar-thin flex-1 space-y-4 overflow-y-auto">
           {groups.map((g) => (
@@ -106,10 +106,10 @@ export default function AdminLayout({ loaderData }: Route.ComponentProps) {
             </div>
           ))}
         </nav>
-        <div className="mt-3 border-t border-line px-2 pt-3 text-[12.5px] text-ink-3">
+        <div className="mt-3 border-t border-line px-2 pt-3 text-ui-caption-lg text-ink-3">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate">{me.name}</span>
-            {me.dev && <span className="rounded-mark bg-amber/15 px-1.5 text-[11px] font-medium text-amber">开发</span>}
+            {me.dev && <span className="rounded-mark bg-amber/15 px-1.5 text-ui-caption-sm font-medium text-amber">开发</span>}
           </div>
           <form method="post" action="/api/auth/logout" className="mt-1.5">
             <button type="submit" className="text-ink-4 hover:text-ink-2">退出登录</button>
@@ -120,16 +120,16 @@ export default function AdminLayout({ loaderData }: Route.ComponentProps) {
         <div className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur lg:hidden">
           <div className="flex items-center gap-2 px-4 pt-3">
             <RingMark className="size-5 text-accent" />
-            <span className="text-[14px] font-semibold text-ink">{`${SITE.name} 后台`}</span>
-            {me.dev && <span className="rounded-mark bg-amber/15 px-1.5 text-[11px] font-medium text-amber">开发</span>}
+            <span className="text-ui-body-sm font-semibold text-ink">{`${SITE.name} 后台`}</span>
+            {me.dev && <span className="rounded-mark bg-amber/15 px-1.5 text-ui-caption-sm font-medium text-amber">开发</span>}
           </div>
           <nav className="scrollbar-none flex gap-1 overflow-x-auto px-3 py-2">
             {flat.map((i) => {
               const active = location.pathname === i.to || location.pathname.startsWith(`${i.to}/`);
               return (
-                <NavLink key={i.to} to={i.to} className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-[13px] ${active ? "bg-ink text-bg" : "text-ink-3"}`}>
+                <NavLink key={i.to} to={i.to} className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-ui-label ${active ? "bg-ink text-bg" : "text-ink-3"}`}>
                   {i.label}
-                  <NavCount counts={counts} countsKey={countsKey} name={i.count} className="num ml-1 text-[11px] opacity-70" />
+                  <NavCount counts={counts} countsKey={countsKey} name={i.count} className="num ml-1 text-ui-caption-sm opacity-70" />
                 </NavLink>
               );
             })}

@@ -7,12 +7,13 @@ const boundary = "按编号区分先后，或给测试数据明确的过去时�
 const wait = "等待可观察的状态、事件或可控计时器；不要用休眠判定操作完成";
 const id = "编号使用 randomUUID()、测试序号或 tag()，不要只用系统时钟";
 const clock = String.raw`(?:new\s+Date\s*\(\s*\)|Date\.now\s*\(\s*\))`;
-const fields = "publishedAt|discoveredAt|releasedAt|visibleAfter|startAfter|nextCheckAt|observedAt";
+const fields = "publishedAt|discoveredAt|releasedAt|visibleAfter|startAfter|nextCheckAt|observedAt|\\w*(?:Since|Before|After)";
 const sqlFields = "published_at|discovered_at|visible_after|start_after|next_check_at|observed_at|sort_at";
 const current = String.raw`(?:now\s*\(\s*\)|current_timestamp|clock_timestamp\s*\(\s*\))`;
+const sqlClock = String.raw`(?:${current}|\$\{\s*${clock}\s*\})`;
 const value = new RegExp(String.raw`\b(?:${fields})\s*:\s*${clock}(?!\s*[+-]|\.getTime\(\)\s*[+-])`, "g");
-const due = new RegExp(String.raw`\b(?:${sqlFields})\s*=\s*${current}(?!\s*[+-])`, "gi");
-const sleeps = /\b(?:waitForTimeout|sleep|delay|setTimeout)\s*\(\s*(?:\d|(?:resolve|res|r|done)\s*,)|\btime\.sleep\s*\(/g;
+const due = new RegExp(String.raw`\b(?:${sqlFields})\s*=\s*${sqlClock}(?!\s*[+-])`, "gi");
+const sleeps = /\b(?:waitForTimeout|sleep|delay)\s*\(\s*(?:\d|[\w$]+\s*\))|\bsetTimeout\s*\(\s*(?:\d|(?:resolve|res|r|done)\s*,|\(\s*\)\s*=>\s*(?:resolve|res|r|done)\(\s*\)\s*,)|\btime\.sleep\s*\(/g;
 const numberId = /\b(?:\w*[Ii]d|ID|key|tag)\s*[:=]\s*(?:String\()?Date\.now\(\)(?!\s*[-+/])|`[^`\n]*\$\{Date\.now\(\)(?:\.toString\([^)]*\))?\}[^`\n]*`/g;
 
 function positions(text: string, pattern: RegExp, fix: string, add: (offset: number, fix: string) => void) {
@@ -35,14 +36,19 @@ export function clockViolations(source: string): Violation[] {
   positions(text, sleeps, wait, add);
   for (const m of text.matchAll(numberId)) {
     // A serial, UUID or random suffix supplies uniqueness independently of the clock.
-    if (!/\$\{(?!Date\.now)[^}]+\}/.test(m[0])) add(m.index, id);
+    const before = text.slice(text.lastIndexOf("\n", m.index) + 1, m.index);
+    if (/\b(?:console\.(?:log|info|debug|warn|error)|new Error)\([^;]*$/.test(before)) continue;
+    const extra = [...m[0].matchAll(/\$\{(?!Date\.now)([^}]+)\}/g)];
+    if (extra.every(x => /^(?:(?:source|service|vendor|provider)(?:Id|Key)?|prefix)$/i.test(x[1]!.trim()))) add(m.index, id);
   }
   // A live timestamp stored in a local variable and then used as an audit/read cutoff.
   for (const block of text.split(/(?=^\s*(?:test|it)\s*\()/m)) {
     const start = text.indexOf(block);
     for (const m of block.matchAll(new RegExp(String.raw`\b(?:const|let)\s+(\w+)\s*=\s*${clock}\s*[;,]`, "g"))) {
       const used = new RegExp(String.raw`\b\w*(?:Since|Before|After)\s*\(\s*${m[1]}\b|\b(?:${fields})\s*:\s*${m[1]}\b(?!\s*[-+])`);
-      if (used.test(block.slice(m.index + m[0].length))) add(start + m.index, boundary);
+      const remaining = block.slice(m.index + m[0].length);
+      const shorthand = new RegExp(`^(?:${fields})$`).test(m[1]!) && new RegExp(String.raw`[{,]\s*${m[1]}\s*[,}]`).test(remaining);
+      if (used.test(remaining) || shorthand) add(start + m.index, boundary);
     }
   }
   // Split SQL rows only at top-level commas. now(), SQL functions and interpolations can themselves contain commas.
@@ -56,7 +62,7 @@ export function clockViolations(source: string): Violation[] {
       if (char === "`") break;
       if (!depth && (char === "," || char === ")")) {
         const v = text.slice(start, token.index).trim();
-        if (new RegExp(`^(?:${sqlFields})$`, "i").test(columns[column] ?? "") && new RegExp(`^${current}$`, "i").test(v)) add(start + text.slice(start, token.index).indexOf(v), boundary);
+        if (new RegExp(`^(?:${sqlFields})$`, "i").test(columns[column] ?? "") && new RegExp(`^${sqlClock}$`, "i").test(v)) add(start + text.slice(start, token.index).indexOf(v), boundary);
         if (char === ")") {
           const next = /^\s*,\s*\(/.exec(text.slice(tokens.lastIndex));
           if (!next) break;

@@ -35,7 +35,7 @@ export default function PosterSheet({ id, title, open, onClose }: { id: string; 
         <div className="relative aspect-[3/4] w-full max-w-[min(360px,calc((88dvh-200px)*0.75))] overflow-hidden rounded-card border border-line bg-bg-sunk">
           {!loaded && !failed && <div className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,transparent_30%,rgba(255,255,255,0.35)_50%,transparent_70%)] bg-[length:200%_100%]" />}
           {failed ? (
-            <p className="absolute inset-0 grid place-items-center px-6 text-center text-[13px] text-ink-3">海报生成失败，请稍后再试。</p>
+            <p className="absolute inset-0 grid place-items-center px-6 text-center text-ui-label text-ink-3">海报生成失败，请稍后再试。</p>
           ) : (
             <img
               src={src}
@@ -46,17 +46,17 @@ export default function PosterSheet({ id, title, open, onClose }: { id: string; 
             />
           )}
         </div>
-        <p className="mt-3 text-[12.5px] text-ink-3">长按图片可保存或发送给朋友</p>
+        <p className="mt-3 text-ui-caption-lg text-ink-3">长按图片可保存或发送给朋友</p>
         <div className="mt-3 flex w-full max-w-[360px] gap-2">
           <a
             href={src}
             download={`${SITE.mcpPrefix}-${id}.png`}
-            className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-accent text-[14px] font-medium text-accent-contrast transition-colors hover:bg-accent-ink lg:h-10 sm:text-[13.5px]"
+            className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-accent text-ui-body-sm font-medium text-accent-contrast transition-colors hover:bg-accent-ink lg:h-10 sm:text-ui-label-lg"
           >
             <IconDownload size={15} /> 保存图片
           </a>
           {canShareFile && (
-            <button type="button" onClick={share} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-line-strong bg-surface text-[14px] font-medium text-ink transition-colors hover:border-ink-4 lg:h-10 sm:text-[13.5px]">
+            <button type="button" onClick={share} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-line-strong bg-surface text-ui-body-sm font-medium text-ink transition-colors hover:border-ink-4 lg:h-10 sm:text-ui-label-lg">
               <IconShare size={15} /> 分享
             </button>
           )}

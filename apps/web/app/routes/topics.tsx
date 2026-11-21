@@ -67,7 +67,7 @@ function TopicCard({ t }: { t: TopicSummary }) {
         </span>
       )}
       <span className="min-w-0 flex-1 lg:flex lg:flex-col">
-        <span className="flex items-center gap-2.5 text-[15.5px] font-semibold text-ink transition-colors group-hover:text-accent lg:text-[15px] lg:font-bold">
+        <span className="flex items-center gap-2.5 text-[15.5px] font-semibold text-ink transition-colors group-hover:text-accent lg:text-ui-body lg:font-bold">
           {t.brand && (
             <span className="hidden lg:flex">
               <BrandMark brand={t.brand} size={22} />
@@ -75,7 +75,7 @@ function TopicCard({ t }: { t: TopicSummary }) {
           )}
           {t.name}
         </span>
-        <span className="mt-0.5 line-clamp-1 text-[12.5px] leading-[1.6] text-ink-4 lg:mt-1.5 lg:line-clamp-2 lg:flex-1 lg:text-[13px] lg:leading-[1.65] lg:text-ink-2">
+        <span className="mt-0.5 line-clamp-1 text-ui-caption-lg leading-[1.6] text-ink-4 lg:mt-1.5 lg:line-clamp-2 lg:flex-1 lg:text-ui-label lg:leading-[1.65] lg:text-ink-2">
           {t.latest?.title ?? t.definition}
         </span>
         <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-ink-4 lg:mt-3 lg:justify-between">
@@ -102,8 +102,8 @@ export default function TopicsPage() {
     <div className="pb-10">
       <PhoneBar back={{ to: "/more", label: "我的" }} title="主题" />
       <header className="pb-2 pt-3 lg:pt-1">
-        <h1 data-page-title="" className="text-[24px] font-semibold leading-[1.3] text-ink">{subjectAfter("按主题看")}</h1>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-3">
+        <h1 data-page-title="" className="text-ui-heading-lg font-semibold leading-[1.3] text-ink">{subjectAfter("按主题看")}</h1>
+        <p className="mt-1.5 text-ui-label leading-relaxed text-ink-3">
           {`按${groups.map((g) => g.name).join("、")}浏览 `}
           <span className="num">{topics.length}</span> 个主题，追踪最新精选与重要进展。
         </p>
@@ -111,10 +111,10 @@ export default function TopicsPage() {
       {groups.map((g) => (
         <section key={g.key} aria-labelledby={`topics-${g.key}`} className="pt-8">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            <h2 id={`topics-${g.key}`} className="text-[15px] font-bold text-ink">
+            <h2 id={`topics-${g.key}`} className="text-ui-body font-bold text-ink">
               {g.name}
             </h2>
-            <p className="text-[12px] text-ink-4">{g.blurb}</p>
+            <p className="text-ui-caption text-ink-4">{g.blurb}</p>
           </div>
           <ul className="mt-3 divide-y divide-line-soft overflow-hidden rounded-card border border-line bg-surface lg:mt-3.5 lg:grid lg:grid-cols-3 lg:gap-3 lg:divide-y-0 lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent xl:grid-cols-4">
             {topics

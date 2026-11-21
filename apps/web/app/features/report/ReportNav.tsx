@@ -40,7 +40,7 @@ export function ReportArchive({ kind, index, current }: { kind: ReportKind; inde
         ))}
       </nav>
       {kind === "daily" && (
-        <IntentLink to="/daily/archive" className="flex h-12 shrink-0 items-center justify-between border-t border-line pl-1 pr-1.5 text-[12.5px] font-medium text-ink-2 transition-colors hover:text-accent">
+        <IntentLink to="/daily/archive" className="flex h-12 shrink-0 items-center justify-between border-t border-line pl-1 pr-1.5 text-ui-caption-lg font-medium text-ink-2 transition-colors hover:text-accent">
           日报合订本 <IconChevronRight size={14} />
         </IntentLink>
       )}
@@ -68,7 +68,7 @@ function ArchiveGroup({ g, kind, current, initiallyOpen }: {
   const mark = (key: string) => archiveMark(kind, key);
   return (
     <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="disclosure group/month border-b border-line">
-      <summary className="flex h-11 items-center gap-1.5 pl-1 pr-1.5 text-[13px] text-ink transition-colors hover:text-accent">
+      <summary className="flex h-11 items-center gap-1.5 pl-1 pr-1.5 text-ui-label text-ink transition-colors hover:text-accent">
         <IconChevronRight size={14} className="text-ink-4 transition-transform duration-200 group-open/month:rotate-90" />
         <span className="flex-1 font-semibold">{g.label}</span>
         <span className="num text-[11.5px] text-ink-4">{g.entries.length}</span>
@@ -89,7 +89,7 @@ function ArchiveGroup({ g, kind, current, initiallyOpen }: {
                   <span className={`num text-[19px] font-black leading-none tracking-[-0.03em] ${on ? "text-accent" : "text-ink"}`}>{mark(e.key).big}</span>
                   {mark(e.key).small && <span className="mt-1 whitespace-nowrap text-[10px] leading-none text-ink-4">{mark(e.key).small}</span>}
                 </span>
-                <span className={`line-clamp-2 min-w-0 text-[12.5px] leading-[18px] transition-colors ${on ? "font-semibold text-ink" : "text-ink-2 group-hover:text-ink"}`}>{e.title ?? `${REPORT_NAMES[kind]} ${e.key}`}</span>
+                <span className={`line-clamp-2 min-w-0 text-ui-caption-lg leading-[18px] transition-colors ${on ? "font-semibold text-ink" : "text-ink-2 group-hover:text-ink"}`}>{e.title ?? `${REPORT_NAMES[kind]} ${e.key}`}</span>
               </IntentLink>
             </li>
           );
@@ -104,7 +104,7 @@ function ArchiveGroup({ g, kind, current, initiallyOpen }: {
 export function ReportPhoneNav({ kind, index, current, today }: { kind: ReportKind; index: ReportNavigationEntry[]; current: string | null; today: string }) {
   const recent = index.slice(0, 3);
   const earlier = kind === "daily" ? "/daily/archive" : "#report-history";
-  const chip = "inline-flex h-11 shrink-0 items-center rounded-full border px-4 text-[13px] transition-colors";
+  const chip = "inline-flex h-11 shrink-0 items-center rounded-full border px-4 text-ui-label transition-colors";
   if (recent.length === 0) return null;
   return (
     <nav aria-label={`最近的${REPORT_NAMES[kind]}`} className="scrollbar-none bleed flex gap-2 overflow-x-auto pb-1 pt-1.5 lg:mx-0 lg:w-full lg:max-w-[1160px] lg:px-0 lg:pb-4 lg:pt-3 side:hidden">

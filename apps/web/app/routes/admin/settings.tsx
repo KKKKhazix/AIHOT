@@ -22,7 +22,7 @@ function QrSlot({ slot, label, src }: { slot: "wechatQr" | "feishuQr"; label: st
     <div className="flex items-center gap-4">
       {src ? <img src={src} alt={label} className="size-28 rounded-card bg-white object-contain p-1.5 ring-1 ring-line" /> : <div className="flex size-28 shrink-0 items-center justify-center rounded-card bg-surface text-sm text-ink-4 ring-1 ring-line">未设置</div>}
       <div>
-        <div className="text-[14px] font-medium text-ink">{label}</div>
+        <div className="text-ui-body-sm font-medium text-ink">{label}</div>
         <div className="mt-0.5 break-all font-mono text-[11.5px] text-ink-4">{src}</div>
         <input
           ref={input}
@@ -56,7 +56,7 @@ function BudgetRow({ b }: { b: AdminSettings["budgets"][number] }) {
   const changed = v.perMinute !== b.per_minute || v.perHour !== b.per_hour || v.perDay !== b.per_day;
   return (
     <tr className="border-b border-line/70 last:border-0">
-      <td className="px-3 py-2 font-mono text-[12.5px]">{b.service}</td>
+      <td className="px-3 py-2 font-mono text-ui-caption-lg">{b.service}</td>
       {(["perMinute", "perHour", "perDay"] as const).map((k) => (
         <td key={k} className="px-3 py-2">
           <Input type="number" min={0} className="!w-24 !py-1 text-right" value={v[k]} onChange={(e) => setV({ ...v, [k]: Number(e.target.value) })} />
@@ -124,9 +124,9 @@ export default function SettingsAdmin({ loaderData: s }: Route.ComponentProps) {
       </div>
       <Card className="mt-5" title="付费请求上限" right={<span>已用：近 1 小时 / 近 24 小时</span>} pad={false}>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-[13px]">
+          <table className="w-full min-w-[640px] text-ui-label">
             <thead>
-              <tr className="border-b border-line text-left text-[12px] text-ink-3">
+              <tr className="border-b border-line text-left text-ui-caption text-ink-3">
                 <th className="px-3 py-2 font-medium">服务</th>
                 <th className="px-3 py-2 font-medium">每分钟</th>
                 <th className="px-3 py-2 font-medium">每小时</th>

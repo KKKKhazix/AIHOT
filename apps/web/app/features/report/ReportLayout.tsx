@@ -46,7 +46,7 @@ export function ReportLayout({ kind, index, current, today, outline = [], back, 
             <div className="hidden w-full max-w-[1160px] items-center justify-between gap-4 lg:flex side:hidden">
               <KindSwitch kind={kind} phone layoutId="report-kind-narrow" />
               {outline.length > 0 && (
-                <button type="button" onClick={() => setOutlineOpen(true)} className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink">
+                <button type="button" onClick={() => setOutlineOpen(true)} className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-ui-label font-medium text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink">
                   <IconList size={16} /> 本期目录
                 </button>
               )}

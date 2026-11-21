@@ -214,12 +214,12 @@ test('holds written at the same time for different incidents both stand',async()
 
 test('owner alerts claim AI was notified only after the hub actually accepts the wake',async()=>{
  const now=Date.now();
- const fullOutage:Finding={key:'probe.public',level:'now',title:'网站打不开',owner:true,agentFirst:true,action:'把这条发给 AI 排查处理'};
+ const fullOutage:Finding={key:'probe.public',level:'now',title:'网站打不开',owner:true,agentFirst:true,action:'请先查看站点可用性'};
  status=500;tellStatus=200;found=[fullOutage];
  await checkAlerts(now);
  assert.equal(told.length,1);
  assert.ok(!told[0]!.body.text.includes('已自动通知 AI'),'unaccepted event wake must not claim AI was notified');
- assert.ok(told[0]!.body.text.includes('把这条发给 AI 排查处理'));
+ assert.ok(told[0]!.body.text.includes(fullOutage.action!));
 
  const at=new Date(Date.now()-3600_000);
  await sql`INSERT INTO settings(key,value,updated_at) VALUES('heartbeat.worker','{}',${at})`;
@@ -240,7 +240,7 @@ test('owner alerts claim AI was notified only after the hub actually accepts the
 test('a failed owner send after waking never mints a second incident id on retry',async()=>{
  const t0=Date.now();
  const refused:Finding={key:'provider.refused.deepseek',level:'now',title:'DeepSeek 拒绝调用',owner:true,action:'去 DeepSeek 开放平台看余额'};
- const outageNoSince:Finding={key:'probe.public',level:'now',title:'网站打不开',owner:true,agentFirst:true,action:'把这条发给 AI 排查处理'};
+ const outageNoSince:Finding={key:'probe.public',level:'now',title:'网站打不开',owner:true,agentFirst:true,action:'请先查看站点可用性'};
  process.env.FEISHU_ALERT_WEBHOOK_URL=`http://127.0.0.1:${(server.address() as any).port}/webhook`;
  try {
   status=200;tellStatus=500;found=[refused];

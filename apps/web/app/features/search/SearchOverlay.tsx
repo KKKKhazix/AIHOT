@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Form, Link, useLocation, useNavigation } from "react-router";
 import type { SearchSuggestions } from "@aihot/contracts/site";
 import { IconClose, IconSearch } from "../../components/icons";
-import { inNav } from "../../components/shell/nav";
+import { topicsInNav } from "../../components/shell/nav";
 import { addRecentSearch, clearRecentSearches, useRecentSearches } from "../../lib/local-state";
 import { useModal } from "../../components/ui/modal";
 
@@ -103,7 +103,7 @@ export function SearchOverlay() {
   }
 
   const companies = (more?.topics ?? []).filter((t) => t.group === "company").slice(0, 6);
-  const chip = "inline-flex h-11 max-w-full items-center rounded-full px-3.5 text-[14px] transition-colors";
+  const chip = "inline-flex h-11 max-w-full items-center rounded-full px-3.5 text-ui-body-sm transition-colors";
   return (
     <div
       ref={panel}
@@ -141,7 +141,7 @@ export function SearchOverlay() {
             maxLength={200}
             autoComplete="off"
             enterKeyHint="search"
-            className="h-10 w-full rounded-full bg-surface pl-10 pr-9 text-[16px] text-ink outline-none ring-1 ring-inset ring-line-strong transition-shadow placeholder:text-ink-4 focus:ring-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] [&::-webkit-search-cancel-button]:hidden"
+            className="h-10 w-full rounded-full bg-surface pl-10 pr-9 text-ui-body-lg text-ink outline-none ring-1 ring-inset ring-line-strong transition-shadow placeholder:text-ink-4 focus:ring-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] [&::-webkit-search-cancel-button]:hidden"
           />
           {hasText && (
             <button
@@ -159,7 +159,7 @@ export function SearchOverlay() {
             </button>
           )}
         </label>
-        <button type="button" tabIndex={shown ? 0 : -1} onClick={close} className="h-11 shrink-0 px-3 text-[16px] text-accent">
+        <button type="button" tabIndex={shown ? 0 : -1} onClick={close} className="h-11 shrink-0 px-3 text-ui-body-lg text-accent">
           取消
         </button>
       </Form>
@@ -169,8 +169,8 @@ export function SearchOverlay() {
           {recent.length > 0 && (
             <section className="pt-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-[13px] font-semibold text-ink-3">最近搜索</h2>
-                <button type="button" onClick={clearRecentSearches} className="-mr-2 h-11 px-2 text-[13px] text-ink-4">
+                <h2 className="text-ui-label font-semibold text-ink-3">最近搜索</h2>
+                <button type="button" onClick={clearRecentSearches} className="-mr-2 h-11 px-2 text-ui-label text-ink-4">
                   清除
                 </button>
               </div>
@@ -186,14 +186,14 @@ export function SearchOverlay() {
 
           {companies.length > 0 && (
             <section className="pt-6">
-              <h2 className="text-[13px] font-semibold text-ink-3">按主题找</h2>
+              <h2 className="text-ui-label font-semibold text-ink-3">按主题找</h2>
               <div className="mt-2.5 flex flex-wrap gap-2">
                 {companies.map((t) => (
                   <Link viewTransition key={t.slug} to={`/topics/${t.slug}`} className={`${chip} bg-well text-ink-2 ring-1 ring-inset ring-line-soft active:bg-bg-muted`}>
                     <span className="truncate">{t.name}</span>
                   </Link>
                 ))}
-                {inNav("/topics") && (
+                {topicsInNav && (
                   <Link viewTransition to="/topics" className={`${chip} gap-0.5 font-medium text-accent`}>
                     全部 {more!.topics.length} 个主题
                   </Link>
@@ -204,13 +204,13 @@ export function SearchOverlay() {
 
           {(more?.hot.length ?? 0) > 0 && (
             <section className="pt-6">
-              <h2 className="text-[13px] font-semibold text-ink-3">正在热议</h2>
+              <h2 className="text-ui-label font-semibold text-ink-3">正在热议</h2>
               <ol className="mt-1 divide-y divide-line-soft">
                 {more!.hot.map((h, i) => (
                   <li key={h.to}>
                     <Link viewTransition to={h.to} className="grid h-12 grid-cols-[18px_minmax(0,1fr)] items-center gap-x-3 active:opacity-60">
-                      <span className={`num text-center text-[15px] font-black ${RANK_COLOR[i] ?? "text-rank-rest"}`}>{h.rank}</span>
-                      <span className="truncate text-[15px] text-ink">{h.title}</span>
+                      <span className={`num text-center text-ui-body font-black ${RANK_COLOR[i] ?? "text-rank-rest"}`}>{h.rank}</span>
+                      <span className="truncate text-ui-body text-ink">{h.title}</span>
                     </Link>
                   </li>
                 ))}

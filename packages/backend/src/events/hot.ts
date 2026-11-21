@@ -27,8 +27,8 @@ export interface HotEntry {
   representativeItemId: string | null;
   representativeUrl: string | null;
   representativeSource: string | null;
-  /** 精选组 first by tier, then 氛围组; sourceId and tier may be absent on rankings stored by older versions. */
-  participants: Array<{ sourceId?: string; name: string; kind: "editorial" | "signal"; tier?: string }>;
+  /** 精选组 first by tier, then 氛围组. */
+  participants: Array<{ sourceId: string; name: string; kind: "editorial" | "signal"; tier?: string }>;
 }
 
 /** Participants in the 精选组 order: T1 before T1.5 before T2, then everything else. */

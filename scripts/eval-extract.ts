@@ -94,7 +94,8 @@ function run(pages: string, out: string) {
     if (!page.html) continue;
     // A page that makes extraction throw fails that article in production too: record it as this page's result.
     let extracted: ReturnType<typeof readable> = null, error: string | undefined;
-    try { extracted = readable(readFileSync(path.join(pages, page.html), "utf8"), page.fetchedUrl!, page.rules); }
+    const html = readFileSync(path.join(pages, page.html), "utf8");
+    try { extracted = readable(html, page.fetchedUrl!, page.rules); }
     catch (thrown) { error = String(thrown); }
     let body: Body | null = null;
     if (extracted) {

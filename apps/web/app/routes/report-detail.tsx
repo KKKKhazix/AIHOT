@@ -2,7 +2,7 @@ import { data, useLoaderData } from "react-router";
 import type { Route } from "./+types/report-detail";
 import { REPORT_NAMES, reportDateLabel, type ReportDetail, type ReportNavigationResponse, type ReportKind } from "@aihot/contracts/site";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
-import { apiGet, cachedPage, loadOr404 } from "../lib/api.server";
+import { apiGet, cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { breadcrumbLd, pageMeta, reportDescription, reportLd, reportTitle, titled } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
@@ -22,7 +22,7 @@ const PATTERN: Record<ReportKind, RegExp> = {
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const kind = kindFromPath(new URL(request.url).pathname);
+  const kind = kindFromPath(pagePathname(request));
   const key = params.key ?? "";
   if (!PATTERN[kind].test(key)) throw data({ message: "not_found" }, { status: 404 });
   const [report, { items: index }] = await Promise.all([

@@ -85,7 +85,7 @@ function FacesButton({ participants, total, names, children }: { participants: H
         {children}
       </button>
       {open && createPortal(
-        <span ref={popup} id={id} role="dialog" aria-label="参与讨论的来源" style={at} className="fixed z-50 max-h-[240px] w-[240px] overflow-y-auto rounded-control border border-line bg-raised p-3 text-[12.5px] leading-relaxed text-ink-2 shadow-[var(--shadow-pop)]">
+        <span ref={popup} id={id} role="dialog" aria-label="参与讨论的来源" style={at} className="fixed z-50 max-h-[240px] w-[240px] overflow-y-auto rounded-control border border-line bg-raised p-3 text-ui-caption-lg leading-relaxed text-ink-2 shadow-[var(--shadow-pop)]">
           <span className="block">{listed.map((p) => p.name).join("、")}</span>
           {more > 0 && <span className="mt-2 block text-[11.5px] text-ink-4">另有 {more} 位未列出</span>}
         </span>, document.body

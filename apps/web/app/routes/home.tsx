@@ -5,7 +5,7 @@ import type { TimelineResponse } from "@aihot/contracts/site";
 import { cachedPage, loadOr404 } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { filterParams, hasFeedFilters, itemListLd, listPath, pageMeta, readFilters, siteLd } from "../lib/seo";
-import { inNav } from "../components/shell/nav";
+import { hotInNav } from "../components/shell/nav";
 import type { Screen } from "../components/shell/screens";
 import { Timeline } from "../features/feed/Timeline";
 import { HotTopics } from "../features/feed/HotTopics";
@@ -43,7 +43,7 @@ export default function Home() {
       {/* Phones: the bar (精选 | 全部, filter, search), the filter in use, today's hot topics, the feed. */}
       <FeedBar base="/" category={filters.category} channel={filters.channel} />
       <ActiveFilters base="/" category={filters.category} channel={filters.channel} tag={filters.tag} />
-      <h1 className="sr-only lg:not-sr-only lg:text-[24px] lg:font-semibold lg:leading-[1.3] lg:text-ink">
+      <h1 className="sr-only lg:not-sr-only lg:text-ui-heading-lg lg:font-semibold lg:leading-[1.3] lg:text-ink">
         {filters.tag ? `#${filters.tag}` : "精选"}
       </h1>
       <div className="mb-5 mt-4 hidden items-center justify-between gap-4 lg:flex">
@@ -51,7 +51,7 @@ export default function Home() {
         <SearchField keep={{ category: filters.category }} />
       </div>
 
-      {data.hot && inNav("/hot") && <HotTopics entries={data.hot} />}
+      {data.hot && hotInNav && <HotTopics entries={data.hot} />}
 
       <Timeline initial={data} filters={data.filters} />
     </div>

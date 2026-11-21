@@ -150,7 +150,7 @@ export function IssueDots({ kind, reportKey, issueNumber, index, className = "" 
 
   return (
     <div className={className}>
-      <div className="flex items-baseline justify-between text-[11px] text-ink-4">
+      <div className="flex items-baseline justify-between text-ui-caption-sm text-ink-4">
         <span className="font-semibold tracking-[0.2em] text-ink-2">{grid.title}</span>
         <span className="num">{grid.note}</span>
       </div>

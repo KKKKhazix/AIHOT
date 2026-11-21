@@ -37,11 +37,11 @@ export default function AdminLogin() {
       <div className="w-full max-w-[360px]">
         <div className="flex items-center justify-center gap-2">
           <Wordmark size={28} className="text-ink" />
-          <span className="text-[15px] font-semibold text-ink-3">后台</span>
+          <span className="text-ui-body font-semibold text-ink-3">后台</span>
         </div>
         <form method="post" action="/api/auth/password" className="card mt-8 p-6">
           <input type="hidden" name="return" value={returnTo} />
-          <label htmlFor="password" className="block text-[13px] font-medium text-ink-2">
+          <label htmlFor="password" className="block text-ui-label font-medium text-ink-2">
             管理员密码
           </label>
           <input
@@ -51,10 +51,10 @@ export default function AdminLogin() {
             autoComplete="current-password"
             required
             autoFocus
-            className="mt-2 h-10 w-full rounded-full border border-line-strong bg-surface px-4 text-[14px] text-ink outline-none transition-colors focus:border-accent"
+            className="mt-2 h-10 w-full rounded-full border border-line-strong bg-surface px-4 text-ui-body-sm text-ink outline-none transition-colors focus:border-accent"
           />
           {message && (
-            <p role="alert" className="mt-3 text-[12.5px] leading-relaxed text-hot">
+            <p role="alert" className="mt-3 text-ui-caption-lg leading-relaxed text-hot">
               {message}
             </p>
           )}
@@ -62,7 +62,7 @@ export default function AdminLogin() {
             登录
           </button>
         </form>
-        <p className="mt-6 text-center text-[12px] text-ink-4">
+        <p className="mt-6 text-center text-ui-caption text-ink-4">
           <a href="/" className="hover:text-ink-2">
             回到 {SITE.name}
           </a>

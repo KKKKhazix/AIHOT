@@ -69,7 +69,7 @@ function Toggle({ open, onToggle, children }: { open: boolean; onToggle: () => v
         e.stopPropagation();
         onToggle();
       }}
-      className="relative z-10 inline-flex items-center gap-0.5 text-ink-4 transition-colors hover:text-accent text-[12.5px]"
+      className="relative z-10 inline-flex items-center gap-0.5 text-ink-4 transition-colors hover:text-accent text-ui-caption-lg"
     >
       {children}
       <IconChevronDown size={13} className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
@@ -87,7 +87,7 @@ function Panel({ open, children }: { open: boolean; children: ReactNode }) {
 
 function LoadState({ loading, error, onRetry, empty }: { loading: boolean; error: boolean; onRetry: () => void; empty: boolean }) {
   if (loading && empty) return <div className="space-y-2 py-1">{[0, 1].map((i) => <div key={i} className="skeleton h-4" />)}</div>;
-  if (error) return <button type="button" onClick={onRetry} className="min-h-11 py-1 text-[12.5px] text-hot lg:min-h-0">暂时无法加载，点此重试</button>;
+  if (error) return <button type="button" onClick={onRetry} className="min-h-11 py-1 text-ui-caption-lg text-hot lg:min-h-0">暂时无法加载，点此重试</button>;
   return null;
 }
 
@@ -129,7 +129,7 @@ export function GroupSources({ group, filters, parentId }: { group: GroupInfo; f
       <Panel open={open}>
         <ul className="divide-y divide-line-soft">
           {others.map((r) => (
-            <li key={r.id} className="flex items-baseline gap-2 py-1.5 text-[13px]">
+            <li key={r.id} className="flex items-baseline gap-2 py-1.5 text-ui-label">
               <span className="w-[108px] shrink-0 truncate text-ink-4">{r.source.name}</span>
               <Link viewTransition to={`/items/${r.id}`} className={`min-w-0 flex-1 truncate hover:text-accent ${readTone(read.has(r.id), "text-ink-2")}`}>
                 {r.title}
@@ -162,7 +162,7 @@ export function GroupButton({ group, filters, parentId }: { group: GroupInfo; fi
         }}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className="relative z-10 mt-2 flex min-h-11 w-full items-center justify-between rounded-tile bg-well px-3 py-2 text-left text-[12.5px] text-ink-4 transition-colors active:bg-bg-muted lg:hidden"
+        className="relative z-10 mt-2 flex min-h-11 w-full items-center justify-between rounded-tile bg-well px-3 py-2 text-left text-ui-caption-lg text-ink-4 transition-colors active:bg-bg-muted lg:hidden"
       >
         {labelOf(group)}
         <IconChevronRight size={14} />
@@ -192,10 +192,10 @@ function GroupSheet({ open, onClose, group, filters, parentId }: {
           {others.map((r) => (
             <li key={r.id} className="flex items-start gap-2 py-3">
               <Link viewTransition to={`/items/${r.id}`} className="min-w-0 flex-1 active:opacity-60">
-                <span className="block text-[12.5px] text-ink-4">
+                <span className="block text-ui-caption-lg text-ink-4">
                   {r.source.name} · <span className="num">{monthDayTime(r.timelineAt)}</span>
                 </span>
-                <span className={`mt-0.5 line-clamp-2 text-[15px] leading-[1.5] ${readTone(read.has(r.id), "text-ink-2")}`}>{r.title}</span>
+                <span className={`mt-0.5 line-clamp-2 text-ui-body leading-[1.5] ${readTone(read.has(r.id), "text-ink-2")}`}>{r.title}</span>
               </Link>
               <a href={r.originalUrl} target="_blank" rel="noopener noreferrer" aria-label="打开原文" className="-mr-2 grid size-11 shrink-0 place-items-center rounded-full text-ink-4 active:bg-bg-sunk">
                 <IconArrowUpRight size={16} />

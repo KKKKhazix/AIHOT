@@ -78,7 +78,7 @@ export default function Sources({ loaderData }: Route.ComponentProps) {
                     {r.name}
                   </Link>
                   <div className="font-mono text-[11.5px] text-ink-4">{r.id}</div>
-                  {r.health === "failing" && r.last_error && <div className="mt-1 line-clamp-1 text-[12px] text-hot">{r.last_error}</div>}
+                  {r.health === "failing" && r.last_error && <div className="mt-1 line-clamp-1 text-ui-caption text-hot">{r.last_error}</div>}
                 </div>
               ),
             },

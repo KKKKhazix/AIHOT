@@ -128,7 +128,7 @@ export function Lightbox({ images, index, onIndex, onClose }: { images: Lightbox
             <button type="button" aria-label="下一张" onClick={(e) => { e.stopPropagation(); onIndex((index + 1) % images.length); }} className={`${nav} right-[max(12px,env(safe-area-inset-right))] sm:right-5`}>
               <IconArrowRight size={18} />
             </button>
-            <span className="num pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/40 px-2.5 py-0.5 text-[12px] text-white/85">
+            <span className="num pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/40 px-2.5 py-0.5 text-ui-caption text-white/85">
               {index + 1} / {images.length}
             </span>
           </>

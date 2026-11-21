@@ -72,7 +72,7 @@ test('a previously unseen, undated tail cannot become selected news, heat, a rep
 });
 
 test('an original source can supply a missing date without changing the text; discovery and explicit backfill are preserved',async()=>{
-  const discoveredAt=new Date();
+  const discoveredAt=new Date(Date.now()-60_000);
   for(const mode of ['old','fresh','first-import'] as const){
     const material={sourceId:SOURCE,url:`${base}/later-${mode}`,title:'Unchanged material',bodyText:body,via:'fetch' as const,discoveredAt,backfill:mode==='first-import'?'first-import':null};
     const created=await upsertMaterial(material);

@@ -70,7 +70,7 @@ export function RailSection({ title, shrink = false, children }: { title?: React
   const column = shrink ? "flex min-h-0 flex-col" : "";
   return (
     <section className={`border-t border-line pt-3.5 ${column}`}>
-      {title && <h2 className="text-[12px] font-semibold text-ink-3">{title}</h2>}
+      {title && <h2 className="text-ui-caption font-semibold text-ink-3">{title}</h2>}
       <div className={`${title ? "mt-2.5" : ""} ${column}`}>{children}</div>
     </section>
   );
@@ -80,7 +80,7 @@ export function RailSection({ title, shrink = false, children }: { title?: React
 export function AsideCard({ title, children, className = "" }: { title: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={`card p-5 ${className}`}>
-      <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
+      <h2 className="text-ui-label font-semibold text-ink">{title}</h2>
       <div className="mt-3">{children}</div>
     </section>
   );
@@ -89,7 +89,7 @@ export function AsideCard({ title, children, className = "" }: { title: ReactNod
 /** "完整榜单 →" style link used in card headers. */
 export function MoreLink({ to, children }: { to: string; children: ReactNode }) {
   return (
-    <Link viewTransition to={to} className="inline-flex items-center gap-0.5 whitespace-nowrap text-[12px] font-semibold text-accent hover:text-accent-ink">
+    <Link viewTransition to={to} className="inline-flex items-center gap-0.5 whitespace-nowrap text-ui-caption font-semibold text-accent hover:text-accent-ink">
       {children}
       <IconChevronRight size={13} />
     </Link>
@@ -100,8 +100,8 @@ export function MoreLink({ to, children }: { to: string; children: ReactNode }) 
 export function EmptyState({ title, children, action }: { title: ReactNode; children?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center px-6 py-14 text-center">
-      <div className="text-[15px] font-semibold text-ink-2">{title}</div>
-      {children && <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-4">{children}</p>}
+      <div className="text-ui-body font-semibold text-ink-2">{title}</div>
+      {children && <p className="mt-1.5 max-w-sm text-ui-label leading-relaxed text-ink-4">{children}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );

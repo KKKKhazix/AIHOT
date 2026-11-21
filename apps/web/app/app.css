@@ -26,6 +26,19 @@
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
+  /* Interface type sizes. Each utility sets only the size; components own their line height. */
+  --text-ui-caption-sm: 11px;
+  --text-ui-caption: 12px;
+  --text-ui-caption-lg: 12.5px;
+  --text-ui-label: 13px;
+  --text-ui-label-lg: 13.5px;
+  --text-ui-body-sm: 14px;
+  --text-ui-body: 15px;
+  --text-ui-body-lg: 16px;
+  --text-ui-heading-sm: 18px;
+  --text-ui-heading: 20px;
+  --text-ui-heading-lg: 24px;
+
   /* Semantic colours. */
   --color-bg: var(--bg);
   --color-bg-sunk: var(--bg-sunk);
@@ -233,7 +246,7 @@
     background: var(--bg);
     color: var(--ink);
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: var(--text-ui-body-sm);
     line-height: 1.5;
   }
   ::selection {
@@ -274,7 +287,7 @@
     height: 1.625rem;
     padding: 0 0.625rem;
     border-radius: 9999px;
-    font-size: 12px;
+    font-size: var(--text-ui-caption);
     color: var(--ink-4);
     background: var(--bg-sunk);
     border: 1px solid var(--line-soft);
@@ -469,7 +482,7 @@
   overflow-wrap: anywhere;
 }
 @media (min-width: 80rem) {
-  .prose { font-size: 18px; }
+  .prose { font-size: var(--text-ui-heading-sm); }
 }
 /* One gap between any two blocks, whatever they are; headings and figures adjust it below. Paragraphs
    need no margin reset of their own (preflight has one): a `.prose p` rule outranked this one and left a
@@ -513,7 +526,7 @@
   background: var(--bg-sunk);
 }
 .prose figure { margin: 1.5em 0; }
-.prose figcaption { font-size: 13px; color: var(--ink-4); text-align: center; margin-top: 0.6em; }
+.prose figcaption { font-size: var(--text-ui-label); color: var(--ink-4); text-align: center; margin-top: 0.6em; }
 .prose figcaption > :is(b, strong):first-child { margin-right: 0.5em; }
 /* A figure whose picture did not come through and that is left with only words (a chart's own
    description, a panel of numbers) stands apart from the running text in a well. */
@@ -539,7 +552,7 @@
 .prose pre {
   position: relative;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--text-ui-label);
   line-height: 1.65;
   background: var(--code-bg);
   border: 1px solid var(--line);
@@ -551,8 +564,8 @@
 /* Code blocks in article bodies get a head with the language and a copy button (features/item/ArticleBody). */
 .prose .code-block { margin-top: 1.2em; border: 1px solid var(--line); border-radius: var(--radius-tile); overflow: hidden; background: var(--code-bg); }
 .prose .code-block pre { margin: 0; border: 0; border-radius: 0; }
-.prose .code-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--line-soft); font-size: 12px; line-height: 1.4; color: var(--ink-4); letter-spacing: 0; }
-.prose .code-block-copy { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-mark); background: var(--surface); color: var(--ink-3); font-size: 12px; transition: color 120ms, border-color 120ms; }
+.prose .code-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--line-soft); font-size: var(--text-ui-caption); line-height: 1.4; color: var(--ink-4); letter-spacing: 0; }
+.prose .code-block-copy { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-mark); background: var(--surface); color: var(--ink-3); font-size: var(--text-ui-caption); transition: color 120ms, border-color 120ms; }
 .prose .code-block-copy:hover { color: var(--ink); border-color: var(--line-strong); }
 .prose .code-block-copy[data-status="copied"] { color: var(--ok-ink); }
 .prose .hljs-comment, .prose .hljs-quote { color: var(--ink-4); font-style: italic; }
@@ -571,7 +584,7 @@
   overscroll-behavior-x: contain;
   overflow-wrap: normal;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: var(--text-ui-body-sm);
   line-height: 1.55;
 }
 .prose th, .prose td { border: 1px solid var(--line); padding: 0.5em 0.75em; text-align: left; min-width: 4.5em; overflow-wrap: break-word; }
@@ -580,32 +593,32 @@
 
 /* A quoted post's words, set as the post's own text is (QuotedPost), at the quote box's size: its
    original language under 原文 smaller and quieter. */
-.prose.prose-quote { font-size: 15px; line-height: 1.75; letter-spacing: 0; color: var(--ink-2); }
-.prose.prose-quote-original { font-size: 14px; line-height: 1.7; letter-spacing: 0; color: var(--ink-3); }
+.prose.prose-quote { font-size: var(--text-ui-body); line-height: 1.75; letter-spacing: 0; color: var(--ink-2); }
+.prose.prose-quote-original { font-size: var(--text-ui-body-sm); line-height: 1.7; letter-spacing: 0; color: var(--ink-3); }
 .prose:is(.prose-quote, .prose-quote-original) > * + * { margin-top: 0.75em; }
 
 /* Policy pages read smaller and quieter than article bodies, with numbered sections set apart. */
 .prose-compact {
-  font-size: 15px;
+  font-size: var(--text-ui-body);
   line-height: 1.85;
   color: var(--ink-2);
 }
 @media (min-width: 80rem) {
-  .prose-compact { font-size: 16px; line-height: 1.85; }
+  .prose-compact { font-size: var(--text-ui-body-lg); line-height: 1.85; }
 }
 .prose-compact h2 {
-  font-size: 18px;
+  font-size: var(--text-ui-heading-sm);
   font-weight: 600;
   margin-top: 2.2em;
   padding-top: 1.4em;
   border-top: 1px solid var(--line);
 }
 .prose-compact h3 {
-  font-size: 16px;
+  font-size: var(--text-ui-body-lg);
   margin-top: 1.6em;
 }
 .prose-compact table {
-  font-size: 13px;
+  font-size: var(--text-ui-label);
 }
 .prose-compact td:first-child {
   color: var(--ink);

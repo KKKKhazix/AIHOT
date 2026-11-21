@@ -4,7 +4,7 @@ import { POLICY, SITE } from "@aihot/site";
 import type { loader as rootLoader } from "../root";
 import { useChangelogDot } from "../components/shell/Sidebar";
 import { PhoneBar } from "../components/shell/PhoneBar";
-import { inNav } from "../components/shell/nav";
+import { topicsInNav } from "../components/shell/nav";
 import type { Screen } from "../components/shell/screens";
 import { edgeTtl } from "../lib/api.server";
 import { webModules } from "../site-modules";
@@ -37,14 +37,14 @@ const agentWays = () => [...webModules().flatMap((m) => m.agentWays ?? []), "MCP
 /** The modules' tools first, then the engine's. */
 const tools = (): Row[] => [
   ...webModules().flatMap((m) => m.tools ?? []),
-  ...(inNav("/topics") ? [{ to: "/topics", label: "主题", icon: <IconGrid size={20} /> }] : []),
+  ...(topicsInNav ? [{ to: "/topics", label: "主题", icon: <IconGrid size={20} /> }] : []),
   { to: "/agent", label: "Agent 接入", icon: <IconPlug size={20} />, detail: agentWays().slice(0, 3).join(" · ") },
 ];
 
 function Group({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <section>
-      {title && <h2 className="px-4 pb-2 pt-6 text-[13px] font-semibold text-ink-3">{title}</h2>}
+      {title && <h2 className="px-4 pb-2 pt-6 text-ui-label font-semibold text-ink-3">{title}</h2>}
       <ul className="card divide-y divide-line-soft overflow-hidden">{children}</ul>
     </section>
   );
@@ -53,13 +53,13 @@ function Group({ title, children }: { title?: string; children: ReactNode }) {
 function RowLink({ row, dot = false }: { row: Row; dot?: boolean }) {
   return (
     <li>
-      <Link viewTransition to={row.to} className="flex min-h-[52px] items-center gap-3 px-4 text-[16px] font-medium text-ink transition-colors active:bg-bg-sunk lg:hover:bg-bg-sunk">
+      <Link viewTransition to={row.to} className="flex min-h-[52px] items-center gap-3 px-4 text-ui-body-lg font-medium text-ink transition-colors active:bg-bg-sunk lg:hover:bg-bg-sunk">
         <span className="text-ink-3">{row.icon}</span>
         <span className="flex flex-1 items-center gap-2">
           {row.label}
           {dot && <span className="size-[7px] rounded-full bg-hot" aria-label="有新的更新" />}
         </span>
-        {row.detail && <span className="text-[14px] font-normal text-ink-4">{row.detail}</span>}
+        {row.detail && <span className="text-ui-body-sm font-normal text-ink-4">{row.detail}</span>}
         <IconChevronRight size={16} className="text-ink-4" />
       </Link>
     </li>
@@ -83,14 +83,14 @@ export default function MorePage() {
         <Group>
           {Account && <Account place="me" />}
           <RowLink row={{ to: "/starred", label: "收藏", icon: <IconBookmark size={20} />, detail: here && starred.length > 0 ? <span className="num">{starred.length}</span> : undefined }} />
-          <li className="flex min-h-[56px] items-center gap-3 px-4 text-[16px] font-medium text-ink">
+          <li className="flex min-h-[56px] items-center gap-3 px-4 text-ui-body-lg font-medium text-ink">
             <span className="text-ink-3">
               <IconMoon size={20} />
             </span>
             <span className="flex-1">外观</span>
             <ThemeSwitch className="w-[126px]" />
           </li>
-          <li className="flex min-h-[56px] items-center gap-3 px-4 text-[16px] font-medium text-ink">
+          <li className="flex min-h-[56px] items-center gap-3 px-4 text-ui-body-lg font-medium text-ink">
             <span className="w-5 text-center text-ink-3" aria-hidden="true">Aa</span>
             <span className="flex-1">字体</span>
             <Select aria-label="字体" value={font ?? "system"} onChange={(e) => setFontPreference(e.target.value === "browser" ? "browser" : null)}>
@@ -110,7 +110,7 @@ export default function MorePage() {
           <RowLink row={{ to: "/feedback", label: "意见反馈", icon: <IconMessage size={20} /> }} />
         </Group>
       </div>
-      <div className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[12px] leading-[2] text-ink-4">
+      <div className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-1 text-ui-caption leading-[2] text-ink-4">
         <Link viewTransition to="/terms" className="hover:text-ink-2">{POLICY.terms.name}</Link>
         <Link viewTransition to="/privacy" className="hover:text-ink-2">隐私说明</Link>
         <a href="/feed.xml" className="hover:text-ink-2">RSS</a>

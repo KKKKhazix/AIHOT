@@ -58,9 +58,9 @@ export default function SelectBench({ loaderData }: Route.ComponentProps) {
                 pad={false}
               >
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[900px] text-[13px]">
+                  <table className="w-full min-w-[900px] text-ui-label">
                     <thead>
-                      <tr className="border-b border-line text-left text-[12px] text-ink-3">
+                      <tr className="border-b border-line text-left text-ui-caption text-ink-3">
                         {["模型", "有效输出准确率", "覆盖率", "完整准确率", "精确率", "召回率", "F1", "入选比例", "金标入选", "失败", "平均耗时", "输入/输出 tokens"].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}
                       </tr>
                     </thead>
@@ -87,7 +87,7 @@ export default function SelectBench({ loaderData }: Route.ComponentProps) {
                     </tbody>
                   </table>
                 </div>
-                <div className="flex items-center justify-between border-t border-line px-4 py-2 text-[12.5px] text-ink-3">
+                <div className="flex items-center justify-between border-t border-line px-4 py-2 text-ui-caption-lg text-ink-3">
                   <span>{r.cases ? `${num(r.cases)} 条逐条结果` : "只有汇总"}</span>
                   {r.cases > 0 && <Link className="text-accent" to={`/admin/selectbench/${r.id}`}>逐条浏览</Link>}
                 </div>

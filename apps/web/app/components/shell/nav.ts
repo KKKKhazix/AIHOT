@@ -45,7 +45,9 @@ const SECTIONS: Array<{ key: string; title: string; items: NavItem[] }> = [
 ];
 
 /** Whether an engine page is a way in from the navigation (site.ts NAV.hidden); a hidden page still opens. */
-export const inNav = (to: string) => !(NAV.hidden as readonly string[]).includes(to);
+const inNav = (to: string) => !(NAV.hidden as readonly string[]).includes(to);
+export const topicsInNav = inNav("/topics");
+export const hotInNav = inNav("/hot");
 
 const UP = {
   "/hot": { name: "热点榜", back: "热点", tab: "hot" },

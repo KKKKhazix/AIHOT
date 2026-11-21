@@ -43,7 +43,7 @@ export function McpPanel(props: AgentPanelProps) {
       <Steps>
         <Step n={1} title="复制服务地址">
           <Address url={url} />
-          {TAG && <p className="mt-2 text-[13px] text-ink-3">{TAG.mcp}</p>}
+          {TAG && <p className="mt-2 text-ui-label text-ink-3">{TAG.mcp}</p>}
         </Step>
         <Step n={2} title="加到你的客户端">
           <PillTabs className="mt-3" size="xs" layoutId="agent-mcp-client" label="客户端" active={client} onSelect={setClient} items={MCP_CLIENTS.map((c) => ({ key: c.key, label: c.label }))} />
@@ -54,7 +54,7 @@ export function McpPanel(props: AgentPanelProps) {
         </Step>
         <Step n={3} title="让 Agent 调一次">
           <Ask text={`请调用 ${T.latest}，告诉我过去 24 小时最重要的${subjectAfter(" 5 条", "资讯")}，并附 ${SITE.name} 链接。`} />
-          <p className="mt-2 text-[13px] text-ink-3">{`客户端显示调用了 ${T.latest}，回答里有时间范围、中文摘要和 ${new URL(props.base).host} 链接，就是连上了。`}</p>
+          <p className="mt-2 text-ui-label text-ink-3">{`客户端显示调用了 ${T.latest}，回答里有时间范围、中文摘要和 ${new URL(props.base).host} 链接，就是连上了。`}</p>
         </Step>
       </Steps>
 
@@ -129,18 +129,18 @@ export function RssPanel(props: AgentPanelProps) {
         {FEEDS.map((f) => (
           <div key={f.path} className="card flex flex-col p-4">
             <div className="flex items-center gap-2">
-              <span className="text-[15px] font-semibold text-ink">{f.name}</span>
-              {f.badge && <span className="inline-flex h-[18px] items-center rounded-full bg-accent-soft px-2 text-[11px] font-medium text-accent">{f.badge}</span>}
+              <span className="text-ui-body font-semibold text-ink">{f.name}</span>
+              {f.badge && <span className="inline-flex h-[18px] items-center rounded-full bg-accent-soft px-2 text-ui-caption-sm font-medium text-accent">{f.badge}</span>}
             </div>
-            <p className="mt-1 flex-1 text-[13px] leading-[1.7] text-ink-3">{f.desc}</p>
+            <p className="mt-1 flex-1 text-ui-label leading-[1.7] text-ink-3">{f.desc}</p>
             <div className="mt-3 flex items-center gap-2 border-t border-line-soft pt-3">
-              <code className="mono min-w-0 flex-1 truncate text-[12px] text-ink-4">{base}{f.path}</code>
+              <code className="mono min-w-0 flex-1 truncate text-ui-caption text-ink-4">{base}{f.path}</code>
               <CopyButton text={addressOf(props, f.path)} label="复制地址" className="shrink-0" />
             </div>
           </div>
         ))}
       </div>
-      {TAG && <p className="mt-3 text-[12.5px] text-ink-4">{TAG.rss}</p>}
+      {TAG && <p className="mt-3 text-ui-caption-lg text-ink-4">{TAG.rss}</p>}
 
       <Block title="按分类订阅">
         <Table
@@ -156,7 +156,7 @@ export function RssPanel(props: AgentPanelProps) {
 
       <Block title="刷新多快合适">
         <p>阅读器会带着上次的 ETag 来问，内容没变时只回一个很小的 304，不重复下载。30 分钟刷新一次就够，更快也拿不到新的内容。</p>
-        <p className="mt-3 text-[13px] text-ink-3">{`条目链接指向站内阅读页，原文链接在摘要里。能匿名订阅不等于所有用途都获许可${POLICY.terms.notes ? `：${POLICY.terms.notes.rss}` : ""}，见`}<Link viewTransition to="/terms" className={link}>{POLICY.terms.name}</Link>。</p>
+        <p className="mt-3 text-ui-label text-ink-3">{`条目链接指向站内阅读页，原文链接在摘要里。能匿名订阅不等于所有用途都获许可${POLICY.terms.notes ? `：${POLICY.terms.notes.rss}` : ""}，见`}<Link viewTransition to="/terms" className={link}>{POLICY.terms.name}</Link>。</p>
       </Block>
     </>
   );
@@ -196,7 +196,7 @@ export function ApiPanel(props: AgentPanelProps) {
             { title: "按节奏取", text: `资讯和热点最快一分钟一次；日报${EDITION_WHEN.daily} 后取一次，周报、月报出刊后取一次；往回翻页翻到已有的那条就停。` },
           ]}
         />
-        <p className="mt-3 text-[13px] leading-[1.75] text-ink-3">{pace}</p>
+        <p className="mt-3 text-ui-label leading-[1.75] text-ink-3">{pace}</p>
       </Block>
 
       <Block title="接口一览">
@@ -249,22 +249,22 @@ export function ApiPanel(props: AgentPanelProps) {
 
       <Block title="出错了怎么办" id="agent-api-recovery">
         <dl className="grid grid-cols-[76px_minmax(0,1fr)] gap-x-3 gap-y-2.5">
-          <dt className="mono text-[13px] text-ink">400</dt>
+          <dt className="mono text-ui-label text-ink">400</dt>
           <dd>参数不对：按 OpenAPI 和返回的 code 修正，不要自动换成更宽的查询。cursor 无效或滑出时间窗返回 invalid_cursor，从第一页重来。</dd>
-          <dt className="mono text-[13px] text-ink">409</dt>
+          <dt className="mono text-ui-label text-ink">409</dt>
           <dd>snapshot_required：增量没法安全续上，重新取一次完整快照。</dd>
-          <dt className="mono text-[13px] text-ink">429</dt>
+          <dt className="mono text-ui-label text-ink">429</dt>
           <dd>请求太密：按 Retry-After 等待，不要并发重试。</dd>
-          <dt className="mono text-[13px] text-ink">5xx</dt>
+          <dt className="mono text-ui-label text-ink">5xx</dt>
           <dd>指数退避，先用上次成功的结果；公开服务不承诺 SLA。</dd>
           {AGENT_PARTS.flatMap((a) => a.apiErrors ?? []).map(([status, what]) => (
             <Fragment key={status}>
-              <dt className="mono text-[13px] text-ink">{status}</dt>
+              <dt className="mono text-ui-label text-ink">{status}</dt>
               <dd>{what}</dd>
             </Fragment>
           ))}
         </dl>
-        <p className="mt-4 text-[13px] text-ink-3">{`能匿名调用不等于所有用途都获许可${POLICY.terms.notes ? `：${POLICY.terms.notes.api}` : ""}，见`}<Link viewTransition to="/terms" className={link}>{POLICY.terms.name}</Link>。</p>
+        <p className="mt-4 text-ui-label text-ink-3">{`能匿名调用不等于所有用途都获许可${POLICY.terms.notes ? `：${POLICY.terms.notes.api}` : ""}，见`}<Link viewTransition to="/terms" className={link}>{POLICY.terms.name}</Link>。</p>
       </Block>
 
     </>

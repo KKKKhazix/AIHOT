@@ -11,7 +11,7 @@ const CLOSE_DISTANCE = 110;
 const CLOSE_VELOCITY = 0.6; // px per ms
 
 /** A choice listed in a sheet: large type in a full-height row, the one in use in accent. */
-export const sheetChoice = (on: boolean) => `flex h-12 items-center justify-between text-[16px] transition-colors active:bg-bg-sunk ${on ? "font-semibold text-accent" : "text-ink"}`;
+export const sheetChoice = (on: boolean) => `flex h-12 items-center justify-between text-ui-body-lg transition-colors active:bg-bg-sunk ${on ? "font-semibold text-accent" : "text-ink"}`;
 
 /** The tick that ends the choice in use. */
 export const ChoiceTick = () => <IconCheck size={19} strokeWidth={2.2} />;

@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 // Failure cases: two workers finish the same extraction; a report revises the article while a page
 // or X Article is in flight; an obsolete empty response marks new input unconfirmed; an admin
 // repeats extraction of unchanged HTML. Neither content nor revision history may go backwards.
@@ -177,19 +178,16 @@ test("an obsolete extraction failure cannot penalize a newer complete report", a
   hold.failed = true;
   const source = `${sourceId}-worker`;
   await sql`INSERT INTO sources(id,name,kind) VALUES (${source},'Extraction worker','x_search')`;
-  const material = { sourceId: source, url: `https://x.com/author/status/${Date.now()}`, title: "Original", via: "fetch" as const,
-    xPost: { tweetId: `${Date.now()}9`, authorName: "Author", handle: "author", text: "https://x.com/i/article/123" } };
+  const postIdForFixture = "90000000000059";
+  const material = { sourceId: source, url: `https://x.com/author/status/${postIdForFixture}`, title: "Original", via: "fetch" as const,
+    xPost: { tweetId: postIdForFixture, authorName: "Author", handle: "author", text: "https://x.com/i/article/123" } };
   const { articleId } = await upsertMaterial(material);
   const job = await queueProcessing(articleId);
   await registerExtractionJobs(await getBoss());
   await hold.entered.promise;
   try { await upsertMaterial({ ...material, title: "Corrected", bodyText: "Complete corrected body" }); }
   finally { hold.release.open(); }
-  const deadline = Date.now() + 12_000;
-  while ((await sql`SELECT state FROM pgboss.job WHERE id=${job!}`)[0]?.state !== "completed") {
-    assert.ok(Date.now() < deadline, "extraction worker did not finish");
-    await new Promise(resolve => setTimeout(resolve, 20));
-  }
+  await pollFor(async () => (await sql`SELECT state FROM pgboss.job WHERE id=${job!}`)[0]?.state === "completed", "extraction worker completion", 12_000);
   const [row] = await sql`SELECT body_status,processing_attempts,processing_error,processing_retry_at FROM articles WHERE id=${articleId}`;
   assert.deepEqual({ ...row }, { body_status: "ok", processing_attempts: 0, processing_error: null, processing_retry_at: null });
 });

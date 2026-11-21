@@ -26,7 +26,7 @@ test("the worker warms the API's current public PNG without an HTTP server", asy
   await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, site_fulltext, syndicate_fulltext)
     VALUES (${source}, 'Share fixture', 'rss', 'T1', 'editorial', true, true)`;
   const { articleId } = await upsertMaterial({ sourceId: source, url: `https://example.org/${source}`, title: "Share fixture",
-    bodyText: "A public article with a prepared share card.", bodyHtml: "<p>A public article.</p>", bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+    bodyText: "A public article with a prepared share card.", bodyHtml: "<p>A public article.</p>", bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, reason_zh, score, selected)
     VALUES (${articleId}, 1, 'rule', 'pass', ${CATEGORY_KEYS[0]!}, '分享图预热验证', 'API 与 worker 复用同一份图片', 'fixture', 90, true)`;
   await publishArticle(articleId, { releasedAt: new Date(Date.now() - 60_000) });

@@ -52,7 +52,6 @@ const server = createServer(async (req, res) => {
   if (req.url === "/gone") { refusalHits++; res.writeHead(404); return res.end(); }
   if (req.url === "/refused") { refusalHits++; res.writeHead(403); return res.end(); }
   imageHits++;
-  await new Promise((resolve) => setTimeout(resolve, 60));
   res.writeHead(200, { "content-type": "image/png" });
   res.end(png);
 });

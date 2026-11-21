@@ -25,7 +25,7 @@ async function fixture() {
 }
 async function report(f:Awaited<ReturnType<typeof fixture>>, label:string, visibility:'public'|'summary-only'|'withdrawn'|null, options:{role?:string;age?:number;identity?:string;factId?:number}={}) {
   const id=randomUUID(),url='https://example.invalid/'+id,title=f.key+' '+label;
-  await sql`INSERT INTO articles(id,source_id,identity_key,url,title,discovered_at,timeline_at) VALUES(${id},${f.key},${options.identity??id},${url},${title},now(),now()-make_interval(days=>${options.age??0}))`;
+  await sql`INSERT INTO articles(id,source_id,identity_key,url,title,discovered_at,timeline_at) VALUES(${id},${f.key},${options.identity??id},${url},${title},now() - interval '1 minute',now()-make_interval(days=>${options.age??0}))`;
   await sql`INSERT INTO analyses(article_id,input_revision,origin,title_zh,summary_zh,output) VALUES(${id},1,'rule',${title},'',${sql.json({scope:'single'})})`;
   await sql`INSERT INTO fact_articles(fact_id,article_id,role) VALUES(${options.factId??f.factId},${id},${options.role??'report'})`;
   if(visibility!==null) await sql`INSERT INTO publications(article_id,title,summary,source_id,channel,url,visibility,discovered_at,timeline_at,sort_at) SELECT id,title,'',source_id,'news',url,${visibility},discovered_at,timeline_at,timeline_at FROM articles WHERE id=${id}`;

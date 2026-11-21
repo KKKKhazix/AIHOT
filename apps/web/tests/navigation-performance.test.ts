@@ -113,7 +113,8 @@ test('hover downloads nothing, a press fetches article data once for its click, 
     const start=hits.length;
     // In one task, as a scroll moves within the hold that makes a still touch a press; two calls can be further apart.
     await link.evaluate(a=>{for(const type of ['touchstart','touchmove'])a.dispatchEvent(new TouchEvent(type,{bubbles:true,cancelable:true,composed:true}));});
-    await link.hover();await page.waitForTimeout(300);
+    await page.clock.install();
+    await link.hover();await page.clock.runFor(300);
     await page.getByRole('heading',{name:'精选',exact:true}).click();
     assert.equal(hits.slice(start).filter(x=>x.startsWith('/api/site/items/')).length,0);
     await link.click();await expect(page.getByText('固定正文',{exact:true})).toBeVisible();
@@ -148,6 +149,7 @@ test('SSR all-pages and report kinds return offline with their own content',asyn
 // Disable HTTP reuse here: otherwise the browser cache can hide a lost document-level result.
 test('a press on a selected link preserves visited data and the next revisit starts no data request',async()=>{
   const context=await chrome.newContext();const page=await context.newPage();
+  await page.clock.install();
   const requests:string[]=[];
   await context.route('**/*.data*',route=>route.continue());
   page.on('request',request=>{if(request.url().includes('.data'))requests.push(request.url());});
@@ -156,11 +158,11 @@ test('a press on a selected link preserves visited data and the next revisit sta
     await page.getByRole('link',{name:'模型',exact:true}).click();
     await expect(page.getByRole('link',{name:'分类 ai-models',exact:true})).toBeVisible();
     await page.getByRole('link',{name:'模型',exact:true}).dispatchEvent('pointerdown',{button:0,pointerType:'mouse',isPrimary:true});
-    await page.waitForTimeout(150);
+    await page.clock.runFor(150);
     await page.getByRole('link',{name:'产品',exact:true}).click();
     await expect(page.getByRole('link',{name:'分类 ai-products',exact:true})).toBeVisible();
     await page.getByRole('link',{name:'产品',exact:true}).dispatchEvent('pointerdown',{button:0,pointerType:'mouse',isPrimary:true});
-    await page.waitForTimeout(150);
+    await page.clock.runFor(150);
     const before=requests.length;
     await page.getByRole('link',{name:'模型',exact:true}).click();
     await expect(page.getByRole('link',{name:'分类 ai-models',exact:true})).toBeVisible();

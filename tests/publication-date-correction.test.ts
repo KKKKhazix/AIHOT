@@ -118,7 +118,7 @@ test('a changed publication decision refuses the whole correction',async()=>{
 async function misdatedFixture(){
   const id=await fixture();
   await sql`DELETE FROM grouping_overrides WHERE article_id=${id}`;
-  await sql`UPDATE articles SET published_at=now(),published_at_claim=now(),discovered_at=now(),timeline_at=now() WHERE id=${id}`;
+  await sql`UPDATE articles SET published_at=now() - interval '1 minute',published_at_claim=now() - interval '1 minute',discovered_at=now() - interval '1 minute',timeline_at=now() - interval '1 minute' WHERE id=${id}`;
   await publishArticle(id);
   await sql`DELETE FROM settings WHERE key=${`date-hook:${id}`}`;
   return id;
@@ -129,7 +129,7 @@ test('a recently misdated old article returns to history without new analysis or
   const [story]=await sql`INSERT INTO stories(public_id,title) VALUES(${randomUUID()},'Old news treated as live') RETURNING id`;
   const [fact]=await sql`INSERT INTO facts(public_id,story_id,title) VALUES(${`fact-${id}`},${story!.id},'Old event') RETURNING id`;
   await sql`INSERT INTO fact_articles(fact_id,article_id,role) VALUES(${fact!.id},${id},'primary')`;
-  await sql`INSERT INTO story_signals(story_id,article_id,participant_key,source_id,kind,observed_at) VALUES(${story!.id},${id},${source},${source},'editorial',now())`;
+  await sql`INSERT INTO story_signals(story_id,article_id,participant_key,source_id,kind,observed_at) VALUES(${story!.id},${id},${source},${source},'editorial',now() - interval '1 minute')`;
   await publishArticle(id);
   await sql`DELETE FROM settings WHERE key=${`date-hook:${id}`}`;
   const before=await retained(id);
@@ -217,7 +217,7 @@ test('retracting a proven repost date removes live evidence while retaining mate
   const [story]=await sql`INSERT INTO stories(public_id,title) VALUES(${randomUUID()},'Repost date without original evidence') RETURNING id`;
   const [fact]=await sql`INSERT INTO facts(public_id,story_id,title) VALUES(${`fact-${id}`},${story!.id},'Reposted article') RETURNING id`;
   await sql`INSERT INTO fact_articles(fact_id,article_id,role) VALUES(${fact!.id},${id},'primary')`;
-  await sql`INSERT INTO story_signals(story_id,article_id,participant_key,source_id,kind,observed_at) VALUES(${story!.id},${id},${source},${source},'editorial',now())`;
+  await sql`INSERT INTO story_signals(story_id,article_id,participant_key,source_id,kind,observed_at) VALUES(${story!.id},${id},${source},${source},'editorial',now() - interval '1 minute')`;
   await publishArticle(id);
   await sql`DELETE FROM settings WHERE key=${`date-hook:${id}`}`;
   const before=await retained(id);

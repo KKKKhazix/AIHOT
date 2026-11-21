@@ -7,6 +7,12 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "..");
 export interface Violation { line: number; code: string; fix: string }
 
+export function assertNoViolations(violations: Map<string, Violation[]>) {
+  const problems = Array.from(violations).flatMap(([file, hits]) =>
+    hits.map(hit => `${file}:${hit.line} ${hit.fix}`));
+  assert.deepEqual(problems, [], problems.join("\n"));
+}
+
 /** Each fingerprint admits one existing occurrence in that file. Moving the same line still works. */
 export function checkSourceDebt(name: string, violations: Map<string, Violation[]>) {
   const files = [`tests/${name}-debt.json`, `ops/ci/${name}-debt.json`].filter(f => existsSync(path.join(root, f)));

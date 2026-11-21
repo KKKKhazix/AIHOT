@@ -22,7 +22,7 @@ test("a short laptop window keeps several outline entries and can reach the last
       await page.goto(web.origin + "/items/outline-short");
       const nav = page.getByRole("navigation", { name: "本文目录" });
       await expect(nav).toBeVisible();
-      await page.waitForTimeout(100);
+      await page.evaluate(() => document.fonts.ready);
       const entry = await nav.locator("a").first().evaluate((a) => a.getBoundingClientRect().height);
       assert.ok((await nav.evaluate((n) => n.clientHeight)) >= entry * 5, `${height}px: the outline shows at least five entries`);
       const last = nav.locator("a").last();
@@ -59,7 +59,7 @@ test("outline keyboard scrolling stays inside its boundary in WebKit", async () 
         }, boundary);
         const before = await page.evaluate(() => scrollY);
         await page.keyboard.press(key);
-        await page.waitForTimeout(150);
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
         assert.equal(await page.evaluate(() => scrollY), before, `${key} stays inside the outline at its ${boundary}`);
       }
     }

@@ -40,7 +40,7 @@ test("invalid source timestamps remain unknown on inserts and revisions", async 
 async function imported(url: string, title = "Imported title") {
   const id = `imp${tag()}`;
   await sql`INSERT INTO articles (id, source_id, identity_key, url, title, discovered_at, timeline_at, revision, content_hash, body_text, body_status, processing_state)
-            VALUES (${id}, ${SOURCE}, ${identityKeyForUrl(url)}, ${url}, ${title}, now(), now(), 1, NULL, 'imported body', 'ok', 'analyzed')`;
+            VALUES (${id}, ${SOURCE}, ${identityKeyForUrl(url)}, ${url}, ${title}, now() - interval '1 minute', now() - interval '1 minute', 1, NULL, 'imported body', 'ok', 'analyzed')`;
   return id;
 }
 
@@ -141,7 +141,7 @@ test("a listing's trailing live counters are no revision, its prose numbers are"
 });
 
 test("an article linking to a tweet is stored separately from the tweet", async () => {
-  const tweetId = `${Date.now()}123456`;
+  const tweetId = `9000000000008123456`;
   const url = `https://x.com/openai/status/${tweetId}`;
   const tweet = await upsertMaterial({ sourceId: SOURCE, url, title: "Original tweet", via: "fetch" });
   const article = await upsertMaterial({

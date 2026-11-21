@@ -1,3 +1,4 @@
+import { pollFor } from "../../../tests/poll.ts";
 // Run after `npm run build -w @aihot/web`. Real production server/router, synthetic HTTP API only.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -19,7 +20,7 @@ const api = fakeApi(async (url, res, req) => {
   if (url.pathname === "/api/site/meta") {
     // Past the deadline on the wall clock the server reads: timers run on another clock, and a CI VM
     // stepping its wall clock back mid-wait would otherwise answer before the deadline.
-    while (metaAfterDeadline && Date.now() < deadline * 1000 + 50) await new Promise((resolve) => setTimeout(resolve, deadline * 1000 + 50 - Date.now()));
+    if (metaAfterDeadline) await pollFor(() => Date.now() >= deadline * 1000 + 50, "upstream cache expiry");
     return { changelogVersion: "2026-09-28T12:00" };
   }
   if (url.pathname === "/api/site/timeline") {

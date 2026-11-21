@@ -28,13 +28,13 @@ test("category corrections revise every standard report atomically without selec
   await getBoss(); // the digest check below reads the job table
   const sourceId = `category-${tag()}`;
   await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES (${sourceId},'Category fixture','rss','T1','editorial')`;
-  const { articleId } = await upsertMaterial({ sourceId, url: `https://example.com/${sourceId}`, title: "开源推理工具", bodyText: "工具正文", bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+  const { articleId } = await upsertMaterial({ sourceId, url: `https://example.com/${sourceId}`, title: "开源推理工具", bodyText: "工具正文", bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,tags,title_zh,summary_zh,score,selected)
     VALUES (${articleId},1,'rule','pass','ai-models',ARRAY['模型发布','DeepSeek'],'开源推理工具','冻结摘要',88,true)`;
   const [story] = await sql`INSERT INTO stories (public_id,title) VALUES (gen_random_uuid(),'工具事件') RETURNING id`;
   const [fact] = await sql`INSERT INTO facts (public_id,title,story_id) VALUES (${`f-${tag()}`},'工具发布',${story!.id}) RETURNING id`;
   await sql`INSERT INTO fact_articles (fact_id,article_id,role) VALUES (${fact!.id},${articleId},'report')`;
-  await publishArticle(articleId, { releasedAt: new Date() });
+  await publishArticle(articleId, { releasedAt: new Date(Date.now() - 60_000) });
   const entry = { itemId: articleId, title: "冻结标题", summary: "冻结摘要", sourceId, firstParty: true, role: "官方" };
   const contents = [
     { kind: "daily", key: "2097-01-02", content: { leadItemId: articleId, lead: { title: "冻结头条" }, highlights: [articleId], flashes: [], sections: [{ label: "模型发布/更新", items: [entry] }], metrics: { totalEvents: 1, modelsReleased: 1 } } },
@@ -83,10 +83,10 @@ test("category corrections revise every standard report atomically without selec
 test("a correction keeps the introduction of the section it moves into", async () => {
   const sourceId = `category-intro-${tag()}`;
   await sql`INSERT INTO sources (id,name,kind,tier,participation_mode) VALUES (${sourceId},'Category intro fixture','rss','T2','editorial')`;
-  const { articleId } = await upsertMaterial({ sourceId, url: `https://example.com/${sourceId}`, title: "推理工具更新", bodyText: "正文", bodyStatus: "ok", via: "fetch", publishedAt: new Date() });
+  const { articleId } = await upsertMaterial({ sourceId, url: `https://example.com/${sourceId}`, title: "推理工具更新", bodyText: "正文", bodyStatus: "ok", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await sql`INSERT INTO analyses (article_id,input_revision,origin,relevance,category,tags,title_zh,summary_zh,score,selected)
     VALUES (${articleId},1,'rule','pass','ai-models',ARRAY['模型发布'],'推理工具更新','工具更新摘要',70,true)`;
-  await publishArticle(articleId, { releasedAt: new Date() });
+  await publishArticle(articleId, { releasedAt: new Date(Date.now() - 60_000) });
   const moved = { itemId: articleId, title: "推理工具更新", summary: "工具更新摘要" };
   const other = (n: number, title: string) => ({ itemId: `${articleId}-${n}`, title, summary: `${title}摘要` });
   const themes = [

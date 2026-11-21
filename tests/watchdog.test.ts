@@ -41,7 +41,9 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (url.pathname === `/open-apis/bot/v2/hook/test-${T}` && hookDelay) {
     const ms = hookDelay;
     hookDelay = 0;
-    await new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise<Response>((resolve, reject) => {
+      setTimeout(() => realFetch(`${provider.url}${url.pathname}${url.search}`, init).then(resolve, reject), ms);
+    });
   }
   return realFetch(`${provider.url}${url.pathname}${url.search}`, init);
 }) as typeof fetch;

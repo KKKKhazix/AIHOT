@@ -129,7 +129,7 @@ test("redirect limits do not expose query credentials", async () => {
   });
 });
 test("one deadline and response byte limit remain effective", async () => {
-  a.routes.set("/slow", async (_hit, res) => { await new Promise(resolve => setTimeout(resolve, 65)); res.writeHead(302, { location: "/slow" }); res.end(); });
+  a.routes.set("/slow", (_hit, res) => { setTimeout(() => { res.writeHead(302, { location: "/slow" }); res.end(); }, 65); });
   await assert.rejects(guardedFetch(a.url + "/slow", { timeoutMs: 100, maxRedirects: 9 }), { name: "TimeoutError" });
   a.routes.set("/large", (_hit, res) => { res.end("x".repeat(1000)); });
   await assert.rejects(guardedFetch(a.url + "/large", { maxBytes: 100 }), /too large/i);

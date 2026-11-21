@@ -97,7 +97,7 @@ after(async () => {
 });
 
 test("a discussion post that came before any report is grouped again when a report founds its fact", async () => {
-  const { articleId: postId } = await upsertMaterial({ sourceId: SIGNAL, url: `https://example.com/sig-${T}-post`, title: `AMD to acquire ${TOPIC}`, via: "fetch", publishedAt: new Date() });
+  const { articleId: postId } = await upsertMaterial({ sourceId: SIGNAL, url: `https://example.com/sig-${T}-post`, title: `AMD to acquire ${TOPIC}`, via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await queueProcessing(postId);
   const queued = await job(postId);
   assert.deepEqual([queued?.name, queued?.priority, queued?.data.signalOnly], ["events.group", -1, true], "straight to grouping, behind reports");
@@ -189,7 +189,7 @@ test("a late re-evaluation that finds nothing keeps a post's heat in a story rec
   markers.forEach((m, i) => VECTORS.set(m, direction(90 + i, [1])));
   const reportId = await report("late-first", { title: `Launch ${markers[0]}` });
   const { storyId } = await groupArticle(reportId);
-  const material = (marker: string) => ({ sourceId: SIGNAL, url: `https://example.com/sig-${T}-late`, title: `Discussion ${marker}`, bodyText: `Discussion ${marker}`, bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date() });
+  const material = (marker: string) => ({ sourceId: SIGNAL, url: `https://example.com/sig-${T}-late`, title: `Discussion ${marker}`, bodyText: `Discussion ${marker}`, bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date(Date.now() - 60_000) });
   const { articleId } = await upsertMaterial(material(markers[0]!));
   await settleNonEditorial(articleId);
   assert.equal((await groupArticle(articleId, { signalOnly: true })).storyId, storyId);
@@ -221,10 +221,11 @@ test("history waits behind live work and founds no event; a new source's post fr
 test("a discussion post that quotes a post not yet collected joins its story when the original arrives", async () => {
   // Dan Shipper's "SONNET 5.5 IS OUT!" quoted Anthropic's post a minute before it was collected; the
   // original then joined the fact a report had already founded (same-fact: no new fact, no rematch).
-  const tweetId = `9${Date.now()}`;
+  const tweetId = "99000000000007";
+  const postIdForFixture = "19000000000007";
   const { articleId: postId } = await upsertMaterial({
-    sourceId: SIGNAL, url: `https://x.com/danshipper/status/1${Date.now()}`, title: `SONNET IS OUT! ${ALONE}`, via: "fetch", publishedAt: new Date(),
-    xPost: { tweetId: `1${Date.now()}`, authorName: "Dan", handle: "danshipper", text: "SONNET IS OUT!", quoted: { authorName: "Anthropic", handle: "AnthropicAI", text: "Introducing", url: `https://x.com/AnthropicAI/status/${tweetId}` } },
+    sourceId: SIGNAL, url: `https://x.com/danshipper/status/${postIdForFixture}`, title: `SONNET IS OUT! ${ALONE}`, via: "fetch", publishedAt: new Date(Date.now() - 60_000),
+    xPost: { tweetId: postIdForFixture, authorName: "Dan", handle: "danshipper", text: "SONNET IS OUT!", quoted: { authorName: "Anthropic", handle: "AnthropicAI", text: "Introducing", url: `https://x.com/AnthropicAI/status/${tweetId}` } },
   });
   assert.deepEqual(await settleNonEditorial(postId), { group: true });
   assert.equal((await groupArticle(postId, { signalOnly: true })).verdict, "signal-unmatched");
@@ -232,7 +233,7 @@ test("a discussion post that quotes a post not yet collected joins its story whe
   const first = await groupArticle(await report("quoted-first", { title: `Anthropic 发布 ${TOPIC} Sonnet` }));
   const { articleId: originalId } = await upsertMaterial({
     sourceId: EDITORIAL, url: `https://x.com/AnthropicAI/status/${tweetId}`, title: `Introducing ${TOPIC} Sonnet`, bodyText: "Introducing.", bodyStatus: "ok",
-    via: "fetch", publishedAt: new Date(), xPost: { tweetId, authorName: "Anthropic", handle: "AnthropicAI", text: `Introducing ${TOPIC} Sonnet` },
+    via: "fetch", publishedAt: new Date(Date.now() - 60_000), xPost: { tweetId, authorName: "Anthropic", handle: "AnthropicAI", text: `Introducing ${TOPIC} Sonnet` },
   });
   await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, score, selected, output)
             VALUES (${originalId}, 1, 'rule', 'pass', 'ai-models', ${`Anthropic 发布 ${TOPIC} Sonnet`}, '摘要', 80, false, ${sql.json({ fact: { title: "Sonnet" } })})`;

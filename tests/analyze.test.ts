@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 // The judging and writing steps (editorial/analyze.ts): the prefilter decides relevance, two scores
 // against the source's threshold (its tier's, raised by its class) decide 精选, selected and near-selected items are written by the content
 // understanding and the rest by the title/summary translation, a structure step gives the category,
@@ -6,7 +7,6 @@ import { gate, pointModels, Reply, stub, tag } from "./setup.ts";
 import { analysisStep, SELECTING_SCORE, type AnalysisStep } from "./analysis-steps.ts";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
@@ -241,9 +241,10 @@ test("a feed summary alone: the article page is fetched first, then the whole ar
 test("a short post in Chinese is its own copy; a content-filter refusal is translated instead", async () => {
   // The tag rides as a hashtag, which the language check strips.
   const text = `推文：今天把智能体接进了工作流，效果不错。#t${T}`;
+  const postIdForFixture = "19000000000008";
   const { articleId } = await upsertMaterial({
-    sourceId: X_SOURCE, url: `https://x.com/test/status/1${Date.now()}`, title: text, via: "fetch", publishedAt: new Date(),
-    xPost: { tweetId: `1${Date.now()}`, authorName: "测试", handle: "test", text },
+    sourceId: X_SOURCE, url: `https://x.com/test/status/${postIdForFixture}`, title: text, via: "fetch", publishedAt: new Date(Date.now() - 60_000),
+    xPost: { tweetId: postIdForFixture, authorName: "测试", handle: "test", text },
   });
   const post = await analyzeArticle(articleId);
   assert.deepEqual([post!.output!.titleZh, post!.output!.summaryZh], [text, text]);
@@ -374,10 +375,7 @@ function worker(queue: string) {
   });
   return { child, ready: ready.promise, stopping: stopping.promise, done };
 }
-async function until(check: () => Promise<boolean>, label: string) {
-  const deadline = Date.now() + 12_000;
-  while (!(await check())) { if (Date.now() > deadline) assert.fail(`timeout waiting for ${label}`); await delay(20); }
-}
+
 
 before(async () => {
   await sql`INSERT INTO sources (id,name,kind,tier,participation_mode,next_fetch_at)
@@ -392,7 +390,7 @@ test("SIGTERM during the final paid writing call still commits the complete anal
   await boss.createQueue(queue, { policy: "short", retryLimit: 4, retryDelay: 1, expireInSeconds: 120 });
   const { articleId } = await upsertMaterial({ sourceId: SHUTDOWN_SOURCE, url: `https://example.org/analyze-stop-${T}/final`, title: `Final model release ${T}`,
     bodyText: `A lab released a new AI model with benchmarks and prices. ${T} ` + "The release explains model capabilities and evaluation results. ".repeat(10),
-    bodyStatus: "ok", language: "en", via: "fetch", publishedAt: new Date() });
+    bodyStatus: "ok", language: "en", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   const jobId = await boss.send(queue, { articleId }, { singletonKey: articleId });
   const running = worker(queue);
   await Promise.race([Promise.all([running.ready, active.writingAsked!.promise]), running.done.then(() => assert.fail("worker exited before writing"))]);
@@ -417,14 +415,14 @@ for (const failScore of [false, true]) test(`SIGTERM during ${failScore ? "faile
   await boss.createQueue(queue, { policy: "short", retryLimit: 4, retryDelay: 0, expireInSeconds: 120 });
   const { articleId } = await upsertMaterial({ sourceId: SHUTDOWN_SOURCE, url: `https://example.org/analyze-stop-${T}/${failScore}`, title: `A new model released ${T} ${failScore}`,
     bodyText: `A lab released a new AI model with benchmarks and prices. ${T} ${failScore} ` + "The release explains model capabilities and evaluation results. ".repeat(10),
-    bodyStatus: "ok", language: "en", via: "fetch", publishedAt: new Date() });
+    bodyStatus: "ok", language: "en", via: "fetch", publishedAt: new Date(Date.now() - 60_000) });
   await sql`UPDATE articles SET processing_attempts=2,processing_error='prior temporary failure',processing_queued_at=now() WHERE id=${articleId}`;
   const jobId = await boss.send(queue, { articleId }, { singletonKey: articleId });
   const first = worker(queue);
   await Promise.race([Promise.all([first.ready, active.scoreAsked.promise, active.structureAsked.promise]), first.done.then(() => assert.fail("worker exited before both requests"))]);
   first.child.kill("SIGTERM"); await first.stopping;
   active.scoreAnswer.open();
-  await until(async () => !!(await sql`SELECT 1 FROM receipts WHERE subject=${`article:${articleId}@1`} AND purpose='score_article' AND status IN ('received','failed')`)[0], "score receipt");
+  await pollFor(async () => !!(await sql`SELECT 1 FROM receipts WHERE subject=${`article:${articleId}@1`} AND purpose='score_article' AND status IN ('received','failed')`)[0], "score receipt", 12_000);
   assert.equal(first.child.exitCode, null, "the process stays alive while structure owns a paid response");
   assert.equal((await sql`SELECT state FROM pgboss.job WHERE id=${jobId}`)[0]!.state, "active");
   assert.deepEqual(active.calls.filter(s => s !== "prefilter").sort(), ["score", "structure"], "no second score or writing starts during shutdown");
@@ -437,7 +435,7 @@ for (const failScore of [false, true]) test(`SIGTERM during ${failScore ? "faile
   assert.deepEqual(receipts.map(r => [r.purpose,r.status]), [["prefilter_article","received"],["score_article",failScore ? "failed" : "received"],["structure_article","received"]]);
   assert.equal((await sql`SELECT state FROM pgboss.job WHERE id=${jobId}`)[0]!.state, "retry", "pg-boss owns restart recovery");
   const restarted = worker(queue); await restarted.ready;
-  await until(async () => (await sql`SELECT state FROM pgboss.job WHERE id=${jobId}`)[0]?.state === "completed", "completed retry");
+  await pollFor(async () => (await sql`SELECT state FROM pgboss.job WHERE id=${jobId}`)[0]?.state === "completed", "completed retry", 12_000);
   restarted.child.kill("SIGTERM"); await restarted.done;
   assert.equal(active.calls.filter(s => s === "prefilter").length, 1);
   assert.equal(active.calls.filter(s => s === "structure").length, 1, "the slow structure answer was saved and reused");
@@ -520,7 +518,7 @@ test("a later material revision can be scored after the title-only revision wait
 
 const consistencyMaterial = (name: string) => ({ sourceId: SOURCE, url: `https://example.org/${SOURCE}/${name}`, title: `A lab releases a model ${name}`,
   bodyText: `A lab released a model ${name}. ` + "The release includes benchmark results and pricing details. ".repeat(12),
-  bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date() });
+  bodyStatus: "ok" as const, via: "fetch" as const, publishedAt: new Date(Date.now() - 60_000) });
 
 test("a late successful analysis preserves newer input awaiting processing", async () => {
   const input = consistencyMaterial("stale-success");

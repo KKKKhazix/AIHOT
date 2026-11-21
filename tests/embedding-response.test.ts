@@ -1,3 +1,4 @@
+import { pollFor } from "./poll.ts";
 // Failure modes at the paid response boundary: a fully received invalid response is not an unknown
 // outcome; missing/duplicate indices, incomplete dimensions or invalid coordinates cannot enter
 // recall; out-of-order valid vectors must stay attached to their original inputs on receipt replay,
@@ -99,9 +100,7 @@ test("calls that meet a stored batch's receipt together buy its vectors once", a
   await gate`BEGIN`;
   await gate`SELECT pg_advisory_xact_lock(hashtext('budget:dashscope')), pg_advisory_xact_lock(hashtext('budget:embedding'))`;
   const calls = [ensureEmbeddings([item]), ensureEmbeddings([item])];
-  while ((await sql`SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event = 'advisory'`).length < 2) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  await pollFor(async () => (await sql`SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event = 'advisory'`).length >= 2, "both embedding requests to reach the lock");
   await gate`COMMIT`;
   gate.release();
   const results = await Promise.allSettled(calls);
@@ -125,9 +124,7 @@ test("a batch another call stored while this one waited is read from the table, 
   await gate`BEGIN`;
   await gate`SELECT pg_advisory_xact_lock(hashtext('budget:dashscope')), pg_advisory_xact_lock(hashtext('budget:embedding'))`;
   const racing = ensureEmbeddings([item]);
-  while (!(await sql`SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event = 'advisory'`).length) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  await pollFor(async () => (await sql`SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event = 'advisory'`).length > 0, "embedding request to reach the lock");
   await sql`UPDATE embeddings SET text_hash = ${hash} WHERE kind = 'article' AND ref_id = ${item.id}`;
   answer = { data: [{ index: 0, embedding: vector(6) }] };
   await gate`COMMIT`;
@@ -151,9 +148,7 @@ test("when another call stored part of a stored batch meanwhile, only the rest i
   await gate`BEGIN`;
   await gate`SELECT pg_advisory_xact_lock(hashtext('budget:dashscope')), pg_advisory_xact_lock(hashtext('budget:embedding'))`;
   const racing = ensureEmbeddings(items);
-  while (!(await sql`SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event = 'advisory'`).length) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  await pollFor(async () => (await sql`SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event = 'advisory'`).length > 0, "embedding request to reach the lock");
   await sql`UPDATE embeddings SET text_hash = ${hash} WHERE kind = 'article' AND ref_id = ${items[0]!.id}`;
   answer = { data: [{ index: 0, embedding: vector(7) }] };
   await gate`COMMIT`;

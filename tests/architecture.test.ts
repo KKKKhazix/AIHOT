@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { checkSourceDebt } from "./source-debt.ts";
+import { assertNoViolations, checkSourceDebt } from "./source-debt.ts";
 import { presentationAssertions, rawLoaderPaths } from "./lesson-checks.ts";
 import { clockDebt } from "./test-clock.ts";
 import { after, test } from "node:test";
@@ -14,7 +14,7 @@ import { closeDb, sql } from "@aihot/backend/db";
 after(closeDb);
 
 test("test fixtures and identities do not depend on the wall clock", () => {
-  checkSourceDebt("test-clock", clockDebt());
+  assertNoViolations(clockDebt());
 });
 
 test("page loaders identify document and data requests by the same pathname", async () => {

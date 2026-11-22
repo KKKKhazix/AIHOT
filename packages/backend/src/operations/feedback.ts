@@ -123,7 +123,7 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
       ORDER BY expires_at DESC NULLS FIRST LIMIT 1`;
     if (!ban) return null;
     return ban.expires_at
-      ? new FeedbackRejected(429, "rate_limited", "反馈提交过于频繁，已暂时暂停。请稍后再试，草稿会保留。", Math.max(1, Math.ceil((ban.expires_at.getTime() - now.getTime()) / 1000)))
+      ? new FeedbackRejected(429, "rate_limited", "提交太频繁，已暂停接收，请稍后再试，草稿已为你保留。", Math.max(1, Math.ceil((ban.expires_at.getTime() - now.getTime()) / 1000)))
       : new FeedbackRejected(403, "forbidden", "暂时无法提交反馈。");
   };
   const banned = await activeBan(sql, new Date());
@@ -175,7 +175,7 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
       // A shared quota throttles rotating UA families without banning the whole network.
       const networkAttempts = networkState!.attempts.filter(t => t > now - HOUR);
       if (networkAttempts.length >= MAX_ATTEMPTS) {
-        return new FeedbackRejected(429, "rate_limited", "同一网络反馈提交过于频繁。请稍后再试，草稿会保留。", Math.max(1, Math.ceil((networkAttempts[0]! + HOUR - now) / 1000)));
+        return new FeedbackRejected(429, "rate_limited", "当前网络提交太频繁，请稍后再试，草稿已为你保留。", Math.max(1, Math.ceil((networkAttempts[0]! + HOUR - now) / 1000)));
       }
       networkAttempts.push(now);
       await tx`UPDATE feedback_submission_state SET attempts = ${tx.json(networkAttempts)} WHERE source_hash = ${network}`;

@@ -2,7 +2,7 @@
 // button on phones), the phone bar of 精选 and 全部, and search.
 import { useEffect, useRef, useState } from "react";
 import { Form, Link, useNavigation, useSearchParams } from "react-router";
-import { CATEGORY_KEYS, CATEGORY_LABELS, CHANNEL_LABELS, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
+import { CATEGORY_KEYS, CATEGORY_LABELS, CHANNEL_LABELS, displayTag, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
 import { SITE } from "@aihot/site";
 import { IconClose, IconFilter, IconSearch } from "../../components/icons";
 import { PillTabs } from "../../components/ui/Tabs";
@@ -131,6 +131,7 @@ function FilterSheet({ open, onClose, base, active }: { open: boolean; onClose: 
 export function ActiveFilters({ base, category, channel, tag }: { base: string; category: CategoryKey | null; channel: ChannelKey; tag: string | null }) {
   const [params] = useSearchParams();
   const label = channel === "firstParty" ? CHANNEL_LABELS.firstParty : category ? CATEGORY_LABELS[category] : null;
+  const shownTag = tag ? displayTag(tag) : null;
   if (!label && !tag) return null;
   const chip = "inline-flex min-h-11 max-w-full items-center gap-1 rounded-full bg-accent-soft pl-3 pr-2 text-ui-label font-medium text-accent transition-opacity active:opacity-60";
   const clearFilter = hrefWith(base, params, { category: null, channel: null });
@@ -144,8 +145,8 @@ export function ActiveFilters({ base, category, channel, tag }: { base: string; 
         </Link>
       )}
       {tag && (
-        <Link to={clearTag} rel={clearTag.includes("?") ? "nofollow" : undefined} aria-label={`取消标签：${tag}`} className={chip}>
-          <span className="truncate">#{tag}</span>
+        <Link to={clearTag} rel={clearTag.includes("?") ? "nofollow" : undefined} aria-label={shownTag ? `取消标签：${shownTag}` : "取消标签筛选"} className={chip}>
+          <span className="truncate">{shownTag ? `#${shownTag}` : "标签筛选"}</span>
           <IconClose size={14} strokeWidth={2} className="shrink-0" />
         </Link>
       )}

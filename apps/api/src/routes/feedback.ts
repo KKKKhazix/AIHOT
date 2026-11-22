@@ -10,15 +10,15 @@ async function readForm(raw: unknown, contentType: string): Promise<FeedbackBody
   try {
     form = await new Response(raw as Buffer<ArrayBuffer>, { headers: { "content-type": contentType } }).formData();
   } catch {
-    throw new FeedbackRejected(400, "invalid_request", "截图上传格式不正确，请重新提交。");
+    throw new FeedbackRejected(400, "invalid_request", "提交的数据不完整，请重新发送。");
   }
   const text = (key: string) => {
     const value = form.get(key);
-    if (value !== null && typeof value !== "string") throw new FeedbackRejected(400, "invalid_request", "反馈文字格式不正确。");
+    if (value !== null && typeof value !== "string") throw new FeedbackRejected(400, "invalid_request", "反馈内容未能正常提交，请重新发送。");
     return value;
   };
   const file = form.get("screenshot");
-  if (file !== null && !(file instanceof File)) throw new FeedbackRejected(400, "invalid_request", "截图上传格式不正确。");
+  if (file !== null && !(file instanceof File)) throw new FeedbackRejected(400, "invalid_request", "截图未能正常上传，请重新选择图片。");
   return {
     content: text("content") ?? "", email: text("email"), pageUrl: text("pageUrl"),
     screenshot: file ? { mime: file.type, data: Buffer.from(await file.arrayBuffer()) } : null,

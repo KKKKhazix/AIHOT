@@ -30,7 +30,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
   const base = siteUrl();
   return pageMeta({
     title: SITE.topicsTitle,
-    description: `按${by}${subjectAfter("追踪", "最新动态")}：${named ? `${named}等 ` : ""}${topics.length} 个主题，浏览最新精选与重要进展，持续更新。`,
+    description: `按${by}整理 ${topics.length} 个${withSubject("主题")}${named ? `（含 ${named} 等）` : ""}，集中看各方向最新精选与进展。`,
     path: "/topics",
     image: "/og/pages/topics.png",
     jsonLd: [
@@ -104,8 +104,8 @@ export default function TopicsPage() {
       <header className="pb-2 pt-3 lg:pt-1">
         <h1 data-page-title="" className="text-ui-heading-lg font-semibold leading-[1.3] text-ink">{subjectAfter("按主题看")}</h1>
         <p className="mt-1.5 text-ui-label leading-relaxed text-ink-3">
-          {`按${groups.map((g) => g.name).join("、")}浏览 `}
-          <span className="num">{topics.length}</span> 个主题，追踪最新精选与重要进展。
+          {`按${groups.map((g) => g.name).join("、")}分了 `}
+          <span className="num">{topics.length}</span> 个主题，挑关心的方向看最新动态。
         </p>
       </header>
       {groups.map((g) => (

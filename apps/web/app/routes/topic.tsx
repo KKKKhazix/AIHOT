@@ -64,7 +64,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
   const { topic, page } = data;
   const parts = partsOf(data);
   const path = page > 1 ? `/topics/${topic.slug}/page/${page}` : `/topics/${topic.slug}`;
-  const text = page > 1 ? `${topic.name}的精选归档第 ${page} 页。${topic.definition}` : description(data, parts);
+  const text = page > 1 ? `${topic.name} 精选归档（第 ${page} 页）。${topic.definition}` : description(data, parts);
   const crumbs = breadcrumbLd([{ name: SITE.name, path: "/" }, ...UP.crumbs, { name: topic.name, path: `/topics/${topic.slug}` }]);
   return pageMeta({
     title: page > 1

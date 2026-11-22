@@ -110,7 +110,7 @@ export function registerOg(app: FastifyInstance) {
     const s = await loadStoryDetail(found.storyId);
     if (!s) return notFound(reply);
     return send(req, reply, {
-      kicker: s.whyHot.rank ? `热点第 ${s.whyHot.rank} · 事件` : "事件",
+      kicker: s.whyHot.rank ? `热点第 ${s.whyHot.rank} 名 · 事件` : "事件",
       title: s.title,
       subtitle: s.latest ?? s.digest,
       meta: `${s.sourceCount} 个来源 · ${s.reportCount} 篇报道`,

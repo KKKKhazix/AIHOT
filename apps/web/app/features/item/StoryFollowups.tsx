@@ -16,7 +16,7 @@ export function StoryFollowups({ followups, story, currentId }: { followups: Sto
     <section className="mt-10 border-t border-line pt-5">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="shrink-0 text-ui-body-sm font-semibold text-ink">所属事件</h2>
-        <MoreLink to={`/story/${story.publicId}`}>查看事件全部</MoreLink>
+        <MoreLink to={`/story/${story.publicId}`}>查看完整事件</MoreLink>
       </div>
       <Link viewTransition to={`/story/${story.publicId}`} className="mt-2 block text-ui-body-sm leading-snug text-ink-2 transition-colors hover:text-accent">
         {story.title}
@@ -32,7 +32,7 @@ function Followups({items, more, story}: {items: StoryFollowup[]; more: boolean;
         <h2 className="text-ui-body-sm font-semibold text-ink">
           事件后续 <span className="num font-normal text-ink-4">· {items.length}{more ? "+" : ""}</span>
         </h2>
-        <MoreLink to={`/story/${story.publicId}`}>查看事件全部</MoreLink>
+        <MoreLink to={`/story/${story.publicId}`}>查看完整事件</MoreLink>
       </div>
       <ul className="divide-y divide-line-soft">
         {items.map((d) => (

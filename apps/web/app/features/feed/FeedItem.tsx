@@ -7,7 +7,7 @@ import { shortAddresses } from "@aihot/contracts/addresses";
 import { Link } from "react-router";
 import { IntentLink } from "../../components/ui/IntentLink";
 import type { GroupInfo, FeedItemSummary, TimelineFilters } from "@aihot/contracts/site";
-import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
+import { CATEGORY_LABELS, displayTag } from "@aihot/contracts/taxonomy";
 import { ITEM_COPY } from "@aihot/site";
 import { SameEventBadge, SelectedBadge } from "../../components/ui/Badge";
 import { ScoreLabel } from "../../components/ui/Score";
@@ -42,12 +42,14 @@ export const FeedItem = memo(function FeedItem({ item, group, filters, read = fa
   const showSources = !!group && (group.additionalSourceCount > 0 || group.reportCount > 1);
   const tags = showTags
     ? item.tags
-        .filter((t) => !currentTopicSlug || tagTopics?.[t] !== currentTopicSlug)
-        .slice(0, 3)
-        .map((t) => {
+        .flatMap((t) => {
+          if (currentTopicSlug && tagTopics?.[t] === currentTopicSlug) return [];
+          const label = displayTag(t);
+          if (!label) return [];
           const slug = tagTopics?.[t];
-          return { tag: t, to: slug ? `/topics/${slug}` : `/all?tag=${encodeURIComponent(t)}`, nofollow: !slug };
+          return [{ tag: t, label, to: slug ? `/topics/${slug}` : `/all?tag=${encodeURIComponent(t)}`, nofollow: !slug }];
         })
+        .slice(0, 3)
     : [];
 
   return (
@@ -104,9 +106,9 @@ export const FeedItem = memo(function FeedItem({ item, group, filters, read = fa
               {CATEGORY_LABELS[item.category]}
             </Link>
           )}
-          {tags.map(({ tag, to, nofollow }) => (
+          {tags.map(({ tag, label, to, nofollow }) => (
             <Link key={tag} to={to} rel={nofollow ? "nofollow" : undefined} className="hover:text-accent">
-              #{tag}
+              #{label}
             </Link>
           ))}
         </div>

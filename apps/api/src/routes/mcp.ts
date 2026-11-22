@@ -151,7 +151,7 @@ function registerTools(server: McpServer) {
     },
     safe(T.search, async (args) => {
       const q = args.q.trim();
-      if (q.includes("\0")) return fail("invalid_request", "搜索词不能包含 NUL 字符。");
+      if (q.includes("\0")) return fail("invalid_request", "搜索词包含不支持的特殊字符。");
       if ([...q].length < 2) return fail("invalid_request", "搜索词需要 2 到 200 个字符。");
       const found = await searchItems(q, args.window, args.category ?? null, args.limit, (query) => recent(`items:${JSON.stringify(query)}`, () => v1Items(query)));
       return ok(searchAnswer(found, { q, window: args.window, category: args.category ?? null }), { schemaVersion: 1, query: found.res.query, items: found.res.items });
@@ -199,15 +199,15 @@ function registerTools(server: McpServer) {
     safe(T.daily, async (args) => {
       if (args.date && !isValidDate(args.date)) return fail("invalid_request", `${args.date} 不是有效日期。`);
       const res = await recent(`daily:${args.date ?? "latest"}`, () => dailyWithNotes(args.date ?? "latest"));
-      if (!res) return fail("not_found", args.date ? `没有 ${args.date} 的公开日报。` : "还没有公开日报。");
+      if (!res) return fail("not_found", args.date ? `没有 ${args.date} 的日报。` : "还没有发布过日报。");
       return ok(dailyAnswer(res.body.report, "mcp", res.notes, res.leadItemId), res.body);
     }),
   );
 
   for (const p of [
-    { kind: "weekly", tool: T.weekly, input: WEEKLY_INPUT, key: (a: { week?: string }) => a.week, name: "周报", form: "真实的 ISO 周（例如 2026-W39）",
+    { kind: "weekly", tool: T.weekly, input: WEEKLY_INPUT, key: (a: { week?: string }) => a.week, name: "周报", form: "有效的 ISO 周（例如 2026-W39）",
       description: `Get ${SITE.name}'s edited weekly report: the week's most important events chosen from its dailies, grouped by section, with an overview. Use this for what happened this week or in a given ISO week; omit week for the latest.` },
-    { kind: "monthly", tool: T.monthly, input: MONTHLY_INPUT, key: (a: { month?: string }) => a.month, name: "月报", form: "真实的月份（例如 2026-09）",
+    { kind: "monthly", tool: T.monthly, input: MONTHLY_INPUT, key: (a: { month?: string }) => a.month, name: "月报", form: "有效的月份（例如 2026-09）",
       description: `Get ${SITE.name}'s edited monthly report: the month's most important events chosen from its dailies, grouped by section, with an overview. Use this for what happened this month or in a given month; omit month for the latest.` },
   ] as const) {
     server.registerTool(

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { looksZh } from "@aihot/backend/editorial/writing";
 import { isChineseBody, exportTranslation } from "@aihot/backend/publication/items";
 import { stripTags } from "@aihot/backend/lib/text";
+import { displayTag } from "@aihot/contracts/taxonomy";
 
 // Regression coverage for HTML attributes that contain `>` in real source pages.
 test("stripTags ignores > inside quoted HTML attributes", () => {
@@ -62,4 +63,11 @@ test("writing and public reading agree about Chinese, including Japanese with ka
   assert.equal(isChineseBody({ language: null, body_text: "新的人工智能模型发布了。" }), true);
   assert.equal(isChineseBody({ language: "zh-Hans", body_text: "API" }), true);
   assert.equal(isChineseBody({ language: "en", body_text: "An English article quoting 人工智能." }), false);
+});
+
+test("displayTag maps slash tags to clean labels, hides internal filter tags, and keeps ordinary tags", () => {
+  assert.equal(displayTag("开源/仓库"), "开源");
+  assert.equal(displayTag("部署/工程"), "工程部署");
+  assert.equal(displayTag("非AI/通用工具"), null);
+  assert.equal(displayTag("OpenAI"), "OpenAI");
 });

@@ -310,7 +310,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
         <div className="lg:card">
           {unreadOnly ? (
             state.nextCursor ? (
-              <EmptyState title="这批精选都读过了">点下方的按钮，继续找更早的未读精选。</EmptyState>
+              <EmptyState title="这批精选都读过了">{loadError ? "加载更早内容失败，点下方重试按钮继续查看。" : "点下方“加载更多”，继续看更早的未读精选。"}</EmptyState>
             ) : (
               <EmptyState title="没有未读的精选内容">关掉「只看未读」可以看到全部内容。</EmptyState>
             )

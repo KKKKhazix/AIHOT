@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Await, isRouteErrorResponse, Link, useAsyncError, useLoaderData, useNavigate, useRevalidator, type ClientLoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/item";
 import { REPORT_NAMES, reportDateLabel, type FeedItemSummary, type SiteItemDetail, type StoryFollowupsResponse } from "@aihot/contracts/site";
-import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
+import { CATEGORY_LABELS, displayTag } from "@aihot/contracts/taxonomy";
 import { ITEM_COPY, SITE, withSubject } from "@aihot/site";
 import { linkMentions } from "@aihot/contracts/mentions";
 import { addressRuns } from "@aihot/contracts/addresses";
@@ -179,12 +179,14 @@ function dailyName(daily: NonNullable<SiteItemDetail["daily"]>): string {
  * tag that is a topic's own leads to the topic's page, not to a filtered list search engines are kept from,
  * and beside that topic's chip it is not repeated.
  */
-function tagChips(item: SiteItemDetail): Array<{ tag: string; to: string }> {
+function tagChips(item: SiteItemDetail): Array<{ tag: string; label: string; to: string }> {
   const shown = new Set(item.topics.map((t) => t.slug));
   return item.tags.flatMap((tag) => {
+    const label = displayTag(tag);
+    if (!label) return [];
     const topic = item.tagTopics[tag];
     if (topic && shown.has(topic)) return [];
-    return [{ tag, to: topic ? `/topics/${topic}` : `/all?tag=${encodeURIComponent(tag)}` }];
+    return [{ tag, label, to: topic ? `/topics/${topic}` : `/all?tag=${encodeURIComponent(tag)}` }];
   });
 }
 
@@ -482,9 +484,9 @@ function ItemView({ item, followups }: Loaded) {
       {tags.length > 0 && (
         <RailSection title="标签">
           <div className="flex flex-wrap gap-1.5">
-            {tags.slice(0, 8).map(({ tag, to }) => (
+            {tags.slice(0, 8).map(({ tag, label, to }) => (
               <Link key={tag} to={to} rel={to.startsWith("/all?") ? "nofollow" : undefined} className="chip">
-                #{tag}
+                #{label}
               </Link>
             ))}
           </div>
@@ -642,9 +644,9 @@ function ItemView({ item, followups }: Loaded) {
                   {t.name}
                 </Link>
               ))}
-              {tags.slice(0, 6).map(({ tag, to }) => (
+              {tags.slice(0, 6).map(({ tag, label, to }) => (
                 <Link key={tag} to={to} rel={to.startsWith("/all?") ? "nofollow" : undefined} className="chip">
-                  #{tag}
+                  #{label}
                 </Link>
               ))}
             </div>

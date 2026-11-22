@@ -206,10 +206,10 @@ export function dailyAnswer(r: DailyReport, via: Via, notes: Map<string, DailyNo
   ], data.length ? data : null, [
     "先讲头条，再按栏目挑重点；用户要全文再全部列出。每条是一件事，「相关」是同一件事的其他进展或同一场发布的其他内容。",
     ...(more.length ? ["「今日看点」是正文之外、同一时段值得一看的报道，不算这一期的大事。"] : []),
-    `日报是${EDITION_WHEN.daily} 发布的固定成品，不等于“过去 24 小时”的滚动列表。`,
+    `日报是${EDITION_WHEN.daily} 发布的固定期次，不等于“过去 24 小时”的滚动列表。`,
     via === "http"
-      ? `要其它日期的日报，请求 ${agentUrl("/daily/YYYY-MM-DD")}（真实日期）；没有就如实说，不要换一天冒充。`
-      : "要其它日期的日报，传 date=YYYY-MM-DD（真实日期）；没有就如实说，不要换一天冒充。",
+      ? `要其它日期的日报，请求 ${agentUrl("/daily/YYYY-MM-DD")}（有效日期）；没有就如实说，不要换一天冒充。`
+      : "要其它日期的日报，传 date=YYYY-MM-DD（有效日期）；没有就如实说，不要换一天冒充。",
     NO_INTERNALS,
   ]);
 }
@@ -245,8 +245,8 @@ export function periodAnswer(r: PeriodReport, kind: "weekly" | "monthly", via: V
   }
   const form = kind === "weekly" ? "周，例如 2026-W39" : "月份，例如 2026-09";
   const other = via === "http"
-    ? `请求 ${kind === "weekly" ? agentUrl("/weekly/YYYY-Www") : agentUrl("/monthly/YYYY-MM")}（真实的${form}）`
-    : `传 ${kind === "weekly" ? "week=YYYY-Www" : "month=YYYY-MM"}（真实的${form}）`;
+    ? `请求 ${kind === "weekly" ? agentUrl("/weekly/YYYY-Www") : agentUrl("/monthly/YYYY-MM")}（有效的${form}）`
+    : `传 ${kind === "weekly" ? "week=YYYY-Www" : "month=YYYY-MM"}（有效的${form}）`;
   return answer([
     `# ${SITE.name} ${name} · ${key}`,
     "",
@@ -254,7 +254,7 @@ export function periodAnswer(r: PeriodReport, kind: "weekly" | "monthly", via: V
     ...(data.length ? [] : ["这一期暂时没有可以展示的条目。"]),
   ], data.length ? data : null, [
     "先讲头条和总述，再按栏目挑重点；用户要全文再全部列出。",
-    `${name}是从当期日报里按影响力挑出、按栏目编好的固定成品，不等于「最近一${kind === "weekly" ? "周" : "个月"}」的滚动列表。`,
+    `${name}是从当期日报里按影响力挑出、按栏目编好的固定期次，不等于「最近一${kind === "weekly" ? "周" : "个月"}」的滚动列表。`,
     `要其它${kind === "weekly" ? "周" : "月"}的${name}，${other}；没有就如实说，不要换一期冒充。`,
     NO_INTERNALS,
   ]);

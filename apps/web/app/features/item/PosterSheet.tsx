@@ -46,7 +46,7 @@ export default function PosterSheet({ id, title, open, onClose }: { id: string; 
             />
           )}
         </div>
-        <p className="mt-3 text-ui-caption-lg text-ink-3">长按图片可保存或发送给朋友</p>
+        <p className="mt-3 text-ui-caption-lg text-ink-3">可点下方按钮保存，或在图片上长按／右键复制</p>
         <div className="mt-3 flex w-full max-w-[360px] gap-2">
           <a
             href={src}

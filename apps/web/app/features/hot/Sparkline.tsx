@@ -21,7 +21,7 @@ export function Sparkline({ values, className = "h-6 w-[88px]" }: { values: Arra
   const dot = `M${end[0]} ${end[1]}h0`;
   const gaps = seen.length < values.length;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={`overflow-visible text-accent ${className}`} role="img" aria-label={`近 24 小时热度走势${gaps ? "，部分时段缺少可比数据" : ""}`}>
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={`overflow-visible text-accent ${className}`} role="img" aria-label={`近 24 小时热度走势${gaps ? "，部分时段不可比较" : ""}`}>
       <defs>
         <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
           <stop offset="0" stopColor="currentColor" stopOpacity="0.2" />

@@ -179,7 +179,7 @@ export default function StoryPage() {
   const overview = story.digest
     ? { label: "AI 综述", text: story.digest, note: story.digestUpdatedAt ? `AI 根据报道生成 · ${relativeTime(story.digestUpdatedAt)}更新` : "AI 根据报道生成" }
     : story.summary
-      ? { label: "事实说明", text: story.summary, note: null }
+      ? { label: "事件摘要", text: story.summary, note: null }
       : story.excerpt
         ? { label: "报道摘要", text: story.excerpt.text, note: `摘自 ${story.excerpt.sourceName}` }
         : null;
@@ -262,7 +262,7 @@ export default function StoryPage() {
                 )}
               </>
             ) : (
-              <p className="text-ui-label-lg text-ink-4">还没有综述，先看下面的报道时间线。</p>
+              <p className="text-ui-label-lg text-ink-4">暂时还没有综述，先看下面的报道时间线。</p>
             )}
             {story.latest && (
               <div className="-mx-5 mt-5 border-t border-line-soft px-5 pt-4 lg:-mx-6 lg:px-6">
@@ -383,7 +383,7 @@ export default function StoryPage() {
                 过去 48 小时，有 <b className="num font-semibold text-ink">{story.whyHot.participants48h}</b> 个账号或机构报道、讨论了这件事，最近 6 小时新增{" "}
                 <b className="num font-semibold text-ink">{story.whyHot.newParticipants6h}</b> 个。
               </p>
-              {!story.whyHot.observationComplete && <p className="mt-2 text-ui-caption leading-relaxed text-ink-4">这段时间有些来源没能完整读到，实际参与的可能更多。</p>}
+              {!story.whyHot.observationComplete && <p className="mt-2 text-ui-caption leading-relaxed text-ink-4">部分来源近期更新不完整，实际讨论范围可能更大。</p>}
               <p className="mt-2 text-ui-caption text-ink-4">
                 <span className="num">{story.whyHot.recentReports24h}</span> 篇近期报道
                 {story.whyHot.rank && hotInNav && (

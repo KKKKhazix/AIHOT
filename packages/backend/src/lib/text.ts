@@ -12,6 +12,20 @@ export function isChineseText(text: string, language?: string | null): boolean {
   return /\p{Script=Han}/u.test(text) && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(text);
 }
 
+/** Long-form bodies need a substantial Han share, not a single character: a body that merely
+ * links to 「简体中文」 carries a handful of Han characters in thousands of letters, and the
+ * presence test made the translate pipeline skip it as "already Chinese" (issue #478).
+ * Declared languages keep winning outright; short strings stay with `isChineseText`.
+ */
+export function isSubstantiallyChinese(text: string, language?: string | null): boolean {
+  const declared = language?.toLowerCase().split(/[-_]/)[0];
+  if (declared === "zh") return true;
+  if (declared && !["und", "unknown", "other", "zxx"].includes(declared)) return false;
+  if (/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(text)) return false;
+  const letters = (text.match(/\p{L}/gu) ?? []).length;
+  if (letters < 200) return isChineseText(text, language);
+  return (text.match(/\p{Script=Han}/gu) ?? []).length / letters >= 0.3;
+}
 export function truncate(s: string, max: number, ellipsis = "…"): string {
   const chars = [...s];
   if (chars.length <= max) return s;

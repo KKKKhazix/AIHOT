@@ -15,7 +15,7 @@ import { sanitizeBody, textToHtml } from "../content/sanitize.ts";
 import { htmlAltText, rebaseTranslation } from "../content/presentation.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt, failureKind, providerContentRefused, ProviderRejectedError, rejectReceivedResponse } from "../providers/receipts.ts";
-import { collapseWhitespace, htmlBlockText, isChineseText, mergeDistinctText } from "../lib/text.ts";
+import { collapseWhitespace, htmlBlockText, isChineseText, isSubstantiallyChinese, mergeDistinctText } from "../lib/text.ts";
 import { isEmptyOrLinkOnly, xArticleBody } from "../content/posts.ts";
 import { sha256 } from "../lib/ids.ts";
 import { modelFor } from "./models.ts";
@@ -259,7 +259,7 @@ export async function translateArticle(articleId: string, expectedRevision?: num
     ? mergeDistinctText(row.x_post?.text, article.title, article.text, renderedText)
     : mergeDistinctText(row.body_text, renderedText);
   const languageBasis = (article ? article.text : row.body_text) || sourceText;
-  if (isChineseText(languageBasis, row.language)) return result({ status: "skipped", reason: "no foreign-language body" });
+  if (isSubstantiallyChinese(languageBasis, row.language)) return result({ status: "skipped", reason: "no foreign-language body" });
   const $ = cheerio.load(source, null, false);
   const blocks = segmentsOf($);
   if (!blocks.length) return result({ status: "skipped", reason: "no translatable text" });
@@ -505,7 +505,7 @@ export async function translatePending(opts: { limit?: number; budgetMs?: number
     ORDER BY p.discovered_at DESC`;
   // Reconsider language skips with the shared rule. Filter before taking the batch so Chinese
   // originals do not occupy every slot and starve foreign-language bodies behind them.
-  const rows = pending.filter(row => !isChineseText(row.text ?? "", row.language)).slice(0, opts.limit ?? 30);
+  const rows = pending.filter(row => !isSubstantiallyChinese(row.text ?? "", row.language)).slice(0, opts.limit ?? 30);
   const done: TranslateResult[] = [];
   for (const r of rows) {
     if (Date.now() - started > (opts.budgetMs ?? 4 * 60_000) || shutdownSignal.signal.aborted) break;

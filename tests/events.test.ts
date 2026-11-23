@@ -16,7 +16,7 @@ import { mergeFactInto, mergeStoryInto } from "@aihot/backend/events/merge";
 import { candidateViews } from "@aihot/backend/events/recall";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { publishArticle } from "@aihot/backend/publication/publish";
-import { resolveStory } from "@aihot/backend/publication/stories";
+import { loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
 
 const T = tag();
 const SOURCE = `test-events-${T}`;
@@ -693,4 +693,53 @@ test("stories that reports keep tying together without merging list each other a
     pairRelation = null;
     answerAll = false;
   }
+});
+
+test("long report and fact titles stay complete on stories and story developments instead of slicing at 60 characters", async () => {
+  hold = gate();
+  hold.open();
+  const anchor = randomText();
+  const rootTitle = `${anchor}：研究机构公开完整技术评估报告指出大型推理模型虽在形式化证明取得重要突破但目前仍难以泛化到新领域`;
+  const devTitle = `${anchor}：Gary Marcus 评 Levent Alpöge 借助 Claude 证明黎曼猜想：不是 AI 独立完成，也难以泛化`;
+  const frameTitle = `${randomText()}：研究团队正式公布最新可验证数学推理基准并同步开放全部代码权重与详细评测复现文档供社区独立核验`;
+  assert.ok(rootTitle.length > 60 && devTitle.length > 60 && frameTitle.length > 60);
+
+  const sharedSummary = `${randomText()}${randomText()}${randomText()}${randomText()}${randomText()}`;
+  const rootId = await report("long-root", rootTitle, `${sharedSummary} 根报道摘要`);
+  await sql`UPDATE analyses SET output = ${sql.json({ scope: "single", fact: null })} WHERE article_id = ${rootId}`;
+  await publishArticle(rootId);
+  const root = await groupArticle(rootId);
+  assert.equal(root.verdict, "new-story");
+
+  const [rootRow] = await sql<{ story_title: string; fact_title: string }[]>`
+    SELECT st.title AS story_title, f.title AS fact_title FROM facts f JOIN stories st ON st.id = f.story_id WHERE f.id = ${root.factId!}`;
+  assert.equal(rootRow!.story_title, rootTitle);
+  assert.equal(rootRow!.fact_title, rootTitle);
+
+  const devId = await report("long-dev", devTitle, `${sharedSummary} 后续评论摘要`);
+  await sql`UPDATE analyses SET output = ${sql.json({ scope: "single", fact: null })} WHERE article_id = ${devId}`;
+  await publishArticle(devId);
+  relation = "SAME_STORY";
+  try {
+    const dev = await groupArticle(devId);
+    assert.equal(dev.verdict, "new-fact-in-story");
+    assert.equal(dev.storyId, root.storyId);
+    const [devFact] = await sql<{ title: string }[]>`SELECT title FROM facts WHERE id = ${dev.factId!}`;
+    assert.equal(devFact!.title, devTitle);
+
+    const detail = await loadStoryDetail(root.storyId!);
+    assert.ok(detail !== null);
+    assert.deepEqual(new Set(detail.developments.map((d) => d.title)), new Set([rootTitle, devTitle]));
+  } finally {
+    relation = "SAME_OCCURRENCE";
+  }
+
+  const frameId = await report("long-frame", frameTitle, "带长事实标题的报道");
+  await setScope(frameId, "single", { title: frameTitle, subject: "研究团队", action: "公布", object: "基准" });
+  const framed = await groupArticle(frameId);
+  assert.equal(framed.verdict, "new-story");
+  const [framedRow] = await sql<{ story_title: string; fact_title: string }[]>`
+    SELECT st.title AS story_title, f.title AS fact_title FROM facts f JOIN stories st ON st.id = f.story_id WHERE f.id = ${framed.factId!}`;
+  assert.equal(framedRow!.story_title, frameTitle);
+  assert.equal(framedRow!.fact_title, frameTitle);
 });

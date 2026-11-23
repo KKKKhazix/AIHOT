@@ -21,6 +21,7 @@ import { modelFor, modelRoute } from "../editorial/models.ts";
 import { beijingDate, beijingMidnight } from "@aihot/contracts/time";
 import { sql, type Db, type Tx } from "../db.ts";
 import { newShortId, newUuid } from "../lib/ids.ts";
+import { collapseWhitespace } from "../lib/text.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt, failedReceiptId, failureKind } from "../providers/receipts.ts";
 import { embeddingsAvailable } from "../providers/embeddings.ts";
@@ -117,7 +118,7 @@ async function judgeSignal(articleId: string, query: ReportView, cands: Candidat
 
 async function createStory(db: Db, title: string, at: Date): Promise<number> {
   const cleanTitle = editorialPolicy().sanitizeEventCopy
-    ? editorialPolicy().sanitizeEventCopy!({ title }).title.slice(0, 120)
+    ? editorialPolicy().sanitizeEventCopy!({ title }).title
     : title;
   const [row] = await db<{ id: number }[]>`
     INSERT INTO stories (public_id, title, first_report_at, latest_at, origin)
@@ -140,7 +141,7 @@ async function createFact(db: Db, storyId: number, title: string, frame: Record<
     : { title, conditions: rawConditions, subject: frame?.subject ?? null, action: frame?.action ?? null, object: frame?.object ?? null };
   const [row] = await db<{ id: number }[]>`
     INSERT INTO facts (public_id, story_id, title, subject, action, object, conditions, occurred_at, created_at)
-    VALUES (${`f${newShortId(8)}`}, ${storyId}, ${cleaned.title.slice(0, 60)}, ${cleaned.subject}, ${cleaned.action}, ${cleaned.object}, ${cleaned.conditions}, ${occurred}, ${at})
+    VALUES (${`f${newShortId(8)}`}, ${storyId}, ${cleaned.title}, ${cleaned.subject}, ${cleaned.action}, ${cleaned.object}, ${cleaned.conditions}, ${occurred}, ${at})
     RETURNING id`;
   return row!.id;
 }
@@ -194,10 +195,11 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
     }
   }
 
-  const overrideTitle = typeof f.title === "string" && f.title.trim() ? f.title.trim() : null;
-  const ownCleanTitle = overrideTitle ?? (!awaitingReview && analysis?.title_zh?.trim() ? analysis.title_zh.trim() : pub && !withdrawn && pub.title.trim() ? pub.title.trim() : null);
+  const overrideTitle = typeof f.title === "string" && f.title.trim() ? collapseWhitespace(f.title) : null;
+  const ownCleanTitle = overrideTitle ?? (!awaitingReview && analysis?.title_zh?.trim() ? collapseWhitespace(analysis.title_zh) : pub && !withdrawn && pub.title.trim() ? collapseWhitespace(pub.title) : null);
   const frame = !awaitingReview ? ((analysis?.output?.fact ?? null) as Record<string, any> | null) : null;
-  const ownFactCandidate = !withdrawn ? String(overrideTitle || frame?.title || ownCleanTitle || "").trim().slice(0, 60) : "";
+  const frameTitle = typeof frame?.title === "string" ? collapseWhitespace(frame.title) : "";
+  const ownFactCandidate = !withdrawn ? (overrideTitle || frameTitle || ownCleanTitle || "") : "";
 
   const seenFacts = new Set<number>();
   for (const m of memberships) {
@@ -213,7 +215,7 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
         AND p.visibility = 'public'
       ORDER BY (fa2.role = 'primary') DESC, p.first_party DESC, coalesce(p.score, 0) DESC`;
     const soleActive = !withdrawn && peers.length === 0;
-    const fallbackFactTitle = ownFactCandidate || peers[0]?.title?.slice(0, 60) || "";
+    const fallbackFactTitle = ownFactCandidate || (peers[0]?.title ? collapseWhitespace(peers[0].title) : "");
     const targetFactTitle = soleActive && ownFactCandidate ? ownFactCandidate : m.fact_title;
     const rawConditions = soleActive && !suppressOriginal && Array.isArray(frame?.conditions)
       ? frame.conditions.map((c: { text?: string }) => c.text).filter(Boolean).join("；") || null
@@ -228,22 +230,21 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
       action: soleActive && frame ? (frame.action ?? null) : m.action,
       object: soleActive && frame ? (frame.object ?? null) : m.object,
     });
-    if (
-      cleaned.title !== m.fact_title
-      || cleaned.conditions !== m.conditions
+    const factEvidenceChanged = cleaned.conditions !== m.conditions
       || cleaned.subject !== m.subject
       || cleaned.action !== m.action
-      || cleaned.object !== m.object
-    ) {
+      || cleaned.object !== m.object;
+    if (cleaned.title !== m.fact_title || factEvidenceChanged) {
       await tx`
         UPDATE facts
-        SET title = ${cleaned.title.slice(0, 60)},
+        SET title = ${cleaned.title},
             conditions = ${cleaned.conditions},
             subject = ${cleaned.subject},
             action = ${cleaned.action},
-            object = ${cleaned.object}
+            object = ${cleaned.object},
+            updated_at = now()
         WHERE id = ${factId}`;
-      if (m.story_id !== null) dirtyStories.add(Number(m.story_id));
+      if (m.story_id !== null && factEvidenceChanged) dirtyStories.add(Number(m.story_id));
     }
   }
 
@@ -261,16 +262,16 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
         AND p.visibility = 'public'
       ORDER BY coalesce(p.published_at, p.discovered_at) DESC LIMIT 1`;
     const soleStoryReport = !withdrawn && storyPeers.length === 0 && (m.role === "primary" || m.role === "report");
-    const fallbackStoryTitle = (!withdrawn && (ownFactCandidate || ownCleanTitle) ? (ownFactCandidate || ownCleanTitle!) : storyPeers[0]?.title) || "";
+    const fallbackStoryTitle = (!withdrawn && (ownFactCandidate || ownCleanTitle) ? (ownFactCandidate || ownCleanTitle!) : storyPeers[0]?.title ? collapseWhitespace(storyPeers[0].title) : "") || "";
     const desiredStoryTitle = m.story_origin !== "manual" && soleStoryReport && (ownFactCandidate || ownCleanTitle)
-      ? (ownFactCandidate || ownCleanTitle!).slice(0, 120)
+      ? (ownFactCandidate || ownCleanTitle!)
       : m.story_title;
     const cleanedStory = sanitizer({
       title: desiredStoryTitle,
-      fallbackTitle: fallbackStoryTitle.slice(0, 120),
+      fallbackTitle: fallbackStoryTitle,
     });
     if (cleanedStory.title !== m.story_title) {
-      await tx`UPDATE stories SET title = ${cleanedStory.title.slice(0, 120)}, updated_at = now() WHERE id = ${storyId}`;
+      await tx`UPDATE stories SET title = ${cleanedStory.title}, updated_at = now() WHERE id = ${storyId}`;
       dirtyStories.add(storyId);
     }
   }
@@ -530,7 +531,8 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
     scope: composite ? "composite" : an.output?.scope === "single" ? "single" : "unknown",
     frame: frame ? { subject: frame.subject, action: frame.action, object: frame.object, occurredAt: frame.occurredAt } : null,
   };
-  const newTitle = String(frame?.title || title).slice(0, 60);
+  // Keep the full fact or report title instead of hard-slicing mid-phrase; display views clamp visually where needed.
+  const newTitle = collapseWhitespace(String(frame?.title ?? "")) || collapseWhitespace(title);
 
   const { sameUrl, referenced } = await relatedPosts(a);
   // The URL settles identity, but an unseen fact still needs its first reading-value decision.

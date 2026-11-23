@@ -50,7 +50,8 @@ const QUIET_MINUTES = Math.min(Number(process.env.ALERT_QUIET_MINUTES || ALERTS.
 const QUIET_FETCHING_MINUTES = Math.min(Math.max(ALERTS.quietWhileFetchingMinutes, QUIET_MINUTES), 1440);
 
 /** One check: the problems it finds now. `open` retains ongoing incidents, read once per round. */
-type Check = (now: number, open: AlertState) => Promise<Finding[]>;
+type FindingWithCoverage = Finding & { coveredSourceFailures?: string[] };
+type Check = (now: number, open: AlertState) => Promise<FindingWithCoverage[]>;
 
 /** Everything checked every round, in the order the findings are listed. */
 const CHECKS: Check[] = [
@@ -77,10 +78,19 @@ const CHECKS: Check[] = [
 
 /** Everything wrong right now, with its level. */
 export async function collectFindings(now = Date.now(), open?: AlertState): Promise<Finding[]> {
+  return withoutCoveredFindings(await readFindings(now, open));
+}
+
+async function readFindings(now: number, open?: AlertState): Promise<FindingWithCoverage[]> {
   const announced = open ?? await alertState();
-  const out: Finding[] = [];
+  const out: FindingWithCoverage[] = [];
   for (const check of CHECKS) out.push(...(await check(now, announced)));
   return out;
+}
+
+function withoutCoveredFindings(findings: FindingWithCoverage[]): Finding[] {
+  const covered = new Set(findings.flatMap(finding => finding.coveredSourceFailures ?? []));
+  return findings.filter(finding => !covered.has(finding.key));
 }
 
 // Content flow, judged by outcome: whatever broke (worker, egress proxy, models, queues), readers see
@@ -130,24 +140,25 @@ const FAILING_SHARE = 0.15;
 const FAILING_SOURCES = 50;
 const PROVIDER_ANSWER = "^([a-z_]+) HTTP 5[0-9]{2}:";
 
-async function sourcesFailing(now: number, open: AlertState): Promise<Finding[]> {
+async function sourcesFailing(now: number, open: AlertState): Promise<FindingWithCoverage[]> {
   if (!collecting() && !open["content.fetch"]) return [];
-  const latest = sql`SELECT r.status, r.error, r.started_at FROM sources s CROSS JOIN LATERAL (
+  const latest = sql`SELECT s.id, r.status, r.error, r.started_at FROM sources s CROSS JOIN LATERAL (
       SELECT status, error, started_at FROM fetch_runs f
       WHERE f.source_id = s.id AND f.status IN ('ok', 'failed') AND f.started_at <= ${new Date(now)}
       ORDER BY started_at DESC LIMIT 1) r
     WHERE s.enabled`;
-  const [r] = await sql<{ fetched: number; failing: number; answered: number }[]>`
+  const [r] = await sql<{ fetched: number; failing: number; answered: string[] | null }[]>`
     SELECT count(*)::int AS fetched, count(*) FILTER (WHERE status = 'failed')::int AS failing,
-      count(*) FILTER (WHERE status = 'failed' AND error ~ ${PROVIDER_ANSWER})::int AS answered FROM (${latest}) l`;
+      array_agg(id) FILTER (WHERE status = 'failed' AND error ~ ${PROVIDER_ANSWER}) AS answered FROM (${latest}) l`;
   const many = (n: number) => n >= FAILING_SOURCES && n >= r!.fetched * FAILING_SHARE;
   if (!r || !many(r.failing)) return [];
+  const answered = r.answered ?? [];
   const errors = await sql<{ error: string; n: number; first: Date }[]>`
     SELECT left(coalesce(error, ''), 120) AS error, count(*)::int AS n, min(started_at) AS first FROM (${latest}) l
     WHERE status = 'failed' GROUP BY 1 ORDER BY 2 DESC`;
-  const detail = `失败信源占 ${Math.round((r.failing / r.fetched) * 100)}%（门槛 ${FAILING_SHARE * 100}% 且至少 ${FAILING_SOURCES} 个），其中服务商回了错误的 ${r.answered} 个；常见错误：${errors.slice(0, 3).map((e) => `${e.error || "（无）"} ×${e.n}`).join("；")}`;
+  const detail = `失败信源占 ${Math.round((r.failing / r.fetched) * 100)}%（门槛 ${FAILING_SHARE * 100}% 且至少 ${FAILING_SOURCES} 个），其中服务商回了错误的 ${answered.length} 个；常见错误：${errors.slice(0, 3).map((e) => `${e.error || "（无）"} ×${e.n}`).join("；")}`;
   const since = new Date(Math.min(...errors.map((e) => e.first.getTime())));
-  if (many(r.failing - r.answered) || !many(r.answered)) return [{
+  if (many(r.failing - answered.length) || !many(answered.length)) return [{
     key: "content.fetch",
     level: "now",
     title: "大量信源抓取失败，这些信源的新文章进不来",
@@ -165,11 +176,14 @@ async function sourcesFailing(now: number, open: AlertState): Promise<Finding[]>
     level: "today",
     owner: "only",
     title: `${names} 出故障，${stops || "经它抓取的信源进不来"}`,
-    impact: `最近抓取过的 ${r.fetched} 个信源里，${r.failing} 个最近一次抓取失败，其中 ${r.answered} 个是 ${names} 那边出错，读者暂时看不到它们的新内容`,
+    impact: `最近抓取过的 ${r.fetched} 个信源里，${r.failing} 个最近一次抓取失败，其中 ${answered.length} 个是 ${names} 那边出错，读者暂时看不到它们的新内容`,
     heals: `会，${names} 恢复后按排程重新抓取，这段时间的新内容会晚到`,
     action: "不用处理，是对方的故障；恢复后会再发一条通知",
     detail,
     since,
+    // The provider alert already covers these failures. Other errors and other problems on the same
+    // source still need their own follow-up (2026-11-23: 55 copies of a single SocialData outage).
+    coveredSourceFailures: answered.map(id => `sources.failing.${id}`),
   }];
 }
 
@@ -736,10 +750,12 @@ export async function restoreFollowUp(key: string, reason: string, actor: string
 /** 09:00: the open follow-ups, one list; nothing when there are none. Closures whose problem is gone lapse here.
  *  Agent-only handoffs stay on the ops list and are not part of the owner's message. */
 export async function sendDigest(now = Date.now()) {
-  const found = (await collectFindings(now)).filter((f) => f.level === "later");
-  const dismissed = await dismissedFollowUps(found, now);
+  const findings = await readFindings(now);
+  // A source's closure remains in effect while a provider alert temporarily covers its failure.
+  const dismissed = await dismissedFollowUps(findings, now);
   const lapsed = Object.keys(await savedDismissals()).filter((key) => !dismissed[key]);
   if (lapsed.length) await sql`UPDATE settings SET value = value - ${sql.array(lapsed)}::text[], updated_at = now() WHERE key = 'alerts.dismissed'`;
+  const found = withoutCoveredFindings(findings).filter((f) => f.level === "later");
   const items = found.filter((f) => !dismissed[f.key] && !f.agentOnly);
   const lines = items.map((f, i) => `${i + 1}. ${f.title}${f.detail ? `\n   ${f.detail}` : ""}`);
   // Once the hub has the list, the agent works through it alone and passes on what is still the owner's. Without

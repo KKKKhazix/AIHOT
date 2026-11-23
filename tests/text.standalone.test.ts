@@ -74,6 +74,9 @@ test("a few Han characters in a long English body do not make it Chinese", () =>
     assert.equal(exportTranslation({ language: null, body_text, tr_html: "<p>译文</p>", tr_complete: true }), "<p>译文</p>");
   }
   assert.equal(isChineseBody({ language: null, body_text: "这是一段真正用中文写成的长正文，讲的是模型与智能体。".repeat(120) }), true);
+  // Chinese news full of product names and a link is about a quarter Han, and is still Chinese.
+  const news = "10 月 1 日消息，昨日推送 26H2 更新后，微软在官网公布了 Windows 11 ISO 下载镜像，支持全新安装与升级。下载地址：https://www.microsoft.com/en-us/software-download/windows11?utm_source=feed&utm_medium=rss 。Microsoft Windows Insider Program 同步更新 Release Preview Channel。";
+  assert.equal(isChineseBody({ language: null, body_text: news.repeat(2) }), true);
   assert.equal(isChineseBody({ language: "en", body_text: "这是一段真正用中文写成的长正文。".repeat(120) }), false);
   assert.equal(isChineseBody({ language: "zh", body_text: english }), true);
   assert.equal(isChineseBody({ language: null, body_text: "これはテストの文章です。".repeat(300) }), false);

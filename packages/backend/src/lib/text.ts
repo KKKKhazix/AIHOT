@@ -4,11 +4,12 @@ export function collapseWhitespace(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
-/** A declared language wins. Otherwise Han text is Chinese only without Japanese or Korean script, and a
- * long text needs a real share of Han, not a single character: an English body that merely links to
- * 「简体中文」 carries a handful of Han characters in thousands of letters (issue #478). Short strings
- * (titles, posts, quotes) keep the presence test. Translation and every reading exit share this rule,
- * so a body that is translated is also shown translated.
+/** A declared language wins. Otherwise Han text is Chinese only without Japanese or Korean script, and
+ * a long text needs a real share of Han (a tenth of its letters), not a single character: an English
+ * body that merely links to 「简体中文」 carries a handful of Han characters in thousands of letters
+ * (issue #478), while Chinese news full of product names and links still runs to about a quarter Han.
+ * Short strings (titles, posts, quotes) keep the presence test. Translation and every reading exit
+ * share this rule, so a body that is translated is also shown translated.
  */
 export function isChineseText(text: string, language?: string | null): boolean {
   const declared = language?.toLowerCase().split(/[-_]/)[0];
@@ -16,7 +17,7 @@ export function isChineseText(text: string, language?: string | null): boolean {
   if (declared && !["und", "unknown", "other", "zxx"].includes(declared)) return false;
   if (!/\p{Script=Han}/u.test(text) || /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(text)) return false;
   const letters = (text.match(/\p{L}/gu) ?? []).length;
-  return letters < 200 || (text.match(/\p{Script=Han}/gu) ?? []).length / letters >= 0.3;
+  return letters < 200 || (text.match(/\p{Script=Han}/gu) ?? []).length / letters >= 0.1;
 }
 
 export function truncate(s: string, max: number, ellipsis = "…"): string {

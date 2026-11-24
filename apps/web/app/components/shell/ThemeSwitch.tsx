@@ -11,8 +11,8 @@ const OPTIONS: Array<{ key: Choice; label: string; icon: ReactNode }> = [
   { key: "light", label: "浅色", icon: <IconSun size={14} /> },
 ];
 
-/** Three-way appearance switch (dark / follow the system / light) with a sliding thumb. */
-export function ThemeSwitch({ className = "" }: { className?: string }) {
+/** Three-way appearance switch (dark / follow the system / light) with a sliding thumb; `compact` for the 更多 menu. */
+export function ThemeSwitch({ className = "", compact = false }: { className?: string; compact?: boolean }) {
   const pref = useThemePreference();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -33,7 +33,7 @@ export function ThemeSwitch({ className = "" }: { className?: string }) {
   };
 
   return (
-    <div role="radiogroup" aria-label="外观" className={`relative grid h-[34px] grid-cols-3 rounded-full border border-line bg-bg-sunk p-[3px] ${className}`}>
+    <div role="radiogroup" aria-label="外观" className={`relative grid ${compact ? "h-7" : "h-[34px]"} grid-cols-3 rounded-full border border-line bg-bg-sunk p-[3px] ${className}`}>
       <span
         aria-hidden="true"
         className="absolute inset-y-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-full border border-line bg-surface shadow-[var(--shadow-card)] transition-transform duration-200 ease-[var(--ease-out-quart)]"

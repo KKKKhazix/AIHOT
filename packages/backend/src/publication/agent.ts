@@ -136,7 +136,7 @@ export function searchAnswer(found: { res: V1ItemsResult; expanded: boolean }, q
         `如实告诉用户 ${SITE.name} ${window}没有这方面的报道${q.window === "24h" ? "（可以用 window=7d 看最近一周）" : "；更早的内容这里查不到"}。`,
         `Tell the user plainly that ${SITE.name} has no coverage of this for ${window}${q.window === "24h" ? " (window=7d covers the last week)" : "; older items can't be searched here"}.`,
       ),
-      t("可以换个说法或更短的关键词再查一次（比如只用公司或产品名）。", "Try again with other or shorter keywords, such as just the company or product name: the search reads the site's original Chinese text, so names work best."),
+      t("可以换个说法或更短的关键词再查一次（比如只用公司或产品名）。", "Try again with fewer keywords, such as the company or product name."),
       t("不要用训练记忆冒充最新消息。", "Don't pass off training memory as the latest news."),
     ], lang);
   }
@@ -448,7 +448,7 @@ function agentGuideEn(): string {
     `| One category only | add category=${categories.slice(0, -1).join(", ")} or ${categories.at(-1)} |`,
     "| All public news, not only Top Picks | add mode=all |",
     "| More items | add limit=20 (1–30, default 10) |",
-    `| A company, product, model, person or topic | ${u("/search?q=keywords")} (the last 7 days; window=24h for today only; names work best, as the search reads the site's original Chinese text) |`,
+    `| A company, product, model, person or topic | ${u("/search?q=keywords")} (the last 7 days; window=24h for today only; English titles and summaries are searchable when available) |`,
     `| What's hot, what people are discussing | ${u("/hot")} |`,
     "| A trending story's background and developments | the “Full story” address of each story in the trending results |",
     `| The ${SITE.name} ${REPORT_NAMES_EN.daily} | ${u("/daily")} (latest issue); a given date: ${u("/daily/2026-09-30")} |`,

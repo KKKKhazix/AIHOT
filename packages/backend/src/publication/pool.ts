@@ -106,16 +106,14 @@ function queryEntityTag(q: string): string | null {
 }
 
 /**
- * The public APIs' q (v1 and MCP): every term matches the subject, title or summary, or the start of a
- * body whose full text may be shown, as the API documents it ("title / Chinese title / Chinese summary
- * / body"). Results stay in time order.
+ * A plain Latin or digit term must start a word in the body: "rag" is not inside "storage".
  */
-/** A plain Latin or digit term must start a word in the body: "rag" is not inside "storage". */
 function bodyMatch(t: string) {
   const like = sql`ps.body LIKE ${"%" + t + "%"}`;
   return /^[a-z0-9]+$/.test(t) ? sql`${like} AND ps.body ~ ${"(^|[^a-z0-9])" + t}` : like;
 }
 
+/** Public search also matches translated titles and summaries, and the start of a publicly readable body. */
 export function publicMatchCondition(terms: string[], copies: Copies) {
   if (terms.length === 0) return sql``;
   // Keep the body lookup correlated to the time-ordered candidates. Without OFFSET 0, PostgreSQL

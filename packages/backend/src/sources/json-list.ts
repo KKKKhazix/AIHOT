@@ -154,7 +154,8 @@ function stoppedAt(data: unknown, path: string): string {
     cur = next;
     at = at === "(root)" ? seg : `${at}.${seg}`;
   }
-  return `${at} (keys: ${keyList(cur)})`;
+  // A layer that is null or a scalar has no keys to list: failure envelopes often answer "data": null.
+  return cur !== null && typeof cur === "object" ? `${at} (keys: ${keyList(cur)})` : `${at} (${cur === null ? "null" : `a ${typeof cur}`})`;
 }
 
 /** Failure envelopes answer 200 with the reason in a string field; a body without one still shows its keys. */

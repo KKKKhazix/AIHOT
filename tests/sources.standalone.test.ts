@@ -66,6 +66,8 @@ const pages: Record<string, () => string> = {
   "/error-envelope.json": () => JSON.stringify({ code: "200", success: false, message: "缺少必填参数", data: {} }),
   // The same failure under a field name no convention covers: the keys still show where the reason is.
   "/odd-envelope.json": () => JSON.stringify({ code: 500, errmsg: "参数错误", result: {} }),
+  // The failure envelope most APIs use: data is null, so the path stops at a layer with no keys.
+  "/null-envelope.json": () => JSON.stringify({ code: 1, msg: "token 已过期", data: null }),
   // An items path that points at an object, not an array.
   "/object-items.json": () => JSON.stringify({ total: 2, rows: [{ title: "A" }], items: { a: 1, b: 2 } }),
 };
@@ -303,6 +305,8 @@ test("an items path that is not an array names the layer it stopped at, that lay
     /found nothing at \(root\) \(keys: code, errmsg, result\)/, "a reason under an uncommon field is still visible as a key");
   await assert.rejects(items("items", "object-items.json"),
     /found an object with keys a, b/);
+  await assert.rejects(items("data.items", "null-envelope.json"),
+    /items path data\.items did not resolve to an array: found nothing at data \(null\); upstream said: token 已过期/);
 });
 
 test("a source's language reaches its listing, detail page and article body, which stay in that language", async () => {

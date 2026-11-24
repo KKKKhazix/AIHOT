@@ -102,6 +102,7 @@ test("the storage keys readers already have data under keep their names", async 
   const kept = {
     starred: "aihot-starred-items", read: "aihot-read-items", unreadOnly: "aihot-unread-only", theme: "aihot-theme", font: "aihot-font",
     changelogSeen: "aihot-changelog-seen-version", feedbackDraft: "aihot-feedback-draft-v1", recentSearches: "aihot-recent-searches",
+    englishHint: "aihot-english-hint-dismissed",
   } as const;
   for (const [role, key] of Object.entries(kept)) {
     assert.equal(state.KEYS[role as keyof typeof kept], key, `readers' ${role} data is stored under ${key}; renaming the key loses it`);

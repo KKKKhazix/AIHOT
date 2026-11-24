@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Presence } from "../ui/Presence";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { FontSelect } from "./FontSelect";
+import { LanguageSwitch } from "./LanguageSwitch";
+import { ENGLISH } from "@aihot/contracts/english";
 import { webModules } from "../../site-modules";
 import { useT } from "../../lib/i18n";
 
@@ -16,7 +18,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 /**
  * 更多 at the foot of the desktop sidebar: one word, no icon (product decision 2026-11-24), opening a small
- * panel that holds the reader's account and the appearance and font settings the phone keeps under 我的.
+ * panel that holds the reader's account, the appearance and font settings and, on a site with an English edition,
+ * the language switch, which the phone keeps under 我的.
  * The panel rises from the foot row it belongs to and is placed on the page, not in the sidebar, so a short
  * window (where the sidebar scrolls) does not cut it off; any scroll or resize closes it rather than leave it
  * behind the row it came from.
@@ -100,6 +103,11 @@ export function MoreMenu({ anchor }: { anchor: () => HTMLElement | null }) {
             <Row label={t("字体", "Font")}>
               <FontSelect />
             </Row>
+            {ENGLISH && (
+              <Row label={t("语言", "Language")}>
+                <LanguageSwitch compact className="w-[124px]" />
+              </Row>
+            )}
           </div>
         </Presence>
       </div>

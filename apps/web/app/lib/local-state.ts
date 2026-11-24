@@ -14,6 +14,7 @@ export const KEYS = {
   changelogSeen: "aihot-changelog-seen-version",
   feedbackDraft: "aihot-feedback-draft-v1",
   recentSearches: "aihot-recent-searches",
+  englishHint: "aihot-english-hint-dismissed",
 } as const;
 
 const STARRED_LIMIT = 500;

@@ -13,7 +13,9 @@ import type {
   TopicGroup, TopicLink, TopicPage, TopicSummary, TopicsResponse,
 } from "@aihot/contracts/site";
 import { REPORT_NAMES_EN } from "@aihot/contracts/site";
-import { ENGLISH } from "@aihot/contracts/english";
+import { ENGLISH, HAN, needsEnglish } from "@aihot/contracts/english";
+
+export { HAN, needsEnglish };
 import { sectionLabelIn, topicDefinition, topicName } from "@aihot/contracts/taxonomy";
 import { TOPIC_GROUP_EN } from "@aihot/industry/english";
 import { SITE, withSubject } from "@aihot/site";
@@ -26,7 +28,8 @@ import { monogramOf } from "./topics.ts";
 
 /** How a text is translated: a headline, running text, or a name (its established English name, else as written). */
 export type CopyKind = "headline" | "text" | "name";
-type Part = readonly [CopyKind, string | null | undefined];
+/** A text of an object, how it is translated and, when it is not the object's own, the article it belongs to. */
+type Part = readonly [CopyKind, string | null | undefined, (string | null | undefined)?];
 
 /** What the worker needs about a text the pages show: how to translate it, and the article it belongs to (for its original title). */
 export interface Wanted {
@@ -35,32 +38,26 @@ export interface Wanted {
 }
 
 export interface Copy {
-  /** One object's texts: all in English, or all as they are while any of them has no English yet. */
+  /** One object's texts: all in English, or all as they are while any of them has no English yet. `item`: their article. */
   all<const T extends readonly Part[]>(parts: T, item?: string | null): { -readonly [K in keyof T]: T[K][1] };
   /** A text on its own, such as a linked title; a name without English stays as written. */
   one<S extends string | null | undefined>(kind: CopyKind, text: S, item?: string | null): S;
 }
 
-/**
- * Han characters, as a regular expression both JavaScript and PostgreSQL read the same way (the worker finds what
- * to translate in SQL). A text without them already reads on English pages: names, model names, posts in English.
- */
-export const HAN = "[\\u3400-\\u4dbf\\u4e00-\\u9fff\\uf900-\\ufaff]";
-const HAN_RE = new RegExp(HAN);
-
-export function needsEnglish(text: string | null | undefined): text is string {
-  return !!text && HAN_RE.test(text);
-}
 
 export const copyKey = (zh: string) => sha256(zh);
 
 class Gather implements Copy {
   readonly wanted = new Map<string, Wanted>();
   private add(kind: CopyKind, text: string | null | undefined, item?: string | null) {
-    if (needsEnglish(text) && !this.wanted.has(text)) this.wanted.set(text, { kind, item: item ?? null });
+    if (!needsEnglish(text)) return;
+    const known = this.wanted.get(text);
+    if (!known) this.wanted.set(text, { kind, item: item ?? null });
+    // The same words met again with their article: its original title lends them names (editorial/english.ts).
+    else if (!known.item && item) known.item = item;
   }
   all<const T extends readonly Part[]>(parts: T, item?: string | null) {
-    for (const [kind, text] of parts) this.add(kind, text, item);
+    for (const [kind, text, own] of parts) this.add(kind, text, own ?? item);
     return parts.map((p) => p[1]) as { -readonly [K in keyof T]: T[K][1] };
   }
   one<S extends string | null | undefined>(kind: CopyKind, text: S, item?: string | null): S {
@@ -280,7 +277,7 @@ function front(r: ReportDetail, c: Copy): Pick<ReportDetail, "lead" | "overview"
     const [title, overview] = c.all([["headline", r.lead?.title], ["text", r.overview]], r.leadItemId);
     return { lead: r.lead && { title: title!, leadParagraph: overview ?? "" }, overview };
   }
-  const [title, ...titles] = c.all([["headline", r.lead?.title], ...composed.titles.map((t) => ["headline", t] as const)], r.leadItemId);
+  const [title, ...titles] = c.all([["headline", r.lead?.title, r.leadItemId], ...composed.named.map((n) => ["headline", n.title, n.itemId] as const)]);
   if (titles.some(needsEnglish)) return { lead: r.lead, overview: r.overview };
   const units = ENGLISH?.reports.entry ?? { one: "story", many: "stories" };
   const overview = `${r.kind === "weekly" ? "This week" : "This month"}: ${composed.count} ${composed.count === 1 ? units.one : units.many}. The most watched: ${titles.join("; ")}.`;

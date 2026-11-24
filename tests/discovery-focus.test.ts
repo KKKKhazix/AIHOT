@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { sql, closeDb } from "@aihot/backend/db";
 import { loadDiscoveryEntries } from "@aihot/backend/publication/sitemap";
+import { ENGLISH } from "@aihot/contracts/english";
 import { SITE } from "@aihot/site";
 import { buildApp } from "../apps/api/src/app.ts";
 
@@ -229,4 +230,23 @@ test("the news section is served even when nothing is new", async (t) => {
   const xml = await file("news");
   assert.equal(urls(xml).length, 0);
   assert.match(xml, /<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9" xmlns:news="http:\/\/www\.google\.com\/schemas\/sitemap-news\/0\.9">/);
+});
+
+test("on a site with an English edition its pages are listed again at /en, an article once its title is in English", { skip: ENGLISH === null }, async () => {
+  const untranslated = await report("not-yet-english", { at: ago(1), body: long });
+  await sql`UPDATE publications SET title = '还没翻成英文的标题' WHERE article_id = ${untranslated}`;
+  await sql`INSERT INTO english_copy (zh_hash, zh, kind, en) VALUES (encode(sha256(convert_to('公开报道', 'UTF8')), 'hex'), '公开报道', 'headline', 'A public report')
+            ON CONFLICT (zh_hash) DO UPDATE SET en = EXCLUDED.en, failures = 0`;
+  const inventory = new Set((await loadDiscoveryEntries(new Date())).map((e) => e.loc));
+  for (const path of ["/en", "/en/all", "/en/hot", "/en/daily", "/en/daily/2099-01-02", "/en/weekly/2099-W01", "/en/topics", "/en/agent", "/en/about", `/en/items/${ids.long}`]) {
+    assert.ok(inventory.has(path), `${path} is listed`);
+  }
+  for (const path of ["/en/terms", "/en/privacy", "/en/changelog", `/en/items/${untranslated}`, `/en/items/${ids.withdrawn}`]) {
+    assert.ok(!inventory.has(path), `${path} is not: no English edition, its title still Chinese, or not public`);
+  }
+  // The sitemap (built earlier in this file and kept five minutes) has the English pages in sections of their own.
+  const index = (await app.inject("/sitemap.xml")).body;
+  for (const section of ["en-pages", "en-reports", "en-topics"]) assert.match(index, new RegExp(`/sitemaps/${section}\\.xml`), section);
+  assert.ok(urls(await file("en-pages")).includes("/en/all"));
+  assert.ok(!urls(await file("pages")).some((path) => path === "/en" || path.startsWith("/en/")), "the Chinese sections stay Chinese");
 });

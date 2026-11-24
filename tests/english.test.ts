@@ -17,7 +17,8 @@ import { upsertMaterial } from "@aihot/backend/content/materials";
 import { translateEnglish } from "@aihot/backend/editorial/english";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { autoReleaseUnknownReceipts } from "@aihot/backend/operations/recover";
-import { englishOf } from "@aihot/backend/publication/english";
+import { englishOf, report as englishReport, wantedIn } from "@aihot/backend/publication/english";
+import { loadReport } from "@aihot/backend/publication/reports";
 import { publishArticle } from "@aihot/backend/publication/publish";
 import { digestInputsHash, digestReports } from "@aihot/backend/publication/story-evidence";
 import { buildApp } from "../apps/api/src/app.ts";
@@ -340,4 +341,16 @@ test("an event's digest or summary its page does not show is never sent", { skip
   const sent = requests.flat();
   assert.ok(sent.includes(`综述过期的事件${T}`) && sent.includes("综述过期事件的进展"), "what the page shows is translated");
   assert.ok(!sent.includes("报道改写前的综述。") && !sent.includes("没有报道这样说的事件摘要。"), "what it does not show is never sent");
+});
+
+test("a text goes to the model with its own article: each title a composed overview names, and words met first without one", { skip: ENGLISH === null }, async () => {
+  const wanted = await wantedIn((await loadReport("weekly", "2099-W01"))!, englishReport);
+  assert.equal(wanted.get(`甲公司发布新模型${T}`)?.item, site.a, "not the lead's article, nor none");
+  assert.equal(wanted.get(`丁公司发布智能体${T}`)?.item, site.w);
+  const later = await wantedIn(null, (value, c) => {
+    c.one("headline", "先在别处出现的标题", null);
+    c.one("headline", "先在别处出现的标题", "item-1");
+    return value;
+  });
+  assert.equal(later.get("先在别处出现的标题")?.item, "item-1", "met again with its article, the article goes along");
 });

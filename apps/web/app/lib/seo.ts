@@ -7,8 +7,8 @@ import {
 } from "@aihot/contracts/site";
 import { isCategoryKey, isChannelKey, sectionLabelIn, topicName } from "@aihot/contracts/taxonomy";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
-import { ENGLISH } from "@aihot/contracts/english";
-import { localizePath, translator, type Locale, type Text } from "./i18n.ts";
+import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
+import { hasEnglish, localizePath, translator, type Locale, type Text } from "./i18n.ts";
 
 /**
  * The site's address: SITE_URL while rendering on the server (what crawlers and share previews read),
@@ -117,8 +117,19 @@ export function pageMeta(input: PageMetaInput): MetaDescriptor[] {
   ];
   // The Markdown versions are the Chinese pages'.
   if (input.markdown && input.locale === "zh") tags.push({ tagName: "link", rel: "alternate", type: "text/markdown", href: `${base}${input.markdown}` });
-  if (input.noindex) tags.push({ name: "robots", content: input.nofollow ? "noindex, nofollow" : "noindex, follow" });
+  // An English page whose own title is still Chinese (its words not translated yet) stays out of search until they are.
+  const noindex = input.noindex || (input.locale === "en" && needsEnglish(input.title));
+  if (noindex) tags.push({ name: "robots", content: input.nofollow ? "noindex, nofollow" : "noindex, follow" });
   else {
+    // A page in both languages names both, the Chinese as the default, so search engines show readers their own.
+    if (ENGLISH && hasEnglish(input.path.split(/[?#]/)[0]!)) {
+      const zh = address(input.path, "zh");
+      tags.push(
+        { tagName: "link", rel: "alternate", hrefLang: SITE.locale, href: zh },
+        { tagName: "link", rel: "alternate", hrefLang: "en", href: address(input.path, "en") },
+        { tagName: "link", rel: "alternate", hrefLang: "x-default", href: zh },
+      );
+    }
     // Search results and Discover may show an indexable page's picture large, as they do for news sites.
     tags.push({ name: "robots", content: "max-image-preview:large" });
     if (input.googleNoindex) tags.push({ name: "googlebot", content: "noindex" });

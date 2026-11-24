@@ -129,29 +129,48 @@ export function ems(text: string, weight: 400 | 700 = 700): number {
 export const plainEnglish = (text: string) =>
   text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC").replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/–/g, "-").replace(/\s+/g, " ").trim();
 
-/** English broken into lines between words, each within `room` ems (a word longer than a line takes one of its own). */
-export function wrapLines(text: string, room: number, weight: 400 | 700 = 700): string[] {
-  const lines: string[] = [];
-  let line = "";
-  for (const word of text.split(" ")) {
-    const next = line ? `${line} ${word}` : word;
-    if (line && ems(next, weight) > room) {
-      lines.push(line);
-      line = word;
-    } else line = next;
+/** A word, or a piece of one wider than a line (a hash, an address), which the cards break there (wordBreak: break-word). */
+interface Token { text: string; gap: string }
+
+function tokens(text: string, room: number, weight: 400 | 700): Token[] {
+  return text.split(" ").flatMap((word, i) => {
+    const pieces = [""];
+    for (const ch of word) {
+      if (pieces.at(-1) && ems(pieces.at(-1)! + ch, weight) > room) pieces.push(ch);
+      else pieces[pieces.length - 1] += ch;
+    }
+    return pieces.map((piece, j) => ({ text: piece, gap: i > 0 && j === 0 ? " " : "" }));
+  });
+}
+
+const joined = (line: Token[]) => line.map((t, i) => (i ? t.gap : "") + t.text).join("");
+
+/** Tokens laid into lines, each within `room` ems. */
+function layout(all: Token[], room: number, weight: 400 | 700): Token[][] {
+  const lines: Token[][] = [];
+  for (const token of all) {
+    const line = lines.at(-1);
+    if (line && ems(joined([...line, token]), weight) <= room) line.push(token);
+    else lines.push([token]);
   }
-  return line ? [...lines, line] : lines;
+  return lines;
 }
 
-/** English within `lines` lines of `room` ems, cut between words with an ellipsis. */
+/** English broken into lines between words, each within `room` ems. */
+export function wrapLines(text: string, room: number, weight: 400 | 700 = 700): string[] {
+  return layout(tokens(text, room, weight), room, weight).map(joined);
+}
+
+/** English within `lines` lines of `room` ems, cut between words with an ellipsis (inside a word only wider than a line). */
 export function fitLines(text: string, room: number, lines: number, weight: 400 | 700 = 700): string {
-  if (wrapLines(text, room, weight).length <= lines) return text;
-  let kept = wrapLines(text, room, weight).slice(0, lines).join(" ");
-  while (kept.includes(" ") && wrapLines(`${kept}…`, room, weight).length > lines) kept = kept.slice(0, kept.lastIndexOf(" "));
-  return `${kept.replace(/[\s,;:.-]+$/, "")}…`;
+  const all = tokens(text, room, weight);
+  if (layout(all, room, weight).length <= lines) return text;
+  const kept = layout(all, room, weight).slice(0, lines).flat();
+  while (kept.length > 1 && wrapLines(`${joined(kept)}…`, room, weight).length > lines) kept.pop();
+  return `${joined(kept).replace(/[\s,;:.-]+$/, "")}…`;
 }
 
-export interface CardText { kicker: string; title: string; titleSize: number; subtitle: string | null; meta: string | null }
+export interface CardText { kicker: string; title: string; titleSize: number; subtitle: string | null; meta: string | null; english: boolean }
 
 /**
  * What a card shows. An English card is set as English once its title and summary are; until then (its words not
@@ -171,6 +190,7 @@ function chineseText(card: OgCard): CardText {
     titleSize: length > 40 ? 50 : length > 24 ? 58 : 66,
     subtitle: card.subtitle ? clamp(card.subtitle, length > 40 ? 26 : length > 24 ? 50 : 78) : null,
     meta: card.meta ? clamp(card.meta, 70) : null,
+    english: false,
   };
 }
 
@@ -193,12 +213,15 @@ function englishText(card: OgCard): CardText {
     titleSize,
     subtitle: card.subtitle && left > 0 ? fitLines(plainEnglish(card.subtitle), room / 28, left, 400) : null,
     meta: card.meta ? fitLines(plainEnglish(card.meta), TEXT_WIDTH / 24, 1, 400) : null,
+    english: true,
   };
 }
 
 async function tree(card: OgCard): Promise<Node> {
   const accent = ACCENTS[card.accent ?? "teal"];
-  const { kicker, title, titleSize, subtitle, meta } = cardText(card);
+  const { kicker, title, titleSize, subtitle, meta, english } = cardText(card);
+  // English breaks a word only wider than its line, where wrapLines does; Chinese keeps the styles it had.
+  const wrap = english ? { wordBreak: "break-word" } : {};
   return h(
     "div",
     {
@@ -219,12 +242,12 @@ async function tree(card: OgCard): Promise<Node> {
       ]),
       h("div", { display: "flex", marginTop: 56, alignItems: "center" }, [
         h("div", { width: 10, height: 10, borderRadius: 999, backgroundColor: accent, marginRight: 14 }),
-        h("div", { display: "flex", fontSize: 28, fontWeight: 700, color: accent, letterSpacing: 1 }, kicker),
+        h("div", { display: "flex", fontSize: 28, fontWeight: 700, color: accent, letterSpacing: 1, ...wrap }, kicker),
       ]),
       h("div", { display: "flex", flex: 1, marginTop: 22, gap: 40 }, [
         h("div", { display: "flex", flexDirection: "column", flex: 1 }, [
-          h("div", { display: "flex", fontSize: titleSize, fontWeight: 700, lineHeight: 1.25, color: "#ffffff" }, title),
-          subtitle !== null ? h("div", { display: "flex", marginTop: 22, fontSize: 28, lineHeight: 1.5, color: "#b1bec0" }, subtitle) : null,
+          h("div", { display: "flex", fontSize: titleSize, fontWeight: 700, lineHeight: 1.25, color: "#ffffff", ...wrap }, title),
+          subtitle !== null ? h("div", { display: "flex", marginTop: 22, fontSize: 28, lineHeight: 1.5, color: "#b1bec0", ...wrap }, subtitle) : null,
         ].filter(Boolean)),
         card.badge
           ? h("div", { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 170, height: 170, borderRadius: 999, border: `6px solid ${accent}` }, [
@@ -233,7 +256,7 @@ async function tree(card: OgCard): Promise<Node> {
             ])
           : null,
       ].filter(Boolean)),
-      meta !== null ? h("div", { display: "flex", fontSize: 24, color: "#82939a", borderTop: "1px solid rgba(230,237,237,0.12)", paddingTop: 22 }, meta) : null,
+      meta !== null ? h("div", { display: "flex", fontSize: 24, color: "#82939a", borderTop: "1px solid rgba(230,237,237,0.12)", paddingTop: 22, ...wrap }, meta) : null,
     ].filter(Boolean),
   );
 }

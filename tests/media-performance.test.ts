@@ -7,6 +7,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
+import { ENGLISH } from "@aihot/contracts/english";
 import { SITE } from "@aihot/site";
 
 const dir = await mkdtemp(path.join(tmpdir(), "aihot-media-test-"));
@@ -228,6 +229,12 @@ test("English cards break between words and cut with an ellipsis, in marks the f
   assert.ok(wrapLines(cut, room).length <= 2);
   assert.equal(fitLines("one two", room, 1), "one two", "what fits is left whole");
   assert.equal(plainEnglish("가나 ガ"), "가나 ガ", "letters of other scripts come back whole");
+  // A word wider than a line (a commit hash, an address) is broken where the cards break it, and cut inside if need be.
+  const hash = "3f9a8c1d2e7b6a5f4c3d2e1f0a9b8c7d6e5f4a3b";
+  const lines = wrapLines(`reverts ${hash} today`, room);
+  assert.ok(lines.length > 2 && lines.every((line) => ems(line) <= room) && lines.join("").replace(/ /g, "") === `reverts${hash}today`, lines.join(" | "));
+  const cutHash = fitLines(`reverts ${hash} today`, room, 2);
+  assert.ok(cutHash.endsWith("…") && wrapLines(cutHash, room).length <= 2 && `reverts ${hash}`.startsWith(cutHash.slice(0, -1)), cutHash);
 });
 
 test("an English card or poster whose words are still Chinese is cut as Chinese, never left whole", () => {
@@ -238,6 +245,16 @@ test("an English card or poster whose words are still Chinese is cut as Chinese,
   assert.ok(english.title.endsWith("…") && english.subtitle!.endsWith("…"), "English is cut between words");
   const poster = posterText({ url: "https://example.test/en/items/a", kicker: "Research", title, summary, source: "来源名", date: "November 24, 2026", score: 88, lang: "en" });
   assert.deepEqual([[...poster.title].length, [...poster.summary!].length, poster.source], [72, 120, "Source: 来源名"]);
+});
+
+// A site without an English edition draws no English poster (its tagline has no English).
+test("everything an English poster says is English; a Chinese one says what it always did", { skip: ENGLISH === null }, () => {
+  const base = { url: "https://example.test/items/a", kicker: "Research", title: "A small model matches big ones", summary: "It was trained on proofs it wrote.", source: "Example", date: "November 24, 2026", score: 88 };
+  const english = posterText({ ...base, lang: "en" });
+  assert.ok(english.english && english.scan === "Scan to read" && english.score === "Top Pick · AI score 88" && english.footer.startsWith(`${SITE.name} · `));
+  assert.doesNotMatch(JSON.stringify(english), /[\u3400-\u9fff]/, "no Chinese anywhere on it");
+  const chinese = posterText({ ...base, kicker: "研究", title: "小模型追平大模型", summary: "它用自己写的证明训练。" });
+  assert.deepEqual([chinese.english, chinese.scan, chinese.score, chinese.footer], [false, "长按识别二维码", "精选 · 88 分", `${SITE.name} · ${SITE.tagline}`]);
 });
 
 test("without added fonts, share images and posters keep their cache keys", { skip: FALLBACK_FONTS.length > 0 }, () => {

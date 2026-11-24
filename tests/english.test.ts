@@ -21,7 +21,9 @@ import { translateEnglish } from "@aihot/backend/editorial/english";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { autoReleaseUnknownReceipts } from "@aihot/backend/operations/recover";
 import { copyKey, englishOf, report as englishReport, wantedIn } from "@aihot/backend/publication/english";
-import { loadItemOgCard } from "@aihot/backend/publication/og";
+import { cardText } from "@aihot/backend/media/og";
+import { posterText } from "@aihot/backend/media/poster";
+import { loadItemOgCard, loadItemPoster } from "@aihot/backend/publication/og";
 import { loadReport } from "@aihot/backend/publication/reports";
 import { publishArticle } from "@aihot/backend/publication/publish";
 import { digestInputsHash, digestReports } from "@aihot/backend/publication/story-evidence";
@@ -515,8 +517,12 @@ test("v1, the Agent addresses and the MCP tools in English: English pages, the n
 test("the English pages' share images: articles, posters, issues, events, topics and pages in English, the Chinese ones as they were", { skip: ENGLISH === null }, async () => {
   const get = (url: string) => app.inject({ method: "GET", url });
   const card = await loadItemOgCard(site.a, "en");
-  assert.deepEqual(hanIn(JSON.stringify(card)), [], "an article's English card says nothing in Chinese");
+  assert.deepEqual(hanIn(JSON.stringify([card, cardText(card!)])), [], "an article's English card says nothing in Chinese, as drawn too");
   assert.equal(card!.badge?.label, "AI score");
+  const poster = await loadItemPoster(site.a, "en");
+  assert.ok(poster!.url.endsWith(`/en/items/${site.a}`), "its poster's code opens the English page");
+  assert.deepEqual(hanIn(JSON.stringify(posterText(poster!))), [], "and every word drawn on the poster is English");
+  assert.equal(posterText((await loadItemPoster(site.a))!).scan, "长按识别二维码", "the Chinese poster is as it was");
   const zhCard = await loadItemOgCard(site.a);
   assert.ok(HAN.test(zhCard!.title) && !("lang" in zhCard!), "its Chinese card is as it was");
   const pages = ["/site.png", "/pages/topics.png", ...Object.keys(ENGLISH!.cards).map((name) => `/pages/${name}.png`)];
@@ -525,7 +531,7 @@ test("the English pages' share images: articles, posters, issues, events, topics
     assert.equal(en.statusCode, 200, path);
     assert.equal(en.headers["content-type"], "image/png", path);
     assert.notEqual(en.headers.etag, zh.headers.etag, `${path}: a card of its own`);
-    assert.doesNotMatch(String(en.headers["cache-control"]), /max-age=60,/, `${path}: its words are in English, so it keeps as long as the Chinese one`);
+    assert.equal(en.headers["cache-control"], zh.headers["cache-control"], `${path}: its words are in English, so it keeps as long as the Chinese one`);
   }
   assert.equal((await get("/og/en/pages/changelog.png")).statusCode, 404, "a page with no English edition has no English card");
   // An article whose words are not in English yet is kept a minute, so its card turns English soon after they are.

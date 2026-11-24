@@ -6,6 +6,8 @@ import { CATEGORY_LABELS, categoryLabel, type CategoryKey } from '@aihot/contrac
 import { beijingDate, longDateEn } from '@aihot/contracts/time';
 import { ITEM_COPY, withSubject } from '@aihot/site';
 import type { OgCard } from '../media/og.ts';
+import type { Poster } from '../media/poster.ts';
+import { config } from '../config.ts';
 import { sql } from '../db.ts';
 import { inEnglish } from './english.ts';
 import { hasItemPage, publicSourceName } from './rules.ts';
@@ -50,5 +52,23 @@ export async function loadItemOgCard(id: string, lang: Locale = 'zh'): Promise<O
     subtitle: item.summary,
     meta: `${item.source.name} · ${beijingDate(item.timelineAt)}`,
     badge: item.selected && item.score !== null && ITEM_COPY.showScore ? { value: String(Math.round(item.score)), label: '精选评分' } : null,
+  };
+}
+
+/** The article's phone poster: its QR code opens the article's page in the poster's language. */
+export async function loadItemPoster(id: string, lang: Locale = 'zh'): Promise<Poster | null> {
+  const d = await loadItemShare(id, lang);
+  if (!d) return null;
+  const en = lang === 'en';
+  return {
+    url: `${config.siteUrl}${en ? '/en' : ''}/items/${d.id}`,
+    kicker: d.category ? categoryLabel(d.category, lang) : withSubject(en ? 'News' : '动态'),
+    title: d.title,
+    summary: d.summary,
+    source: d.source.name,
+    date: en ? longDateEn(beijingDate(d.timelineAt)) : beijingDate(d.timelineAt),
+    score: d.selected && ITEM_COPY.showScore ? d.score : null,
+    // Only an English poster says so: a Chinese one keeps the cache key it had.
+    ...(en ? { lang: 'en' as const } : {}),
   };
 }

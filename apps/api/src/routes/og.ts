@@ -6,18 +6,16 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
 import type { Locale } from "@aihot/contracts/i18n";
 import { REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn } from "@aihot/contracts/site";
-import { categoryLabel, topicDefinition, topicName } from "@aihot/contracts/taxonomy";
-import { beijingDate, longDateEn } from "@aihot/contracts/time";
+import { topicDefinition, topicName } from "@aihot/contracts/taxonomy";
 import { TOPIC_GROUP_EN } from "@aihot/industry/english";
 import * as english from "@aihot/backend/publication/english";
-import { loadItemOgCard, loadItemShare } from "@aihot/backend/publication/og";
+import { loadItemOgCard, loadItemPoster } from "@aihot/backend/publication/og";
 import { loadReport, type ReportKind } from "@aihot/backend/publication/reports";
 import { findTopic, TOPIC_GROUPS, TOPICS } from "@aihot/backend/publication/topics";
 import { loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
 import { ogEtag, renderOg, type OgCard } from "@aihot/backend/media/og";
-import { posterEtag, renderPoster, type Poster } from "@aihot/backend/media/poster";
-import { CARDS, ITEM_COPY, REPORTS, SITE, subjectAfter, withSubject } from "@aihot/site";
-import { config } from "@aihot/backend/config";
+import { posterEtag, renderPoster } from "@aihot/backend/media/poster";
+import { CARDS, REPORTS, SITE, subjectAfter, withSubject } from "@aihot/site";
 
 /** "A, B and C". */
 const listEn = (words: string[]) => (words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : (words[0] ?? ""));
@@ -87,19 +85,8 @@ function registerIn(app: FastifyInstance, lang: Locale) {
   app.get(`${og}/posters/:file`, async (req, reply) => {
     const file = (req.params as { file: string }).file;
     if (!file.endsWith(".png")) return notFound(reply);
-    const d = await loadItemShare(file.slice(0, -4), lang);
-    if (!d) return notFound(reply);
-    const poster: Poster = {
-      url: `${config.siteUrl}${en ? "/en" : ""}/items/${d.id}`,
-      kicker: d.category ? categoryLabel(d.category, lang) : withSubject(en ? "News" : "动态"),
-      title: d.title,
-      summary: d.summary,
-      source: d.source.name,
-      date: en ? longDateEn(beijingDate(d.timelineAt)) : beijingDate(d.timelineAt),
-      score: d.selected && ITEM_COPY.showScore ? d.score : null,
-      // Only an English poster says so: a Chinese one keeps the cache key it had.
-      ...(en ? { lang: "en" as const } : {}),
-    };
+    const poster = await loadItemPoster(file.slice(0, -4), lang);
+    if (!poster) return notFound(reply);
     const tag = `"poster-${posterEtag(poster)}"`;
     const waiting = en && (needsEnglish(poster.title) || needsEnglish(poster.summary));
     reply.header("ETag", tag).header("Cache-Control", waiting ? WAITING_IMAGE_CACHE : CONTENT_IMAGE_CACHE);

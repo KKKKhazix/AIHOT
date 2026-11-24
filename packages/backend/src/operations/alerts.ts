@@ -19,7 +19,7 @@ import { ALERTS, EDITION_TIMES } from "@aihot/site";
 import { audit } from "../audit.ts";
 import { sql } from "../db.ts";
 import { agentConfigured, agentTransportFindings, flushAgentEvents, handoffs, wakeAgent, wakeDigest } from "../notify/agent.ts";
-import { duration, formatAlert, formatRecovery, formatReturn, sendAlert, type Finding, type Level } from "../notify/feishu.ts";
+import { duration, formatAlert, formatRecovery, formatReturn, sendAlert, type Finding, type FollowUp, type Level } from "../notify/feishu.ts";
 import { stepsOnService } from "../editorial/models.ts";
 import { backupConfigured } from "./backup.ts";
 import { GROUPING_WARN_AFTER_MS, waitingSelectedNews } from "./grouping.ts";
@@ -53,8 +53,8 @@ const QUIET_FETCHING_MINUTES = Math.min(Math.max(ALERTS.quietWhileFetchingMinute
 type FindingWithCoverage = Finding & { coveredSourceFailures?: string[] };
 type Check = (now: number, open: AlertState) => Promise<FindingWithCoverage[]>;
 
-/** Everything checked every round, in the order the findings are listed. */
-const CHECKS: Check[] = [
+/** Checks that can open, downgrade or recover an incident during the ten-minute round. */
+const INCIDENT_CHECKS: Check[] = [
   // Readers affected now
   contentCollection,
   sourcesFailing,
@@ -67,11 +67,15 @@ const CHECKS: Check[] = [
   backupAge,
   upstreamFindings,
   moduleAlerts,
-  // Follow-ups
+  agentTransportFindings,
+];
+
+/** The full list also includes work only read by the digest and on-demand operations pages. */
+const ALL_CHECKS: Check[] = [
+  ...INCIDENT_CHECKS,
   sourceFollowUps,
   baiduPushFailing,
   unknownOutcomes,
-  agentTransportFindings,
   waitingQueues,
   moduleFollowUps,
 ];
@@ -81,10 +85,10 @@ export async function collectFindings(now = Date.now(), open?: AlertState): Prom
   return withoutCoveredFindings(await readFindings(now, open));
 }
 
-async function readFindings(now: number, open?: AlertState): Promise<FindingWithCoverage[]> {
+async function readFindings(now: number, open?: AlertState, checks = ALL_CHECKS): Promise<FindingWithCoverage[]> {
   const announced = open ?? await alertState();
   const out: FindingWithCoverage[] = [];
-  for (const check of CHECKS) out.push(...(await check(now, announced)));
+  for (const check of checks) out.push(...(await check(now, announced)));
   return out;
 }
 
@@ -303,7 +307,7 @@ async function backupAge(now: number): Promise<Finding[]> {
  * verification does not heal, while Baidu answering "please retry later" for an hour does. Readers see
  * nothing; new pages reach Baidu later, so it is a follow-up.
  */
-async function baiduPushFailing(now: number): Promise<Finding[]> {
+async function baiduPushFailing(now: number): Promise<FollowUp[]> {
   const [r] = await sql<{ since: Date | null; error: string | null }[]>`
     WITH last_ok AS (SELECT max(started_at) AS at FROM job_runs WHERE job = 'seo.baidu-push' AND status = 'ok')
     SELECT min(f.started_at) AS since, (array_agg(f.error ORDER BY f.started_at DESC))[1] AS error
@@ -330,17 +334,17 @@ async function moduleAlerts(now: number): Promise<Finding[]> {
  * One follow-up per source and problem, so fixing a source removes its own line. A quiet source is left to
  * the weekly report: being slow, or too new to have a rhythm, is nothing anyone can fix, and may never end.
  */
-async function sourceFollowUps(now: number): Promise<Finding[]> {
+async function sourceFollowUps(now: number): Promise<FollowUp[]> {
   if (!collecting()) return [];
-  return (await sourceHealth(now)).flatMap(group => SOURCE_PROBLEMS.flatMap(p => group[p.problem].map((s): Finding => ({
+  return (await sourceHealth(now)).flatMap(group => SOURCE_PROBLEMS.flatMap(p => group[p.problem].map((s): FollowUp => ({
     key: `sources.${p.problem}.${s.id}`, level: "later", title: `${group.name}信源「${s.name}」${p.title}`,
     detail: `${s.id}：${p.describe(s)}；${p.action}`, observedAt: p.observedAt(s) ?? undefined,
   }))));
 }
 
 /** Paid requests and content-group pushes whose outcome is not known yet. */
-async function unknownOutcomes(): Promise<Finding[]> {
-  const out: Finding[] = [];
+async function unknownOutcomes(): Promise<FollowUp[]> {
+  const out: FollowUp[] = [];
 
   const [r] = await sql<{ receipts: number; services: string | null; deliveries: number; targets: string | null }[]>`
     SELECT (SELECT count(*)::int FROM receipts WHERE ${awaitingRelease()}) AS receipts,
@@ -355,17 +359,17 @@ async function unknownOutcomes(): Promise<Finding[]> {
 }
 
 /** Runnable jobs (deferred ones excluded) that have waited more than two hours. */
-async function waitingQueues(now: number): Promise<Finding[]> {
+async function waitingQueues(now: number): Promise<FollowUp[]> {
   const queues = await sql<{ name: string; n: number; oldest: Date }[]>`
     SELECT name, count(*)::int AS n, min(start_after) AS oldest FROM pgboss.job
     WHERE state IN ('created', 'retry') AND start_after <= now() AND name NOT LIKE 'cron.%' GROUP BY 1`;
-  return queues.filter((q) => now - q.oldest.getTime() > 2 * 3600_000).map((q): Finding => (
+  return queues.filter((q) => now - q.oldest.getTime() > 2 * 3600_000).map((q): FollowUp => (
     { key: `queue.${q.name}`, level: "later", title: `后台任务排队超过 2 小时：${q.name}`, detail: `${q.n} 个等待，最早的等了 ${duration(now - q.oldest.getTime())}` }));
 }
 
 /** The site's modules' follow-ups. */
-async function moduleFollowUps(now: number): Promise<Finding[]> {
-  const out: Finding[] = [];
+async function moduleFollowUps(now: number): Promise<FollowUp[]> {
+  const out: FollowUp[] = [];
   for (const m of serverModules()) if (m.followUps) out.push(...(await m.followUps(now)));
   return out;
 }
@@ -569,7 +573,7 @@ async function settleDailies(open: AlertState, found: Set<string>, now: number):
  */
 export async function checkAlerts(now = Date.now()) {
   const state = await alertState();
-  const all = await collectFindings(now, state);
+  const all = withoutCoveredFindings(await readFindings(now, state, INCIDENT_CHECKS));
   const handing = agentConfigured() && !all.some((f) => f.key === "webhook.transport");
   const returns = await returnsTold(now);
   const holds = await savedHolds();

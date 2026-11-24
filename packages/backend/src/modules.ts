@@ -9,7 +9,7 @@ import type { MentionTarget } from "@aihot/contracts/mentions";
 import type { Brand } from "@aihot/contracts/site";
 import type { Db } from "./db.ts";
 import type { QueueOptions } from "./jobs/queue.ts";
-import type { Finding } from "./notify/feishu.ts";
+import type { Finding, FollowUp } from "./notify/feishu.ts";
 import type { ContentPart } from "./providers/llm.ts";
 import type { WantedText } from "./publication/english.ts";
 import type { Topic, TopicMember } from "./publication/topics.ts";
@@ -250,7 +250,7 @@ export interface ServerModule {
   /** Job queues of its own (jobs/queue.ts). */
   queues?: ModuleQueue[];
   /** Follow-ups (level later), after the engine's (operations/alerts.ts). */
-  followUps?: (now: number) => Promise<Finding[]>;
+  followUps?: (now: number) => Promise<FollowUp[]>;
   /** Reminders for the person behind a JSON request (RequestNotices). */
   notices?: Partial<RequestNotices>;
   /** More keys a feedback sender is known by; a ban under any of them holds (operations/feedback.ts). */

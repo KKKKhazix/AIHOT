@@ -229,6 +229,10 @@ test("a report the model reads as empty is marked spam and not pushed; a real on
     assert.ok(sentFor(real));
     assert.equal((await record(real)).status, "new");
 
+    const receipts = await sql<{ status: string }[]>`SELECT status FROM receipts WHERE purpose = 'judge_feedback'
+      AND subject IN (${`feedback:${empty}`}, ${`feedback:${real}`})`;
+    assert.deepEqual(receipts.map(r => r.status), ["completed", "completed"]);
+
     model.fails = true;
     const down = await pending("模型挂了的时候提的反馈");
     await forwardPendingFeedback();

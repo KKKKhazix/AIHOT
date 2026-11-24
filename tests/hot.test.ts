@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
 import { heatRows, snapshotHeat, type HotEntry } from "@aihot/backend/events/hot";
-import { loadHotStrip, rankingExtras } from "@aihot/backend/publication/hot";
+import { loadHotStrip, rankingParticipants } from "@aihot/backend/publication/hot";
 import { loadHot, loadStoryDetail, v1HotTopics } from "@aihot/backend/publication/stories";
 import { buildApp } from "../apps/api/src/app.ts";
 
@@ -269,8 +269,8 @@ test("faces are 精选组 sources by tier (T1, T1.5, T2), at most 6; 氛围组 o
   const [saved] = await sql<{ id: number }[]>`INSERT INTO hot_rankings(computed_at,rule_version,entries,published)
     VALUES(${at},'test',${sql.json(entries as never)},true) RETURNING id`;
   const ranking = { id: saved!.id, computedAt: at.toISOString(), ruleVersion: "test", entries, coverage: null };
-  const extras = await rankingExtras(ranking);
-  const full = extras.participants(entries[0]!);
+  const participants = await rankingParticipants(ranking);
+  const full = participants(entries[0]!);
   const home = (await loadHotStrip())![0]!;
   const hot = (await loadHot()).entries[0]!;
   const order = [5, 2, 3, 1, 6, 8, 9, 7, 0, 4];
@@ -281,7 +281,7 @@ test("faces are 精选组 sources by tier (T1, T1.5, T2), at most 6; 氛围组 o
   assert.equal(hot.participantCount, 12);
   assert.deepEqual(full.slice(0, 6).map(p => p.iconUrl ? new URL(p.iconUrl, "http://localhost").searchParams.get("u") : null), order.slice(0, 6).map(imageUrl), "visible faces keep their image or initial");
   assert.equal(full[1]!.iconUrl, null, "a visible initial still takes one of the six slots");
-  const signals = extras.participants({ ...entries[0]!, participants: entries[0]!.participants.filter(p => p.kind === "signal") });
+  const signals = participants({ ...entries[0]!, participants: entries[0]!.participants.filter(p => p.kind === "signal") });
   assert.deepEqual(signals, order.filter(i => inputs[i]!.kind === "signal").map(i => ({ sourceId: faceSourceId(i), name: faceName(i), kind: "signal" })), "no editorial faces means no image URLs at all");
   const external = (await v1HotTopics()).items[0]!;
   assert.equal(external.participantCount, 12);
@@ -294,7 +294,7 @@ test("faces are 精选组 sources by tier (T1, T1.5, T2), at most 6; 氛围组 o
     ...entries[0]!,
     participants: [{ sourceId: faceSourceId(5), name: `${faceName(5)} 旧名`, kind: "editorial", tier: "T1" }],
   };
-  const resolved = extras.participants(renamedEntry);
+  const resolved = participants(renamedEntry);
   assert.equal(resolved[0]!.sourceId, faceSourceId(5));
   assert.equal(new URL(resolved[0]!.iconUrl!, "http://localhost").searchParams.get("u"), imageUrl(5));
 });

@@ -103,10 +103,12 @@ async function items(window: "recent" | "reachable", limit: number): Promise<Tex
 
 /** The hot ranking, the hot strip and search suggestions, and the leading events' pages. */
 async function hot(): Promise<Text[]> {
-  const out = fromWanted(await wantedIn(await loadHot((text) => text), english.hot));
   const ranking = await latestHotRanking();
-  for (const entry of (ranking?.entries ?? []).slice(0, HOT_STORIES)) {
-    const story = await loadStoryDetail(entry.storyId);
+  if (!ranking) return [];
+  const out = fromWanted(await wantedIn(await loadHot((text) => text, ranking), english.hot));
+  const now = new Date();
+  for (const entry of ranking.entries.slice(0, HOT_STORIES)) {
+    const story = await loadStoryDetail(entry.storyId, now, entry.rank);
     if (story) out.push(...fromWanted(await wantedIn(story, english.story)));
   }
   return out;

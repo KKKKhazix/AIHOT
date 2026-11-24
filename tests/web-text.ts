@@ -33,7 +33,9 @@ function verdict(path: Node[]): string | null {
       const callee = calleeName(parent.callee as Node);
       if (callee === "zh") return null;
       if (callee === "t" || callee === "L") {
-        return (parent.arguments as Node[]).indexOf(node) === 0 ? null : "英文参数里还有中文：第二个参数写英文";
+        const args = parent.arguments as Node[];
+        if (args.indexOf(node) !== 0) return "英文参数里还有中文：第二个参数写英文";
+        return args.length >= 2 ? null : "只有中文没有英文：补上第二个参数，写成 t(\"中文\", \"English\")";
       }
     }
   }

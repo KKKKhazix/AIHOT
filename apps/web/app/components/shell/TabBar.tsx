@@ -6,7 +6,7 @@ import { noteScreen, rememberedTab, useScreen } from "./screens";
 import { markBack } from "./transitions";
 import { scrollBehavior } from "../../lib/motion";
 import { useChangelogDot } from "./Sidebar";
-import { useLocale, useT } from "../../lib/i18n";
+import { pagePath, useLocale, useT } from "../../lib/i18n";
 
 const subscribe = () => () => {};
 const serverTab = () => null;
@@ -20,7 +20,9 @@ const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayout
  */
 export function TabBar({ changelogVersion }: { changelogVersion: string | null }) {
   const screen = useScreen();
-  const { pathname, key } = useLocation();
+  const { pathname: address, key } = useLocation();
+  // Tabs name the pages' paths; an English page's address carries /en in front.
+  const pathname = pagePath(address);
   const revalidator = useRevalidator();
   const dot = useChangelogDot(changelogVersion);
   const last = useRef<TabKey | undefined>(undefined);
@@ -34,8 +36,8 @@ export function TabBar({ changelogVersion }: { changelogVersion: string | null }
     // Do not overwrite a saved entry with the server fallback before hydration reads this browser's tab.
     if (restored === null) return;
     last.current = active;
-    noteScreen(screen.name, key, active);
-  }, [active, key, screen.name, restored]);
+    noteScreen(screen.name === undefined ? undefined : t(screen.name), key, active);
+  }, [active, key, screen.name, restored, t]);
   if (screen.toolbar) return null;
   return (
     <nav

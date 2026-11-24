@@ -91,7 +91,6 @@ export function titled(title: string): string {
 
 export function pageMeta(input: PageMetaInput): MetaDescriptor[] {
   const base = siteUrl();
-  const t = translator(input.locale);
   const english = input.locale === "en" ? ENGLISH : null;
   const home = english?.homeTitle ?? HOME_TITLE;
   const title = input.title ? (input.rawTitle ? input.title : titled(input.title)) : home;
@@ -102,7 +101,6 @@ export function pageMeta(input: PageMetaInput): MetaDescriptor[] {
     { title },
     { name: "description", content: description },
     { tagName: "link", rel: "canonical", href: url },
-    { tagName: "link", rel: "alternate", type: "application/rss+xml", title: t(`${SITE.name} — 精选`, `${SITE.name} — Top Picks`), href: t("/feed.xml", "/en/feed.xml") },
     { property: "og:site_name", content: SITE.name },
     { property: "og:type", content: input.type ?? "website" },
     { property: "og:title", content: input.title ?? home },
@@ -331,7 +329,7 @@ export function reportLd(r: ReportDetail, path: string, description: string, loc
     description,
     publishedAt: r.generatedAt,
     image: `/og/reports/${r.kind}/${r.key}.png`,
-    section: [...new Set(r.sections.map((s) => sectionLabelIn(s.label, locale)))],
+    section: [...new Set(r.sections.map((s) => sectionLabelIn(s.label, locale, s.key)))],
   });
 }
 

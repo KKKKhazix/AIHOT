@@ -82,10 +82,13 @@ export function feedCategoryLabelIn(key: PublicApiCategoryKey, lang: Lang): stri
   return lang === "en" ? CATEGORY_EN[key as CategoryKey]?.feedLabel ?? feedCategoryLabel(key) : feedCategoryLabel(key);
 }
 
-/** A report section's name (a category's `section`, as issues store it) in the reader's language. */
-export function sectionLabelIn(label: string, lang: Lang): string {
+/**
+ * A report section's name in the reader's language: by the section's key (the first category key that owns it, as
+ * issues store it) where it has one, so an issue written before a section was renamed still reads; else by its name.
+ */
+export function sectionLabelIn(label: string, lang: Lang, key?: string): string {
   if (lang === "zh") return label;
-  const category = CATEGORIES.find((c) => c.section === label);
+  const category = (key ? CATEGORIES.find((c) => c.key === key) : undefined) ?? CATEGORIES.find((c) => c.section === label);
   return category ? CATEGORY_EN[category.key].section : label;
 }
 

@@ -171,16 +171,32 @@ async function dailyLeads(rows: Array<{ key: string; content: Record<string, any
   return leads;
 }
 
+/** What a composed overview says: how many stories the issue carries and the titles it names. */
+export interface ComposedOverview {
+  count: number;
+  titles: string[];
+}
+
+/**
+ * Kept on a weekly's or monthly's answer whose overview periodOverview composed, under this key, which JSON leaves
+ * out: English pages say that overview in English (publication/english.ts).
+ */
+export const COMPOSED_OVERVIEW = Symbol("composed overview");
+
 /**
  * A weekly's or monthly's overview: the one written for it, else what it carries, naming the first three
  * of its lead, highlights and entries still public. `gone` must cover every entry.
  */
-function periodOverview(content: Record<string, any>, kind: "weekly" | "monthly", gone: Set<string>): string | null {
+function periodOverview(content: Record<string, any>, kind: "weekly" | "monthly", gone: Set<string>): { text: string | null; composed: ComposedOverview | null } {
   const changed = entriesOf(content, "periodic").some((e) => e.itemId && gone.has(e.itemId));
-  if (!changed && typeof content.overview === "string" && content.overview) return content.overview;
+  if (!changed && typeof content.overview === "string" && content.overview) return { text: content.overview, composed: null };
   const shown = leadCandidates(content, "periodic").filter((e) => !e.itemId || !gone.has(String(e.itemId)));
-  if (!shown.length) return null;
-  return `${kind === "weekly" ? "本周" : "本月"} ${shown.length} ${REPORTS.entry.measure}${REPORTS.entry.noun}，最受关注的是：${shown.slice(0, 3).map((e) => e.title).join("；")}。`;
+  if (!shown.length) return { text: null, composed: null };
+  const titles = shown.slice(0, 3).map((e) => String(e.title));
+  return {
+    text: `${kind === "weekly" ? "本周" : "本月"} ${shown.length} ${REPORTS.entry.measure}${REPORTS.entry.noun}，最受关注的是：${titles.join("；")}。`,
+    composed: { count: shown.length, titles },
+  };
 }
 
 /** A weekly or monthly's own headline; the composer's "<site name> 周报 · 2026-W38" names the issue, not its news. */
@@ -390,7 +406,8 @@ export async function loadReport(kind: ReportKind, key: string): Promise<ReportD
   const avail = await issueAvailability(c);
   const { sections, all, highlights, flashes, gone, hasCitedLead, named, leadItem, leadItemId } = issueAsShown(kind, c, avail);
   const text = [c.lead?.leadParagraph ?? "", c.overview ?? "", ...all.flatMap((i: ReportCitation) => [`${i.title}${i.summary ?? ""}`, ...(i.related ?? []).map((r) => r.title)])].join("");
-  const overview = kind === "daily" ? c.overview ?? null : periodOverview(c, kind, gone);
+  const period = kind === "daily" ? null : periodOverview(c, kind, gone);
+  const overview = kind === "daily" ? c.overview ?? null : period!.text;
   // An earlier weekly's or monthly's picture is captioned with the item it comes from.
   const [{ prev, next }, picture] = await Promise.all([neighbors(kind, key), leadItem?.itemId && leadItem.available ? leadCover(leadItem.itemId) : null]);
   const cover = picture && leadItem ? { ...picture, caption: kind === "daily" || c.leadItemId ? null : leadItem.title } : null;
@@ -401,7 +418,7 @@ export async function loadReport(kind: ReportKind, key: string): Promise<ReportD
       : c.lead ? { ...c.lead, leadParagraph: overview ?? "" } : (headline ? { title: headline, leadParagraph: overview ?? "" } : null);
   const title = kind === "daily" ? `${withSubject("日报")} · ${key}`
     : String((hasCitedLead && c.title === headline ? named?.title : c.title) ?? (kind === "weekly" ? `${SITE.name} 周报 · ${key}` : `${SITE.name} 月报 · ${key}`));
-  return {
+  const detail: ReportDetail = {
     kind,
     key,
     issueNumber: r.issue_number,
@@ -425,6 +442,7 @@ export async function loadReport(kind: ReportKind, key: string): Promise<ReportD
     // The texts the issue's page draws: its lead, overview and each section's summary and stories.
     mentions: await mentionsIn([lead?.leadParagraph, overview, ...sections.flatMap((s) => [s.summary, ...s.items.map((i) => i.summary)])]),
   };
+  return period?.composed ? Object.assign(detail, { [COMPOSED_OVERVIEW]: period.composed }) : detail;
 }
 
 /**
@@ -634,7 +652,7 @@ export async function feedIssues(kind: ReportKind, limit: number): Promise<FeedI
       key: r.key,
       generatedAt: r.generated_at,
       headline: lead?.title ?? null,
-      leadParagraph: kind === "daily" ? lead?.leadParagraph ?? null : periodOverview(r.content, kind, gone),
+      leadParagraph: kind === "daily" ? lead?.leadParagraph ?? null : periodOverview(r.content, kind, gone).text,
       sections: groups.map((g) => ({
         label: String(g.label),
         items: (g.items ?? []).filter((i) => i.itemId && !gone.has(i.itemId)).map((i) => ({ title: String(i.title), link: itemUrl(i.itemId) })),
@@ -699,7 +717,7 @@ export async function v1Period(kind: PeriodKind, key: string | "latest") {
       links: { aihot: url },
       attribution: attribution(url),
       headline: issueLead(c, "periodic", gone)?.title ?? null,
-      overview: periodOverview(c, kind, gone),
+      overview: periodOverview(c, kind, gone).text,
       sections: (c.themes ?? []).map((t: any) => ({
         label: String(t.heading),
         summary: sectionSummary(t, avail),

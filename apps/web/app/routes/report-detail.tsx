@@ -10,7 +10,7 @@ import { ReportLayout } from "../features/report/ReportLayout";
 import { ReportPaper, reportOutline } from "../features/report/ReportPaper";
 import { KIND_PATH, feedLink, kindFromPath } from "../features/report/format";
 import type { Screen } from "../components/shell/screens";
-import { L, localeOf, translator, useLocale } from "../lib/i18n";
+import { apiIn, L, localeOf, translator, useLocale } from "../lib/i18n";
 
 export const handle: Screen = { tab: "daily", name: L("日报", "Daily") };
 export { pageHeaders as headers } from "../lib/api.server";
@@ -24,11 +24,12 @@ const PATTERN: Record<ReportKind, RegExp> = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const kind = kindFromPath(pagePathname(request));
+  const locale = localeOf(pagePathname(request));
   const key = params.key ?? "";
   if (!PATTERN[kind].test(key)) throw data({ message: "not_found" }, { status: 404 });
   const [report, { items: index }] = await Promise.all([
-    loadOr404<ReportDetail>(`/api/site/reports/${kind}/${key}`, { signal: request.signal }),
-    apiGet<ReportNavigationResponse>(`/api/site/reports/${kind}/navigation/${key}`, { signal: request.signal }),
+    loadOr404<ReportDetail>(apiIn(`/api/site/reports/${kind}/${key}`, locale), { signal: request.signal }),
+    apiGet<ReportNavigationResponse>(apiIn(`/api/site/reports/${kind}/navigation/${key}`, locale), { signal: request.signal }),
   ]);
   return cachedPage(3600, { report, index, today: beijingDate(Date.now()) });
 }

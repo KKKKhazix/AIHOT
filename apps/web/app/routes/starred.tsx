@@ -15,7 +15,7 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 import { webModules } from "../site-modules";
 import { Link } from "../lib/link";
-import { L, localeOf, translator, useLocale, useT, type Text, type Translate } from "../lib/i18n";
+import { apiIn, L, localeOf, translator, useLocale, useT, type Text, type Translate } from "../lib/i18n";
 
 export const handle: Screen = { tab: "me", name: L("收藏", "Saved") };
 
@@ -61,7 +61,7 @@ export default function StarredPage() {
     for (let i = 0; i < ids.length; i += 100) batches.push(ids.slice(i, i + 100));
     Promise.all(
       batches.map((batch) =>
-        fetch(`/api/site/items/availability?ids=${encodeURIComponent(batch.join(","))}`, { signal: controller.signal })
+        fetch(apiIn(`/api/site/items/availability?ids=${encodeURIComponent(batch.join(","))}`, locale), { signal: controller.signal })
           .then((r) => (r.ok ? (r.json() as Promise<Record<string, ItemAvailability>>) : {}))
           .catch(() => ({})),
       ),
@@ -69,7 +69,7 @@ export default function StarredPage() {
       if (!controller.signal.aborted) setAvailability(Object.assign({}, ...parts));
     });
     return () => controller.abort();
-  }, [mounted, starredIds]);
+  }, [mounted, starredIds, locale]);
 
   // Back from an item: the list renders only after mounting (it lives in this browser), so the
   // position comes back once it is there, by the same card anchor the other lists use.
@@ -163,6 +163,9 @@ export default function StarredPage() {
             const current = availability[s.id];
             const status = current?.status;
             const unavailable = status === "unavailable";
+            // English pages read each one's words today (a star keeps them as saved, in Chinese).
+            const title = current?.title ?? s.title;
+            const summary = current?.title !== undefined ? current.summary ?? null : s.summary;
             return (
               <li key={s.id} data-card-key={s.id} className={`relative border-b border-line-soft py-4 lg:card lg:px-[18px] lg:py-[15px] ${unavailable ? "opacity-70" : "lg:card-hover"}`}>
                 <div className="flex items-center gap-2 text-ui-caption-lg text-ink-4">
@@ -177,14 +180,14 @@ export default function StarredPage() {
                 </div>
                 <h2 className="mt-1.5 text-ui-body-lg font-[650] leading-[1.55] text-ink">
                   {unavailable ? (
-                    s.title
+                    title
                   ) : (
                     <Link viewTransition to={`/items/${s.id}`} className="transition-colors after:absolute after:inset-0 after:content-[''] hover:text-accent">
-                      {s.title}
+                      {title}
                     </Link>
                   )}
                 </h2>
-                {s.summary && <p className="mt-1.5 line-clamp-2 text-ui-body-sm leading-[1.75] text-ink-3">{shortAddresses(s.summary)}</p>}
+                {summary && <p className="mt-1.5 line-clamp-2 text-ui-body-sm leading-[1.75] text-ink-3">{shortAddresses(summary)}</p>}
                 {unavailable && <p className="mt-2 text-ui-caption-lg text-hot">{t("这条内容已经下架，收藏会一直保留，直到你手动移除。", "This story has been taken down. It stays in Saved until you remove it.")}</p>}
                 {status === "summary-only" && <p className="mt-2 text-ui-caption-lg text-amber-ink">{t("这条内容现在只提供摘要。", "Only the summary of this story is available now.")}</p>}
               </li>

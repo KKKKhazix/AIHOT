@@ -5,7 +5,7 @@ import type { SiteContact, SiteStats } from "@aihot/contracts/site";
 import { ABOUT, POLICY, REPORTS, SEO_TITLES, SITE, subjectAfter } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import type { Route } from "./+types/about";
-import { apiGet, cachedPage } from "../lib/api.server";
+import { apiGet, cachedPage, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { breadcrumbLd, organizationLd, pageMeta } from "../lib/seo";
 import { Kicker } from "../components/ui/Kicker";
@@ -15,7 +15,7 @@ import { SignalRiver, type RiverSource } from "../features/about/SignalRiver";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 import { Link } from "../lib/link";
-import { L, localeOf, translator, useLocale, useT, type Text, type Translate } from "../lib/i18n";
+import { apiIn, L, localeOf, translator, useLocale, useT, type Text, type Translate } from "../lib/i18n";
 
 export const handle: Screen = { tab: "me", name: L("关于", "About") };
 export { pageHeaders as headers } from "../lib/api.server";
@@ -24,7 +24,7 @@ export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 export async function loader({ request }: { request: Request }) {
   const [contact, stats] = await Promise.all([
     apiGet<SiteContact>("/api/site/contact", { signal: request.signal }).catch(() => null),
-    apiGet<SiteStats>("/api/site/stats", { signal: request.signal }).catch(() => null),
+    apiGet<SiteStats>(apiIn("/api/site/stats", localeOf(pagePathname(request))), { signal: request.signal }).catch(() => null),
   ]);
   return cachedPage(300, { contact, stats });
 }

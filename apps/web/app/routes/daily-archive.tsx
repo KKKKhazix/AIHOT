@@ -2,7 +2,7 @@ import { useLoaderData } from "react-router";
 import { IntentLink } from "../components/ui/IntentLink";
 import { REPORT_NAMES_EN, type ReportIndexEntry, type ReportIndexResponse } from "@aihot/contracts/site";
 import { SITE, withSubject } from "@aihot/site";
-import { apiGet, cachedPage } from "../lib/api.server";
+import { apiGet, cachedPage, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { archiveLd, breadcrumbLd, pageMeta } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
@@ -12,14 +12,14 @@ import { archiveGroups, entriesUnit } from "../features/report/format";
 import { Rows, SectionPage } from "../features/report/ReportPaper";
 import { Nameplate } from "../features/report/Nameplate";
 import type { Screen } from "../components/shell/screens";
-import { L, localeOf, translator, useLocale, useT } from "../lib/i18n";
+import { apiIn, L, localeOf, translator, useLocale, useT } from "../lib/i18n";
 
 export const handle: Screen = { tab: "daily", name: L("往期", "Past issues") };
 export { pageHeaders as headers } from "../lib/api.server";
 export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
-  const { items: index } = await apiGet<ReportIndexResponse>("/api/site/reports/daily", { signal: request.signal });
+  const { items: index } = await apiGet<ReportIndexResponse>(apiIn("/api/site/reports/daily", localeOf(pagePathname(request))), { signal: request.signal });
   return cachedPage(600, { index, today: beijingDate(Date.now()) });
 }
 

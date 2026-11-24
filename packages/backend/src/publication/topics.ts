@@ -234,7 +234,9 @@ const RECENT_DAYS = 30;
 export const TOPIC_PAGE_SIZE = 20;
 
 /** A company's initial, drawn as its mark. */
-const monogram = (t: Topic): Brand => ({ src: null, monogram: t.name.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 1).toUpperCase(), raster: false });
+/** A company's mark without a logo: its name's first letter (English pages: of its English name). */
+export const monogramOf = (name: string) => name.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 1).toUpperCase();
+const monogram = (t: Topic): Brand => ({ src: null, monogram: monogramOf(t.name), raster: false });
 
 /** Every company's mark, by its topic's slug. */
 async function companyBrands(): Promise<Map<string, Brand>> {

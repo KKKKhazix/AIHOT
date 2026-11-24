@@ -242,7 +242,14 @@ async function queryHotCovers({ entries }: HotRanking) {
   return covers;
 }
 
-export async function loadHot(): Promise<HotResponse> {
+/** The card clips its text to a few lines; complete public words belong to the event page. */
+export function cardText(text: string | null, max = 480): string | null {
+  const chars = text ? Array.from(text) : null;
+  return chars && chars.length > max ? chars.slice(0, max).join("") + "…" : text;
+}
+
+/** `clip`: English pages clip after translating (publication/english.ts hot). */
+export async function loadHot(clip: (text: string | null) => string | null = cardText): Promise<HotResponse> {
   const ranking = await latestHotRanking();
   if (!ranking) return { computedAt: null, windowHours: 48, entries: [] };
   const at = new Date(ranking.computedAt);
@@ -261,8 +268,6 @@ export async function loadHot(): Promise<HotResponse> {
       const picture = covers.get(e.storyId);
       const coverUrl = picture ? proxiedImage(picture.url, "full") : null;
       const text = extras.text(e);
-      // The card clips its text to a few lines; complete public words belong to the event page.
-      const summary = text.summary ? Array.from(text.summary) : null;
       return {
         rank: e.rank,
         story: { publicId: e.storyPublicId, title: e.title },
@@ -275,7 +280,7 @@ export async function loadHot(): Promise<HotResponse> {
         sourceNames: [...new Set(e.sourceNames.map(publicSourceName))],
         participants: extras.participants(e),
         spark: sparks.get(e.storyId) ?? [],
-        summary: summary && summary.length > 480 ? summary.slice(0, 480).join('') + '…' : text.summary,
+        summary: clip(text.summary),
         latest: text.latest,
         cover: picture && coverUrl ? { url: coverUrl, srcSet: proxiedImageSet(picture.url, "hero") ?? undefined, width: picture.width, height: picture.height } : null,
       };

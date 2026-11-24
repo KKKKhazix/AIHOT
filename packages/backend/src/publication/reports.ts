@@ -171,10 +171,10 @@ async function dailyLeads(rows: Array<{ key: string; content: Record<string, any
   return leads;
 }
 
-/** What a composed overview says: how many stories the issue carries and the titles it names. */
+/** What a composed overview says: how many stories the issue carries and the titles it names, each with its article. */
 export interface ComposedOverview {
   count: number;
-  titles: string[];
+  named: Array<{ title: string; itemId: string | null }>;
 }
 
 /**
@@ -192,10 +192,10 @@ function periodOverview(content: Record<string, any>, kind: "weekly" | "monthly"
   if (!changed && typeof content.overview === "string" && content.overview) return { text: content.overview, composed: null };
   const shown = leadCandidates(content, "periodic").filter((e) => !e.itemId || !gone.has(String(e.itemId)));
   if (!shown.length) return { text: null, composed: null };
-  const titles = shown.slice(0, 3).map((e) => String(e.title));
+  const named = shown.slice(0, 3).map((e) => ({ title: String(e.title), itemId: e.itemId ? String(e.itemId) : null }));
   return {
-    text: `${kind === "weekly" ? "本周" : "本月"} ${shown.length} ${REPORTS.entry.measure}${REPORTS.entry.noun}，最受关注的是：${titles.join("；")}。`,
-    composed: { count: shown.length, titles },
+    text: `${kind === "weekly" ? "本周" : "本月"} ${shown.length} ${REPORTS.entry.measure}${REPORTS.entry.noun}，最受关注的是：${named.map((n) => n.title).join("；")}。`,
+    composed: { count: shown.length, named },
   };
 }
 

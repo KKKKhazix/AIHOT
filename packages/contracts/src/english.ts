@@ -4,3 +4,15 @@ import { ENGLISH as SITE_ENGLISH } from "@aihot/site";
 import type { EnglishEdition } from "./site-config.ts";
 
 export const ENGLISH: EnglishEdition | null = SITE_ENGLISH;
+
+/**
+ * Han characters, as a regular expression both JavaScript and PostgreSQL read the same way (the worker finds what
+ * to translate in SQL). A text without them already reads on English pages: names, model names, posts in English.
+ */
+export const HAN = "[\\u3400-\\u4dbf\\u4e00-\\u9fff\\uf900-\\ufaff]";
+const HAN_RE = new RegExp(HAN);
+
+/** Whether a text is (still) Chinese: on an English page, one the worker has not translated yet. */
+export function needsEnglish(text: string | null | undefined): text is string {
+  return !!text && HAN_RE.test(text);
+}

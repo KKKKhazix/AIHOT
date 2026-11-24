@@ -1,6 +1,7 @@
 import { type RouteConfig, type RouteConfigEntry, index, layout, route } from "@react-router/dev/routes";
 import type { ModulePage } from "@aihot/contracts/modules";
 import { MODULES } from "@aihot/site/modules";
+import { englishPages } from "./lib/i18n.ts";
 
 /** A module's route module, from the app directory. */
 const file = (module: string, path: string) => `../../../modules/${module}/${path}`;
@@ -13,7 +14,24 @@ const modulePages: RouteConfigEntry[] = MODULES.flatMap((m) =>
 );
 const adminPages: RouteConfigEntry[] = MODULES.flatMap((m) => (m.pages ?? []).flatMap((p) => ("layout" in p || !p.admin ? [] : [page(m.name, p)])));
 
-export default [
+/**
+ * The pages with an English edition (lib/i18n.ts englishPages) again under /en, the same route modules: the address
+ * decides the language. A layout keeps its English children.
+ */
+function inEnglish(entries: RouteConfigEntry[]): RouteConfigEntry[] {
+  const english = new Set(englishPages());
+  const visit = (list: RouteConfigEntry[]): RouteConfigEntry[] => list.flatMap((e): RouteConfigEntry[] => {
+    if (e.path === undefined && !e.index && e.children) {
+      const children = visit(e.children);
+      return children.length ? [{ ...e, id: `en-${e.id ?? e.file}`, children }] : [];
+    }
+    if (!english.has(e.index ? "/" : `/${e.path}`)) return [];
+    return [{ ...e, index: undefined, path: e.index ? "en" : `en/${e.path}`, id: `en-${e.id ?? e.file}` }];
+  });
+  return visit(entries);
+}
+
+const PAGES: RouteConfigEntry[] = [
   index("routes/home.tsx"),
   route("all", "routes/all.tsx"),
   route("all/search-busy", "routes/search-busy.tsx", { id: "all-search-busy" }),
@@ -41,6 +59,11 @@ export default [
   route("starred", "routes/starred.tsx"),
   route("agent", "routes/agent.tsx"),
   ...modulePages,
+];
+
+export default [
+  ...PAGES,
+  ...inEnglish(PAGES),
   // The modules' admin pages (ModulePage.admin), for the admins a site module names, in their own back-office shell.
   ...(adminPages.length ? [layout("routes/admin/module-layout.tsx", { id: "module-admin-layout" }, adminPages)] : []),
   route("admin/login", "routes/admin-login.tsx"),

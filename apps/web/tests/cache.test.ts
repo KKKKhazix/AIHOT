@@ -17,6 +17,8 @@ let metaAfterDeadline = false;
 const apiCookies: Array<string | undefined> = [];
 const api = fakeApi(async (url, res, req) => {
   apiCookies.push(req.headers.cookie);
+  // The English edition's answers (/api/site/en/…) as the Chinese ones here.
+  if (url.pathname.startsWith("/api/site/en/")) url.pathname = url.pathname.replace("/api/site/en/", "/api/site/");
   if (url.pathname === "/api/site/meta") {
     // Past the deadline on the wall clock the server reads: timers run on another clock, and a CI VM
     // stepping its wall clock back mid-wait would otherwise answer before the deadline.
@@ -30,6 +32,9 @@ const api = fakeApi(async (url, res, req) => {
     return { filters, cards: [], nextCursor: null, dayCounts: [], hot: null };
   }
   if (url.pathname === "/api/site/hot") return { entries: [] };
+  if (url.pathname === "/api/site/pool") {
+    return { filters: { channel: "all", category: null, tag: null, q: null, tab: null }, items: [], tagTopics: {}, page: Number(url.searchParams.get("page") ?? 1), pageCount: 3, total: 0, todayCount: 0, freshness: new Date().toISOString() };
+  }
   if (url.pathname === "/api/site/echo-client") return { forwarded: req.headers["x-forwarded-for"], real: req.headers["x-real-ip"] };
   if (url.pathname === "/api/site/download") {
     res.setHeader("Content-Type", "text/markdown; charset=utf-8");
@@ -179,6 +184,25 @@ test("browser freshness shares the selected deadline, including slow sibling loa
   } finally {
     deadline = savedDeadline;
     metaAfterDeadline = false;
+  }
+});
+
+// A withdrawal purges the list pages at their bare addresses (modules/ops/backend/purge.ts): a filtered or later page
+// is an entry of its own at the edge, gone only when it expires. So these stay there a minute at most, in both languages.
+test("filtered and later list pages stay in shared caches a minute at most", async () => {
+  const savedDeadline = deadline;
+  try {
+    deadline = Math.floor(Date.now() / 1000) + 3600;
+    for (const pathname of ["/?tag=x", "/?category=ai-models", "/_.data?tag=x", "/all?page=2", "/all.data?page=2", "/en?tag=x", "/en.data?tag=x", "/en/all?page=2", "/en/all.data?page=2"]) {
+      const res = await fetch(origin + pathname);
+      const cc = res.headers.get("Cache-Control") ?? "";
+      assert.equal(res.status, 200, pathname);
+      const shared = Number(cc.match(/(?:^|,)\s*s-maxage=(\d+)/)?.[1] ?? 0);
+      assert.ok(shared <= 60, `${pathname}: ${cc}. A withdrawal clears this page only when it expires (purge.ts): keep it within a minute.`);
+      await res.text();
+    }
+  } finally {
+    deadline = savedDeadline;
   }
 });
 

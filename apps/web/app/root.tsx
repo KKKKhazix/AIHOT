@@ -13,6 +13,7 @@ import { PullToRefresh } from "./components/shell/PullToRefresh";
 import { usePageTransition } from "./components/shell/transitions";
 import { SearchOverlay } from "./features/search/SearchOverlay";
 import { BackToTop, NavigationProgress } from "./components/shell/Chrome";
+import { EnglishHint } from "./components/shell/EnglishHint";
 import { buttonClass } from "./components/ui/Controls";
 import { rememberPage, APPEARANCE_BOOT_SCRIPT, useAppearanceSync } from "./lib/local-state";
 import { apiGet } from "./lib/api.server";
@@ -110,6 +111,7 @@ function SiteShell({ changelogVersion, children }: { changelogVersion: string | 
       {interactive && <SearchOverlay />}
       {interactive && <PullToRefresh />}
       <BackToTop />
+      <EnglishHint />
     </div>
   );
 }

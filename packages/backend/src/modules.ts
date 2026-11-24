@@ -105,6 +105,8 @@ export interface SitemapEntry {
   lastmod?: Date | null;
   changefreq?: string;
   priority?: number;
+  /** The page has an English edition at /en<loc> (on a site with one), listed with it in the sitemap. */
+  english?: boolean;
 }
 
 /**

@@ -14,8 +14,9 @@ import { pageMeta } from "../lib/seo";
 import { useStarred } from "../lib/local-state";
 import { FontSelect } from "../components/shell/FontSelect";
 import { ThemeSwitch } from "../components/shell/ThemeSwitch";
+import { LanguageSwitch } from "../components/shell/LanguageSwitch";
 import { Filings } from "../components/shell/Filings";
-import { IconBookmark, IconChevronRight, IconGrid, IconHeart, IconMessage, IconMoon, IconPlug, IconSparkles } from "../components/icons";
+import { IconBookmark, IconChevronRight, IconGlobe, IconGrid, IconHeart, IconMessage, IconMoon, IconPlug, IconSparkles } from "../components/icons";
 import { Link } from "../lib/link";
 import { hasEnglish, L, localeOf, translator, useLocale, useT, type Locale, type Text } from "../lib/i18n";
 
@@ -107,6 +108,15 @@ export default function MorePage() {
             <span className="flex-1">{t("字体", "Font")}</span>
             <FontSelect />
           </li>
+          {ENGLISH && (
+            <li className="flex min-h-[56px] items-center gap-3 px-4 text-ui-body-lg font-medium text-ink">
+              <span className="text-ink-3">
+                <IconGlobe size={20} />
+              </span>
+              <span className="flex-1">{t("语言", "Language")}</span>
+              <LanguageSwitch className="w-[148px]" />
+            </li>
+          )}
         </Group>
         <Group title={t("工具与入口", "Tools")}>
           {tools().map((r) => (

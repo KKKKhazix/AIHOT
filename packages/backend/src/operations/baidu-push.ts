@@ -9,6 +9,7 @@ import { config } from "../config.ts";
 import { sql } from "../db.ts";
 import { siteUrl } from "../publication/links.ts";
 import { loadDiscoveryEntries } from "../publication/sitemap.ts";
+import { localeOf } from "@aihot/contracts/i18n";
 
 const ENDPOINT = "http://data.zz.baidu.com/urls";
 const MAX_URLS = 2000;
@@ -28,7 +29,8 @@ const time = (e: Entry) => e.newsAt?.getTime() ?? e.lastmod?.getTime() ?? 0;
 
 export async function submitBaiduPush(now = new Date()) {
   const [row] = await sql<{ value: State }[]>`SELECT value FROM settings WHERE key = ${KEY}`;
-  const entries = await loadDiscoveryEntries(now);
+  // Baidu is for Chinese readers: the English edition's addresses are not pushed.
+  const entries = (await loadDiscoveryEntries(now)).filter((e) => localeOf(e.loc) === "zh");
   if (!row) {
     await save({ known: entries.map((e) => e.loc), day: "", remain: null });
     return { status: "baseline" as const, urls: 0, more: false };

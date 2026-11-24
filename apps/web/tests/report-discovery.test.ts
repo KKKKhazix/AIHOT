@@ -35,3 +35,12 @@ test('English pages offer the English feeds: the RSS panel, every category row a
   assert.equal($('link[rel="alternate"][type="application/rss+xml"]').attr('href'), '/en/feed.xml');
   assert.ok($('a[href="/api/v1/agent?lang=en"]').length > 0 && $('a[href="/api/v1/agent"]').length === 0, 'the Agent guide it links is the English one');
 });
+
+test('the English Agent page sends agents to the English guide and tells them how to ask MCP in English', { skip: ENGLISH === null }, async () => {
+  const response = await fetch(`${web.origin}/en/agent`);
+  assert.equal(response.status, 200, web.logs());
+  const $ = cheerio.load(await response.text());
+  assert.ok($('a[href="/api/v1/agent?lang=en"]').length > 0 && $('a[href="/api/v1/agent"]').length === 0, 'every guide link on it is the English guide');
+  const mcp = cheerio.load(await (await fetch(`${web.origin}/en/agent?tab=mcp`)).text())('#agent-panel').text();
+  assert.ok(mcp.includes('with lang "en"') && !mcp.includes('returns its summaries in Chinese'), mcp.slice(0, 300));
+});

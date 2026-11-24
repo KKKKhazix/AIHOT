@@ -6,7 +6,7 @@ import { REPORT_NAMES, type ReportNavigationEntry, type ReportNavigationResponse
 import { PillTabs } from "../../components/ui/Tabs";
 import { IconChevronRight } from "../../components/icons";
 import { KINDS, KIND_PATH, archiveGroups, archiveMark, chipLabel, kindName, reportPath } from "./format";
-import { localizePath, useLocale, useT } from "../../lib/i18n";
+import { apiIn, localizePath, useLocale, useT } from "../../lib/i18n";
 
 /**
  * 日报 / 周报 / 月报 as the site's pill switch: spread across the archive column, or compact in the phone bar
@@ -65,12 +65,12 @@ function ArchiveGroup({ g, kind, current, initiallyOpen }: {
   useEffect(() => {
     if (!open || loaded || kind !== "daily" || !g.entries.some((e) => e.title === undefined)) return;
     const controller = new AbortController();
-    fetch(`/api/site/reports/daily/months/${g.id}`, { signal: controller.signal })
+    fetch(apiIn(`/api/site/reports/daily/months/${g.id}`, locale), { signal: controller.signal })
       .then((r) => r.ok ? r.json() : null)
       .then((data: ReportNavigationResponse | null) => { if (data && !controller.signal.aborted) setLoaded(data.items); })
       .catch(() => {});
     return () => controller.abort();
-  }, [open, kind, g.id, loaded]);
+  }, [open, kind, g.id, loaded, locale]);
   const entries = loaded ?? g.entries;
   const mark = (key: string) => archiveMark(kind, key, locale);
   return (

@@ -33,7 +33,7 @@ export const CAPABILITIES = {
   digest: { label: "事件综述", env: "DIGEST_MODEL", default: DEFAULTS.digest ?? "default", purposes: ["story_digest"] },
   // Dailies are computed by rule; report_lead and report_daily remain for their older receipts.
   report: { label: "周报月报的总述与主题（日报由规则算出，不用模型）", env: "REPORT_MODEL", default: DEFAULTS.report ?? "default", purposes: ["report_weekly", "report_monthly", "report_lead", "report_daily"] },
-  translate: { label: "精选全文翻译（含引用帖）", env: "TRANSLATE_MODEL", default: DEFAULTS.translate ?? "default", purposes: ["translate_body", "translate_quoted"] },
+  translate: { label: "翻译（精选全文和引用帖的中文；有英文版的站点还有标题、摘要、事件和报告的英文）", env: "TRANSLATE_MODEL", default: DEFAULTS.translate ?? "default", purposes: ["translate_body", "translate_quoted", "translate_copy_en"] },
   feedback: { label: "反馈筛选（读者反馈有没有内容，没有内容的不转发）", env: "FEEDBACK_MODEL", default: DEFAULTS.feedback ?? "default", purposes: ["judge_feedback"] },
 } satisfies Record<string, Capability>;
 

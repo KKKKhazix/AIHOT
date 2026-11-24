@@ -20,7 +20,7 @@ import type { Screen } from "../components/shell/screens";
 import type { TopicPagePart } from "../modules";
 import { loadParts } from "../site-modules";
 import { Link } from "../lib/link";
-import { localeOf, localizePath, translator, useLocale, useT, type Locale } from "../lib/i18n";
+import { apiIn, localeOf, localizePath, translator, useLocale, useT, type Locale } from "../lib/i18n";
 
 // Topics are reached from the topics page, as long as the site shows it.
 const UP = navUp("/topics");
@@ -35,7 +35,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   if (params.page !== undefined && (!/^\d+$/.test(params.page) || page < 1)) throw new Response("Not found", { status: 404 });
   // Page 1 lives at the topic's own address (308), in the reader's language.
   if (params.page === "1") throw redirect(localizePath(`/topics/${encodeURIComponent(params.slug)}`, localeOf(pagePathname(request))), 308);
-  const data = await loadOr404<TopicPage>(`/api/site/topics/${encodeURIComponent(params.slug)}?page=${page}`, { signal: request.signal });
+  const data = await loadOr404<TopicPage>(apiIn(`/api/site/topics/${encodeURIComponent(params.slug)}?page=${page}`, localeOf(pagePathname(request))), { signal: request.signal });
   return cachedPage(60, { data });
 }
 

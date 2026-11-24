@@ -12,10 +12,10 @@ import { isReload } from "../../lib/restore";
 import { listPath, filterParams } from "../../lib/seo";
 import { sessionCache } from "../../lib/session-cache";
 import { Link } from "../../lib/link";
-import { useLocale, useT, type Translate } from "../../lib/i18n";
+import { apiIn, useLocale, useT, type Locale, type Translate } from "../../lib/i18n";
 
-const reportsUrl = (factId: string, filters: TimelineFilters | undefined) =>
-  listPath(`/api/site/groups/${encodeURIComponent(factId)}/reports`, filters ? filterParams(filters) : {});
+const reportsUrl = (factId: string, filters: TimelineFilters | undefined, locale: Locale) =>
+  listPath(apiIn(`/api/site/groups/${encodeURIComponent(factId)}/reports`, locale), filters ? filterParams(filters) : {});
 
 const labelOf = (group: GroupInfo, t: Translate) => {
   const others = group.additionalSourceCount;
@@ -105,7 +105,7 @@ export function GroupSources({ group, filters, parentId }: { group: GroupInfo; f
   const key = `${group.factId}|${parentId}`;
   const saved = openGroups.peek(entry)?.groups[key];
   const [open, setOpen] = useState(saved !== undefined);
-  const reports = useReports(reportsUrl(group.factId, filters), saved);
+  const reports = useReports(reportsUrl(group.factId, filters, useLocale()), saved);
   // Back in this history entry, an open group comes back open and is read once more; so after the browser
   // reloaded the page on back/forward (never on a reader's reload, which asks for a fresh list).
   useEffect(() => {
@@ -189,7 +189,7 @@ function GroupSheet({ open, onClose, group, filters, parentId }: {
   filters?: TimelineFilters;
   parentId: string;
 }) {
-  const reports = useReports(reportsUrl(group.factId, filters));
+  const reports = useReports(reportsUrl(group.factId, filters, useLocale()));
   useEffect(() => {
     if (open && !reports.reports && !reports.loading && !reports.error) void reports.load();
   }, [open]);

@@ -8,7 +8,7 @@ import { ITEM_COPY, SITE, withSubject } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import { linkMentions } from "@aihot/contracts/mentions";
 import { addressRuns } from "@aihot/contracts/addresses";
-import { cachedPage, loadOr404 } from "../lib/api.server";
+import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { loadFollowups } from "../features/item/followups.server";
 import { pageReuse } from "../lib/page-reuse";
 import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
@@ -35,7 +35,7 @@ import { IconArrowLeft, IconCopy, IconDownload, IconExternal, IconImage, IconLis
 import { BarButton, PhoneBar } from "../components/shell/PhoneBar";
 import { isPhone, type Screen } from "../components/shell/screens";
 import { Link, useNavigate } from "../lib/link";
-import { localeOf, localizePath, translator, useLocale, useT, type Locale } from "../lib/i18n";
+import { apiIn, localeOf, localizePath, translator, useLocale, useT, type Locale } from "../lib/i18n";
 
 export const handle: Screen = { home: "featured", toolbar: true };
 export { pageHeaders as headers } from "../lib/api.server";
@@ -43,8 +43,9 @@ export { pageHeaders as headers } from "../lib/api.server";
 const PosterSheet = lazy(() => import("../features/item/PosterSheet"));
 
 export async function loader({ params, request }: Route.LoaderArgs) {
-  const item = await loadOr404<SiteItemDetail>(`/api/site/items/${encodeURIComponent(params.id)}`, { signal: request.signal });
-  return cachedPage(600, { item, followups: await loadFollowups(item, request.signal) });
+  const locale = localeOf(pagePathname(request));
+  const item = await loadOr404<SiteItemDetail>(apiIn(`/api/site/items/${encodeURIComponent(params.id)}`, locale), { signal: request.signal });
+  return cachedPage(600, { item, followups: await loadFollowups(item, locale, request.signal) });
 }
 
 type Loaded = { item: SiteItemDetail; followups: StoryFollowupsResponse | null };

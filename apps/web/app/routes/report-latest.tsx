@@ -12,7 +12,7 @@ import { ReportLayout } from "../features/report/ReportLayout";
 import { ReportPaper, reportOutline } from "../features/report/ReportPaper";
 import { KIND_PATH, feedLink, kindFromPath } from "../features/report/format";
 import type { Screen } from "../components/shell/screens";
-import { L, localeOf, translator, useLocale, useT } from "../lib/i18n";
+import { apiIn, L, localeOf, translator, useLocale, useT } from "../lib/i18n";
 
 export const handle: Screen = { tab: "daily", name: L("日报", "Daily") };
 export { pageHeaders as headers } from "../lib/api.server";
@@ -20,7 +20,7 @@ export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: Route.LoaderArgs) {
   const kind = kindFromPath(pagePathname(request));
-  const { index, report } = await loadOr404<ReportLatestPage>(`/api/site/reports/${kind}/latest-page`, { signal: request.signal });
+  const { index, report } = await loadOr404<ReportLatestPage>(apiIn(`/api/site/reports/${kind}/latest-page`, localeOf(pagePathname(request))), { signal: request.signal });
   return cachedPage(600, { kind, report, index, today: beijingDate(Date.now()) });
 }
 

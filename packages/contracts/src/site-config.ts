@@ -88,4 +88,6 @@ export interface EnglishEdition {
   agent: { search: { scope: string; ask: string } };
   /** Share image text of each page (CARDS). */
   cards: Record<string, { kicker: string; title: string; subtitle: string; accent?: "hot" | "amber" }>;
+  /** Names the English of the site's news always writes this way (the site's own people and brands), Chinese → English. */
+  glossary: Record<string, string>;
 }

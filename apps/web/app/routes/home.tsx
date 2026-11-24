@@ -11,7 +11,7 @@ import type { Screen } from "../components/shell/screens";
 import { Timeline } from "../features/feed/Timeline";
 import { HotTopics } from "../features/feed/HotTopics";
 import { ActiveFilters, CategoryTabs, FeedBar, SearchField } from "../features/feed/Filters";
-import { L, localeOf, localizePath, translator, useLocale, useT } from "../lib/i18n";
+import { apiIn, L, localeOf, localizePath, translator, useLocale, useT } from "../lib/i18n";
 
 export const handle: Screen = { tab: "featured", name: L("精选", "Top Picks") };
 export { pageHeaders as headers } from "../lib/api.server";
@@ -19,12 +19,13 @@ export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
+  const locale = localeOf(pagePathname(request));
   const q = url.searchParams.get("q");
   // Search lives on /all; keep the parameters so old links still land on results.
-  if (q && q.trim()) throw redirect(localizePath(`/all${url.search}`, localeOf(pagePathname(request))));
+  if (q && q.trim()) throw redirect(localizePath(`/all${url.search}`, locale));
   const filters = readFilters(url.searchParams);
   const upstream = new Headers();
-  const data = await loadOr404<TimelineResponse>(listPath("/api/site/timeline", filterParams(filters)), { responseHeaders: upstream, signal: request.signal });
+  const data = await loadOr404<TimelineResponse>(listPath(apiIn("/api/site/timeline", locale), filterParams(filters)), { responseHeaders: upstream, signal: request.signal });
   // A minute at most, here and on /all: new selections must not wait longer at the edge or in a browser.
   return cachedPage(60, { data, filters }, upstream);
 }

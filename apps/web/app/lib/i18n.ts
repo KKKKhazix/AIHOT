@@ -58,6 +58,18 @@ export function localizePath(to: string, locale: Locale): string {
   return `/en${pathname === "/" ? "" : pathname}${at < 0 ? "" : to.slice(at)}`;
 }
 
+/**
+ * The site api's answers with an English edition, under /api/site/en (apps/api routes/site.ts registerReading):
+ * what readers read. The site-wide answers (meta, contact, changelog, feedback) and the modules' own are
+ * the same in both languages.
+ */
+const ENGLISH_API = /^\/api\/site\/(timeline|pool|items\/(?![^?]*\/original)|stories\/|groups\/|topics|search\/suggestions|hot|reports\/|stats)/;
+
+/** Where a page in this language reads a site api answer. */
+export function apiIn(path: string, locale: Locale): string {
+  return locale === "en" && ENGLISH_API.test(path) ? `/api/site/en/${path.slice("/api/site/".length)}` : path;
+}
+
 /** A page's path in the other language: what the language switch links to; null when there is no such page. */
 export function counterpart(pathname: string, to: Locale): string | null {
   if (to === "zh") return pagePath(pathname);

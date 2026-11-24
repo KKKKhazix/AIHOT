@@ -9,7 +9,7 @@ import { topicsInNav } from "../../components/shell/nav";
 import { addRecentSearch, clearRecentSearches, useRecentSearches } from "../../lib/local-state";
 import { useModal } from "../../components/ui/modal";
 import { Link } from "../../lib/link";
-import { localizePath, useLocale, useT } from "../../lib/i18n";
+import { apiIn, localizePath, useLocale, useT, type Locale } from "../../lib/i18n";
 import { topicName } from "@aihot/contracts/taxonomy";
 
 // One overlay for the whole site, opened from any bar.
@@ -40,14 +40,18 @@ export function openSearch(query = "", trigger?: HTMLElement) {
   setOpen(true);
 }
 
-let suggestions: Promise<SearchSuggestions> | null = null;
+const suggestions = new Map<Locale, Promise<SearchSuggestions>>();
 
 /** Share only an ongoing read; the HTTP cache owns freshness and failed reads can be retried. */
-function loadSuggestions() {
-  suggestions ??= fetch('/api/site/search/suggestions')
-    .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json() as Promise<SearchSuggestions>; })
-    .finally(() => { suggestions = null; });
-  return suggestions;
+function loadSuggestions(locale: Locale) {
+  let read = suggestions.get(locale);
+  if (!read) {
+    read = fetch(apiIn("/api/site/search/suggestions", locale))
+      .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json() as Promise<SearchSuggestions>; })
+      .finally(() => { suggestions.delete(locale); });
+    suggestions.set(locale, read);
+  }
+  return read;
 }
 
 const RANK_COLOR = ["text-rank-1", "text-rank-2", "text-rank-3"];
@@ -82,7 +86,7 @@ export function SearchOverlay() {
     let active = true;
     setHasText(!!input.current?.value);
     setMore(null);
-    void loadSuggestions().then(value => { if (active) setMore(value); }).catch(() => {});
+    void loadSuggestions(locale).then(value => { if (active) setMore(value); }).catch(() => {});
     // At the desktop breakpoint this layer is hidden by CSS; it must stop holding the page still too.
     const desktop = window.matchMedia("(min-width: 700px)");
     const onResize = () => { if (desktop.matches) close(); };
@@ -92,7 +96,7 @@ export function SearchOverlay() {
       active = false;
       desktop.removeEventListener("change", onResize);
     };
-  }, [shown]);
+  }, [shown, locale]);
 
   // Leaving for the results (or anywhere) closes the search.
   useEffect(() => {

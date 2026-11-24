@@ -6,7 +6,7 @@ import { beijingDate } from "@aihot/contracts/time";
 import { shortAddresses } from "@aihot/contracts/addresses";
 import { SEO_TITLES, SITE, subjectAfter, withSubject } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
-import { cachedPage, loadOr404 } from "../lib/api.server";
+import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { archiveLd, breadcrumbLd, pageMeta } from "../lib/seo";
 import { monthDay, monthDayTime } from "../lib/format";
@@ -21,14 +21,14 @@ import { Picture } from "../components/ui/Picture";
 import { navUp } from "../components/shell/nav";
 import { scrollBehavior } from "../lib/motion";
 import type { Screen } from "../components/shell/screens";
-import { L, localeOf, translator, useLocale, useT, type Locale, type Phrase } from "../lib/i18n";
+import { apiIn, L, localeOf, translator, useLocale, useT, type Locale, type Phrase } from "../lib/i18n";
 
 export const handle: Screen = { tab: navUp("/hot").tab, name: L("热点", "Trending") };
 export { pageHeaders as headers } from "../lib/api.server";
 export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
-  return cachedPage(120, { hot: await loadOr404<HotResponse>("/api/site/hot", { signal: request.signal }) });
+  return cachedPage(120, { hot: await loadOr404<HotResponse>(apiIn("/api/site/hot", localeOf(pagePathname(request))), { signal: request.signal }) });
 }
 
 export function meta({ loaderData, location }: Route.MetaArgs) {

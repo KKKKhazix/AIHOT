@@ -1,6 +1,9 @@
 // First-party site API (/api/site/*). Not public, not versioned, never called /api/v2.
-// Reads through the same public read layer as v1; no cookies are read or set.
+// Reads through the same public read layer as v1; no cookies are read or set. A site with an English edition
+// also answers what readers read in English, under /api/site/en/* (publication/english.ts).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { ENGLISH } from "@aihot/contracts/english";
+import type { Locale } from "@aihot/contracts/i18n";
 import { isCategoryKey, isChannelKey, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
 import type { ReportIndexResponse, ReportLatestPage, ReportNavigationResponse, SearchSuggestions, SiteContact } from "@aihot/contracts/site";
 import { InvalidCursorError } from "@aihot/backend/lib/cursor";
@@ -16,6 +19,7 @@ import { loadContact, loadMakerAvatar } from "@aihot/backend/site/contact";
 import { loadSiteStats } from "@aihot/backend/site/stats";
 import { itemAvailability } from "@aihot/backend/publication/availability";
 import { listTopicSummaries, loadTopicPage, topicBrowseLinks } from "@aihot/backend/publication/topics";
+import * as english from "@aihot/backend/publication/english";
 import { registerFeedback } from "./feedback.ts";
 import { loadHot, loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
 import { listReports, loadReport, reportNavigation, loadReportNavigation, loadReportMonth, type ReportKind } from "@aihot/backend/publication/reports";
@@ -57,60 +61,15 @@ export function parseFilters(q: Record<string, string>): FilterParams {
   return { channel, category: category as CategoryKey | null, tag };
 }
 
+/**
+ * Where each language's answers live: the Chinese under /api/site, the English under /api/site/en (only on a site
+ * with an English edition). The path decides the language, so a cache keyed by URL never mixes the two.
+ */
+const LANGUAGES: Array<{ lang: Locale; base: string }> = [{ lang: "zh", base: "/api/site" }, ...(ENGLISH ? [{ lang: "en" as const, base: "/api/site/en" }] : [])];
+
 export function registerSite(app: FastifyInstance) {
   app.get("/api/site/meta", siteHandler(async (req, reply) => {
     return sendJsonWithEtag(req, reply, siteMeta(), { etagPrefix: "meta", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
-  app.get("/api/site/timeline", siteHandler(async (req, reply) => {
-    const q = looseQuery(req);
-    const filters = parseFilters(q);
-    const limit = Math.min(Math.max(Number(q.limit) || 20, 1), 40);
-    const unfiltered = filters.channel === "all" && !filters.category && !filters.tag && !q.cursor;
-    const [data, hot] = await Promise.all([
-      loadTimeline({ ...filters, cursor: q.cursor || null, limit }),
-      unfiltered ? loadHotStrip() : null,
-    ]);
-    // Any cache in front and the home page built from this answer share one absolute deadline.
-    reply.header("X-Accel-Expires", `@${Math.floor(Date.now() / 1000) + 60}`);
-    return sendJsonWithEtag(req, reply, { ...data, hot }, { etagPrefix: "tl", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
-  app.get("/api/site/pool", siteHandler(async (req, reply) => {
-    const q = looseQuery(req);
-    const filters = parseFilters(q);
-    const page = Math.min(Math.max(Number(q.page) || 1, 1), 50);
-    const search = q.q?.trim() ? q.q.trim().slice(0, 200) : null;
-    const tab = q.tab === "relevance" ? "relevance" : "time";
-    return sendJsonWithEtag(req, reply, await loadPool({ ...filters, q: search, tab, page }), { etagPrefix: "pool", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
-  app.get("/api/site/items/:id", siteHandler(async (req, reply) => {
-    const id = (req.params as { id: string }).id;
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found" });
-    const result = await loadItemDetail(id);
-    if (result.kind === "not_found") return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found", cacheControl: "public, max-age=60" });
-    return sendJsonWithEtag(req, reply, result.item, { etagPrefix: "item", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
-  app.get("/api/site/items/:id/original", siteHandler(async (req, reply) => {
-    const id = (req.params as { id: string }).id;
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found" });
-    const result = await loadItemDetail(id, "original");
-    if (result.kind === "not_found") return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found", cacheControl: "public, max-age=60" });
-    return sendJsonWithEtag(req, reply, result.item, { etagPrefix: "item-original", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
-  app.get("/api/site/stories/:publicId/followups", siteHandler(async (req, reply) => {
-    const result = await loadStoryFollowups((req.params as { publicId: string }).publicId);
-    if (!result) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "story not found" });
-    return reply.header("Cache-Control", "no-store").send(result);
-  }));
-
-  app.get("/api/site/groups/:factId/reports", siteHandler(async (req, reply) => {
-    const data = await loadGroupReports({ factPublicId: (req.params as { factId: string }).factId, ...parseFilters(looseQuery(req)) });
-    if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "reading group unavailable" });
-    return reply.header("Cache-Control", "no-store").send(data);
   }));
 
   app.get("/api/site/contact", siteHandler(async (req, reply) => {
@@ -119,95 +78,13 @@ export function registerSite(app: FastifyInstance) {
     return sendJsonWithEtag(req, reply, body, { etagPrefix: "contact", cacheControl: "public, max-age=300, s-maxage=300" });
   }));
 
-  app.get("/api/site/stats", siteHandler(async (req, reply) => {
-    return sendJsonWithEtag(req, reply, await loadSiteStats(), { etagPrefix: "stats", cacheControl: "public, max-age=300, s-maxage=300" });
-  }));
-
   app.get("/api/site/changelog", siteHandler(async (req, reply) => {
     return sendJsonWithEtag(req, reply, loadChangelog(), { etagPrefix: "changelog", cacheControl: "public, max-age=300, s-maxage=300" });
   }));
 
-  app.get("/api/site/items/availability", siteHandler(async (req, reply) => {
-    const ids = (looseQuery(req).ids ?? "").split(",").filter(Boolean);
-    reply.header("Cache-Control", "no-store");
-    return reply.send(await itemAvailability(ids));
-  }));
-
-  app.get("/api/site/topics", siteHandler(async (req, reply) => {
-    return sendJsonWithEtag(req, reply, await listTopicSummaries(), { etagPrefix: "topics", cacheControl: "public, max-age=300, s-maxage=300" });
-  }));
-
-  app.get('/api/site/search/suggestions', siteHandler(async (req, reply) => {
-    const body: SearchSuggestions = { topics: topicBrowseLinks(), hot: await hotSearchLinks() };
-    return sendJsonWithEtag(req, reply, body, { etagPrefix: 'suggestions', cacheControl: 'public, max-age=30, s-maxage=30, must-revalidate' });
-  }));
-
-  app.get("/api/site/topics/:slug", siteHandler(async (req, reply) => {
-    const slug = (req.params as { slug: string }).slug;
-    const data = await loadTopicPage(slug, Number(looseQuery(req).page ?? 1));
-    if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "topic page not found", cacheControl: "public, max-age=60" });
-    return sendJsonWithEtag(req, reply, data, { etagPrefix: "topic", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
   registerFeedback(app);
 
-  app.get("/api/site/hot", siteHandler(async (req, reply) => {
-    const data = await loadHot();
-    return sendJsonWithEtag(req, reply, data, { etagPrefix: "hot", cacheControl: "public, max-age=30, s-maxage=30" });
-  }));
-
-  app.get("/api/site/stories/:publicId", siteHandler(async (req, reply) => {
-    const publicId = (req.params as { publicId: string }).publicId;
-    const found = await resolveStory(publicId);
-    if (found.kind === "merged") {
-      return reply.code(308).header("Location", `/api/site/stories/${found.target}`).header("Cache-Control", "public, max-age=300").send({ mergedInto: found.target });
-    }
-    if (found.kind === "not_found") return sendProblem(req, reply, { status: 404, code: "not_found", detail: "story not found", cacheControl: "public, max-age=60" });
-    const data = await loadStoryDetail(found.storyId);
-    if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "story not public", cacheControl: "public, max-age=60" });
-    return sendJsonWithEtag(req, reply, data, { etagPrefix: "story", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
-  app.get("/api/site/reports/:kind", siteHandler(async (req, reply) => {
-    const kind = (req.params as { kind: string }).kind;
-    if (!["daily", "weekly", "monthly"].includes(kind)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "unknown report kind" });
-    const body: ReportIndexResponse = { kind: kind as ReportKind, items: await listReports(kind as ReportKind) };
-    return sendJsonWithEtag(req, reply, body, { etagPrefix: "reports", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
-  // The latest report page needs its archive selector and the report in one HTTP request.
-  app.get("/api/site/reports/:kind/latest-page", siteHandler(async (req, reply) => {
-    const kind = (req.params as { kind: string }).kind;
-    if (!["daily", "weekly", "monthly"].includes(kind)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "unknown report kind" });
-    const index = await listReports(kind as ReportKind);
-    const report = index[0] ? await loadReport(kind as ReportKind, index[0].key) : null;
-    const body: ReportLatestPage = { index: reportNavigation(kind as ReportKind, index, report?.key ?? ""), report };
-    return sendJsonWithEtag(req, reply, body, { etagPrefix: "report-latest", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
-  app.get("/api/site/reports/:kind/navigation/:key", siteHandler(async (req, reply) => {
-    const { kind, key } = req.params as { kind: string; key: string };
-    if (!["daily", "weekly", "monthly"].includes(kind) || !/^\d{4}-(\d{2}(-\d{2})?|W\d{2})$/.test(key)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "report not found" });
-    const body: ReportNavigationResponse = { items: await loadReportNavigation(kind as ReportKind, key) };
-    return sendJsonWithEtag(req, reply, body, { etagPrefix: "report-navigation", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
-  app.get("/api/site/reports/daily/months/:month", siteHandler(async (req, reply) => {
-    const { month } = req.params as { month: string };
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "month not found" });
-    const body: ReportNavigationResponse = { items: await loadReportMonth("daily", month) };
-    return sendJsonWithEtag(req, reply, body, { etagPrefix: "report-month", cacheControl: "public, max-age=60, s-maxage=60" });
-  }));
-
-  app.get("/api/site/reports/:kind/:key", siteHandler(async (req, reply) => {
-    const { kind, key } = req.params as { kind: string; key: string };
-    if (!["daily", "weekly", "monthly"].includes(kind) || !/^\d{4}-(\d{2}(-\d{2})?|W\d{2})$/.test(key)) {
-      return sendProblem(req, reply, { status: 404, code: "not_found", detail: "report not found" });
-    }
-    const data = await loadReport(kind as ReportKind, key);
-    if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "report not found", cacheControl: "public, max-age=60" });
-    return sendJsonWithEtag(req, reply, data, { etagPrefix: "report", cacheControl: "public, max-age=120, s-maxage=120" });
-  }));
+  for (const { lang, base } of LANGUAGES) registerReading(app, lang, base);
 
   // Markdown export: attachment, 404 when there is nothing to export (same predicate as the button).
   app.get("/items/:id/markdown", siteHandler(async (req, reply) => {
@@ -222,5 +99,152 @@ export function registerSite(app: FastifyInstance) {
       .header("X-Robots-Tag", "noindex")
       .header("Link", `<${itemUrl(id)}>; rel="canonical"`)
       .send(md.body);
+  }));
+}
+
+/** What readers read, in one language: the lists, articles, events, the hot ranking, reports and topics. */
+function registerReading(app: FastifyInstance, lang: Locale, base: string) {
+  const en = lang === "en";
+  const shown = <T>(data: T, overlay: english.Overlay<T>): T | Promise<T> => (en ? english.inEnglish(data, overlay) : data);
+  const send = async <T>(req: FastifyRequest, reply: FastifyReply, data: T, overlay: english.Overlay<T>, opts: { etagPrefix: string; cacheControl: string }) =>
+    sendJsonWithEtag(req, reply, await shown(data, overlay), { ...opts, etagPrefix: en ? `en-${opts.etagPrefix}` : opts.etagPrefix });
+
+  app.get(`${base}/timeline`, siteHandler(async (req, reply) => {
+    const q = looseQuery(req);
+    const filters = parseFilters(q);
+    const limit = Math.min(Math.max(Number(q.limit) || 20, 1), 40);
+    const unfiltered = filters.channel === "all" && !filters.category && !filters.tag && !q.cursor;
+    const [data, hot] = await Promise.all([
+      loadTimeline({ ...filters, cursor: q.cursor || null, limit }),
+      unfiltered ? loadHotStrip() : null,
+    ]);
+    // Any cache in front and the home page built from this answer share one absolute deadline.
+    reply.header("X-Accel-Expires", `@${Math.floor(Date.now() / 1000) + 60}`);
+    return send(req, reply, { ...data, hot }, english.timeline, { etagPrefix: "tl", cacheControl: "public, max-age=60, s-maxage=60" });
+  }));
+
+  app.get(`${base}/pool`, siteHandler(async (req, reply) => {
+    const q = looseQuery(req);
+    const filters = parseFilters(q);
+    const page = Math.min(Math.max(Number(q.page) || 1, 1), 50);
+    const search = q.q?.trim() ? q.q.trim().slice(0, 200) : null;
+    const tab = q.tab === "relevance" ? "relevance" : "time";
+    return send(req, reply, await loadPool({ ...filters, q: search, tab, page }), english.pool, { etagPrefix: "pool", cacheControl: "public, max-age=60, s-maxage=60" });
+  }));
+
+  // An English page reads an article's original: no body is translated into English.
+  app.get(`${base}/items/:id`, siteHandler(async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found" });
+    const result = await loadItemDetail(id, en ? "original" : "zh");
+    if (result.kind === "not_found") return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found", cacheControl: "public, max-age=60" });
+    return send(req, reply, result.item, english.itemDetail, { etagPrefix: "item", cacheControl: "public, max-age=60, s-maxage=60" });
+  }));
+
+  if (!en) {
+    app.get(`${base}/items/:id/original`, siteHandler(async (req, reply) => {
+      const id = (req.params as { id: string }).id;
+      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found" });
+      const result = await loadItemDetail(id, "original");
+      if (result.kind === "not_found") return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found", cacheControl: "public, max-age=60" });
+      return sendJsonWithEtag(req, reply, result.item, { etagPrefix: "item-original", cacheControl: "public, max-age=60, s-maxage=60" });
+    }));
+  }
+
+  app.get(`${base}/stories/:publicId/followups`, siteHandler(async (req, reply) => {
+    const result = await loadStoryFollowups((req.params as { publicId: string }).publicId);
+    if (!result) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "story not found" });
+    return reply.header("Cache-Control", "no-store").send(await shown(result, english.followups));
+  }));
+
+  app.get(`${base}/groups/:factId/reports`, siteHandler(async (req, reply) => {
+    const data = await loadGroupReports({ factPublicId: (req.params as { factId: string }).factId, ...parseFilters(looseQuery(req)) });
+    if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "reading group unavailable" });
+    return reply.header("Cache-Control", "no-store").send(await shown(data, english.groupReports));
+  }));
+
+  app.get(`${base}/items/availability`, siteHandler(async (req, reply) => {
+    const ids = (looseQuery(req).ids ?? "").split(",").filter(Boolean);
+    reply.header("Cache-Control", "no-store");
+    return reply.send(await shown(await itemAvailability(ids, en), english.availability));
+  }));
+
+  app.get(`${base}/stats`, siteHandler(async (req, reply) => {
+    return send(req, reply, await loadSiteStats(), english.stats, { etagPrefix: "stats", cacheControl: "public, max-age=300, s-maxage=300" });
+  }));
+
+  app.get(`${base}/topics`, siteHandler(async (req, reply) => {
+    return send(req, reply, await listTopicSummaries(), english.topics, { etagPrefix: "topics", cacheControl: "public, max-age=300, s-maxage=300" });
+  }));
+
+  app.get(`${base}/search/suggestions`, siteHandler(async (req, reply) => {
+    const body: SearchSuggestions = { topics: topicBrowseLinks(), hot: await hotSearchLinks() };
+    return send(req, reply, body, english.suggestions, { etagPrefix: "suggestions", cacheControl: "public, max-age=30, s-maxage=30, must-revalidate" });
+  }));
+
+  app.get(`${base}/topics/:slug`, siteHandler(async (req, reply) => {
+    const slug = (req.params as { slug: string }).slug;
+    const data = await loadTopicPage(slug, Number(looseQuery(req).page ?? 1));
+    if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "topic page not found", cacheControl: "public, max-age=60" });
+    return send(req, reply, data, english.topicPage, { etagPrefix: "topic", cacheControl: "public, max-age=60, s-maxage=60" });
+  }));
+
+  app.get(`${base}/hot`, siteHandler(async (req, reply) => {
+    // English cards are clipped once translated (english.hot): the Chinese is read whole.
+    const data = await loadHot(en ? (text) => text : undefined);
+    return send(req, reply, data, english.hot, { etagPrefix: "hot", cacheControl: "public, max-age=30, s-maxage=30" });
+  }));
+
+  app.get(`${base}/stories/:publicId`, siteHandler(async (req, reply) => {
+    const publicId = (req.params as { publicId: string }).publicId;
+    const found = await resolveStory(publicId);
+    if (found.kind === "merged") {
+      return reply.code(308).header("Location", `${base}/stories/${found.target}`).header("Cache-Control", "public, max-age=300").send({ mergedInto: found.target });
+    }
+    if (found.kind === "not_found") return sendProblem(req, reply, { status: 404, code: "not_found", detail: "story not found", cacheControl: "public, max-age=60" });
+    const data = await loadStoryDetail(found.storyId);
+    if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "story not public", cacheControl: "public, max-age=60" });
+    return send(req, reply, data, english.story, { etagPrefix: "story", cacheControl: "public, max-age=60, s-maxage=60" });
+  }));
+
+  app.get(`${base}/reports/:kind`, siteHandler(async (req, reply) => {
+    const kind = (req.params as { kind: string }).kind;
+    if (!["daily", "weekly", "monthly"].includes(kind)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "unknown report kind" });
+    const body: ReportIndexResponse = { kind: kind as ReportKind, items: await listReports(kind as ReportKind) };
+    return send(req, reply, body, english.reportIndex, { etagPrefix: "reports", cacheControl: "public, max-age=60, s-maxage=60" });
+  }));
+
+  // The latest report page needs its archive selector and the report in one HTTP request.
+  app.get(`${base}/reports/:kind/latest-page`, siteHandler(async (req, reply) => {
+    const kind = (req.params as { kind: string }).kind;
+    if (!["daily", "weekly", "monthly"].includes(kind)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "unknown report kind" });
+    const index = await listReports(kind as ReportKind);
+    const report = index[0] ? await loadReport(kind as ReportKind, index[0].key) : null;
+    const body: ReportLatestPage = { index: reportNavigation(kind as ReportKind, index, report?.key ?? ""), report };
+    return send(req, reply, body, english.reportLatest, { etagPrefix: "report-latest", cacheControl: "public, max-age=60, s-maxage=60" });
+  }));
+
+  app.get(`${base}/reports/:kind/navigation/:key`, siteHandler(async (req, reply) => {
+    const { kind, key } = req.params as { kind: string; key: string };
+    if (!["daily", "weekly", "monthly"].includes(kind) || !/^\d{4}-(\d{2}(-\d{2})?|W\d{2})$/.test(key)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "report not found" });
+    const body: ReportNavigationResponse = { items: await loadReportNavigation(kind as ReportKind, key) };
+    return send(req, reply, body, english.reportNavigation, { etagPrefix: "report-navigation", cacheControl: "public, max-age=60, s-maxage=60" });
+  }));
+
+  app.get(`${base}/reports/daily/months/:month`, siteHandler(async (req, reply) => {
+    const { month } = req.params as { month: string };
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "month not found" });
+    const body: ReportNavigationResponse = { items: await loadReportMonth("daily", month) };
+    return send(req, reply, body, english.reportNavigation, { etagPrefix: "report-month", cacheControl: "public, max-age=60, s-maxage=60" });
+  }));
+
+  app.get(`${base}/reports/:kind/:key`, siteHandler(async (req, reply) => {
+    const { kind, key } = req.params as { kind: string; key: string };
+    if (!["daily", "weekly", "monthly"].includes(kind) || !/^\d{4}-(\d{2}(-\d{2})?|W\d{2})$/.test(key)) {
+      return sendProblem(req, reply, { status: 404, code: "not_found", detail: "report not found" });
+    }
+    const data = await loadReport(kind as ReportKind, key);
+    if (!data) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "report not found", cacheControl: "public, max-age=60" });
+    return send(req, reply, data, english.report, { etagPrefix: "report", cacheControl: "public, max-age=120, s-maxage=120" });
   }));
 }

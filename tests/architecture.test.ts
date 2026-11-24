@@ -78,6 +78,14 @@ test("packages never import the apps, and nothing below the admin imports it", (
   assert.deepEqual(found, [], "admin/ is the top layer: move what others need to the folder that owns it");
 });
 
+test("editorial and event code can enqueue work without loading worker implementations", () => {
+  const found = violations([...sources(BACKEND + "/editorial"), ...sources(BACKEND + "/events")], (file, spec) => {
+    const target = backendPath(file, spec);
+    return !!target?.startsWith("jobs/") && target !== "jobs/queue.ts";
+  });
+  assert.deepEqual(found, [], "submit work through jobs/queue.ts; worker implementations depend on editorial and events");
+});
+
 // Public routes read through the public read faces; the rest are the reader's own writes (feedback) and
 // the image proxy. Admin and ingest routes may call any backend use case.
 const PRIVATE_ROUTES = new Set(["admin.ts", "admin-auth.ts", "ingest.ts"]);

@@ -75,10 +75,15 @@ class Apply implements Copy {
     const ready = parts.every(([, text]) => !needsEnglish(text) || this.en.has(text));
     return parts.map(([, text]) => (ready && needsEnglish(text) ? this.en.get(text) : text)) as { -readonly [K in keyof T]: T[K][1] };
   }
-  one<S extends string | null | undefined>(_kind: CopyKind, text: S): S {
-    return (needsEnglish(text) ? this.en.get(text) ?? text : text) as S;
+  one<S extends string | null | undefined>(kind: CopyKind, text: S): S {
+    if (needsEnglish(text)) return (this.en.get(text) ?? text) as S;
+    return (kind === "name" && text ? englishMarks(text) : text) as S;
   }
 }
+
+/** A name with nothing to translate, in English punctuation: "Example：News（RSS）" reads "Example: News (RSS)". */
+const englishMarks = (name: string) =>
+  name.replace(/\s*：\s*/g, ": ").replace(/\s*[，、]\s*/g, ", ").replace(/\s*（\s*/g, " (").replace(/\s*）/g, ")").trim();
 
 export type Overlay<T> = (value: T, copy: Copy) => T | Promise<T>;
 

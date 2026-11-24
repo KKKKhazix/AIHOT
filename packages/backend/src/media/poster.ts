@@ -32,15 +32,23 @@ const WORDS: Record<"zh" | "en", Words> = {
   en: { score: (n: number) => `Top Pick · AI score ${n}`, source: (name: string) => `Source: ${name}`, scan: "Scan to read", read: "The summary and a link to the original", tagline: ENGLISH?.tagline ?? SITE.tagline },
 };
 
-export interface PosterText { kicker: string; title: string; titleSize: number; summary: string | null; source: string }
+/** Every word a poster shows: its text, and its own words in the poster's language. */
+export interface PosterText {
+  kicker: string; title: string; titleSize: number; summary: string | null; source: string;
+  score: string | null; scan: string; read: string; footer: string; english: boolean;
+}
 
 /** What a poster shows: as og.ts cardText, an English poster is set as English once its title and summary are. */
 export function posterText(p: Poster): PosterText {
-  return p.lang === "en" && !needsEnglish(p.title) && !needsEnglish(p.summary) ? englishText(p) : chineseText(p, WORDS[p.lang ?? "zh"]);
+  const words = WORDS[p.lang ?? "zh"];
+  const text = p.lang === "en" && !needsEnglish(p.title) && !needsEnglish(p.summary) ? englishText(p) : chineseText(p, words);
+  return { ...text, score: p.score !== null ? words.score(Math.round(p.score)) : null, scan: words.scan, read: words.read, footer: `${SITE.name} · ${words.tagline}` };
 }
 
+type SetText = Omit<PosterText, "score" | "scan" | "read" | "footer">;
+
 /** A poster's text cut by characters, as Chinese is: the summary takes the room the title leaves. */
-function chineseText(p: Poster, words: Words): PosterText {
+function chineseText(p: Poster, words: Words): SetText {
   const title = clamp(p.title, 72);
   const len = [...title].length;
   return {
@@ -49,6 +57,7 @@ function chineseText(p: Poster, words: Words): PosterText {
     titleSize: len > 48 ? 58 : len > 30 ? 66 : 76,
     summary: p.summary ? clamp(p.summary, len > 48 ? 120 : len > 30 ? 150 : 180) : null,
     source: clamp(words.source(p.source), 34),
+    english: false,
   };
 }
 
@@ -57,7 +66,7 @@ const TITLE_SIZES: Array<[size: number, lines: number]> = [[76, 3], [66, 4], [58
 const TEXT_WIDTH = WIDTH - 176;
 const TEXT_HEIGHT = 600;
 
-function englishText(p: Poster): PosterText {
+function englishText(p: Poster): SetText {
   const title = plainEnglish(p.title);
   const [titleSize, most] = TITLE_SIZES.find(([size, lines]) => wrapLines(title, TEXT_WIDTH / size).length <= lines) ?? TITLE_SIZES.at(-1)!;
   const left = Math.min(6, Math.floor((TEXT_HEIGHT - Math.min(most, wrapLines(title, TEXT_WIDTH / titleSize).length) * titleSize * 1.3) / (34 * 1.7)));
@@ -68,12 +77,14 @@ function englishText(p: Poster): PosterText {
     titleSize,
     summary: p.summary && left > 0 ? fitLines(plainEnglish(p.summary), TEXT_WIDTH / 34, left, 400) : null,
     source: fitLines(plainEnglish(WORDS.en.source(p.source)), TEXT_WIDTH / 28, 1, 400),
+    english: true,
   };
 }
 
 async function tree(p: Poster): Promise<Node> {
-  const words = WORDS[p.lang ?? "zh"];
-  const { kicker, title, titleSize, summary, source } = posterText(p);
+  // Every word comes from posterText. English breaks a word only wider than its line, where og.ts wrapLines does.
+  const { kicker, title, titleSize, summary, source, score, scan, read, footer, english } = posterText(p);
+  const wrap = english ? { wordBreak: "break-word" } : {};
   const qr = `data:image/svg+xml;base64,${Buffer.from(renderSVG(p.url, { border: 0, ecc: "M", blackColor: INK, whiteColor: "#ffffff" })).toString("base64")}`;
   return h(
     "div",
@@ -95,14 +106,14 @@ async function tree(p: Poster): Promise<Node> {
       ]),
       h("div", { display: "flex", alignItems: "center", marginTop: 96 }, [
         h("div", { width: 12, height: 12, borderRadius: 999, backgroundColor: ACCENT, marginRight: 16 }),
-        h("div", { display: "flex", fontSize: 30, fontWeight: 700, color: ACCENT, letterSpacing: 1 }, kicker),
-        p.score !== null
-          ? h("div", { display: "flex", marginLeft: 20, padding: "4px 16px", borderRadius: 999, backgroundColor: "rgba(23,107,117,0.09)", fontSize: 26, color: "#0f5a63" }, words.score(Math.round(p.score)))
+        h("div", { display: "flex", fontSize: 30, fontWeight: 700, color: ACCENT, letterSpacing: 1, ...wrap }, kicker),
+        score !== null
+          ? h("div", { display: "flex", marginLeft: 20, padding: "4px 16px", borderRadius: 999, backgroundColor: "rgba(23,107,117,0.09)", fontSize: 26, color: "#0f5a63" }, score)
           : null,
       ].filter(Boolean)),
-      h("div", { display: "flex", marginTop: 30, fontSize: titleSize, fontWeight: 700, lineHeight: 1.3, color: INK }, title),
-      summary ? h("div", { display: "flex", marginTop: 36, fontSize: 34, lineHeight: 1.7, color: "#3a484c" }, summary) : null,
-      h("div", { display: "flex", marginTop: 36, fontSize: 28, color: "#66757a" }, source),
+      h("div", { display: "flex", marginTop: 30, fontSize: titleSize, fontWeight: 700, lineHeight: 1.3, color: INK, ...wrap }, title),
+      summary ? h("div", { display: "flex", marginTop: 36, fontSize: 34, lineHeight: 1.7, color: "#3a484c", ...wrap }, summary) : null,
+      h("div", { display: "flex", marginTop: 36, fontSize: 28, color: "#66757a", ...wrap }, source),
       h("div", { display: "flex", flex: 1 }),
       h(
         "div",
@@ -110,13 +121,13 @@ async function tree(p: Poster): Promise<Node> {
         [
           h("img", { width: 200, height: 200 }, undefined, { src: qr, width: 200, height: 200 }),
           h("div", { display: "flex", flexDirection: "column", marginLeft: 44, flex: 1 }, [
-            h("div", { display: "flex", fontSize: 36, fontWeight: 700, color: INK }, words.scan),
-            h("div", { display: "flex", marginTop: 14, fontSize: 28, lineHeight: 1.5, color: "#66757a" }, words.read),
+            h("div", { display: "flex", fontSize: 36, fontWeight: 700, color: INK }, scan),
+            h("div", { display: "flex", marginTop: 14, fontSize: 28, lineHeight: 1.5, color: "#66757a" }, read),
             h("div", { display: "flex", marginTop: 22, fontSize: 26, color: ACCENT }, SITE_HOST),
           ]),
         ],
       ),
-      h("div", { display: "flex", justifyContent: "center", marginTop: 40, fontSize: 24, color: "#98a4a7" }, `${SITE.name} · ${words.tagline}`),
+      h("div", { display: "flex", justifyContent: "center", marginTop: 40, fontSize: 24, color: "#98a4a7" }, footer),
     ].filter(Boolean),
   );
 }

@@ -14,6 +14,7 @@ import { normalizeUrl } from "../lib/url.ts";
 import { serverModules } from "../modules.ts";
 import { fetchJsonList } from "../sources/json-list.ts";
 import { fetchRss } from "../sources/rss.ts";
+import { resolveGoogleNewsLinks } from "../sources/gnews.ts";
 import { assertSupportedConfig, UnsupportedConfig } from "../sources/config-keys.ts";
 import { applyUsePace, enrichDetails, listingEntries, storedDetails } from "../sources/collect.ts";
 import { filterPublicationWindow } from "../sources/filters.ts";
@@ -93,7 +94,7 @@ export async function previewSource(draft: Pick<SourceRow, "id" | "kind" | "conf
   assertSupportedConfig(source.kind, source.config);
   const started = performance.now();
   let found;
-  if (source.kind === "rss") found = (await fetchRss(source, { force: true })).candidates;
+  if (source.kind === "rss") found = await resolveGoogleNewsLinks((await fetchRss(source, { force: true })).candidates, source, {});
   else if (source.kind === "web_list") found = await fetchWebList(source);
   else if (source.kind === "json_list") found = await fetchJsonList(source);
   else if (source.kind === "x_search") found = (await fetchXSearch(source)).candidates;

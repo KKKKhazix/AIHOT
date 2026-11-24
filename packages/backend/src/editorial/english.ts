@@ -277,10 +277,12 @@ interface Totals {
  * goes with the texts, so it reads the same as on the source's own label.
  */
 async function namesIn(texts: Text[]): Promise<Array<[string, string]>> {
+  const passages = texts.filter((t) => t.kind !== "name").map((t) => t.zh);
+  if (!passages.length) return [];
   const rows = await sql<{ zh: string; en: string }[]>`
     SELECT c.zh, c.en FROM english_copy c
     WHERE c.kind = 'name' AND c.en IS NOT NULL AND c.en !~ ${HAN}
-      AND EXISTS (SELECT 1 FROM unnest(${texts.filter((t) => t.kind !== "name").map((t) => t.zh)}::text[]) AS t(zh) WHERE strpos(t.zh, c.zh) > 0)`;
+      AND EXISTS (SELECT 1 FROM unnest(${passages}::text[]) AS t(zh) WHERE strpos(t.zh, c.zh) > 0)`;
   return rows.map((r) => [r.zh, r.en]);
 }
 

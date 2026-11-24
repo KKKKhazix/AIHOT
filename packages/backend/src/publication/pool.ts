@@ -181,6 +181,11 @@ async function queryPool(query: PoolQuery, now: Date): Promise<PoolResponse> {
       // A fixed clock (tests, replays) never shares cached totals.
       return { rows, total: query.now ? await listedCount(query, now) : await poolTotal(query) };
     }
+    type CountedRow = Omit<ItemRow, "id"> & { id: string | null; total: number };
+    const pageResult = (result: CountedRow[]) => ({
+      rows: result.filter((r): r is ItemRow & { total: number } => r.id !== null),
+      total: Number(one(result).total),
+    });
     if (tab === "relevance") {
       // Rank narrow rows first: no article bodies or translations enter the sort/count. The public
       // total stops at 2,000, even though ranking must consider every matching item.
@@ -203,7 +208,6 @@ async function queryPool(query: PoolQuery, now: Date): Promise<PoolResponse> {
           ${copies ? sql`UNION SELECT article_id FROM translated` : sql``}) d
         FULL JOIN (SELECT article_id FROM pool_search WHERE body LIKE ${"%" + terms[0]! + "%"}) b ON b.article_id = d.article_id`
         : sql`SELECT ps.article_id, (${partScore}) AS part FROM pool_search ps WHERE ${anyMatch}`;
-      type RankedRow = Omit<ItemRow, "id"> & { id: string | null; rel: number; total: number };
       // Equal relevance: a seated selected item first, then the higher quality score, then the newest.
       const tie = sql`(CASE WHEN p.selected AND p.seat THEN 1000 ELSE 0 END) + coalesce(p.score, 0)`;
       // A query naming a company also takes the articles about it, ranked first.
@@ -216,7 +220,7 @@ async function queryPool(query: PoolQuery, now: Date): Promise<PoolResponse> {
           SELECT p.article_id, p.timeline_at, matches.part + (${titleScore}) AS rel, ${tie} AS tie
           FROM matches JOIN publications p ON p.article_id = matches.article_id JOIN sources s ON s.id = p.source_id
           WHERE ${listedCondition(now)} ${filters}`;
-      const result = await db<RankedRow[]>`
+      const result = await db<CountedRow[]>`
         ${withCopies} matches AS ${splitFields ? sql`MATERIALIZED` : sql`NOT MATERIALIZED`} (${matches}), scored AS MATERIALIZED (${scored}
         ), page AS MATERIALIZED (
           SELECT article_id, rel, tie FROM scored ORDER BY rel DESC, tie DESC, timeline_at DESC, article_id DESC
@@ -225,23 +229,23 @@ async function queryPool(query: PoolQuery, now: Date): Promise<PoolResponse> {
         SELECT hydrated.*, total.n AS total FROM total LEFT JOIN LATERAL (
           SELECT ${ITEM_COLUMNS}, page.rel, page.tie ${ITEM_FROM} JOIN page ON page.article_id = p.article_id
         ) hydrated ON true ORDER BY hydrated.rel DESC, hydrated.tie DESC, hydrated.timeline_at DESC, hydrated.id DESC`;
-      const rows = result.filter((r): r is ItemRow & { rel: number; total: number } => r.id !== null);
-      return { rows, total: Number(result[0]!.total) };
+      return pageResult(result);
     }
     // Default search: newest first straight from the timeline index; the total from the pool's
     // search rows, where one- and two-character terms scan a small table instead of every item.
-    const rows = await db<ItemRow[]>`
+    const direct = directConditions(sql`ps.direct`, sql`ps.article_id`);
+    const result = await db<CountedRow[]>`
       ${withCopies} page AS (
         SELECT p.article_id FROM publications p WHERE ${listedCondition(now)} ${filters} ${matchOrSubject(directConditions(sql`p.search_text`, sql`p.article_id`))}
-        ORDER BY p.timeline_at DESC, p.article_id DESC LIMIT ${POOL_PAGE_SIZE} OFFSET ${offset})
-      SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id IN (SELECT article_id FROM page)
-      ORDER BY p.timeline_at DESC, p.article_id DESC`;
-    const direct = directConditions(sql`ps.direct`, sql`ps.article_id`);
-    const { n } = one(await db<{ n: number }[]>`
-      ${copies ? sql`WITH ${copies}` : sql``}
-      SELECT count(*) AS n FROM (SELECT 1 FROM pool_search ps JOIN publications p ON p.article_id = ps.article_id
-        WHERE ${listedCondition(now)} ${filters} ${matchOrSubject(direct)} LIMIT ${cap}) t`);
-    return { rows, total: Number(n) };
+        ORDER BY p.timeline_at DESC, p.article_id DESC LIMIT ${POOL_PAGE_SIZE} OFFSET ${offset}
+      ), total AS (
+        SELECT count(*) AS n FROM (SELECT 1 FROM pool_search ps JOIN publications p ON p.article_id = ps.article_id
+          WHERE ${listedCondition(now)} ${filters} ${matchOrSubject(direct)} LIMIT ${cap}) t
+      )
+      SELECT hydrated.*, total.n AS total FROM total LEFT JOIN LATERAL (
+        SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id IN (SELECT article_id FROM page)
+      ) hydrated ON true ORDER BY hydrated.timeline_at DESC, hydrated.id DESC`;
+    return pageResult(result);
   };
 
   const { rows, total } = q ? await withSearchCapacity(run) : await run(sql);

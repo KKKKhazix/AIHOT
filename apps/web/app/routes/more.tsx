@@ -115,7 +115,7 @@ export default function MorePage() {
                 <IconGlobe size={20} />
               </span>
               <span className="flex-1">{t("语言", "Language")}</span>
-              <LanguageSwitch className="w-[148px]" />
+              <LanguageSwitch page="/more" className="w-[148px]" />
             </li>
           )}
         </Group>

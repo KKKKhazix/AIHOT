@@ -547,3 +547,29 @@ test("the English pages' share images: articles, posters, issues, events, topics
   assert.equal(moved.statusCode, 308);
   assert.equal(moved.headers.location, `/og/en/stories/${site.story}.png`, "a merged event's English card leads to the English one");
 });
+
+test("both searches and public clients match the translated wording, including words split across fields", { skip: ENGLISH === null }, async () => {
+  const title = "编辑介绍了协作办法";
+  const summary = "多款模型可以一起工作。";
+  const id = await report(await source("Example Wire"), { title, summary, reason: "这有新意。" });
+  for (const [zh, en, kind] of [[title, "Editor shares a method", "headline"], [summary, "For coordinating several models", "text"]] as const) {
+    await sql`INSERT INTO english_copy (zh_hash, zh, kind, en, original_of) VALUES (${copyKey(zh)}, ${zh}, ${kind}, ${en}, ${id})`;
+  }
+  const query = new URLSearchParams({ q: "editor shares a method for coordinating" });
+  for (const base of ["/api/site/pool", "/api/site/en/pool"]) {
+    for (const tab of ["time", "relevance"]) {
+      const result = await get(`${base}?${query}&tab=${tab}`);
+      assert.equal(result.total, 1);
+      assert.equal(result.items[0].id, id);
+    }
+  }
+  for (const lang of ["zh", "en"]) assert.equal((await get(`/api/v1/items?mode=all&${query}&lang=${lang}`)).items[0].id, id);
+  assert.equal((await get("/api/site/en/pool?q=coordinating&tab=relevance")).items[0].id, id);
+  for (const [prefix, expected] of [["", [title, summary]], ["/en", ["Editor shares a method", "For coordinating several models"]]] as const) {
+    const current = (await get(`/api/site${prefix}/items/availability?ids=${id}`))[id];
+    assert.deepEqual([current.title, current.summary], expected);
+  }
+  await sql`UPDATE publications SET suppress_original = true WHERE article_id = ${id}`;
+  assert.equal((await get("/api/site/en/pool?q=coordinating+models")).total, 0);
+  assert.deepEqual((await get("/api/v1/items?mode=all&q=coordinating+models&lang=en")).items, []);
+});

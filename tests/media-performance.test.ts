@@ -15,7 +15,7 @@ process.env.AIHOT_DATA_DIR = dir;
 process.env.ALLOW_PRIVATE_NETWORK_FETCH = "true";
 process.env.MODEL_CALLS_ENABLED = "false";
 const { produceImage } = await import("@aihot/backend/media/images");
-const { renderOg, ogEtag, fallbackFontFiles, FALLBACK_FONTS, OG_TEMPLATE_VERSION, ASCII_WIDTHS, cardText, ems, fitLines, plainEnglish, wrapLines } = await import("@aihot/backend/media/og");
+const { renderOg, ogEtag, fallbackFontFiles, FALLBACK_FONTS, OG_TEMPLATE_VERSION, ENGLISH_LAYOUT_VERSION, ASCII_WIDTHS, cardText, ems, fitLines, plainEnglish, wrapLines } = await import("@aihot/backend/media/og");
 const { REPO_ROOT } = await import("@aihot/backend/config");
 const { posterEtag, posterText, renderPoster, POSTER_TEMPLATE_VERSION } = await import("@aihot/backend/media/poster");
 const { xView } = await import("@aihot/backend/publication/items");
@@ -235,6 +235,10 @@ test("English cards break between words and cut with an ellipsis, in marks the f
   assert.ok(lines.length > 2 && lines.every((line) => ems(line) <= room) && lines.join("").replace(/ /g, "") === `reverts${hash}today`, lines.join(" | "));
   const cutHash = fitLines(`reverts ${hash} today`, room, 2);
   assert.ok(cutHash.endsWith("…") && wrapLines(cutHash, room).length <= 2 && `reverts ${hash}`.startsWith(cutHash.slice(0, -1)), cutHash);
+  // The ellipsis takes letters from such a word, not the word's whole line: what fits of it stays.
+  const url = "https://git.example.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=3f9a8c1d2e7b6a5f4c3d";
+  const cutUrl = fitLines(`See ${url} for details`, room, 2);
+  assert.ok(cutUrl.endsWith("…") && wrapLines(cutUrl, room).length <= 2 && cutUrl.length > "See https://git".length && `See ${url}`.startsWith(cutUrl.slice(0, -1)), cutUrl);
 });
 
 test("an English card or poster whose words are still Chinese is cut as Chinese, never left whole", () => {
@@ -262,6 +266,11 @@ test("without added fonts, share images and posters keep their cache keys", { sk
   assert.equal(ogEtag(card), createHash("sha256").update(OG_TEMPLATE_VERSION).update(JSON.stringify(card)).digest("hex").slice(0, 24));
   const poster = { url: "https://example.test/a", kicker: "精选", title: "缓存键不变", summary: null, source: "来源", date: "2026-11-01", score: null };
   assert.equal(posterEtag(poster), createHash("sha256").update(POSTER_TEMPLATE_VERSION).update(JSON.stringify(poster)).digest("hex").slice(0, 24));
+  // English images carry how English is set, so a change to it draws them again; the Chinese keys above stay.
+  const english = { ...card, lang: "en" as const };
+  assert.equal(ogEtag(english), createHash("sha256").update(OG_TEMPLATE_VERSION).update(ENGLISH_LAYOUT_VERSION).update(JSON.stringify(english)).digest("hex").slice(0, 24));
+  const englishPoster = { ...poster, lang: "en" as const };
+  assert.equal(posterEtag(englishPoster), createHash("sha256").update(POSTER_TEMPLATE_VERSION).update(ENGLISH_LAYOUT_VERSION).update(JSON.stringify(englishPoster)).digest("hex").slice(0, 24));
 });
 
 test("successive responsive candidates reuse the completed original download", async () => {

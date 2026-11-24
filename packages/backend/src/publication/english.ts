@@ -134,9 +134,10 @@ export const originalShown = (alias: string) => sql`(${sql(alias)}.visibility <>
 
 /**
  * A row the worker wrote with an article's original title stands only while that original may be shown; the worker
- * sends an original title by the same rule (editorial/english.ts).
+ * sends an original title by the same rule (editorial/english.ts). Keep the lookup on its primary key:
+ * a broad search otherwise hashes the whole publications table to check these few originals.
  */
-export const usableCopy = sql`(c.original_of IS NULL OR EXISTS (SELECT 1 FROM publications w WHERE w.article_id = c.original_of AND ${originalShown("w")}))`;
+export const usableCopy = sql`(c.original_of IS NULL OR EXISTS (SELECT 1 FROM publications w WHERE w.article_id = c.original_of AND ${originalShown("w")} OFFSET 0))`;
 
 /** The English of these texts, where the worker has it. */
 export async function englishOf(texts: Iterable<string>): Promise<Map<string, string>> {
@@ -379,7 +380,7 @@ export const stats: Overlay<SiteStats> = (r, c) => ({
   latest: r.latest.map((l) => ({ ...l, title: c.one("headline", l.title, l.id), source: c.one("name", l.source) })),
 });
 
-/** Starred items (itemAvailability with their texts): each one's title and summary today, and its source's name. */
+/** Starred items: each one's title and summary today, and its source's name. */
 export const availability: Overlay<Record<string, ItemAvailability>> = (r, c) => Object.fromEntries(Object.entries(r).map(([id, a]) => {
   const [title, summary] = c.all([["headline", a.title], ["text", a.summary]], id);
   return [id, {

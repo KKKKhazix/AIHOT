@@ -166,7 +166,7 @@ function registerReading(app: FastifyInstance, lang: Locale, base: string) {
   app.get(`${base}/items/availability`, siteHandler(async (req, reply) => {
     const ids = (looseQuery(req).ids ?? "").split(",").filter(Boolean);
     reply.header("Cache-Control", "no-store");
-    return reply.send(await shown(await itemAvailability(ids, en), english.availability));
+    return reply.send(await shown(await itemAvailability(ids), english.availability));
   }));
 
   app.get(`${base}/stats`, siteHandler(async (req, reply) => {

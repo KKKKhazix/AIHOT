@@ -11,6 +11,11 @@ import { needsEnglish } from "@aihot/contracts/english";
 import { SITE } from "@aihot/site";
 
 export const OG_TEMPLATE_VERSION = "og-2026-09-29.1";
+/**
+ * How English cards and posters are set (englishText here and in poster.ts): changed with them, so English images
+ * already drawn and cached are drawn again. Only English keys carry it; Chinese ones stay as they were.
+ */
+export const ENGLISH_LAYOUT_VERSION = "en-2026-11-25.1";
 const WIDTH = 1200;
 const HEIGHT = 630;
 const CACHE_DIR = path.join(config.dataDir, "ogcache");
@@ -129,8 +134,8 @@ export function ems(text: string, weight: 400 | 700 = 700): number {
 export const plainEnglish = (text: string) =>
   text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC").replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/–/g, "-").replace(/\s+/g, " ").trim();
 
-/** A word, or a piece of one wider than a line (a hash, an address), which the cards break there (wordBreak: break-word). */
-interface Token { text: string; gap: string }
+/** A word, or a piece of one wider than a line (a hash, an address: `broken`), which the cards break there (wordBreak: break-word). */
+interface Token { text: string; gap: string; broken: boolean }
 
 function tokens(text: string, room: number, weight: 400 | 700): Token[] {
   return text.split(" ").flatMap((word, i) => {
@@ -139,7 +144,7 @@ function tokens(text: string, room: number, weight: 400 | 700): Token[] {
       if (pieces.at(-1) && ems(pieces.at(-1)! + ch, weight) > room) pieces.push(ch);
       else pieces[pieces.length - 1] += ch;
     }
-    return pieces.map((piece, j) => ({ text: piece, gap: i > 0 && j === 0 ? " " : "" }));
+    return pieces.map((piece, j) => ({ text: piece, gap: i > 0 && j === 0 ? " " : "", broken: pieces.length > 1 }));
   });
 }
 
@@ -166,7 +171,13 @@ export function fitLines(text: string, room: number, lines: number, weight: 400 
   const all = tokens(text, room, weight);
   if (layout(all, room, weight).length <= lines) return text;
   const kept = layout(all, room, weight).slice(0, lines).flat();
-  while (kept.length > 1 && wrapLines(`${joined(kept)}…`, room, weight).length > lines) kept.pop();
+  while (wrapLines(`${joined(kept)}…`, room, weight).length > lines) {
+    const last = kept.at(-1)!;
+    // A piece of a word wider than a line gives up letters for the ellipsis, not its whole line.
+    if (last.broken && [...last.text].length > 1) kept[kept.length - 1] = { ...last, text: [...last.text].slice(0, -1).join("") };
+    else if (kept.length > 1) kept.pop();
+    else break;
+  }
   return `${joined(kept).replace(/[\s,;:.-]+$/, "")}…`;
 }
 
@@ -300,7 +311,9 @@ async function render(file: string, size: { width: number; height: number }, tre
 
 export function ogEtag(card: OgCard): string {
   // Added font names go into the key, so an image drawn before a font was added is drawn again; with none the key is unchanged.
-  return createHash("sha256").update(OG_TEMPLATE_VERSION).update(FALLBACK_FONTS.join()).update(JSON.stringify(card)).digest("hex").slice(0, 24);
+  const hash = createHash("sha256").update(OG_TEMPLATE_VERSION).update(FALLBACK_FONTS.join());
+  if (card.lang === "en") hash.update(ENGLISH_LAYOUT_VERSION);
+  return hash.update(JSON.stringify(card)).digest("hex").slice(0, 24);
 }
 
 /** PNG bytes for a card, from the disk cache when this exact card was rendered before. */

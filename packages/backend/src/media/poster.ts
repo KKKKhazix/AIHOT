@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { renderSVG } from "uqr";
 import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
 import { SITE } from "@aihot/site";
-import { brandMark, clamp, FALLBACK_FONTS, fitLines, h, nameMark, plainEnglish, renderPng, SITE_HOST, wrapLines, type Node } from "./og.ts";
+import { brandMark, clamp, ENGLISH_LAYOUT_VERSION, FALLBACK_FONTS, fitLines, h, nameMark, plainEnglish, renderPng, SITE_HOST, wrapLines, type Node } from "./og.ts";
 
 export const POSTER_TEMPLATE_VERSION = "poster-2026-09-29.1";
 const WIDTH = 1080;
@@ -35,17 +35,20 @@ const WORDS: Record<"zh" | "en", Words> = {
 /** Every word a poster shows: its text, and its own words in the poster's language. */
 export interface PosterText {
   kicker: string; title: string; titleSize: number; summary: string | null; source: string;
-  score: string | null; scan: string; read: string; footer: string; english: boolean;
+  score: string | null; scan: string; read: string; footer: string; date: string; host: string; english: boolean;
 }
 
 /** What a poster shows: as og.ts cardText, an English poster is set as English once its title and summary are. */
 export function posterText(p: Poster): PosterText {
   const words = WORDS[p.lang ?? "zh"];
   const text = p.lang === "en" && !needsEnglish(p.title) && !needsEnglish(p.summary) ? englishText(p) : chineseText(p, words);
-  return { ...text, score: p.score !== null ? words.score(Math.round(p.score)) : null, scan: words.scan, read: words.read, footer: `${SITE.name} · ${words.tagline}` };
+  return {
+    ...text, score: p.score !== null ? words.score(Math.round(p.score)) : null, scan: words.scan, read: words.read,
+    footer: `${SITE.name} · ${words.tagline}`, date: p.date, host: SITE_HOST,
+  };
 }
 
-type SetText = Omit<PosterText, "score" | "scan" | "read" | "footer">;
+type SetText = Omit<PosterText, "score" | "scan" | "read" | "footer" | "date" | "host">;
 
 /** A poster's text cut by characters, as Chinese is: the summary takes the room the title leaves. */
 function chineseText(p: Poster, words: Words): SetText {
@@ -83,7 +86,7 @@ function englishText(p: Poster): SetText {
 
 async function tree(p: Poster): Promise<Node> {
   // Every word comes from posterText. English breaks a word only wider than its line, where og.ts wrapLines does.
-  const { kicker, title, titleSize, summary, source, score, scan, read, footer, english } = posterText(p);
+  const { kicker, title, titleSize, summary, source, score, scan, read, footer, date, host, english } = posterText(p);
   const wrap = english ? { wordBreak: "break-word" } : {};
   const qr = `data:image/svg+xml;base64,${Buffer.from(renderSVG(p.url, { border: 0, ecc: "M", blackColor: INK, whiteColor: "#ffffff" })).toString("base64")}`;
   return h(
@@ -102,7 +105,7 @@ async function tree(p: Poster): Promise<Node> {
     [
       h("div", { display: "flex", alignItems: "center", justifyContent: "space-between" }, [
         (await brandMark("wordmark.svg", 50)) ?? nameMark(44, INK, ACCENT),
-        h("div", { display: "flex", fontSize: 26, color: "#66757a" }, p.date),
+        h("div", { display: "flex", fontSize: 26, color: "#66757a" }, date),
       ]),
       h("div", { display: "flex", alignItems: "center", marginTop: 96 }, [
         h("div", { width: 12, height: 12, borderRadius: 999, backgroundColor: ACCENT, marginRight: 16 }),
@@ -123,7 +126,7 @@ async function tree(p: Poster): Promise<Node> {
           h("div", { display: "flex", flexDirection: "column", marginLeft: 44, flex: 1 }, [
             h("div", { display: "flex", fontSize: 36, fontWeight: 700, color: INK }, scan),
             h("div", { display: "flex", marginTop: 14, fontSize: 28, lineHeight: 1.5, color: "#66757a" }, read),
-            h("div", { display: "flex", marginTop: 22, fontSize: 26, color: ACCENT }, SITE_HOST),
+            h("div", { display: "flex", marginTop: 22, fontSize: 26, color: ACCENT }, host),
           ]),
         ],
       ),
@@ -133,7 +136,9 @@ async function tree(p: Poster): Promise<Node> {
 }
 
 export function posterEtag(p: Poster): string {
-  return createHash("sha256").update(POSTER_TEMPLATE_VERSION).update(FALLBACK_FONTS.join()).update(JSON.stringify(p)).digest("hex").slice(0, 24);
+  const hash = createHash("sha256").update(POSTER_TEMPLATE_VERSION).update(FALLBACK_FONTS.join());
+  if (p.lang === "en") hash.update(ENGLISH_LAYOUT_VERSION);
+  return hash.update(JSON.stringify(p)).digest("hex").slice(0, 24);
 }
 
 /** PNG bytes for a poster, from the disk cache when this exact poster was rendered before. */

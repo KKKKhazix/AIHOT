@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from "react";
-import type { ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
+import type { ReportKind } from "@aihot/contracts/site";
 import { BarButton, PhoneBar, type BackTarget } from "../../components/shell/PhoneBar";
 import { OutlineSheet, type OutlineEntry } from "../../components/ui/OutlineSheet";
 import { IconList } from "../../components/icons";
 import { KindSwitch, ReportArchive, ReportPhoneNav } from "./ReportNav";
+import type { ArchiveGroup } from "./format";
 import { useT } from "../../lib/i18n";
 
 /**
@@ -13,9 +14,9 @@ import { useT } from "../../lib/i18n";
  * leading back instead. The paper is centred beside the archive, on a faintly toned paper in the light
  * theme, up to 1160px.
  */
-export function ReportLayout({ kind, index, current, today, outline = [], back, title, children }: {
+export function ReportLayout({ kind, groups, current, today, outline = [], back, title, children }: {
   kind: ReportKind;
-  index: ReportNavigationEntry[];
+  groups: ArchiveGroup[];
   current: string | null;
   today: string;
   /** The issue's pages (reportOutline). */
@@ -29,7 +30,7 @@ export function ReportLayout({ kind, index, current, today, outline = [], back, 
   const [outlineOpen, setOutlineOpen] = useState(false);
   return (
     <div className="report-shell lg:-mx-5 lg:-mb-[72px] lg:-mt-6 lg:flex lg:min-h-dvh wide:-mx-7">
-      <ReportArchive kind={kind} index={index} current={current} />
+      <ReportArchive kind={kind} groups={groups} current={current} />
       <div className="min-w-0 flex-1 pb-6 lg:flex lg:flex-col lg:items-center lg:px-10 lg:pb-16 lg:pt-9">
         {back ? (
           <PhoneBar back={back} title={title} />
@@ -53,7 +54,7 @@ export function ReportLayout({ kind, index, current, today, outline = [], back, 
                 </button>
               )}
             </div>
-            <ReportPhoneNav kind={kind} index={index} current={current} today={today} />
+            <ReportPhoneNav kind={kind} groups={groups} current={current} today={today} />
             {outline.length > 0 && <OutlineSheet title={t("本期目录", "In this issue")} open={outlineOpen} onClose={() => setOutlineOpen(false)} outline={outline} />}
           </>
         )}

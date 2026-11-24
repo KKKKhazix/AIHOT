@@ -52,7 +52,7 @@ export default function DailyArchive() {
   const months = archiveGroups("daily", index, locale);
   const issues = index[0]?.issueNumber ?? 0;
   return (
-    <ReportLayout kind="daily" index={index} current={null} today={today} back={{ to: "/daily", label: L("日报", "Daily") }} title={t("日报合订本", "Daily archive")}>
+    <ReportLayout kind="daily" groups={months} current={null} today={today} back={{ to: "/daily", label: L("日报", "Daily") }} title={t("日报合订本", "Daily archive")}>
       <div className="@container">
         <header className="pt-5 lg:pt-0">
           <div className="flex items-center justify-between gap-4 text-ui-caption text-ink-4">

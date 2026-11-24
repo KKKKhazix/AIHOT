@@ -48,7 +48,7 @@ function textOf(node: Node): string | null {
   return null;
 }
 
-export function fileTextViolations(file: string, source: string): Violation[] {
+function fileTextViolations(source: string): Violation[] {
   const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"], errorRecovery: false }) as unknown as Node;
   const hits: Violation[] = [];
   const path: Node[] = [];
@@ -76,7 +76,7 @@ export function webTextViolations(): Map<string, Violation[]> {
   for (const file of sourceFiles("apps/web/app", "modules/*/web.*", "modules/*/web/**")) {
     if (!/\.tsx?$/.test(file) || /\/(?:tests?|__tests__)\//.test(file) || file.endsWith(".d.ts")) continue;
     if (CHINESE_ONLY.some(({ pattern }) => pattern.test(file))) continue;
-    const hits = fileTextViolations(file, readFileSync(new URL("../" + file, import.meta.url), "utf8"));
+    const hits = fileTextViolations(readFileSync(new URL("../" + file, import.meta.url), "utf8"));
     if (hits.length) result.set(file, hits);
   }
   return result;

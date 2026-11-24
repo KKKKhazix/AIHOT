@@ -26,6 +26,8 @@
       "./.react-router/types"
     ],
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noEmit": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,

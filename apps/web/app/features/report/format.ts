@@ -66,7 +66,7 @@ export function shortDay(iso: string, locale: Locale): string {
 export interface ArchiveGroup {
   id: string;
   label: string;
-  entries: Array<ReportNavigationEntry & { short: string }>;
+  entries: ReportNavigationEntry[];
 }
 
 /**
@@ -76,27 +76,14 @@ export interface ArchiveGroup {
 export function archiveGroups(kind: ReportKind, index: ReportNavigationEntry[], locale: Locale): ArchiveGroup[] {
   const t = translator(locale);
   const groups: ArchiveGroup[] = [];
-  const push = (id: string, label: string, e: ReportNavigationEntry & { short: string }) => {
-    const g = groups[groups.length - 1];
-    if (g && g.id === id) g.entries.push(e);
-    else groups.push({ id, label, entries: [e] });
-  };
-  if (kind === "weekly") {
-    const byMonth = new Map<string, string[]>();
-    for (const e of index) {
-      const m = isoWeekRange(e.key)!.start.slice(0, 7);
-      byMonth.set(m, [...(byMonth.get(m) ?? []), e.key]);
+  for (const entry of index) {
+    const id = kind === "weekly" ? isoWeekRange(entry.key)!.start.slice(0, 7) : entry.key.slice(0, kind === "daily" ? 7 : 4);
+    const previous = groups.at(-1);
+    if (previous?.id === id) previous.entries.push(entry);
+    else {
+      const label = kind === "monthly" ? t(`${id} 年`, id) : t(`${id.slice(0, 4)} 年 ${Number(id.slice(5))} 月`, longDateEn(id));
+      groups.push({ id, label, entries: [entry] });
     }
-    for (const e of index) {
-      const m = isoWeekRange(e.key)!.start.slice(0, 7);
-      const weeks = [...byMonth.get(m)!].sort();
-      push(m, t(`${m.slice(0, 4)} 年 ${Number(m.slice(5))} 月`, longDateEn(m)), { ...e, short: t(`第${weeks.indexOf(e.key) + 1}周`, `Week ${weeks.indexOf(e.key) + 1}`) });
-    }
-    return groups;
-  }
-  for (const e of index) {
-    if (kind === "daily") push(e.key.slice(0, 7), t(`${e.key.slice(0, 4)} 年 ${Number(e.key.slice(5, 7))} 月`, longDateEn(e.key.slice(0, 7))), { ...e, short: t(`${Number(e.key.slice(8, 10))} 日`, monthDayEn(e.key)) });
-    else push(e.key.slice(0, 4), t(`${e.key.slice(0, 4)} 年`, e.key.slice(0, 4)), { ...e, short: t(`${Number(e.key.slice(5, 7))} 月`, monthEn(e.key)) });
   }
   return groups;
 }
@@ -112,22 +99,22 @@ export function archiveMark(kind: ReportKind, key: string, locale: Locale): { bi
   return { big: key.slice(5, 7), small: null };
 }
 
-/** Short chip label for the phone switcher: "今天" / "Today", "9月26日" / "Sep 26", "9月第2周" / "Sep 14–20", "8 月" / "August". */
-export function chipLabel(kind: ReportKind, key: string, index: ReportNavigationEntry[], today: string, locale: Locale = "zh"): string {
+/** The phone's three newest issues, with their labels from the same newest-first archive as the sidebar. */
+export function recentIssues(kind: ReportKind, groups: ArchiveGroup[], today: string, locale: Locale): Array<{ key: string; label: string }> {
   const t = translator(locale);
-  if (kind === "daily") return key === today ? t("今天", "Today") : t(engineMonthDay(key, today), monthDayEn(key, today));
-  if (kind === "monthly") return t(`${Number(key.slice(5, 7))} 月`, monthEn(key));
-  const group = archiveGroups("weekly", index, locale).find((g) => g.entries.some((e) => e.key === key));
-  const entry = group?.entries.find((e) => e.key === key);
-  return group && entry ? t(`${Number(group.id.slice(5))}月${entry.short}`, reportDateLabelEn("weekly", key)) : key;
-}
-
-/**
- * "第 N 期": the issue's place in its series as the server counts it over every issue. The navigation
- * index holds only the newest issues, so its length cannot tell.
- */
-export function issueNumber(index: ReportNavigationEntry[], key: string): number | null {
-  return index.find((e) => e.key === key)?.issueNumber ?? null;
+  const recent = [];
+  for (const group of groups) {
+    for (const [position, issue] of group.entries.entries()) {
+      const { key } = issue;
+      let label: string;
+      if (kind === "daily") label = key === today ? t("今天", "Today") : t(engineMonthDay(key, today), monthDayEn(key, today));
+      else if (kind === "weekly") label = t(`${Number(group.id.slice(5))}月第${group.entries.length - position}周`, reportDateLabelEn("weekly", key));
+      else label = t(`${Number(key.slice(5, 7))} 月`, monthEn(key));
+      recent.push({ key, label });
+      if (recent.length === 3) return recent;
+    }
+  }
+  return recent;
 }
 
 /** The masthead's date block: a large figure and two small lines beside it. */
@@ -222,10 +209,10 @@ export interface PeriodCell {
  */
 export function periodGrid(kind: ReportKind, key: string, index: ReportNavigationEntry[], current: number, locale: Locale = "zh"): { title: string; note: string; columns: number; heads: string[] | null; cells: PeriodCell[] } {
   const t = translator(locale);
-  const exists = new Set(index.map((e) => e.key));
+  const numbers = new Map(index.map((e) => [e.key, e.issueNumber]));
   const cell = (k: string, name: string): PeriodCell => {
-    const n = k === key ? current : issueNumber(index, k);
-    return { key: k, label: n ? t(`${name} · 第 ${n} 期`, `${name} · Issue ${n}`) : t(`${name} · 未出刊`, `${name} · No issue`), state: k === key ? "current" : exists.has(k) ? "issue" : "none" };
+    const n = k === key ? current : numbers.get(k);
+    return { key: k, label: n ? t(`${name} · 第 ${n} 期`, `${name} · Issue ${n}`) : t(`${name} · 未出刊`, `${name} · No issue`), state: k === key ? "current" : n !== undefined ? "issue" : "none" };
   };
   const count = (cells: PeriodCell[]) => cells.filter((c) => c.state === "issue" || c.state === "current").length;
   const year = key.slice(0, 4);

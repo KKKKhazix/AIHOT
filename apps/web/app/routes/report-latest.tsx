@@ -10,7 +10,7 @@ import { beijingDate } from "@aihot/contracts/time";
 import { EmptyState } from "../components/ui/Page";
 import { ReportLayout } from "../features/report/ReportLayout";
 import { ReportPaper, reportOutline } from "../features/report/ReportPaper";
-import { KIND_PATH, feedLink, kindFromPath } from "../features/report/format";
+import { KIND_PATH, archiveGroups, feedLink, kindFromPath } from "../features/report/format";
 import type { Screen } from "../components/shell/screens";
 import { apiIn, L, localeOf, translator, useLocale, useT } from "../lib/i18n";
 
@@ -53,7 +53,7 @@ export default function ReportLatestPage() {
   const locale = useLocale();
   const t = useT();
   return (
-    <ReportLayout kind={kind} index={index} current={report?.key ?? null} today={today} outline={report ? reportOutline(report, locale) : []}>
+    <ReportLayout kind={kind} groups={archiveGroups(kind, index, locale)} current={report?.key ?? null} today={today} outline={report ? reportOutline(report, locale) : []}>
       {report ? <ReportPaper report={report} index={index} /> : <EmptyState title={t(subjectAfter("还没有发布", REPORT_NAMES[kind]), `No ${withSubject(REPORT_NAMES_EN[kind])} issues yet`)}>{t("第一期发布后会出现在这里。", "The first issue will appear here once it's out.")}</EmptyState>}
     </ReportLayout>
   );

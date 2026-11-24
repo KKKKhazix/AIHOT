@@ -60,8 +60,8 @@ export function McpPanel(props: AgentPanelProps) {
           {client === "other" && <p className="mt-3">{t(`在客户端的 MCP 或连接器设置里新建一项：名称填 ${name}，地址填上面的网址，认证选“无”，不要填 API Key。只支持本地命令的客户端，先用它自带的远程 MCP 代理。`, `In your client's MCP or connector settings, add a new entry: name it ${name}, paste the URL above, set authentication to "None", and leave the API key empty. If your client only runs local commands, go through its built-in remote MCP proxy.`)}</p>}
         </Step>
         <Step n={3} title={t("让 Agent 调一次", "Test it with your agent")}>
-          <Ask text={t(`请调用 ${T.latest}，告诉我过去 24 小时最重要的${subjectAfter(" 5 条", "资讯")}，并附 ${SITE.name} 链接。`, `Call ${T.latest} and tell me the 5 most important ${SITE.subject} news stories of the past 24 hours, with ${SITE.name} links.`)} />
-          <p className="mt-2 text-ui-label text-ink-3">{t(`客户端显示调用了 ${T.latest}，回答里有时间范围、中文摘要和 ${new URL(props.base).host} 链接，就是连上了。`, `If your client shows a call to ${T.latest} and the answer has a time range, summaries and ${new URL(props.base).host} links, you're connected. The tool returns its summaries in Chinese.`)}</p>
+          <Ask text={t(`请调用 ${T.latest}，告诉我过去 24 小时最重要的${subjectAfter(" 5 条", "资讯")}，并附 ${SITE.name} 链接。`, `Call ${T.latest} with lang "en" and tell me the 5 most important ${SITE.subject} news stories of the past 24 hours, with ${SITE.name} links.`)} />
+          <p className="mt-2 text-ui-label text-ink-3">{t(`客户端显示调用了 ${T.latest}，回答里有时间范围、中文摘要和 ${new URL(props.base).host} 链接，就是连上了。`, `If your client shows a call to ${T.latest} and the answer has a time range, summaries and ${new URL(props.base).host} links, you're connected. Without lang "en" the tool answers in Chinese.`)}</p>
         </Step>
       </Steps>
 
@@ -239,7 +239,7 @@ export function ApiPanel(props: AgentPanelProps) {
             ...shownIn(locale, AGENT_PARTS.flatMap((a) => (a.api ? [a.api] : [])), (api) => api.group)
               .flatMap((api) => [{ group: t(api.group) }, ...api.rows.map(([path, does, often]) => [<Mono>{path}</Mono>, t(does), t(often)])]),
             { group: t("给 AI 助手", "For AI assistants") },
-            [<Mono>/api/v1/agent</Mono>, t(`给 Agent 的使用说明，列出的地址返回整理好的中文 Markdown${GUIDE_CLIENTS ? `；${GUIDE_CLIENTS.zh} 用的就是它们` : ""}`, `Instructions for agents; the URLs it lists return clean Chinese Markdown${GUIDE_CLIENTS ? `, and they power ${GUIDE_CLIENTS.en}` : ""}`), t("需要时", "When needed")],
+            [<Mono>/api/v1/agent</Mono>, t(`给 Agent 的使用说明，列出的地址返回整理好的中文 Markdown${GUIDE_CLIENTS ? `；${GUIDE_CLIENTS.zh} 用的就是它们` : ""}`, `Instructions for agents; the URLs it lists return clean Markdown, in English with lang=en${GUIDE_CLIENTS ? `, and they power ${GUIDE_CLIENTS.en}` : ""}`), t("需要时", "When needed")],
             { group: t("完整精选同步", "Full top picks sync") },
             [<Mono>/api/v1/selected/snapshot</Mono>, t("当前全部精选，分页一次拿全", "All current top picks, paginated so you can fetch the full set"), t("只在第一次", "Only the first time")],
             [<Mono>/api/v1/selected/changes</Mono>, t("之后的新增、修改和撤选", "What's been added, changed or dropped from top picks since"), t("几分钟一次", "Every few minutes")],

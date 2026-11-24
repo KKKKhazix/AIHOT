@@ -16,13 +16,15 @@ const OPTIONS: Array<{ key: Locale; label: string; lang: string }> = [
  * page with no English edition leads to the English home. Plain links: the whole page changes language at once.
  * Choosing 中文 also says no to the English hint (EnglishHint) in this browser.
  */
-export function LanguageSwitch({ className = "", compact = false }: { className?: string; compact?: boolean }) {
+export function LanguageSwitch({ className = "", compact = false, page }: { className?: string; compact?: boolean; page?: string }) {
   const t = useT();
   const locale = useLocale();
   const { pathname, search, hash } = useLocation();
   if (!ENGLISH) return null;
   const index = OPTIONS.findIndex((o) => o.key === locale);
   const href = (to: Locale) => {
+    // A shared, queryless page supplies its canonical path for the rendered links.
+    if (page) return counterpart(page, to) ?? "/en";
     const path = counterpart(pathname, to);
     return path ? `${path}${search}${hash}` : "/en";
   };

@@ -163,7 +163,7 @@ export default function StarredPage() {
             const current = availability[s.id];
             const status = current?.status;
             const unavailable = status === "unavailable";
-            // English pages read each one's words today (a star keeps them as saved, in Chinese).
+            // A local snapshot keeps the wording of the language it was saved in.
             const title = current?.title ?? s.title;
             const summary = current?.title !== undefined ? current.summary ?? null : s.summary;
             return (

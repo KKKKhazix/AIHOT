@@ -1,4 +1,5 @@
 // Public pool (/all) with numeric pages, and search in its two orderings.
+import { ENGLISH } from "@aihot/contracts/english";
 import type { PoolResponse, TimelineFilters } from "@aihot/contracts/site";
 import { beijingDate, beijingMidnight } from "@aihot/contracts/time";
 import { one, sql, withCustomPlans, type Db } from "../db.ts";
@@ -7,6 +8,7 @@ import {
   categoryCondition, channelCondition, ITEM_COLUMNS, ITEM_FROM, seatHolders, tagCondition, toFeedItemSummary,
   type ItemRow,
 } from "./items.ts";
+import { usableCopy } from "./english.ts";
 import { browsedCondition, listedCondition } from "./scope.ts";
 import { tagTopics, TOPICS } from "./topics.ts";
 
@@ -68,10 +70,24 @@ export function searchTerms(q: string): string[] {
     .map((t) => t.replace(/[\\%_]/g, (m) => `\\${m}`));
 }
 
-/** Default search: subject, title or summary match (search_text), newest first. */
-export function directMatchCondition(terms: string[]) {
-  if (terms.length === 0) return sql``;
-  return terms.reduce((acc, t) => sql`${acc} AND p.search_text LIKE ${"%" + t + "%"}`, sql``);
+// Join only translations of current public-facing titles and summaries. A withdrawn original
+// invalidates its translation for search on the same read as it does on the article page.
+export function translatedSearch(terms: string[]) {
+  if (!ENGLISH || !terms.length) return null;
+  return sql`matching_copy AS MATERIALIZED (
+    SELECT c.zh, lower(c.en) AS en FROM english_copy c
+    WHERE lower(c.en) LIKE ANY(${terms.map(t => "%" + t + "%")}::text[]) AND ${usableCopy}
+  ), translated AS MATERIALIZED (
+    SELECT p.article_id, c.en, true AS headline FROM matching_copy c JOIN publications p ON p.title = c.zh WHERE p.eligible OR p.selected
+    UNION ALL
+    SELECT p.article_id, c.en, false FROM matching_copy c JOIN publications p ON p.summary = c.zh WHERE p.eligible OR p.selected
+  )`;
+}
+type Copies = ReturnType<typeof translatedSearch>;
+const like = (col: ReturnType<typeof sql>, t: string) => sql`${col} LIKE ${"%" + t + "%"}`;
+function textMatch(col: ReturnType<typeof sql>, id: ReturnType<typeof sql>, t: string, copies: Copies, titleOnly = false) {
+  const direct = like(col, t);
+  return copies ? sql`(${direct} OR ${id} IN (SELECT article_id FROM translated WHERE ${like(sql`en`, t)} ${titleOnly ? sql`AND headline` : sql``}))` : direct;
 }
 
 const normalizeAlias = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
@@ -100,12 +116,12 @@ function bodyMatch(t: string) {
   return /^[a-z0-9]+$/.test(t) ? sql`${like} AND ps.body ~ ${"(^|[^a-z0-9])" + t}` : like;
 }
 
-export function publicMatchCondition(terms: string[]) {
+export function publicMatchCondition(terms: string[], copies: Copies) {
   if (terms.length === 0) return sql``;
   // Keep the body lookup correlated to the time-ordered candidates. Without OFFSET 0, PostgreSQL
   // may hash every matching body in pool_search before serving even the first 40 recent items.
   return terms.reduce(
-    (acc, t) => sql`${acc} AND (p.search_text LIKE ${"%" + t + "%"} OR EXISTS (
+    (acc, t) => sql`${acc} AND (${textMatch(sql`p.search_text`, sql`p.article_id`, t, copies)} OR EXISTS (
       SELECT 1 FROM pool_search ps WHERE ps.article_id = p.article_id AND ${bodyMatch(t)} OFFSET 0))`,
     sql``,
   );
@@ -143,6 +159,8 @@ async function queryPool(query: PoolQuery, now: Date): Promise<PoolResponse> {
   const q = query.q?.trim() || null;
   const tab = q && query.tab === "relevance" ? "relevance" : "time";
   const terms = q ? searchTerms(q) : [];
+  const copies = translatedSearch(terms);
+  const withCopies = copies ? sql`WITH ${copies},` : sql`WITH`;
   const entityTag = q ? queryEntityTag(q) : null;
   const filters = sql`${channelCondition(query.channel)} ${categoryCondition(query.category)} ${tagCondition(query.tag)}`;
   const offset = (page - 1) * POOL_PAGE_SIZE;
@@ -150,8 +168,9 @@ async function queryPool(query: PoolQuery, now: Date): Promise<PoolResponse> {
 
   // Searches go through pool_search (eligible items only): trigram indexes for longer terms, a small
   // table to scan for one- and two-character ones.
-  const matchOrSubject = (text: ReturnType<typeof directMatchCondition>) => (entityTag ? sql`AND (p.tags @> ${[entityTag]}::text[] OR (TRUE ${text}))` : text);
-  const like = (col: ReturnType<typeof sql>, t: string) => sql`${col} LIKE ${"%" + t + "%"}`;
+  const directConditions = (col: ReturnType<typeof sql>, id: ReturnType<typeof sql>) =>
+    terms.reduce((acc, t) => sql`${acc} AND ${textMatch(col, id, t, copies)}`, sql``);
+  const matchOrSubject = (text: ReturnType<typeof directConditions>) => (entityTag ? sql`AND (p.tags @> ${[entityTag]}::text[] OR (TRUE ${text}))` : text);
   const run = async (db: Db) => {
     if (!q) {
       // Page ids from the timeline index first, then the joins for those rows only.
@@ -172,16 +191,18 @@ async function queryPool(query: PoolQuery, now: Date): Promise<PoolResponse> {
       // terms, additional terms and selective publication filters retain their existing plans.
       const splitFields = terms.length === 1 && /[\p{L}\p{N}]{3}/u.test(terms[0]!)
         && (!query.channel || query.channel === "all") && !query.category && !query.tag;
+      const directMatch = (t: string) => textMatch(sql`ps.direct`, sql`ps.article_id`, t, copies);
       const partScore = terms.reduce(
-        (acc, t) => sql`${acc} + (CASE WHEN ${like(sql`ps.direct`, t)} THEN 3 ELSE 0 END) + (CASE WHEN ${like(sql`ps.body`, t)} THEN 1 ELSE 0 END)`,
+        (acc, t) => sql`${acc} + (CASE WHEN ${directMatch(t)} THEN 3 ELSE 0 END) + (CASE WHEN ${like(sql`ps.body`, t)} THEN 1 ELSE 0 END)`,
         sql`0`,
       );
-      const titleScore = terms.reduce((acc, t) => sql`${acc} + (CASE WHEN ${like(sql`lower(p.title)`, t)} THEN 6 ELSE 0 END)`, sql`0`);
-      const anyMatch = terms.reduce((acc, t) => sql`${acc} AND (${like(sql`ps.direct`, t)} OR ${like(sql`ps.body`, t)})`, sql`TRUE`);
+      const titleScore = terms.reduce((acc, t) => sql`${acc} + (CASE WHEN ${textMatch(sql`lower(p.title)`, sql`p.article_id`, t, copies, true)} THEN 6 ELSE 0 END)`, sql`0`);
+      const anyMatch = terms.reduce((acc, t) => sql`${acc} AND (${directMatch(t)} OR ${like(sql`ps.body`, t)})`, sql`TRUE`);
       const matches = splitFields ? sql`
         SELECT coalesce(d.article_id, b.article_id) AS article_id,
           (CASE WHEN d.article_id IS NOT NULL THEN 3 ELSE 0 END) + (CASE WHEN b.article_id IS NOT NULL THEN 1 ELSE 0 END) AS part
-        FROM (SELECT article_id FROM pool_search WHERE direct LIKE ${"%" + terms[0]! + "%"}) d
+        FROM (SELECT article_id FROM pool_search WHERE direct LIKE ${"%" + terms[0]! + "%"}
+          ${copies ? sql`UNION SELECT article_id FROM translated` : sql``}) d
         FULL JOIN (SELECT article_id FROM pool_search WHERE body LIKE ${"%" + terms[0]! + "%"}) b ON b.article_id = d.article_id`
         : sql`SELECT ps.article_id, (${partScore}) AS part FROM pool_search ps WHERE ${anyMatch}`;
       type RankedRow = Omit<ItemRow, "id"> & { id: string | null; rel: number; total: number };
@@ -198,7 +219,7 @@ async function queryPool(query: PoolQuery, now: Date): Promise<PoolResponse> {
           FROM matches JOIN publications p ON p.article_id = matches.article_id JOIN sources s ON s.id = p.source_id
           WHERE ${listedCondition(now)} ${filters}`;
       const result = await db<RankedRow[]>`
-        WITH matches AS ${splitFields ? sql`MATERIALIZED` : sql`NOT MATERIALIZED`} (${matches}), scored AS MATERIALIZED (${scored}
+        ${withCopies} matches AS ${splitFields ? sql`MATERIALIZED` : sql`NOT MATERIALIZED`} (${matches}), scored AS MATERIALIZED (${scored}
         ), page AS MATERIALIZED (
           SELECT article_id, rel, tie FROM scored ORDER BY rel DESC, tie DESC, timeline_at DESC, article_id DESC
           LIMIT ${POOL_PAGE_SIZE} OFFSET ${offset}
@@ -212,13 +233,14 @@ async function queryPool(query: PoolQuery, now: Date): Promise<PoolResponse> {
     // Default search: newest first straight from the timeline index; the total from the pool's
     // search rows, where one- and two-character terms scan a small table instead of every item.
     const rows = await db<ItemRow[]>`
-      WITH page AS (
-        SELECT p.article_id FROM publications p WHERE ${listedCondition(now)} ${filters} ${matchOrSubject(directMatchCondition(terms))}
+      ${withCopies} page AS (
+        SELECT p.article_id FROM publications p WHERE ${listedCondition(now)} ${filters} ${matchOrSubject(directConditions(sql`p.search_text`, sql`p.article_id`))}
         ORDER BY p.timeline_at DESC, p.article_id DESC LIMIT ${POOL_PAGE_SIZE} OFFSET ${offset})
       SELECT ${ITEM_COLUMNS} ${ITEM_FROM} WHERE p.article_id IN (SELECT article_id FROM page)
       ORDER BY p.timeline_at DESC, p.article_id DESC`;
-    const direct = terms.reduce((acc, t) => sql`${acc} AND ${like(sql`ps.direct`, t)}`, sql``);
+    const direct = directConditions(sql`ps.direct`, sql`ps.article_id`);
     const { n } = one(await db<{ n: number }[]>`
+      ${copies ? sql`WITH ${copies}` : sql``}
       SELECT count(*) AS n FROM (SELECT 1 FROM pool_search ps JOIN publications p ON p.article_id = ps.article_id
         WHERE ${listedCondition(now)} ${filters} ${matchOrSubject(direct)} LIMIT ${cap}) t`);
     return { rows, total: Number(n) };

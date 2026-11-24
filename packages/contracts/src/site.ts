@@ -478,7 +478,7 @@ export interface StoryFollowupsResponse { items: StoryFollowup[]; more: boolean 
 export interface ItemAvailability {
   status: "public" | "summary-only" | "unavailable";
   sourceName?: string;
-  /** English pages, which keep no saved Chinese: its title and summary today. */
+  /** The current public title and summary in the requested language. */
   title?: string;
   summary?: string | null;
 }

@@ -11,6 +11,7 @@ import { after, before, test } from "node:test";
 import * as cheerio from "cheerio";
 import type { SiteItemDetail, StoryDetail } from "@aihot/contracts/site";
 import { beijingDate } from "@aihot/contracts/time";
+import { ENGLISH } from "@aihot/contracts/english";
 import { ITEM_COPY, withSubject } from "@aihot/site";
 import { fakeApi, FIXTURE_AT, itemDetail, startWebServer, type WebServer } from "../apps/web/tests/web-server.ts";
 
@@ -58,6 +59,14 @@ async function page(path: string) {
   assert.equal(response.status, 200, web.logs());
   return cheerio.load(await response.text());
 }
+
+test("both language links on the cached Me page have canonical addresses", { skip: !ENGLISH }, async () => {
+  for (const path of ["/more", "/en/more"]) {
+    const $ = await page(path + "?utm_source=newsletter");
+    const links = $("nav[aria-label='语言'] a, nav[aria-label='Language'] a");
+    assert.deepEqual(links.toArray().map(a => $(a).attr("href")), ["/more", "/en/more"]);
+  }
+});
 
 /** The headings of the rail that has `heading`, in order. */
 function railOf($: cheerio.CheerioAPI, heading: string): string[] {

@@ -5,7 +5,7 @@ import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
-import { loadPool, publicMatchCondition, searchTerms } from "@aihot/backend/publication/pool";
+import { loadPool, publicMatchCondition, searchTerms, translatedSearch } from "@aihot/backend/publication/pool";
 
 const T = `relevance-${tag()}`;
 const now = new Date("2026-01-01T12:00:00Z");
@@ -86,9 +86,13 @@ test("public search needs a plain Latin term to start a word in the body", async
   await add("kv-han", "", "多模态kv系统");
   await add("kv-inside", "", "an mkv file");
   await add("kv-direct", "mkv", "");
-  const found = async (q: string) => (await sql<{ article_id: string }[]>`
-    SELECT p.article_id FROM publications p WHERE p.source_id = ${T} ${publicMatchCondition(searchTerms(q))}`)
-    .map(r => r.article_id).sort();
+  const found = async (q: string) => {
+    const terms = searchTerms(q);
+    const copies = translatedSearch(terms);
+    return (await sql<{ article_id: string }[]>`${copies ? sql`WITH ${copies}` : sql``}
+      SELECT p.article_id FROM publications p WHERE p.source_id = ${T} ${publicMatchCondition(terms, copies)}`)
+      .map(r => r.article_id).sort();
+  };
   assert.deepEqual(await found("kv"), ["kv-direct", "kv-han", "kv-word"].map(id).sort());
 });
 

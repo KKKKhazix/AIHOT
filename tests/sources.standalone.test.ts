@@ -62,6 +62,12 @@ const pages: Record<string, () => string> = {
   "/date-modified": () => `<meta property="article:modified_time" content="2026-10-14T00:00:00Z"><time itemprop="dateModified" datetime="2026-10-14T00:00:00Z">Updated today</time>`,
   "/date-unlabelled": () => `<time datetime="2026-10-14T00:00:00Z">2026-10-14</time>`,
   "/date-published": () => `<time itemprop="datePublished" datetime="2020-02-15T00:00:00Z">Published February 15, 2020</time>`,
+  // A search API that answers 200 with a failure envelope: the reason is in message, and data is empty.
+  "/error-envelope.json": () => JSON.stringify({ code: "200", success: false, message: "缺少必填参数", data: {} }),
+  // The same failure under a field name no convention covers: the keys still show where the reason is.
+  "/odd-envelope.json": () => JSON.stringify({ code: 500, errmsg: "参数错误", result: {} }),
+  // An items path that points at an object, not an array.
+  "/object-items.json": () => JSON.stringify({ total: 2, rows: [{ title: "A" }], items: { a: 1, b: 2 } }),
 };
 function article(title: string, text: string) {
   return `<html><head><title>${title}</title><meta property="article:published_time" content="2026-09-23T12:00:00Z"></head><body><article><h1>${title}</h1><p>${text}</p></article></body></html>`;
@@ -287,6 +293,16 @@ test("dates in yyyymmdd and in JSON-LD are read", async () => {
   const got = await fetchDetail(`${site}/ld-post`, { id: "test-feed", config: { detail: { maxFetches: 20 } } } as never, { date: true, title: false, summary: false, body: false });
   assert.equal(got.publishedAt?.toISOString(), "2026-09-23T16:00:00.000Z");
   assert.equal(got.publicationTime, "2026-09-24");
+});
+
+test("an items path that is not an array names the layer it stopped at, that layer's keys, and the API's reason", async () => {
+  const items = (path: string, file: string) => fetchJsonList({ id: "test-json", config: { url: `${site}/${file}`, itemsPath: path, titlePaths: ["title"], urlTemplate: "{raw:url}" } } as never);
+  await assert.rejects(items("data.items", "error-envelope.json"),
+    /items path data\.items did not resolve to an array: found nothing at data \(keys: none\); upstream said: 缺少必填参数/);
+  await assert.rejects(items("data.rows", "odd-envelope.json"),
+    /found nothing at \(root\) \(keys: code, errmsg, result\)/, "a reason under an uncommon field is still visible as a key");
+  await assert.rejects(items("items", "object-items.json"),
+    /found an object with keys a, b/);
 });
 
 test("a source's language reaches its listing, detail page and article body, which stay in that language", async () => {

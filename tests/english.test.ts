@@ -179,8 +179,7 @@ const englishAnswers = () => [
 ];
 
 test("without an English edition there are no English answers and nothing to translate", { skip: ENGLISH !== null }, async () => {
-  const res = await app.inject({ method: "GET", url: "/api/site/en/timeline" });
-  assert.equal(res.statusCode, 404);
+  for (const url of ["/api/site/en/timeline", "/en/feed.xml", "/en/feed/daily.xml"]) assert.equal((await app.inject({ method: "GET", url })).statusCode, 404, url);
   assert.deepEqual(await translateEnglish(), { stored: 0, failed: 0, calls: 0 });
 });
 
@@ -389,4 +388,35 @@ test("a name with nothing to translate reads in English punctuation on English p
   const id = await report(await source(`Example Wire：AI ${T}`), { title: `丁公司发布新模型${T}`, summary: "丁公司发布了新模型。", reason: "新模型值得一看。" });
   assert.equal((await get(`/api/site/en/items/${id}`)).source.name, `Example Wire: AI ${T}`);
   assert.equal((await get(`/api/site/items/${id}`)).source.name, `Example Wire：AI ${T}`);
+});
+
+test("an English feed lists only what reads in English, links to the English pages and carries the original text, never Chinese", { skip: ENGLISH === null }, async () => {
+  // Two sources that allow republishing: one writes in English, the other in Chinese.
+  const wire = await source(`English Wire ${T}`, { fulltext: true });
+  const zhWire = await source(`中文转载媒体${T}`, { fulltext: true });
+  await sql`UPDATE sources SET syndicate_fulltext = true WHERE id IN (${wire}, ${zhWire})`;
+  const original = await report(wire, { title: `己公司发布年度报告${T}`, summary: "己公司发布了年度报告。", reason: "年度报告值得一读。", original: `Ji Corp publishes its annual report ${T}`, body: `The annual report is out, ${T}.` });
+  const zhOriginal = await report(zhWire, { title: `庚公司发布新芯片${T}`, summary: "庚公司发布了新芯片。", reason: "新芯片值得关注。", body: `庚公司的芯片正文${T}。` });
+  const left = await report(await source(`Example Feed ${T}`), { title: `戊公司的消息${T}`, summary: `戊公司的摘要总被漏掉${T}。`, reason: "戊公司的理由。" });
+  await translateEnglish(RUN);
+  const read = async (url: string) => {
+    const res = await app.inject({ method: "GET", url });
+    assert.equal(res.statusCode, 200, `${url}: ${res.body}`);
+    assert.match(String(res.headers["content-type"]), /application\/rss\+xml/);
+    return res.body;
+  };
+  const feeds = Object.fromEntries(await Promise.all(["/feed.xml", "/feed/full.xml", "/feed/all.xml", "/feed/daily.xml", "/feed/weekly.xml", "/feed/monthly.xml", "/feed/category/ai-models.xml"]
+    .map(async (path) => [path, await read(`/en${path}`)] as const)));
+  for (const [path, xml] of Object.entries(feeds)) {
+    assert.match(xml, /<language>en<\/language>/, path);
+    assert.deepEqual(xml.match(new RegExp(`${HAN.source}+`, "g")) ?? [], [], `${path} carries no Chinese`);
+  }
+  const full = feeds["/feed/full.xml"]!;
+  assert.ok(full.includes(`/en/items/${original}`) && full.includes(english(`己公司发布年度报告${T}`)), "an article in English, linking to its English page");
+  assert.ok(full.includes(`The annual report is out, ${T}.`), "the full feed carries the original text");
+  assert.ok(full.includes(`/en/items/${zhOriginal}`) && (await app.inject({ method: "GET", url: "/feed/full.xml" })).body.includes(`庚公司的芯片正文${T}。`), "a body written in Chinese is carried in the Chinese feed only");
+  assert.ok(!feeds["/feed/all.xml"]!.includes(`/items/${left}`) && (await app.inject({ method: "GET", url: "/feed/all.xml" })).body.includes(`/items/${left}`), "an article still in Chinese is left out");
+  const daily = feeds["/feed/daily.xml"]!;
+  assert.ok(daily.includes("/en/daily/2099-01-02") && daily.includes(`/en/items/${site.a}`), "an issue links to its English page and its entries' English pages");
+  assert.ok(daily.includes(english("今日头条：甲公司发布新模型")), "its headline in English");
 });

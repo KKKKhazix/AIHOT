@@ -8,7 +8,7 @@ import {
 import { isCategoryKey, isChannelKey, sectionLabelIn, topicName } from "@aihot/contracts/taxonomy";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
 import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
-import { hasEnglish, localizePath, translator, type Locale, type Text } from "./i18n.ts";
+import { feedPath, hasEnglish, localizePath, translator, type Locale, type Text } from "./i18n.ts";
 
 /**
  * The site's address: SITE_URL while rendering on the server (what crawlers and share previews read),
@@ -222,11 +222,11 @@ export function siteLd(locale: Locale) {
       creator: orgRef(),
       publisher: orgRef(),
       distribution: [
-        { "@type": "DataDownload", name: t("精选 RSS", "Top Picks RSS"), encodingFormat: "application/rss+xml", contentUrl: `${base}/feed.xml` },
-        { "@type": "DataDownload", name: t("全部动态 RSS", `All ${SITE.subject} News RSS`), encodingFormat: "application/rss+xml", contentUrl: `${base}/feed/all.xml` },
-        { "@type": "DataDownload", name: t(`${withSubject("日报")} RSS`, `${SITE.subject} Daily RSS`), encodingFormat: "application/rss+xml", contentUrl: `${base}/feed/daily.xml` },
-        { "@type": "DataDownload", name: t(`${withSubject("周报")} RSS`, `${SITE.subject} Weekly RSS`), encodingFormat: "application/rss+xml", contentUrl: `${base}/feed/weekly.xml` },
-        { "@type": "DataDownload", name: t(`${withSubject("月报")} RSS`, `${SITE.subject} Monthly RSS`), encodingFormat: "application/rss+xml", contentUrl: `${base}/feed/monthly.xml` },
+        { "@type": "DataDownload", name: t("精选 RSS", "Top Picks RSS"), encodingFormat: "application/rss+xml", contentUrl: `${base}${feedPath("/feed.xml", locale)}` },
+        { "@type": "DataDownload", name: t("全部动态 RSS", `All ${SITE.subject} News RSS`), encodingFormat: "application/rss+xml", contentUrl: `${base}${feedPath("/feed/all.xml", locale)}` },
+        { "@type": "DataDownload", name: t(`${withSubject("日报")} RSS`, `${SITE.subject} Daily RSS`), encodingFormat: "application/rss+xml", contentUrl: `${base}${feedPath("/feed/daily.xml", locale)}` },
+        { "@type": "DataDownload", name: t(`${withSubject("周报")} RSS`, `${SITE.subject} Weekly RSS`), encodingFormat: "application/rss+xml", contentUrl: `${base}${feedPath("/feed/weekly.xml", locale)}` },
+        { "@type": "DataDownload", name: t(`${withSubject("月报")} RSS`, `${SITE.subject} Monthly RSS`), encodingFormat: "application/rss+xml", contentUrl: `${base}${feedPath("/feed/monthly.xml", locale)}` },
         { "@type": "DataDownload", name: t("公开 API v1", "Public API v1"), encodingFormat: "application/json", contentUrl: `${base}/api/v1/items` },
         { "@type": "DataDownload", name: "OpenAPI", encodingFormat: "application/json", contentUrl: `${base}/openapi-v1.json` },
       ],

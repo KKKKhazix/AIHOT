@@ -22,7 +22,7 @@ import { SITE, withSubject } from "@aihot/site";
 import { sql } from "../db.ts";
 import { sha256 } from "../lib/ids.ts";
 import { mentionsIn } from "./mentions.ts";
-import { COMPOSED_OVERVIEW, type ComposedOverview } from "./reports.ts";
+import { COMPOSED_OVERVIEW, type ComposedOverview, type FeedIssue, type ReportKind } from "./reports.ts";
 import { cardText } from "./stories.ts";
 import { monogramOf } from "./topics.ts";
 
@@ -284,10 +284,40 @@ function front(r: ReportDetail, c: Copy): Pick<ReportDetail, "lead" | "overview"
   }
   const [title, ...titles] = c.all([["headline", r.lead?.title, r.leadItemId], ...composed.named.map((n) => ["headline", n.title, n.itemId] as const)]);
   if (titles.some(needsEnglish)) return { lead: r.lead, overview: r.overview };
-  const units = ENGLISH?.reports.entry ?? { one: "story", many: "stories" };
-  const overview = `${r.kind === "weekly" ? "This week" : "This month"}: ${composed.count} ${composed.count === 1 ? units.one : units.many}. The most watched: ${titles.join("; ")}.`;
+  const overview = composedOverview(r.kind, composed.count, titles as string[]);
   return { lead: r.lead && { title: title!, leadParagraph: overview }, overview };
 }
+
+/** A composed overview in English, from the titles it names (already in English). */
+function composedOverview(kind: ReportKind, count: number, titles: string[]): string {
+  const units = ENGLISH?.reports.entry ?? { one: "story", many: "stories" };
+  return `${kind === "weekly" ? "This week" : "This month"}: ${count} ${count === 1 ? units.one : units.many}. The most watched: ${titles.join("; ")}.`;
+}
+
+/**
+ * A report feed's issues (feeds.ts), said as the issue pages say them: each headline goes with its lead paragraph (a
+ * composed overview in English from the titles it names), then the sections' labels and the entries' titles.
+ */
+export const feedIssues = (kind: ReportKind): Overlay<FeedIssue[]> => (issues, c) => issues.map((r) => {
+  const composed = (r as FeedIssue & { [COMPOSED_OVERVIEW]?: ComposedOverview })[COMPOSED_OVERVIEW];
+  let headline = r.headline;
+  let leadParagraph = r.leadParagraph;
+  if (composed) {
+    const [title, ...titles] = c.all([["headline", r.headline, r.leadItemId], ...composed.named.map((n) => ["headline", n.title, n.itemId] as const)]);
+    if (!titles.some(needsEnglish)) [headline, leadParagraph] = [title ?? null, composedOverview(kind, composed.count, titles as string[])];
+  } else {
+    [headline, leadParagraph] = c.all([["headline", r.headline], ["text", r.leadParagraph]], r.leadItemId);
+  }
+  return {
+    ...r,
+    headline: headline ?? null,
+    leadParagraph: leadParagraph ?? null,
+    sections: r.sections.map((s) => ({
+      label: kind === "daily" ? sectionLabelIn(s.label, "en") : c.one("headline", s.label),
+      items: s.items.map((i) => ({ ...i, title: c.one("headline", i.title, i.id) })),
+    })),
+  };
+});
 
 export const report: Overlay<ReportDetail> = async (r, c) => {
   const { lead, overview } = front(r, c);

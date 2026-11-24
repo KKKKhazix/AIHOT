@@ -1,13 +1,15 @@
-// RSS routes. Unknown query parameters are accepted and never change content.
+// RSS routes. Unknown query parameters are accepted and never change content. On a site with an English edition every
+// feed is also at /en/feed…, in English (publication/feeds.ts).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { feedCacheControl, isFeedCategory, itemFeed, reportFeed, type ItemFeedKind } from "@aihot/backend/publication/feeds";
+import { ENGLISH } from "@aihot/contracts/english";
+import { feedCacheControl, isFeedCategory, itemFeed, reportFeed, type FeedLanguage, type ItemFeedKind } from "@aihot/backend/publication/feeds";
 import { serverModules } from "@aihot/backend/modules";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
 
-async function sendFeed(req: FastifyRequest, reply: FastifyReply, xml: string, cacheControl: string) {
+async function sendFeed(req: FastifyRequest, reply: FastifyReply, xml: string, cacheControl: string, lang: FeedLanguage) {
   applyPublicHeaders(reply, { cors: false });
   for (const m of serverModules()) m.on?.exitServed?.("rss", req);
-  return sendTextWithEtag(req, reply, xml, { etagPrefix: "rss", cacheControl, contentType: "application/rss+xml; charset=utf-8" });
+  return sendTextWithEtag(req, reply, xml, { etagPrefix: lang === "en" ? "rss-en" : "rss", cacheControl, contentType: "application/rss+xml; charset=utf-8" });
 }
 
 function feedError(reply: FastifyReply) {
@@ -15,25 +17,30 @@ function feedError(reply: FastifyReply) {
 }
 
 export function registerFeeds(app: FastifyInstance) {
+  for (const lang of ENGLISH ? (["zh", "en"] as const) : (["zh"] as const)) registerIn(app, lang);
+}
+
+function registerIn(app: FastifyInstance, lang: FeedLanguage) {
+  const at = (path: string) => (lang === "en" ? `/en${path}` : path);
   // A preflight gets 204 and the allowed methods; feeds send no CORS headers.
   for (const url of ["/feed.xml", "/feed/full.xml", "/feed/all.xml", "/feed/daily.xml", "/feed/weekly.xml", "/feed/monthly.xml", "/feed/category/:file", "/feed/full/category/:file"]) {
-    app.options(url, async (_req, reply) => reply.code(204).header("Allow", "GET, HEAD, OPTIONS").send());
+    app.options(at(url), async (_req, reply) => reply.code(204).header("Allow", "GET, HEAD, OPTIONS").send());
   }
   const item = (kind: ItemFeedKind) => async (req: FastifyRequest, reply: FastifyReply) => {
     try {
-      return await sendFeed(req, reply, await itemFeed(kind, null), feedCacheControl(kind));
+      return await sendFeed(req, reply, await itemFeed(kind, null, { lang }), feedCacheControl(kind), lang);
     } catch (error) {
       req.log.error({ err: error }, "feed error");
       return feedError(reply);
     }
   };
-  app.get("/feed.xml", item("selected"));
-  app.get("/feed/full.xml", item("selected-full"));
-  app.get("/feed/all.xml", item("all"));
+  app.get(at("/feed.xml"), item("selected"));
+  app.get(at("/feed/full.xml"), item("selected-full"));
+  app.get(at("/feed/all.xml"), item("all"));
   for (const kind of ["daily", "weekly", "monthly"] as const) {
-    app.get(`/feed/${kind}.xml`, async (req, reply) => {
+    app.get(at(`/feed/${kind}.xml`), async (req, reply) => {
       try {
-        return await sendFeed(req, reply, await reportFeed(kind), feedCacheControl(kind));
+        return await sendFeed(req, reply, await reportFeed(kind, lang), feedCacheControl(kind), lang);
       } catch (error) {
         req.log.error({ err: error }, "feed error");
         return feedError(reply);
@@ -41,13 +48,13 @@ export function registerFeeds(app: FastifyInstance) {
     });
   }
   for (const full of [false, true]) {
-    app.get(full ? "/feed/full/category/:file" : "/feed/category/:file", async (req, reply) => {
+    app.get(at(full ? "/feed/full/category/:file" : "/feed/category/:file"), async (req, reply) => {
       const file = (req.params as { file: string }).file;
       const slug = file.replace(/\.xml$/, "");
       if (!file.endsWith(".xml") || !isFeedCategory(slug)) return reply.code(404).type("text/plain; charset=utf-8").send("Not found");
       const kind = full ? "selected-full" : "selected";
       try {
-        return await sendFeed(req, reply, await itemFeed(kind, slug), feedCacheControl(kind));
+        return await sendFeed(req, reply, await itemFeed(kind, slug, { lang }), feedCacheControl(kind), lang);
       } catch (error) {
         req.log.error({ err: error }, "feed error");
         return feedError(reply);

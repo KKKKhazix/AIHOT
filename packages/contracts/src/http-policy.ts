@@ -3,6 +3,7 @@
 // read this module.
 import { ABOUT, POLICY, SITE } from "@aihot/site";
 import { MODULES } from "@aihot/site/modules";
+import { ENGLISH } from "./english.ts";
 
 /** CORS for /api/v1/* and /openapi-v1.json. */
 export const PUBLIC_API_CORS: Record<string, string> = {
@@ -193,6 +194,8 @@ const literal = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const ENGINE_API_PATHS: RegExp[] = [
   /^\/api\//,
   /^\/feed(\.xml|\/.*)?$/,
+  // The English edition's feeds (publication/feeds.ts), on a site that has one.
+  ...(ENGLISH ? [/^\/en\/feed(\.xml|\/.*)?$/] : []),
   /^\/(rss|rss\.xml|atom\.xml)$/,
   /^\/openapi-v1\.json$/,
   /^\/(llms\.txt|robots\.txt|sitemap\.xml|manifest\.webmanifest)$/,

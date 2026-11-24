@@ -612,9 +612,11 @@ export interface FeedIssue {
   key: string;
   generatedAt: Date;
   headline: string | null;
-  /** A daily's lead paragraph; a weekly's or monthly's overview. */
+  /** A daily's lead paragraph; a weekly's or monthly's overview (one composed by rule keeps COMPOSED_OVERVIEW). */
   leadParagraph: string | null;
-  sections: Array<{ label: string; items: Array<{ title: string; link: string }> }>;
+  /** The article the headline and lead are about. */
+  leadItemId: string | null;
+  sections: Array<{ label: string; items: Array<{ id: string; title: string }> }>;
 }
 
 /**
@@ -648,16 +650,19 @@ export async function feedIssues(kind: ReportKind, limit: number): Promise<FeedI
     const groups: Array<{ label: unknown; items?: Array<Record<string, any>> }> = kind === "daily"
       ? (r.content.sections ?? []).map((s: any) => ({ label: s.label, items: s.items }))
       : (r.content.themes ?? []).map((t: any) => ({ label: t.heading, items: t.storyRefs }));
-    return {
+    const period = kind === "daily" ? null : periodOverview(r.content, kind, gone);
+    const issue: FeedIssue = {
       key: r.key,
       generatedAt: r.generated_at,
       headline: lead?.title ?? null,
-      leadParagraph: kind === "daily" ? lead?.leadParagraph ?? null : periodOverview(r.content, kind, gone).text,
+      leadParagraph: period ? period.text : lead?.leadParagraph ?? null,
+      leadItemId: typeof r.content.leadItemId === "string" && !gone.has(r.content.leadItemId) ? r.content.leadItemId : null,
       sections: groups.map((g) => ({
         label: String(g.label),
-        items: (g.items ?? []).filter((i) => i.itemId && !gone.has(i.itemId)).map((i) => ({ title: String(i.title), link: itemUrl(i.itemId) })),
+        items: (g.items ?? []).filter((i) => i.itemId && !gone.has(i.itemId)).map((i) => ({ id: String(i.itemId), title: String(i.title) })),
       })).filter((s) => s.items.length > 0),
     };
+    return period?.composed ? Object.assign(issue, { [COMPOSED_OVERVIEW]: period.composed }) : issue;
   });
 }
 

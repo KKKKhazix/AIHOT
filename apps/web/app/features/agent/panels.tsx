@@ -13,7 +13,7 @@ import type { AgentPanelProps } from "../../modules";
 import { AGENT_PARTS, GUIDE_CLIENTS, TAG } from "./module-parts";
 import { Address, Ask, Block, Bullets, Details, Mono, PanelHead, Step, Steps, Table, Tips } from "./parts";
 import { Link } from "../../lib/link";
-import { L, shownIn, useLocale, useT } from "../../lib/i18n";
+import { feedPath, L, shownIn, useLocale, useT } from "../../lib/i18n";
 
 const V = PUBLIC_INTERFACE_VERSION;
 
@@ -116,9 +116,9 @@ export function McpPanel(props: AgentPanelProps) {
 const ENTRIES_EN = ENGLISH?.reports.entry.many ?? REPORTS.entry.noun;
 
 const FEEDS = [
-  { name: L("精选摘要", "Top Picks · Summaries"), badge: L("推荐", "Recommended"), path: "/feed.xml", desc: L("最新 50 条精选，带标题、摘要、站内阅读和原文链接。", "The latest 50 top picks, each with its headline, summary, and links to the reading page and the original.") },
-  { name: L("精选全文", "Top Picks · Full Text"), path: "/feed/full.xml", desc: L("同样的 50 条；允许转载的来源直接附全文，其余仍是摘要。", "The same 50 items, with the full text where the source allows republishing and the summary otherwise.") },
-  { name: L("全部动态", `All ${SITE.subject} News`), path: "/feed/all.xml", desc: L("最近 7 天的公开动态，按原文发布时间倒序。", "Everything public from the last 7 days, newest first by original publish time.") },
+  { name: L("精选摘要", "Top Picks · Summaries"), badge: L("推荐", "Recommended"), path: "/feed.xml", desc: L("最新 50 条精选，带标题、摘要、站内阅读和原文链接。", "The latest top picks (up to 50), each with its headline, summary, and links to the reading page and the original. A pick appears once it is in English.") },
+  { name: L("精选全文", "Top Picks · Full Text"), path: "/feed/full.xml", desc: L("同样的 50 条；允许转载的来源直接附全文，其余仍是摘要。", "The same picks, with the original full text where the source allows republishing and the summary otherwise.") },
+  { name: L("全部动态", `All ${SITE.subject} News`), path: "/feed/all.xml", desc: L("最近 7 天的公开动态，按原文发布时间倒序。", "Everything public from the last 7 days, newest first by original publish time, once it is in English.") },
   { name: L(withSubject("日报"), `${SITE.subject} Daily`), path: "/feed/daily.xml", desc: L(`${EDITION_WHEN.daily}（北京时间）一期：头条导语加整期目录，保留最近 30 期。`, `New issue ${WHEN_EN.daily}: the lead story's intro plus the full table of contents. Keeps the last 30 issues.`) },
   { name: L(withSubject("周报"), `${SITE.subject} Weekly`), path: "/feed/weekly.xml", desc: L(`${EDITION_WHEN.weekly}（北京时间）一期：总述加按栏目分好的${REPORTS.entry.noun}，保留最近 12 期。`, `New issue ${WHEN_EN.weekly}: an overview plus the ${ENTRIES_EN} grouped by section. Keeps the last 12 issues.`) },
   { name: L(withSubject("月报"), `${SITE.subject} Monthly`), path: "/feed/monthly.xml", desc: L(`${EDITION_WHEN.monthly}（北京时间）一期：总述加按栏目分好的${REPORTS.entry.noun}，保留最近 12 期。`, `New issue ${WHEN_EN.monthly}: an overview plus the ${ENTRIES_EN} grouped by section. Keeps the last 12 issues.`) },
@@ -138,7 +138,7 @@ export function RssPanel(props: AgentPanelProps) {
         {lead}
       </PanelHead>
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {FEEDS.map((f) => (
+        {FEEDS.map((f) => ({ ...f, path: feedPath(f.path, locale) })).map((f) => (
           <div key={f.path} className="card flex flex-col p-4">
             <div className="flex items-center gap-2">
               <span className="text-ui-body font-semibold text-ink">{t(f.name)}</span>
@@ -160,8 +160,9 @@ export function RssPanel(props: AgentPanelProps) {
           minWidth={420}
           rows={FEED_CATEGORIES.map(([slug, label]) => [
             <span className="font-medium text-ink">{t(label)}</span>,
-            <span className="inline-flex items-center gap-2"><Mono>{`/feed/category/${slug}.xml`}</Mono><CopyButton text={addressOf(props, `/feed/category/${slug}.xml`)} className="!h-6 !px-1.5" /></span>,
-            <span className="inline-flex items-center gap-2"><Mono>{`/feed/full/category/${slug}.xml`}</Mono><CopyButton text={addressOf(props, `/feed/full/category/${slug}.xml`)} className="!h-6 !px-1.5" /></span>,
+            ...[`/feed/category/${slug}.xml`, `/feed/full/category/${slug}.xml`].map((path) => feedPath(path, locale)).map((path) => (
+              <span className="inline-flex items-center gap-2"><Mono>{path}</Mono><CopyButton text={addressOf(props, path)} className="!h-6 !px-1.5" /></span>
+            )),
           ])}
         />
       </Block>

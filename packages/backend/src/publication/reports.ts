@@ -455,7 +455,7 @@ export async function firstDaily(itemId: string): Promise<{ key: string; lead: b
   // Every daily citing it anywhere, oldest first. strict: in lax mode `.**` reaches every array member a second time.
   const issues = await sql<{ key: string; content: Record<string, any> }[]>`
     SELECT key, content FROM reports
-    WHERE kind = 'daily' AND jsonb_path_exists(content, 'strict $.**.itemId ? (@ == $id)', jsonb_build_object('id', ${itemId}::text))
+    WHERE kind = 'daily' AND jsonb_path_query_array(content, 'strict $.**.itemId') ? ${itemId}
     ORDER BY key`;
   for (const { key, content } of issues) {
     const shown = issueAsShown("daily", content, await issueAvailability(content));

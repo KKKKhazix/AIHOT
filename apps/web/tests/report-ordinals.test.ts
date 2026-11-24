@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type { ReportDetail, ReportKind, ReportNavigationEntry } from "@aihot/contracts/site";
 import { isoWeekLabel } from "@aihot/contracts/time";
-import { chipLabel, issueNumber, neighbourLabel, periodGrid } from "../app/features/report/format.ts";
+import { archiveGroups, neighbourLabel, periodGrid, recentIssues } from "../app/features/report/format.ts";
 import { fakeApi, startWebServer, type WebServer } from "./web-server.ts";
 
 const kinds: ReportKind[] = ["daily", "weekly", "monthly"];
@@ -72,7 +72,6 @@ for (const kind of kinds) {
     assert.match(current.label, /第 1 期/);
     const unlisted = cells.find((cell) => cell.key === keys[kind][1])!;
     assert.doesNotMatch(unlisted.label, /第 \d+ 期/, "an issue the navigation does not list gets no number");
-    assert.equal(issueNumber(index(kind), keys[kind].at(-1)!), 405);
     const stale = periodGrid(kind, first, [{ key: first, issueNumber: 9 }], 10);
     assert.match(stale.cells.find((cell) => cell.key === first)!.label, /第 10 期/, "the report's own number wins over an older navigation");
   });
@@ -87,10 +86,9 @@ test("the daily archive counts every issue, as the masthead numbers them", async
 // On 2 January 2027 the chip for the 31 December issue read "12月31日" and the 1 January issue's "前一日"
 // link "前一日 · 12月31日": both read as 2027's (KKKKhazix/AIHOT#274).
 test("a day of another Beijing year carries its year in the phone chip and the prev/next links", () => {
-  const days = [{ key: "2026-12-31", issueNumber: 400, title: "第400期" }, { key: "2027-01-01", issueNumber: 401, title: "第401期" }];
-  assert.equal(chipLabel("daily", "2027-01-02", days, "2027-01-02"), "今天");
-  assert.equal(chipLabel("daily", "2027-01-01", days, "2027-01-02"), "1月1日");
-  assert.equal(chipLabel("daily", "2026-12-31", days, "2027-01-02"), "2026年12月31日");
+  const days = ["2027-01-02", "2027-01-01", "2026-12-31"].map((key, i) => ({ key, issueNumber: 402 - i }));
+  const chips = recentIssues("daily", archiveGroups("daily", days, "zh"), "2027-01-02", "zh");
+  assert.deepEqual(chips.map((c) => c.label), ["今天", "1月1日", "2026年12月31日"]);
   const endOfYear = Date.parse("2026-12-31T23:30:00+08:00");
   assert.equal(neighbourLabel("daily", "2026-12-30", "prev", endOfYear), "前一日 · 12月30日");
   assert.equal(neighbourLabel("daily", "2027-01-01", "prev", endOfYear), "前一日 · 2027年1月1日");

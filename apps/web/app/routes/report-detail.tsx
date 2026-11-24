@@ -8,7 +8,7 @@ import { breadcrumbLd, pageMeta, reportDescription, reportLd, reportTitle, title
 import { beijingDate } from "@aihot/contracts/time";
 import { ReportLayout } from "../features/report/ReportLayout";
 import { ReportPaper, reportOutline } from "../features/report/ReportPaper";
-import { KIND_PATH, feedLink, kindFromPath } from "../features/report/format";
+import { KIND_PATH, archiveGroups, feedLink, kindFromPath } from "../features/report/format";
 import type { Screen } from "../components/shell/screens";
 import { apiIn, L, localeOf, translator, useLocale } from "../lib/i18n";
 
@@ -63,7 +63,7 @@ export default function ReportDetailPage() {
   const { report, index, today } = useLoaderData<typeof loader>();
   const locale = useLocale();
   return (
-    <ReportLayout kind={report.kind} index={index} current={report.key} today={today} outline={reportOutline(report, locale)}>
+    <ReportLayout kind={report.kind} groups={archiveGroups(report.kind, index, locale)} current={report.key} today={today} outline={reportOutline(report, locale)}>
       <ReportPaper report={report} index={index} />
     </ReportLayout>
   );

@@ -22,8 +22,11 @@ import { SITE, withSubject } from "@aihot/site";
 import { sql } from "../db.ts";
 import { sha256 } from "../lib/ids.ts";
 import { mentionsIn } from "./mentions.ts";
-import { COMPOSED_OVERVIEW, type ComposedOverview, type FeedIssue, type ReportKind } from "./reports.ts";
-import { cardText } from "./stories.ts";
+import type { V1ItemPayload } from "./items.ts";
+import { siteUrl } from "./links.ts";
+import { COMPOSED_OVERVIEW, type ComposedOverview, type DailyNote, type FeedIssue, type ReportKind, type v1Dailies, type v1Daily, type v1Period, type v1Periods } from "./reports.ts";
+import { publicSourceName } from "./rules.ts";
+import { cardText, type v1HotTopics, type v1Story } from "./stories.ts";
 import { monogramOf } from "./topics.ts";
 
 /** How a text is translated: a headline, running text, or a name (its established English name, else as written). */
@@ -385,3 +388,118 @@ export const availability: Overlay<Record<string, ItemAvailability>> = (r, c) =>
     ...(a.sourceName !== undefined ? { sourceName: c.one("name", a.sourceName) } : {}),
   }];
 }));
+
+// v1 answers in English: lang=en on /api/v1 and /api/v1/agent, and the MCP tools' lang "en". Each text as the pages
+// say it, field by field (v1 shows a few texts in places the pages do not, and a missing one must not hold back the
+// rest). Programs read the JSON ("json"): a source keeps the name it is stored under, which they filter and fingerprint
+// by. Agents read text ("text"): a source reads by its public name in English, as on the pages.
+
+/** Who reads a v1 answer: a program (JSON) or an agent (the Markdown and the MCP tools' text). */
+export type V1Reader = "json" | "text";
+
+const v1Source = <S extends { name: string }>(s: S, c: Copy, by: V1Reader): S => (by === "text" ? { ...s, name: c.one("name", publicSourceName(s.name)) } : s);
+const v1Name = (name: string, c: Copy, by: V1Reader) => (by === "text" ? c.one("name", publicSourceName(name)) : name);
+const v1Entry = <E extends { title: string; summary?: string | null; source: { name: string } }>(e: E, c: Copy, by: V1Reader): E => ({
+  ...e, title: c.one("headline", e.title), ...(e.summary !== undefined ? { summary: c.one("text", e.summary) } : {}), source: v1Source(e.source, c, by),
+});
+
+/** v1 items and search results. */
+export const v1Items = (by: V1Reader) => <R extends { items: V1ItemPayload[] }>(r: R, c: Copy): R => ({
+  ...r, items: r.items.map((i) => ({ ...v1Entry(i, c, by), reason: c.one("text", i.reason) })),
+});
+
+type V1Hot = Awaited<ReturnType<typeof v1HotTopics>>;
+export const v1Hot = (by: V1Reader): Overlay<V1Hot> => (r, c) => ({
+  ...r, items: r.items.map((t) => ({ ...t, title: c.one("headline", t.title), source: v1Source(t.source, c, by), sourceNames: t.sourceNames.map((n) => v1Name(n, c, by)) })),
+});
+
+type V1Story = NonNullable<Awaited<ReturnType<typeof v1Story>>>;
+export const v1StoryAnswer = (by: V1Reader): Overlay<V1Story> => (r, c) => {
+  const s = r.story;
+  const neighbour = <N extends { title: string }>(n: N): N => ({ ...n, title: c.one("headline", n.title) });
+  return {
+    ...r,
+    story: {
+      ...s, title: c.one("headline", s.title), latest: c.one("headline", s.latest), digest: c.one("text", s.digest),
+      reports: s.reports.map((x) => v1Entry(x, c, by)), storyline: s.storyline.map(neighbour), related: s.related.map(neighbour),
+    },
+  };
+};
+
+type V1Daily = NonNullable<Awaited<ReturnType<typeof v1Daily>>>;
+export const v1DailyAnswer = (by: V1Reader): Overlay<V1Daily> => (r, c) => {
+  const d = r.report;
+  return {
+    ...r,
+    report: {
+      ...d,
+      lead: d.lead && { title: c.one("headline", d.lead.title), leadParagraph: c.one("text", d.lead.leadParagraph) },
+      sections: d.sections.map((s: (typeof d.sections)[number]) => ({ ...s, label: sectionLabelIn(s.label, "en"), items: s.items.map((i: (typeof s.items)[number]) => v1Entry(i, c, by)) })),
+      flashes: d.flashes.map((i: (typeof d.flashes)[number]) => v1Entry(i, c, by)),
+      highlights: d.highlights.map((i: (typeof d.highlights)[number]) => v1Entry(i, c, by)),
+    },
+  };
+};
+
+/** What the Agent answer adds to a daily's entries: the event's other developments, by their titles. */
+export const v1DailyNotes: Overlay<Map<string, DailyNote>> = (notes, c) =>
+  new Map([...notes].map(([key, n]) => [key, { ...n, related: n.related.map((x) => ({ ...x, title: c.one("headline", x.title) })) }]));
+
+type V1Period = NonNullable<Awaited<ReturnType<typeof v1Period>>>;
+/** A weekly or monthly; an overview composed by rule is said in English from the titles it names, as on its page. */
+export const v1PeriodAnswer = (kind: "weekly" | "monthly", by: V1Reader): Overlay<V1Period> => (r, c) => {
+  const p = r.report;
+  const composed = (p as typeof p & { [COMPOSED_OVERVIEW]?: ComposedOverview })[COMPOSED_OVERVIEW];
+  let overview = c.one("text", p.overview);
+  if (composed) {
+    const titles = composed.named.map((n) => c.one("headline", n.title));
+    if (!titles.some(needsEnglish)) overview = composedOverview(kind, composed.count, titles);
+  }
+  return {
+    ...r,
+    report: {
+      ...p, headline: c.one("headline", p.headline), overview,
+      sections: p.sections.map((s: (typeof p.sections)[number]) => ({ ...s, label: c.one("headline", s.label), summary: c.one("text", s.summary), items: s.items.map((i: (typeof s.items)[number]) => v1Entry(i, c, by)) })),
+    },
+  };
+};
+
+export const v1DailyIndex: Overlay<Awaited<ReturnType<typeof v1Dailies>>> = (r, c) => ({
+  ...r, items: r.items.map((e) => ({ ...e, leadTitle: c.one("headline", e.leadTitle), leadParagraph: c.one("text", e.leadParagraph) })),
+});
+
+export const v1PeriodIndex: Overlay<Awaited<ReturnType<typeof v1Periods>>> = (r, c) => ({
+  ...r, items: r.items.map((e) => ({ ...e, headline: c.one("headline", e.headline) })),
+});
+
+/** The site's pages a v1 answer links to that have an English edition, and its own v1 addresses. */
+const PAGE_LINK = new RegExp(`^(${siteUrl("").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})/(items|story|daily|weekly|monthly)(?=[/?#]|$)`);
+const LINK_KEYS = new Set(["aihot", "story", "api", "url", "link"]);
+
+/**
+ * An English answer's links: the pages it links to at their English addresses, and its v1 addresses asked in English
+ * too, so every next step an answer offers stays in English.
+ */
+export function englishLinks<T>(value: T): T {
+  const api = siteUrl("/api/v1/");
+  const walk = (v: unknown, key: string): unknown => {
+    if (typeof v === "string") {
+      if (!LINK_KEYS.has(key)) return v;
+      if (PAGE_LINK.test(v)) return v.replace(PAGE_LINK, "$1/en/$2");
+      return v.startsWith(api) ? `${v}${v.includes("?") ? "&" : "?"}lang=en` : v;
+    }
+    if (Array.isArray(v)) return v.map((x) => walk(x, key));
+    if (v instanceof Map) return new Map([...v].map(([k, x]) => [k, walk(x, key)]));
+    if (v && typeof v === "object") return Object.assign(Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)])), symbolsOf(v));
+    return v;
+  };
+  return walk(value, "") as T;
+}
+
+/** An object's symbol-keyed marks (COMPOSED_OVERVIEW), kept across englishLinks. */
+const symbolsOf = (v: object) => Object.fromEntries(Object.getOwnPropertySymbols(v).map((k) => [k, (v as Record<symbol, unknown>)[k]]));
+
+/** A v1 answer in English: its texts, then its links. */
+export async function v1InEnglish<T>(value: T, overlay: Overlay<T>): Promise<T> {
+  return englishLinks(await inEnglish(value, overlay));
+}

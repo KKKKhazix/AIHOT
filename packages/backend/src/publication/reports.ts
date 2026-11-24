@@ -712,37 +712,37 @@ export async function v1Period(kind: PeriodKind, key: string | "latest") {
   const ok = (i: Record<string, any>) => !i.itemId || (avail.get(i.itemId)?.available ?? true);
   const gone = goneIn(avail);
   const url = periodUrl(kind, r.key);
-  return {
-    schemaVersion: 1 as const,
-    report: {
-      ...periodOf(kind, r.key),
-      generatedAt: r.generated_at.toISOString(),
-      windowStart: r.window_start.toISOString(),
-      windowEnd: r.window_end.toISOString(),
-      links: { aihot: url },
-      attribution: attribution(url),
-      headline: issueLead(c, "periodic", gone)?.title ?? null,
-      overview: periodOverview(c, kind, gone).text,
-      sections: (c.themes ?? []).map((t: any) => ({
-        label: String(t.heading),
-        summary: sectionSummary(t, avail),
-        items: (t.storyRefs ?? []).filter(ok).map((i: any) => {
-          const a = i.itemId ? avail.get(i.itemId) : undefined;
-          const metadata = citationMetadata(i, a);
-          const sourceId = a?.sourceId ?? (typeof i.sourceId === "string" ? i.sourceId : null);
-          return {
-            id: i.itemId ? String(i.itemId) : null,
-            title: String(i.title),
-            summary: String(metadata.summary ?? ""),
-            source: { ...(sourceId ? { id: sourceId } : {}), name: metadata.sourceName },
-            links: { aihot: i.itemId ? itemUrl(i.itemId) : null, original: metadata.sourceUrl },
-            publishedAt: metadata.publishedAt,
-            attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),
-          };
-        }),
-      })).filter((s: { items: unknown[] }) => s.items.length > 0),
-    },
+  const period = periodOverview(c, kind, gone);
+  const report = {
+    ...periodOf(kind, r.key),
+    generatedAt: r.generated_at.toISOString(),
+    windowStart: r.window_start.toISOString(),
+    windowEnd: r.window_end.toISOString(),
+    links: { aihot: url },
+    attribution: attribution(url),
+    headline: issueLead(c, "periodic", gone)?.title ?? null,
+    overview: period.text,
+    sections: (c.themes ?? []).map((t: any) => ({
+      label: String(t.heading),
+      summary: sectionSummary(t, avail),
+      items: (t.storyRefs ?? []).filter(ok).map((i: any) => {
+        const a = i.itemId ? avail.get(i.itemId) : undefined;
+        const metadata = citationMetadata(i, a);
+        const sourceId = a?.sourceId ?? (typeof i.sourceId === "string" ? i.sourceId : null);
+        return {
+          id: i.itemId ? String(i.itemId) : null,
+          title: String(i.title),
+          summary: String(metadata.summary ?? ""),
+          source: { ...(sourceId ? { id: sourceId } : {}), name: metadata.sourceName },
+          links: { aihot: i.itemId ? itemUrl(i.itemId) : null, original: metadata.sourceUrl },
+          publishedAt: metadata.publishedAt,
+          attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),
+        };
+      }),
+    })).filter((s: { items: unknown[] }) => s.items.length > 0),
   };
+  // An overview composed by rule is said in English from the titles it names (publication/english.ts).
+  return { schemaVersion: 1 as const, report: period.composed ? Object.assign(report, { [COMPOSED_OVERVIEW]: period.composed }) : report };
 }
 
 export function reportNavigation(kind: ReportKind, index: ReportIndexEntry[], key: string): ReportNavigationEntry[] {

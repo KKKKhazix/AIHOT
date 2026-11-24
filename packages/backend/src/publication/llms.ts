@@ -1,5 +1,6 @@
 // /llms.txt — generated from the site's own configuration; only real, available resources are listed.
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
+import { ENGLISH } from "@aihot/contracts/english";
 import { MCP_TOOL_NAMES as T, MCP_TOOLS, mcpToolName } from "@aihot/contracts/mcp";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { ACCESS, EDITION_WHEN, POLICY, REPORTS, SITE, subjectAfter, withSubject } from "@aihot/site";
@@ -70,6 +71,8 @@ export function llmsTxt(opts: {
   );
   lines.push(...opts.modules.ways);
   lines.push(`- [MCP Server](${u("/api/mcp")}): 远程 Streamable HTTP，版本 ${v}；提供 ${opts.tools.join("、")} ${opts.tools.length} 个只读工具，和给 Agent 的使用说明里的能力一一对应、回答同源`);
+  // The English edition's ways in: its pages, its feeds, and lang on the API, the Agent addresses and MCP.
+  if (ENGLISH) lines.push(`- 英文版：网页在 [/en](${u("/en")})；RSS 地址前加 /en（如 ${u("/en/feed.xml")}）；读新闻的 JSON 接口和给 Agent 的新闻地址加 lang=en，MCP 新闻工具传 lang: "en"（精选同步和其他能力只有中文，不收这个参数）。标题、摘要等有英文的用英文，还没翻好的少数仍是中文。`);
   lines.push(rss("精选摘要 RSS（推荐）", "selected"), rss("精选全文 RSS（按需）", "selected-full"), rss("全部动态 RSS", "all"));
   if (opts.hasDailies) lines.push(rss("日报 RSS", "daily"));
   if (opts.hasWeekly) lines.push(`- [周报 RSS](${u("/feed/weekly.xml")}): ${EDITION_WHEN.weekly}（北京时间）发布的周报，每期附总述和按栏目分好的${REPORTS.entry.noun}目录，保留最近 12 期。`);

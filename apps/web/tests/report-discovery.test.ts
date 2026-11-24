@@ -33,4 +33,5 @@ test('English pages offer the English feeds: the RSS panel, every category row a
   assert.ok(feeds.some((a) => a.endsWith('/en/feed.xml')) && feeds.some((a) => a.includes('/en/feed/full/category/')), feeds.join(' '));
   assert.deepEqual(feeds.filter((a) => !a.includes('/en/feed')), [], 'a feed address on an English page is an English feed');
   assert.equal($('link[rel="alternate"][type="application/rss+xml"]').attr('href'), '/en/feed.xml');
+  assert.ok($('a[href="/api/v1/agent?lang=en"]').length > 0 && $('a[href="/api/v1/agent"]').length === 0, 'the Agent guide it links is the English one');
 });

@@ -2,6 +2,8 @@
 // /api/v1); each operation's query parameters and Cache-Control are listed in V1_OPERATIONS.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { PUBLIC_API_CATEGORY_KEYS, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
+import { ENGLISH } from "@aihot/contracts/english";
+import type { Locale } from "@aihot/contracts/i18n";
 import { config } from "@aihot/backend/config";
 import { InvalidCursorError } from "@aihot/backend/lib/cursor";
 import { SearchBusyError } from "@aihot/backend/publication/pool";
@@ -9,6 +11,7 @@ import { selectedChanges, selectedSnapshot, SnapshotRequiredError, v1Items } fro
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
 import { isPeriodKey, v1Dailies, v1Daily, v1Period, v1Periods } from "@aihot/backend/publication/reports";
 import { isValidDate } from "@aihot/contracts/time";
+import * as english from "@aihot/backend/publication/english";
 import { requestNotice } from "@aihot/backend/modules";
 import { applyPublicHeaders, QueryError, sendJsonWithNotice, sendJsonWithEtag, sendProblem, strictQuery } from "../http/respond.ts";
 
@@ -16,19 +19,34 @@ type Handler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
 
 const op = (queryKeys: readonly string[], cacheControl: string) => ({ queryKeys, cacheControl });
 
+/**
+ * What readers read takes lang on a site with an English edition: lang=en answers in English (publication/english.ts
+ * v1InEnglish). The selected-items sync does not: its fingerprints would change as translations land.
+ */
+export const LANG: readonly string[] = ENGLISH ? ["lang"] : [];
+
+/**
+ * A reader operation's query and the language it answers in (zh unless lang=en), checked together before anything is
+ * read: a wrong lang is a 400 even when the read would have failed or been busy.
+ */
+export function readerQuery(req: FastifyRequest, keys: readonly string[]): { q: Record<string, string>; lang: Locale } {
+  const q = strictQuery(req, keys);
+  return { q, lang: enumParam(q.lang, "lang", ["zh", "en"] as const, "zh") };
+}
+
 export const V1_OPERATIONS = {
-  items: op(["mode", "category", "window", "by", "q", "limit", "cursor"], "public, max-age=60, s-maxage=60, must-revalidate"),
-  hotTopics: op([], "public, max-age=60, s-maxage=60, must-revalidate"),
-  storyByPublicId: op([], "public, max-age=60, s-maxage=60, must-revalidate"),
-  dailies: op(["limit"], "public, max-age=60, s-maxage=60, must-revalidate"),
-  latestDaily: op([], "public, max-age=60, s-maxage=60, must-revalidate"),
-  dailyByDate: op([], "public, max-age=300, s-maxage=300, must-revalidate"),
-  weeklies: op(["limit"], "public, max-age=300, s-maxage=300, must-revalidate"),
-  latestWeekly: op([], "public, max-age=300, s-maxage=300, must-revalidate"),
-  weeklyByWeek: op([], "public, max-age=300, s-maxage=300, must-revalidate"),
-  monthlies: op(["limit"], "public, max-age=300, s-maxage=300, must-revalidate"),
-  latestMonthly: op([], "public, max-age=300, s-maxage=300, must-revalidate"),
-  monthlyByMonth: op([], "public, max-age=300, s-maxage=300, must-revalidate"),
+  items: op(["mode", "category", "window", "by", "q", "limit", "cursor", ...LANG], "public, max-age=60, s-maxage=60, must-revalidate"),
+  hotTopics: op([...LANG], "public, max-age=60, s-maxage=60, must-revalidate"),
+  storyByPublicId: op([...LANG], "public, max-age=60, s-maxage=60, must-revalidate"),
+  dailies: op(["limit", ...LANG], "public, max-age=60, s-maxage=60, must-revalidate"),
+  latestDaily: op([...LANG], "public, max-age=60, s-maxage=60, must-revalidate"),
+  dailyByDate: op([...LANG], "public, max-age=300, s-maxage=300, must-revalidate"),
+  weeklies: op(["limit", ...LANG], "public, max-age=300, s-maxage=300, must-revalidate"),
+  latestWeekly: op([...LANG], "public, max-age=300, s-maxage=300, must-revalidate"),
+  weeklyByWeek: op([...LANG], "public, max-age=300, s-maxage=300, must-revalidate"),
+  monthlies: op(["limit", ...LANG], "public, max-age=300, s-maxage=300, must-revalidate"),
+  latestMonthly: op([...LANG], "public, max-age=300, s-maxage=300, must-revalidate"),
+  monthlyByMonth: op([...LANG], "public, max-age=300, s-maxage=300, must-revalidate"),
   selectedSnapshot: op(["fields", "limit", "page"], "public, max-age=300, s-maxage=300, must-revalidate"),
   selectedChanges: op(["cursor", "limit"], "public, max-age=60, s-maxage=60, must-revalidate"),
 };
@@ -50,6 +68,11 @@ export function enumParam<T extends string>(value: string | undefined, name: str
 }
 
 type SendOptions = Parameters<typeof sendJsonWithEtag>[3];
+
+/** A v1 answer in the asked language: as it is, or in English (texts and links). */
+export async function inLanguage<T>(body: T, overlay: english.Overlay<T>, lang: Locale): Promise<T> {
+  return lang === "en" ? english.v1InEnglish(body, overlay) : body;
+}
 
 /** Every v1 JSON answer: with a weak ETag, 304 when it matches, and a module's reminder for the person behind the request on top. */
 export function sendV1(req: FastifyRequest, reply: FastifyReply, body: object, opts: SendOptions) {
@@ -85,7 +108,7 @@ export function publicHandler(fn: Handler): Handler {
 
 export function registerV1(app: FastifyInstance) {
   app.get("/api/v1/items", publicHandler(async (req, reply) => {
-    const q = strictQuery(req, V1_OPERATIONS.items.queryKeys);
+    const { q, lang } = readerQuery(req, V1_OPERATIONS.items.queryKeys);
     const mode = enumParam(q.mode, "mode", ["selected", "all"] as const, "selected");
     const window = enumParam(q.window, "window", ["24h", "7d"] as const, "7d");
     const by = enumParam(q.by, "by", ["timeline", "published"] as const, "timeline");
@@ -99,48 +122,48 @@ export function registerV1(app: FastifyInstance) {
     const limit = intParam(q.limit, "limit", 1, 100, 50);
     if (q.cursor !== undefined && q.cursor.length === 0) throw new InvalidCursorError("empty cursor");
     const body = await v1Items({ mode, window, by, category, q: search, limit, cursor: q.cursor ?? null });
-    return sendV1(req, reply, body, { etagPrefix: "v1-items", cacheControl: V1_OPERATIONS.items.cacheControl });
+    return sendV1(req, reply, await inLanguage(body, english.v1Items("json"), lang), { etagPrefix: "v1-items", cacheControl: V1_OPERATIONS.items.cacheControl });
   }));
 
   app.get("/api/v1/hot-topics", publicHandler(async (req, reply) => {
-    strictQuery(req, V1_OPERATIONS.hotTopics.queryKeys);
-    const body = await v1HotTopics();
+    const { lang } = readerQuery(req, V1_OPERATIONS.hotTopics.queryKeys);
+    const body = await inLanguage(await v1HotTopics(), english.v1Hot("json"), lang);
     return sendV1(req, reply, body, { etagPrefix: "v1-hot", cacheControl: V1_OPERATIONS.hotTopics.cacheControl });
   }));
 
   app.get("/api/v1/stories/:publicId", publicHandler(async (req, reply) => {
-    strictQuery(req, V1_OPERATIONS.storyByPublicId.queryKeys);
+    const { lang } = readerQuery(req, V1_OPERATIONS.storyByPublicId.queryKeys);
     const publicId = (req.params as { publicId: string }).publicId;
     if (publicId.length > 128) throw new QueryError("publicId must be a short opaque id.");
     const found = await resolveStory(publicId);
     if (found.kind === "merged") {
-      return reply.code(308).header("Location", `/api/v1/stories/${found.target}`).header("Cache-Control", V1_OPERATIONS.storyByPublicId.cacheControl).send();
+      return reply.code(308).header("Location", `/api/v1/stories/${found.target}${lang === "en" ? "?lang=en" : ""}`).header("Cache-Control", V1_OPERATIONS.storyByPublicId.cacheControl).send();
     }
     const body = found.kind === "found" ? await v1Story(found.storyId) : null;
     if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `No public story exists for ${publicId}.`, cacheControl: "public, max-age=60" });
-    return sendV1(req, reply, body, { etagPrefix: "v1-story", cacheControl: V1_OPERATIONS.storyByPublicId.cacheControl });
+    return sendV1(req, reply, await inLanguage(body, english.v1StoryAnswer("json"), lang), { etagPrefix: "v1-story", cacheControl: V1_OPERATIONS.storyByPublicId.cacheControl });
   }));
 
   app.get("/api/v1/dailies", publicHandler(async (req, reply) => {
-    const q = strictQuery(req, V1_OPERATIONS.dailies.queryKeys);
+    const { q, lang } = readerQuery(req, V1_OPERATIONS.dailies.queryKeys);
     const limit = intParam(q.limit, "limit", 1, 180, 30);
-    return sendV1(req, reply, await v1Dailies(limit), { etagPrefix: "v1-dailies", cacheControl: V1_OPERATIONS.dailies.cacheControl });
+    return sendV1(req, reply, await inLanguage(await v1Dailies(limit), english.v1DailyIndex, lang), { etagPrefix: "v1-dailies", cacheControl: V1_OPERATIONS.dailies.cacheControl });
   }));
 
   app.get("/api/v1/dailies/latest", publicHandler(async (req, reply) => {
-    strictQuery(req, V1_OPERATIONS.latestDaily.queryKeys);
+    const { lang } = readerQuery(req, V1_OPERATIONS.latestDaily.queryKeys);
     const body = await v1Daily("latest");
     if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "No daily report has been published yet." });
-    return sendV1(req, reply, body, { etagPrefix: "v1-daily", cacheControl: V1_OPERATIONS.latestDaily.cacheControl });
+    return sendV1(req, reply, await inLanguage(body, english.v1DailyAnswer("json"), lang), { etagPrefix: "v1-daily", cacheControl: V1_OPERATIONS.latestDaily.cacheControl });
   }));
 
   app.get("/api/v1/dailies/:date", publicHandler(async (req, reply) => {
-    strictQuery(req, V1_OPERATIONS.dailyByDate.queryKeys);
+    const { lang } = readerQuery(req, V1_OPERATIONS.dailyByDate.queryKeys);
     const date = (req.params as { date: string }).date;
     if (!isValidDate(date)) throw new QueryError("date must be a real YYYY-MM-DD calendar date.");
     const body = await v1Daily(date);
     if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `No daily report exists for ${date}.`, cacheControl: "public, max-age=60" });
-    return sendV1(req, reply, body, { etagPrefix: "v1-daily", cacheControl: V1_OPERATIONS.dailyByDate.cacheControl });
+    return sendV1(req, reply, await inLanguage(body, english.v1DailyAnswer("json"), lang), { etagPrefix: "v1-daily", cacheControl: V1_OPERATIONS.dailyByDate.cacheControl });
   }));
 
   // Weeklies and monthlies: an index, the latest issue and one issue by ISO week or month.
@@ -149,23 +172,23 @@ export function registerV1(app: FastifyInstance) {
     { kind: "monthly", path: "monthlies", param: "month", name: "monthly", form: "a real month such as 2026-09", index: V1_OPERATIONS.monthlies, latest: V1_OPERATIONS.latestMonthly, byKey: V1_OPERATIONS.monthlyByMonth },
   ] as const) {
     app.get(`/api/v1/${p.path}`, publicHandler(async (req, reply) => {
-      const q = strictQuery(req, p.index.queryKeys);
+      const { q, lang } = readerQuery(req, p.index.queryKeys);
       const limit = intParam(q.limit, "limit", 1, 60, 12);
-      return sendV1(req, reply, await v1Periods(p.kind, limit), { etagPrefix: `v1-${p.path}`, cacheControl: p.index.cacheControl });
+      return sendV1(req, reply, await inLanguage(await v1Periods(p.kind, limit), english.v1PeriodIndex, lang), { etagPrefix: `v1-${p.path}`, cacheControl: p.index.cacheControl });
     }));
     app.get(`/api/v1/${p.path}/latest`, publicHandler(async (req, reply) => {
-      strictQuery(req, p.latest.queryKeys);
+      const { lang } = readerQuery(req, p.latest.queryKeys);
       const body = await v1Period(p.kind, "latest");
       if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `No ${p.name} report has been published yet.` });
-      return sendV1(req, reply, body, { etagPrefix: `v1-${p.name}`, cacheControl: p.latest.cacheControl });
+      return sendV1(req, reply, await inLanguage(body, english.v1PeriodAnswer(p.kind, "json"), lang), { etagPrefix: `v1-${p.name}`, cacheControl: p.latest.cacheControl });
     }));
     app.get(`/api/v1/${p.path}/:${p.param}`, publicHandler(async (req, reply) => {
-      strictQuery(req, p.byKey.queryKeys);
+      const { lang } = readerQuery(req, p.byKey.queryKeys);
       const key = (req.params as Record<string, string>)[p.param]!;
       if (!isPeriodKey(p.kind, key)) throw new QueryError(`${p.param} must be ${p.form}.`);
       const body = await v1Period(p.kind, key);
       if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `No ${p.name} report exists for ${key}.`, cacheControl: "public, max-age=60" });
-      return sendV1(req, reply, body, { etagPrefix: `v1-${p.name}`, cacheControl: p.byKey.cacheControl });
+      return sendV1(req, reply, await inLanguage(body, english.v1PeriodAnswer(p.kind, "json"), lang), { etagPrefix: `v1-${p.name}`, cacheControl: p.byKey.cacheControl });
     }));
   }
 

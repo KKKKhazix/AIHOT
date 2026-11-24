@@ -48,9 +48,9 @@ const ANCHORS = new Map([
 const anchorHref = (id: string) => `${hrefOf(ANCHORS.get(id)!)}#${id}`;
 
 /** Machine-readable entry points, with what each one is for. */
-const RESOURCES: Array<[label: Text, href: string, note: Text]> = [
+const RESOURCES: Array<[label: Text, href: Text, note: Text]> = [
   ["llms.txt", "/llms.txt", L("给大模型读的站点说明", "The site explained for LLMs")],
-  [L("Agent 使用说明", "Agent guide"), "/api/v1/agent", L(`Agent 读了就能查${GUIDE_CLIENTS ? `，${GUIDE_CLIENTS.zh} 用的也是它` : ""}`, `Agents read it and can start querying${GUIDE_CLIENTS ? `; it also powers ${GUIDE_CLIENTS.en}` : ""}`)],
+  [L("Agent 使用说明", "Agent guide"), L("/api/v1/agent", "/api/v1/agent?lang=en"), L(`Agent 读了就能查${GUIDE_CLIENTS ? `，${GUIDE_CLIENTS.zh} 用的也是它` : ""}`, `Agents read it and can start querying${GUIDE_CLIENTS ? `; it also powers ${GUIDE_CLIENTS.en}` : ""}`)],
   ["OpenAPI 3.1", "/openapi-v1.json", L(`REST API 的完整定义 · ${V}`, `The full REST API definition · ${V}`)],
   ...AGENT_PARTS.flatMap((p) => p.resources ?? []),
 ];
@@ -211,7 +211,7 @@ export default function AgentPage() {
       </AsideCard>
       <AsideCard title={t("接入资源", "Resources")}>
         <nav aria-label={t("接入资源", "Resources")} className="-mx-2 -mb-1">
-          {shownIn(locale, RESOURCES, ([, , note]) => note).map(([l, h, note]) => (
+          {shownIn(locale, RESOURCES, ([, , note]) => note).map(([l, href, note]) => [l, t(href), note] as const).map(([l, h, note]) => (
             <a key={h} href={h} target={h.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer" className="group flex items-start gap-2 rounded-control px-2 py-2 transition-colors hover:bg-bg-sunk">
               <span className="min-w-0 flex-1">
                 <span className="block text-ui-label-lg text-ink-2 group-hover:text-ink">{t(l)}</span>

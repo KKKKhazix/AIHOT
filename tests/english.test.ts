@@ -13,6 +13,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { after, before, test } from "node:test";
 import { ENGLISH } from "@aihot/contracts/english";
+import { MCP_TOOL_NAMES } from "@aihot/contracts/mcp";
+import { serverModules } from "@aihot/backend/modules";
 import { closeDb, sql } from "@aihot/backend/db";
 import { upsertMaterial } from "@aihot/backend/content/materials";
 import { translateEnglish } from "@aihot/backend/editorial/english";
@@ -60,11 +62,34 @@ const get = async (url: string) => {
 
 /** Where Chinese stays on English pages: filter values, the originals' own words, the site's modules' parts. */
 const AS_WRITTEN = new Set(["tags", "tagTopics", "filters", "originalTitle", "author", "x", "modules"]);
-function chinese(value: unknown, path = "$"): string[] {
+/** v1 in English also keeps a source's stored name, which programs filter and fingerprint by. */
+const AS_STORED = new Set([...AS_WRITTEN, "source", "sourceNames"]);
+function chinese(value: unknown, path = "$", keep = AS_WRITTEN): string[] {
   if (typeof value === "string") return HAN.test(value) ? [`${path}: ${value}`] : [];
-  if (Array.isArray(value)) return value.flatMap((v, i) => chinese(v, `${path}[${i}]`));
-  if (value && typeof value === "object") return Object.entries(value).flatMap(([k, v]) => (AS_WRITTEN.has(k) ? [] : chinese(v, `${path}.${k}`)));
+  if (Array.isArray(value)) return value.flatMap((v, i) => chinese(v, `${path}[${i}]`, keep));
+  if (value && typeof value === "object") return Object.entries(value).flatMap(([k, v]) => (keep.has(k) ? [] : chinese(v, `${path}.${k}`, keep)));
   return [];
+}
+const hanIn = (text: string) => text.match(new RegExp(`${HAN.source}+`, "g")) ?? [];
+const text = async (url: string) => {
+  const res = await app.inject({ method: "GET", url });
+  assert.equal(res.statusCode, 200, `${url}: ${res.body}`);
+  return res.body;
+};
+
+/** An MCP tool's answer (stateless, one request), by its full name. */
+async function tool(name: string, args: Record<string, unknown>) {
+  const res = await app.inject({ method: "POST", url: "/api/mcp", headers: {
+    host: "localhost", "content-type": "application/json", accept: "application/json, text/event-stream",
+    "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/call", "mcp-name": name,
+  }, payload: { jsonrpc: "2.0", id: 1, method: "tools/call", params: {
+    name, arguments: args,
+    _meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {} },
+  } } });
+  assert.equal(res.statusCode, 200, res.body);
+  const body = res.headers["content-type"]?.startsWith("text/event-stream") ? JSON.parse(res.body.split("\n").find((l) => l.startsWith("data: "))!.slice(6)) : res.json();
+  assert.ok(body.result, JSON.stringify(body).slice(0, 600));
+  return body.result as { content: Array<{ text: string }>; structuredContent: Record<string, any>; isError?: boolean };
 }
 
 let n = 0;
@@ -166,6 +191,16 @@ before(async () => {
   Object.assign(site, { a, b, w, zhBody, story: story!.public_id, single: single!.public_id, digest, fact: `f-${T}-1` });
 });
 
+const v1English = () => [
+  "/api/v1/items?lang=en", "/api/v1/items?mode=all&window=24h&lang=en", "/api/v1/hot-topics?lang=en", `/api/v1/stories/${site.story}?lang=en`,
+  "/api/v1/dailies?lang=en", "/api/v1/dailies/2099-01-02?lang=en", "/api/v1/weeklies?lang=en", "/api/v1/weeklies/2099-W01?lang=en",
+  "/api/v1/monthlies?lang=en", "/api/v1/monthlies/2099-01?lang=en",
+];
+const agentEnglish = () => [
+  "/api/v1/agent?lang=en", "/api/v1/agent/latest?window=7d&lang=en", `/api/v1/agent/search?q=${T}&lang=en`, "/api/v1/agent/hot?lang=en",
+  `/api/v1/agent/stories/${site.story}?lang=en`, "/api/v1/agent/daily/2099-01-02?lang=en", "/api/v1/agent/weekly/2099-W01?lang=en", "/api/v1/agent/monthly/2099-01?lang=en",
+];
+
 const englishAnswers = () => [
   "/api/site/en/timeline", "/api/site/en/pool", "/api/site/en/pool?q=%E7%94%B2%E5%85%AC%E5%8F%B8",
   `/api/site/en/items/${site.a}`, `/api/site/en/items/${site.b}`, `/api/site/en/items/${site.zhBody}`, `/api/site/en/items/availability?ids=${site.a},${site.b}`,
@@ -180,6 +215,7 @@ const englishAnswers = () => [
 
 test("without an English edition there are no English answers and nothing to translate", { skip: ENGLISH !== null }, async () => {
   for (const url of ["/api/site/en/timeline", "/en/feed.xml", "/en/feed/daily.xml"]) assert.equal((await app.inject({ method: "GET", url })).statusCode, 404, url);
+  for (const url of ["/api/v1/items?lang=en", "/api/v1/agent/hot?lang=en"]) assert.equal((await app.inject({ method: "GET", url })).statusCode, 400, `${url}: no lang to take`);
   assert.deepEqual(await translateEnglish(), { stored: 0, failed: 0, calls: 0 });
 });
 
@@ -189,6 +225,9 @@ test("once the worker has run, English answers carry no Chinese the site wrote, 
   const totals = await translateEnglish(RUN);
   assert.ok(totals.stored > 0 && totals.failed === 0, JSON.stringify(totals));
   for (const url of englishAnswers()) assert.deepEqual(chinese(await get(url)), [], url);
+  // v1 and the Agent answers in English read what the pages read, so the worker has translated all of it.
+  for (const url of v1English()) assert.deepEqual(chinese(await get(url), "$", AS_STORED), [], url);
+  for (const url of agentEnglish()) assert.deepEqual(hanIn(await text(url)), [], url);
 
   const item = await get(`/api/site/en/items/${site.a}`);
   assert.equal(item.title, `${english(`甲公司发布新模型${T}`)} (named after the original)`);
@@ -436,4 +475,38 @@ test("an English feed lists only what reads in English, links to the English pag
   const issue = daily.split("<item>").find((x) => x.includes("/en/daily/2099-01-03<")) ?? "";
   assert.ok(issue.includes(`/en/items/${original}"`) && !issue.includes(`/items/${zhOriginal}"`), "an entry still in Chinese waits; the issue does not");
   assert.ok((await app.inject({ method: "GET", url: "/feed/daily.xml" })).body.includes(`目录里总被漏掉的条目${T}`));
+});
+
+test("v1, the Agent addresses and the MCP tools in English: English pages, the next step asked in English, the stored source names; the sync and the modules take no lang", { skip: ENGLISH === null }, async () => {
+  const items = (await get("/api/v1/items?lang=en")).items as Array<Record<string, any>>;
+  const zhItems = (await get("/api/v1/items")).items as Array<Record<string, any>>;
+  assert.ok(items.length > 0 && items.every((i) => i.links.aihot.includes("/en/items/")), "items link to their English pages");
+  assert.deepEqual(items.map((i) => [i.id, i.links.original, i.source.name]), zhItems.map((i) => [i.id, i.links.original, i.source.name]), "the same items, originals and stored source names");
+  assert.ok(zhItems.every((i) => !i.links.aihot.includes("/en/")), "the Chinese answer is as it was");
+  const story = (await get(`/api/v1/stories/${site.story}?lang=en`)).story;
+  assert.ok(story.links.aihot.endsWith(`/en/story/${site.story}`));
+  assert.ok([...story.storyline, ...story.related].every((n: any) => n.links.api.endsWith("?lang=en")), "a related story's address asks in English");
+  const hot = await text("/api/v1/agent/hot?lang=en");
+  assert.match(hot, new RegExp(`/api/v1/agent/stories/${site.story}\\?lang=en`), "the next step asks in English");
+  assert.ok(!hot.includes(`${new URL(zhItems[0]!.links.aihot).origin}/items/`), "pages linked in English");
+  for (const url of ["/api/v1/hot-topics?lang=fr", "/api/v1/dailies?lang=fr", "/api/v1/weeklies?lang=fr", "/api/v1/agent/hot?lang=fr"]) {
+    assert.equal((await app.inject({ method: "GET", url })).statusCode, 400, url);
+  }
+  const guide = await text("/api/v1/agent");
+  assert.ok(guide.includes("lang=en"), "the Chinese guide tells installed agents about English");
+  const origin = new URL(zhItems[0]!.links.aihot).origin;
+  const guideEn = await text("/api/v1/agent?lang=en");
+  assert.ok(guideEn.includes(`(${origin}/en)`) && guideEn.includes(`give ${origin}/en.`), "the English guide sends readers to the English home");
+  const ability = serverModules().flatMap((m) => m.agent?.abilities ?? [])[0];
+  for (const url of ["/api/v1/items?lang=fr", "/api/v1/selected/snapshot?lang=en", ...(ability ? [`/api/v1/agent${ability.path}?lang=en`] : [])]) {
+    assert.equal((await app.inject({ method: "GET", url })).statusCode, 400, url);
+  }
+  const mcp = await tool(MCP_TOOL_NAMES.hot, { lang: "en" });
+  assert.deepEqual(hanIn(mcp.content[0]!.text), [], "the tool's text in English");
+  assert.match(mcp.content[0]!.text, new RegExp(`public_id=${site.story}, lang="en"`), "the next tool call asks in English too");
+  assert.match((await tool(MCP_TOOL_NAMES.daily, { date: "2099-01-02", lang: "en" })).content[0]!.text, /pass date=YYYY-MM-DD, lang="en"/);
+  const top = mcp.structuredContent.items[0];
+  assert.ok(top.links.aihot.includes("/en/"), "its JSON links the English pages");
+  assert.deepEqual(top.sourceNames, (await get("/api/v1/hot-topics")).items[0].sourceNames, "and keeps the stored source names");
+  assert.ok(HAN.test((await tool(MCP_TOOL_NAMES.hot, {})).content[0]!.text), "without lang it answers in Chinese");
 });

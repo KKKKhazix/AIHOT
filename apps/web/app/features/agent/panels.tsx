@@ -45,7 +45,7 @@ export function McpPanel(props: AgentPanelProps) {
   return (
     <>
       <PanelHead label={`MCP · ${V}`} title={t(`填一个地址，Agent 多出 ${mcpToolCount()} 个工具`, `Add one URL and your agent gets ${mcpToolCount()} new tools`)}>
-        {t("标准 Streamable HTTP，匿名只读，不用 token，也不读你的登录状态。适合 Claude 桌面版、Cursor、Cherry Studio 这类支持远程 MCP 的客户端。", "Standard Streamable HTTP, anonymous and read-only: no token needed, and it never accesses your account. Works with clients that support remote MCP, such as Claude Desktop, Cursor and Cherry Studio.")}
+        {t("标准 Streamable HTTP，匿名只读，不用 token，也不读你的登录状态。适合 Claude 桌面版、Cursor、Cherry Studio 这类支持远程 MCP 的客户端。", `Standard Streamable HTTP, anonymous and read-only: no token needed, and it never accesses your account. Works with clients that support remote MCP, such as Claude Desktop, Cursor and Cherry Studio.${ENGLISH ? ` The news tools answer in English when your agent passes lang "en".` : ""}`)}
       </PanelHead>
       <Steps>
         <Step n={1} title={t("复制服务地址", "Copy the server URL")}>
@@ -190,11 +190,12 @@ export function ApiPanel(props: AgentPanelProps) {
   if (ACCESS.ratePerMinute) pace += t(`同一个 IP 每分钟超过约 ${ACCESS.ratePerMinute} 次会收到 429，请按 Retry-After 等待，不要并发重试。`, ` More than about ${ACCESS.ratePerMinute} requests a minute from one IP get a 429: wait as Retry-After says, and don't retry in parallel.`);
   const [recipe, setRecipe] = useState<string>("latest");
   const recipes = shownIn(locale, AGENT_PARTS.flatMap((a) => a.recipes ?? []), (r) => r.label);
-  const items = `${base}/api/v1/items?mode=selected&window=24h&limit=20`;
+  // English pages show the English answer: lang=en on any reader's address.
+  const items = `${base}/api/v1/items?mode=selected&window=24h&limit=20${locale === "en" && ENGLISH ? "&lang=en" : ""}`;
   return (
     <>
       <PanelHead label={`REST API · ${V}`} title={t("匿名 GET，拿来就能用", "Anonymous GET, ready to use")}>
-        {t(<>不用 token；浏览器跨域、curl 和各语言默认的 HTTP 客户端都能直接调。路径是 /api/v1，字段和错误码以 <a href="/openapi-v1.json" className={link}>OpenAPI</a> 为准。</>, <>No token needed: call it straight from a browser (cross-origin works), curl or any language's standard HTTP client. The path is /api/v1, and the <a href="/openapi-v1.json" className={link}>OpenAPI</a> definition is the reference for fields and error codes.</>)}
+        {t(<>不用 token；浏览器跨域、curl 和各语言默认的 HTTP 客户端都能直接调。路径是 /api/v1，字段和错误码以 <a href="/openapi-v1.json" className={link}>OpenAPI</a> 为准。</>, <>No token needed: call it straight from a browser (cross-origin works), curl or any language's standard HTTP client. The path is /api/v1, and the <a href="/openapi-v1.json" className={link}>OpenAPI</a> definition is the reference for fields and error codes.{ENGLISH ? " Add lang=en for titles, summaries and page links in English." : ""}</>)}
       </PanelHead>
       <CodeBlock className="mt-6" title={t("第一个请求", "Your first request")} lang="bash" code={`${curl} '${items}'`} />
 

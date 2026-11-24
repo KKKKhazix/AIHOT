@@ -10,7 +10,7 @@ import { relatedEvidence, RELATED_MIN_REPORTS } from "../events/related.ts";
 import { pickRepresentative, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity } from "./representative.ts";
 import { compositeCondition, evidenceCondition, listedCondition, storyReportCondition } from "./scope.ts";
 import { publicSourceName } from "./rules.ts";
-import { latestHotRanking, rankingExtras } from "./hot.ts";
+import { latestHotRanking, rankingParticipants } from "./hot.ts";
 import { storyTexts } from "./story-text.ts";
 import { topicsOfStory } from "./topics.ts";
 import { mentionsIn } from "./mentions.ts";
@@ -140,7 +140,7 @@ async function relatedStories(storyId: number, now: Date) {
     ) ORDER BY st.latest_at DESC NULLS LAST, st.id DESC LIMIT 8`;
 }
 
-export async function loadStoryDetail(storyId: number, now = new Date()): Promise<StoryDetail | null> {
+export async function loadStoryDetail(storyId: number, now = new Date(), knownRank?: number): Promise<StoryDetail | null> {
   const content = await storyContent(storyId, now);
   if (!content) return null;
   const { s, reports, developments, latestReport, firstReportAt } = content;
@@ -151,8 +151,7 @@ export async function loadStoryDetail(storyId: number, now = new Date()): Promis
              AND participant_key NOT IN (SELECT participant_key FROM cs x WHERE x.observed_at <= ${now}::timestamptz - interval '6 hours')) AS p6,
            count(*) FILTER (WHERE kind = 'editorial' AND observed_at > ${now}::timestamptz - interval '24 hours') AS r24
     FROM cs`;
-  const ranking = await latestHotRanking();
-  const entry = ranking?.entries.find((e) => e.storyId === storyId) ?? null;
+  const rank = knownRank ?? (await latestHotRanking())?.entries.find((entry) => entry.storyId === storyId)?.rank ?? null;
   // Only hours observed in full are drawn (the chart leaves a gap otherwise), over one comparable group.
   const heat = await heatSeries(storyId, now);
   // Complete when none of the sources behind the last 48 hours' participants is behind on collection.
@@ -188,7 +187,7 @@ export async function loadStoryDetail(storyId: number, now = new Date()): Promis
       newParticipants6h: Number(why?.p6 ?? 0),
       recentReports24h: Number(why?.r24 ?? 0),
       observationComplete: !partial?.n,
-      rank: entry?.rank ?? null,
+      rank,
     },
     developments: developments.map((d) => ({ ...d, representative: reportView(d.representative) })),
     officialReports: reports.filter((r) => r.role !== "mention" && r.first_party).slice(0, 12).map(reportView),
@@ -248,18 +247,21 @@ export function cardText(text: string | null, max = 480): string | null {
   return chars && chars.length > max ? chars.slice(0, max).join("") + "…" : text;
 }
 
+const hotTexts = shared((ranking: HotRanking) => String(ranking.id), (ranking) => storyTexts(ranking.entries.map((e) => e.storyId)));
+
 /** `clip`: English pages clip after translating (publication/english.ts hot). */
-export async function loadHot(clip: (text: string | null) => string | null = cardText): Promise<HotResponse> {
-  const ranking = await latestHotRanking();
+export async function loadHot(clip: (text: string | null) => string | null = cardText, knownRanking?: HotRanking): Promise<HotResponse> {
+  const ranking = knownRanking ?? await latestHotRanking();
   if (!ranking) return { computedAt: null, windowHours: 48, entries: [] };
   const at = new Date(ranking.computedAt);
-  const [sparks, covers, extras] = await Promise.all([
+  const [sparks, covers, participants, texts] = await Promise.all([
     sparklines(
       ranking.entries.map((e) => e.storyId),
       at,
     ),
     hotCovers(ranking),
-    rankingExtras(ranking),
+    rankingParticipants(ranking),
+    hotTexts(ranking),
   ]);
   return {
     computedAt: ranking.computedAt,
@@ -267,7 +269,7 @@ export async function loadHot(clip: (text: string | null) => string | null = car
     entries: ranking.entries.map((e) => {
       const picture = covers.get(e.storyId);
       const coverUrl = picture ? proxiedImage(picture.url, "full") : null;
-      const text = extras.text(e);
+      const text = texts.get(e.storyId);
       return {
         rank: e.rank,
         story: { publicId: e.storyPublicId, title: e.title },
@@ -278,10 +280,10 @@ export async function loadHot(clip: (text: string | null) => string | null = car
         participantCount: e.participantCount,
         sourceCount: e.sourceCount,
         sourceNames: [...new Set(e.sourceNames.map(publicSourceName))],
-        participants: extras.participants(e),
+        participants: participants(e),
         spark: sparks.get(e.storyId) ?? [],
-        summary: clip(text.summary),
-        latest: text.latest,
+        summary: clip(text?.digest ?? text?.summary ?? null),
+        latest: text?.latest?.title ?? null,
         cover: picture && coverUrl ? { url: coverUrl, srcSet: proxiedImageSet(picture.url, "hero") ?? undefined, width: picture.width, height: picture.height } : null,
       };
     }),

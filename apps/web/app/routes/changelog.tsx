@@ -25,11 +25,12 @@ export async function loader({ request }: { request: Request }) {
 
 export function meta() {
   return pageMeta({
+    locale: "zh",
     title: "更新日志",
     description: `${SITE.name} 的功能更新、优化、公告与下线记录。`,
     path: "/changelog",
     image: "/og/pages/changelog.png",
-    jsonLd: breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "更新日志", path: "/changelog" }]),
+    jsonLd: breadcrumbLd([{ name: SITE.name, path: "/" }, { name: "更新日志", path: "/changelog" }], "zh"),
   });
 }
 

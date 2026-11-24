@@ -7,10 +7,11 @@
 // Theme-aware, paused off screen; reduced motion draws it still. The canvas only illustrates: what it
 // says is also written in the page.
 import { useEffect, useRef, type ReactNode } from "react";
-import { withSubject } from "@aihot/site";
+import { SITE, withSubject } from "@aihot/site";
 import { EDITION } from "../report/format";
 import { watchAppearance } from "../../lib/local-state";
 import { reducedMotion, seededRandom } from "../../lib/motion";
+import { useT, type Translate } from "../../lib/i18n";
 
 export interface RiverSource {
   name: string;
@@ -22,7 +23,17 @@ export interface RiverSource {
 export const STAGES = [0, 0.25, 0.5, 0.75, 1] as const;
 
 const STEP = 3;
-const KIND: Record<string, string> = { x_search: "X 账号", rss: "RSS", web_list: "网页", mp_account: "公众号", json_list: "接口" };
+/** A source's kind as the hover names it. */
+function kindName(kind: string | undefined, t: Translate): string {
+  switch (kind) {
+    case "x_search": return t("X 账号", "X account");
+    case "rss": return "RSS";
+    case "web_list": return t("网页", "Web page");
+    case "mp_account": return t("公众号", "WeChat account");
+    case "json_list": return t("接口", "API");
+    default: return t("信源", "Source");
+  }
+}
 const FLASH_MS = 900;
 const INTRO_MS = 1800;
 /** Slow in, slow out: the river starts gently, crosses, and settles. */
@@ -290,6 +301,7 @@ export function SignalRiver({
   const arriveRef = useRef(onArrive);
   const redrawRef = useRef<() => void>(() => {});
   arriveRef.current = onArrive;
+  const t = useT();
 
   useEffect(() => {
     focusRef.current = focus;
@@ -456,10 +468,10 @@ export function SignalRiver({
     redrawRef.current = redraw;
 
     const place = (x: number, y: number, title: string, note: string) => {
-      const [t, n] = label.children as unknown as [HTMLElement, HTMLElement];
-      t.textContent = title;
-      n.textContent = note;
-      n.hidden = !note;
+      const [head, sub] = label.children as unknown as [HTMLElement, HTMLElement];
+      head.textContent = title;
+      sub.textContent = note;
+      sub.hidden = !note;
       label.hidden = false;
       const w = label.offsetWidth;
       const left = Math.min(Math.max(8, x + 14), wrap.clientWidth - w - 8);
@@ -475,7 +487,7 @@ export function SignalRiver({
       const p = L.paper;
       if (x >= p.x - 8 && x <= p.x + p.w + 8 && y >= p.y - 8 && y <= p.y + p.h + 8) {
         hover = { s: null, bundle: null, paper: true };
-        place(x, y, withSubject("日报"), EDITION.daily);
+        place(x, y, t(withSubject("日报"), `${SITE.subject} Daily`), t(EDITION.daily));
         redraw();
         return;
       }
@@ -498,13 +510,13 @@ export function SignalRiver({
       const b = L.bundles[s.bundle]!;
       if (x < L.x2) {
         hover = { s: best, bundle: null, paper: false };
-        const kind = s.source ? (KIND[s.source.kind] ?? "信源") : "信源";
-        place(x, y, s.source ? s.source.name : "一个信源", s.source?.heatOnly ? `${kind} · 只计入热度` : kind);
+        const kind = kindName(s.source?.kind, t);
+        place(x, y, s.source ? s.source.name : t("一个信源", "A source"), s.source?.heatOnly ? t(`${kind} · 只计入热度`, `${kind} · counts toward heat only`) : kind);
       } else {
         hover = { s: null, bundle: s.bundle, paper: false };
-        if (x < L.gate) place(x, y, "同一件事", `${b.n} 个来源的报道合成一条`);
-        else if (b.kept) place(x, y, "进了精选", "有信息量，分数也够");
-        else place(x, y, "没进精选", "信息不够、重复或只是营销");
+        if (x < L.gate) place(x, y, t("同一件事", "One story"), t(`${b.n} 个来源的报道合成一条`, `Reports from ${b.n} ${b.n === 1 ? "source" : "sources"}, grouped into one`));
+        else if (b.kept) place(x, y, t("进了精选", "Made Top Picks"), t("有信息量，分数也够", "Substantive and scores high enough"));
+        else place(x, y, t("没进精选", "Didn't make Top Picks"), t("信息不够、重复或只是营销", "Too thin, a repeat or just marketing"));
       }
       redraw();
     };
@@ -553,7 +565,7 @@ export function SignalRiver({
       wrap.removeEventListener("pointermove", onMove);
       wrap.removeEventListener("pointerleave", onLeave);
     };
-  }, [sources]);
+  }, [sources, t]);
 
   return (
     <div ref={wrapRef} className={`relative ${className}`}>

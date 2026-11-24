@@ -15,7 +15,7 @@ export function headers() {
 }
 
 export function meta() {
-  return pageMeta({ title: "隐私说明", description: POLICY.privacy.description, path: "/privacy", image: "/og/pages/privacy.png" });
+  return pageMeta({ locale: "zh", title: "隐私说明", description: POLICY.privacy.description, path: "/privacy", image: "/og/pages/privacy.png" });
 }
 
 export default function PrivacyPage() {

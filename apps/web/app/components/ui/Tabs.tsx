@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
-import { Link } from "react-router";
 import { IntentLink } from "./IntentLink";
 import { useEntrance } from "../../lib/hydration";
 import { reducedMotion } from "../../lib/motion";
+import { Link } from "../../lib/link";
 
 /** Where each switch's thumb sat when it last left, relative to its track. */
 const thumbs = new Map<string, { left: number; width: number; at: number }>();

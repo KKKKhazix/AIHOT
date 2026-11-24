@@ -1,6 +1,8 @@
 import { useContext, useEffect, useRef, useState } from "react";
-import { Link, PrefetchPageLinks, UNSAFE_DataRouterContext, UNSAFE_FrameworkContext, useHref, useLocation, type LinkProps } from "react-router";
+import { PrefetchPageLinks, UNSAFE_DataRouterContext, UNSAFE_FrameworkContext, useHref, useLocation, type LinkProps } from "react-router";
 import { hasFreshPage } from '../../lib/page-reuse';
+import { Link, localizeTo } from "../../lib/link";
+import { useLocale } from "../../lib/i18n";
 
 /**
  * Prefetches when the reader presses the link: a mouse or pen button going down, or a touch held
@@ -14,7 +16,8 @@ export function IntentLink({ onPointerDown, onTouchStart, onTouchMove, onTouchEn
   // stays on screen (a tab) does not keep prefetching once the reader is somewhere else.
   const [pressedOn, setPressedOn] = useState<string | null>(null);
   const ready = pressedOn === location.key;
-  const href = useHref(props.to);
+  // What the link will open: the address Link resolves to in this page's language (lib/link.tsx).
+  const href = useHref(localizeTo(props.to, useLocale()));
   const context = useContext(UNSAFE_DataRouterContext);
   const framework = useContext(UNSAFE_FrameworkContext);
   // Router prefetch loads chunks but opts clientLoader routes out of data prefetch. Their

@@ -22,6 +22,8 @@ export interface ModulePage {
   admin?: true;
   /** An admin page's name in the back office's sidebar. */
   nav?: string;
+  /** Also served in English at /en/<path>: the page's reader-facing text is written in both languages (apps/web/app/lib/i18n.ts). */
+  en?: true;
 }
 
 /** Pages that share a layout route. */

@@ -9,6 +9,7 @@ import { presentationAssertions, rawLoaderPaths } from "./lesson-checks.ts";
 import { clockViolationsByFile } from "./test-clock.ts";
 import { after, test } from "node:test";
 import { fontSizeViolations } from "./font-size.ts";
+import { routerLinkViolations, webTextViolations } from "./web-text.ts";
 import { closeDb, sql } from "@aihot/backend/db";
 
 after(closeDb);
@@ -345,4 +346,15 @@ test("web code does not import motion or framer-motion", () => {
 
 test("web font sizes use the design scale", () => {
   assertNoViolations(fontSizeViolations());
+});
+
+// The English edition (/en/…): reader-facing text is written in both languages where it is used, so a page
+// never shows Chinese to an English reader or loses its English when the Chinese is edited (lib/i18n.ts).
+// Pages without an English edition are listed in web-text.ts CHINESE_ONLY with the reason.
+test("reader-facing web text has its English beside it", () => {
+  assertNoViolations(webTextViolations());
+});
+
+test("site links keep the page's language", () => {
+  assertNoViolations(routerLinkViolations());
 });

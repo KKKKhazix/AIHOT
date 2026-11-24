@@ -4,11 +4,12 @@
 // on a canvas in the same dot language as the nameplate; the archive column is the accessible way
 // to the same issues.
 import { useEffect, useMemo, useRef } from "react";
-import { useNavigate } from "react-router";
 import type { ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
 import { watchAppearance } from "../../lib/local-state";
 import { reducedMotion } from "../../lib/motion";
 import { KIND_PATH, periodGrid } from "./format";
+import { useNavigate } from "../../lib/link";
+import { useLocale, useT } from "../../lib/i18n";
 
 const ROW = 20;
 const TAU = Math.PI * 2;
@@ -16,7 +17,9 @@ const INTRO_MS = 700;
 const easeOutBack = (p: number) => 1 + 2.2 * (p - 1) ** 3 + 1.2 * (p - 1) ** 2;
 
 export function IssueDots({ kind, reportKey, issueNumber, index, className = "" }: { kind: ReportKind; reportKey: string; issueNumber: number; index: ReportNavigationEntry[]; className?: string }) {
-  const grid = useMemo(() => periodGrid(kind, reportKey, index, issueNumber), [kind, reportKey, index, issueNumber]);
+  const locale = useLocale();
+  const t = useT();
+  const grid = useMemo(() => periodGrid(kind, reportKey, index, issueNumber, locale), [kind, reportKey, index, issueNumber, locale]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const navigate = useNavigate();
   const rows = Math.ceil(grid.cells.length / grid.columns);
@@ -151,13 +154,14 @@ export function IssueDots({ kind, reportKey, issueNumber, index, className = "" 
   return (
     <div className={className}>
       <div className="flex items-baseline justify-between text-ui-caption-sm text-ink-4">
-        <span className="font-semibold tracking-[0.2em] text-ink-2">{grid.title}</span>
+        <span className={`font-semibold ${t("tracking-[0.2em]", "uppercase tracking-[0.08em]")} text-ink-2`}>{grid.title}</span>
         <span className="num">{grid.note}</span>
       </div>
       {grid.heads && (
         <div className="mt-2 grid text-center text-ui-micro-7 leading-none text-ink-4" style={{ gridTemplateColumns: `repeat(${grid.columns}, minmax(0, 1fr))` }}>
-          {grid.heads.map((h) => (
-            <span key={h}>{h}</span>
+          {/* By place: the English heads repeat letters (M T W T F S S). */}
+          {grid.heads.map((h, i) => (
+            <span key={i}>{h}</span>
           ))}
         </div>
       )}

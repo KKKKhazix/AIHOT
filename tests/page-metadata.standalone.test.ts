@@ -203,8 +203,8 @@ test("an issue's date reads as Chinese readers write it, across months and years
 test("a report without an edited lead uses only a still-public visible highlight", () => {
   // An issue's highlights are among its entries; the ones a thin daily is filled with never head it (above).
   const r = { ...report("weekly"), lead: null, highlights: [citation(false), citation(true)], sections: [{ label: "模型", summary: null, items: [citation(false), citation(true)] }] };
-  assert.match(reportLd(r, "/weekly/2026-W40", "导读").headline, new RegExp(item.title));
-  assert.doesNotMatch(reportLd(r, "/weekly/2026-W40", "导读").headline, /已撤下/);
+  assert.match(reportLd(r, "/weekly/2026-W40", "导读", "zh").headline, new RegExp(item.title));
+  assert.doesNotMatch(reportLd(r, "/weekly/2026-W40", "导读", "zh").headline, /已撤下/);
 });
 
 test("the homepage ties the founder to every public profile the site lists", async () => {
@@ -226,7 +226,7 @@ test("article metadata names its publisher, has a representative image and a dat
   const undated = structured(await page("/items/metadata-undated")).find((entry) => entry["@type"] === "NewsArticle")!;
   assert.equal(undated.datePublished, "2026-10-04T07:30:00.000Z");
   const modified = "2026-10-04T10:00:00.000Z";
-  assert.equal(articleLd({ path: "/items/test", headline: "更正", modifiedAt: modified }).dateModified, modified);
+  assert.equal(articleLd({ locale: "zh", path: "/items/test", headline: "更正", modifiedAt: modified }).dateModified, modified);
 });
 
 test("an article whose own text is a summary's worth asks only Google not to index it", async () => {

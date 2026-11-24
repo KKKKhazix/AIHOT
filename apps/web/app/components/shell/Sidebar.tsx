@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { useLocation } from "react-router";
 import { IntentLink } from "../ui/IntentLink";
 import { useContainedScroll } from "../ui/Page";
 import { SITE } from "@aihot/site";
@@ -10,17 +10,21 @@ import { useScreen } from "./screens";
 import { MoreMenu } from "./MoreMenu";
 import { Filings } from "./Filings";
 import { IconGithub } from "../icons";
+import { Link } from "../../lib/link";
+import { useLocale, useT } from "../../lib/i18n";
 
-/** True while the changelog has an entry newer than the one this reader last opened. */
+/** True while the changelog has an entry newer than the one this reader last opened; never on English pages, which have no changelog. */
 export function useChangelogDot(latestVersion: string | null): boolean {
   const seen = useChangelogSeen();
+  const english = useLocale() === "en";
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  if (!mounted || !latestVersion) return false;
+  if (!mounted || !latestVersion || english) return false;
   return !seen || seen < latestVersion;
 }
 
 function SideLink({ item, dot, active }: { item: NavItem; dot: boolean; active: boolean }) {
+  const t = useT();
   const Icon = item.icon;
   return (
     <IntentLink
@@ -33,8 +37,8 @@ function SideLink({ item, dot, active }: { item: NavItem; dot: boolean; active: 
       <span className={`flex w-[22px] shrink-0 justify-center ${active ? "text-accent" : ""}`}>
         <Icon size={17} />
       </span>
-      <span className="min-w-0 truncate">{item.label}</span>
-      {dot && item.changelog && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-hot" aria-label="有新的更新" />}
+      <span className="min-w-0 truncate">{t(item.label)}</span>
+      {dot && item.changelog && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-hot" aria-label={t("有新的更新", "New updates")} />}
     </IntentLink>
   );
 }
@@ -46,21 +50,23 @@ function SideLink({ item, dot, active }: { item: NavItem; dot: boolean; active: 
  */
 function Rail({ dot }: { dot: boolean }) {
   const { pathname } = useLocation();
-  const { tab, home } = useScreen();
+  const locale = useLocale();
+  const t = useT();
+  const { tab: screenTab, home } = useScreen();
   const [railRef, railOverscroll] = useContainedScroll<HTMLElement>();
   return (
     <aside ref={railRef} className={`scrollbar-thin sticky top-0 hidden h-dvh w-16 shrink-0 flex-col items-center border-r border-line bg-sidebar px-1.5 pb-[max(14px,env(safe-area-inset-bottom))] pt-5 lg:flex wide:hidden short:overflow-y-auto short:pt-3 ${railOverscroll}`}>
-      <Link to="/" className="mb-3 flex size-11 shrink-0 items-center justify-center text-accent short:mb-1" aria-label={`${SITE.name} 首页`}>
+      <Link to="/" className="mb-3 flex size-11 shrink-0 items-center justify-center text-accent short:mb-1" aria-label={t(`${SITE.name} 首页`, `${SITE.name} home`)}>
         <RingMark className="size-7" />
       </Link>
-      <nav className="flex w-full flex-col gap-1" aria-label="主导航">
-        {rail().map((t) => {
-          const on = railIsActive(t, pathname, tab ?? home);
-          const Icon = t.icon;
+      <nav className="flex w-full flex-col gap-1" aria-label={t("主导航", "Main")}>
+        {rail(locale).map((tab) => {
+          const on = railIsActive(tab, pathname, screenTab ?? home);
+          const Icon = tab.icon;
           return (
             <IntentLink
-              key={t.key}
-              to={t.to}
+              key={tab.key}
+              to={tab.to}
               aria-current={on ? "page" : undefined}
               className={`relative flex h-14 shrink-0 flex-col items-center justify-center gap-[3px] rounded-control text-ui-caption-sm transition-colors duration-150 short:h-12 ${
                 on ? "bg-accent/10 font-semibold text-ink dark:bg-accent-soft" : "font-medium text-ink-3 hover:bg-bg-sunk hover:text-ink"
@@ -69,8 +75,8 @@ function Rail({ dot }: { dot: boolean }) {
               <span className={on ? "text-accent" : ""}>
                 <Icon size={20} />
               </span>
-              <span className="max-w-full truncate">{t.label}</span>
-              {dot && t.changelog && <span className="absolute right-2 top-2 size-1.5 rounded-full bg-hot" aria-label="有新的更新" />}
+              <span className="max-w-full truncate">{t(tab.label)}</span>
+              {dot && tab.changelog && <span className="absolute right-2 top-2 size-1.5 rounded-full bg-hot" aria-label={t("有新的更新", "New updates")} />}
             </IntentLink>
           );
         })}
@@ -82,6 +88,8 @@ function Rail({ dot }: { dot: boolean }) {
 export function Sidebar({ changelogVersion }: { changelogVersion: string | null }) {
   const dot = useChangelogDot(changelogVersion);
   const { pathname } = useLocation();
+  const locale = useLocale();
+  const t = useT();
   const [columnRef, columnOverscroll] = useContainedScroll<HTMLElement>();
   const [navRef, navOverscroll] = useContainedScroll<HTMLElement>();
   const footRef = useRef<HTMLDivElement>(null);
@@ -92,16 +100,16 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
     <>
       <Rail dot={dot} />
       <aside ref={columnRef} className={`scrollbar-thin sticky top-0 z-30 hidden h-dvh w-[180px] shrink-0 flex-col border-r border-line bg-sidebar px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-6 wide:flex short:overflow-y-auto ${columnOverscroll}`}>
-        <Link to="/" className="mb-4 flex h-[50px] shrink-0 items-center px-1 text-ink" aria-label={`${SITE.name} 首页`}>
+        <Link to="/" className="mb-4 flex h-[50px] shrink-0 items-center px-1 text-ink" aria-label={t(`${SITE.name} 首页`, `${SITE.name} home`)}>
           <Wordmark size={26} />
         </Link>
-        <nav ref={navRef} className={`scrollbar-thin -mx-1 flex-1 overflow-y-auto px-1 short:flex-none short:overflow-visible ${navOverscroll}`} aria-label="主导航">
-          {sidebar().map((section) => {
+        <nav ref={navRef} className={`scrollbar-thin -mx-1 flex-1 overflow-y-auto px-1 short:flex-none short:overflow-visible ${navOverscroll}`} aria-label={t("主导航", "Main")}>
+          {sidebar(locale).map((section) => {
             // Only the most specific entry of a section is lit, so a detail page does not light the list above it too.
             const lit = activeSidebarItem(section.items, pathname);
             return (
-              <div key={section.title}>
-                <div className="px-2.5 pb-1 pt-3.5 text-ui-caption-sm text-ink-4">{section.title}</div>
+              <div key={section.key}>
+                <div className="px-2.5 pb-1 pt-3.5 text-ui-caption-sm text-ink-4">{t(section.title)}</div>
                 <div className="flex flex-col gap-1">
                   {section.items.map((item) => (
                     <SideLink key={item.to} item={item} dot={dot} active={item.to === lit?.to} />
@@ -119,8 +127,8 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
                 href={SITE.github}
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="GitHub 开源"
-                title="GitHub 开源"
+                aria-label={t("GitHub 开源", "Open source on GitHub")}
+                title={t("GitHub 开源", "Open source on GitHub")}
                 className="flex size-[34px] shrink-0 items-center justify-center rounded-full border border-line text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink touch:size-11"
               >
                 <IconGithub size={15} />
@@ -132,7 +140,7 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
           <div className="-mx-1 flex flex-col items-center gap-1.5">
             {SITE.poweredBy && (
               <a href={SITE.poweredBy.url} target="_blank" rel="noopener" className="whitespace-nowrap text-ui-micro-6 leading-[1.3] text-ink-4 hover:text-ink-3">
-                由 {SITE.poweredBy.name} 驱动
+                {t(<>由 {SITE.poweredBy.name} 驱动</>, <>Powered by {SITE.poweredBy.name}</>)}
               </a>
             )}
             <Filings className="whitespace-nowrap text-ui-micro-6 leading-[1.3] text-ink-4 hover:text-ink-3" badgeSize={10} />

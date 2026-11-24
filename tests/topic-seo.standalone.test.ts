@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { siteUrl, topicLd } from "../apps/web/app/lib/seo.ts";
 
 const topic = {
+  locale: "zh" as const,
   path: "/topics/tutorials",
   name: "教程实践 最新动态",
   description: "值得阅读的教程与实践。",

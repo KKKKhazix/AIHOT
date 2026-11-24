@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Presence } from "./Presence";
 import { useModal } from "./modal";
 import { IconArrowLeft, IconArrowRight, IconClose } from "../icons";
+import { useT } from "../../lib/i18n";
 
 export interface LightboxImage {
   src: string;
@@ -16,6 +17,7 @@ export interface LightboxImage {
  * sideways to the next or previous one, down to close; two fingers zoom as the browser does.
  */
 export function Lightbox({ images, index, onIndex, onClose }: { images: LightboxImage[]; index: number | null; onIndex: (i: number) => void; onClose: () => void }) {
+  const t = useT();
   const open = index !== null && !!images[index];
   const dialog = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -104,7 +106,7 @@ export function Lightbox({ images, index, onIndex, onClose }: { images: Lightbox
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
-        aria-label={many && index !== null ? `图片 ${index + 1} / ${images.length}` : "图片"}
+        aria-label={many && index !== null ? t(`图片 ${index + 1} / ${images.length}`, `Image ${index + 1} of ${images.length}`) : t("图片", "Image")}
         onClick={() => {
           if (!tappedAfterDrag()) onClose();
         }}
@@ -117,15 +119,15 @@ export function Lightbox({ images, index, onIndex, onClose }: { images: Lightbox
         {current && (
           <img ref={img} key={current.src} src={current.src} decoding="async" alt={current.alt ?? ""} className="lightbox-img anim-zoom-in min-h-0 min-w-0 max-h-[calc(100dvh-5rem)] max-w-full rounded-control object-contain shadow-2xl" />
         )}
-        <button ref={closeButton} type="button" aria-label="关闭" onClick={(e) => { e.stopPropagation(); onClose(); }} className="absolute right-[max(16px,env(safe-area-inset-right))] top-[max(16px,env(safe-area-inset-top))] grid size-11 place-items-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20">
+        <button ref={closeButton} type="button" aria-label={t("关闭", "Close")} onClick={(e) => { e.stopPropagation(); onClose(); }} className="absolute right-[max(16px,env(safe-area-inset-right))] top-[max(16px,env(safe-area-inset-top))] grid size-11 place-items-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20">
           <IconClose size={18} />
         </button>
         {many && index !== null && (
           <>
-            <button type="button" aria-label="上一张" onClick={(e) => { e.stopPropagation(); onIndex((index - 1 + images.length) % images.length); }} className={`${nav} left-[max(12px,env(safe-area-inset-left))] sm:left-5`}>
+            <button type="button" aria-label={t("上一张", "Previous image")} onClick={(e) => { e.stopPropagation(); onIndex((index - 1 + images.length) % images.length); }} className={`${nav} left-[max(12px,env(safe-area-inset-left))] sm:left-5`}>
               <IconArrowLeft size={18} />
             </button>
-            <button type="button" aria-label="下一张" onClick={(e) => { e.stopPropagation(); onIndex((index + 1) % images.length); }} className={`${nav} right-[max(12px,env(safe-area-inset-right))] sm:right-5`}>
+            <button type="button" aria-label={t("下一张", "Next image")} onClick={(e) => { e.stopPropagation(); onIndex((index + 1) % images.length); }} className={`${nav} right-[max(12px,env(safe-area-inset-right))] sm:right-5`}>
               <IconArrowRight size={18} />
             </button>
             <span className="num pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/40 px-2.5 py-0.5 text-ui-caption text-white/85">

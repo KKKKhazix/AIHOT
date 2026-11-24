@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router";
 import type { CopyDocument, RenderedCopy } from "../../lib/markdown";
 import { ArticleLayout, RailSection } from "../../components/ui/Page";
 import { PhoneBar } from "../../components/shell/PhoneBar";
+import { Link } from "../../lib/link";
+import { useT, zh } from "../../lib/i18n";
 
 /**
  * Legal and policy pages, read like articles: the document on the page in one column, its facts in the
@@ -10,9 +11,11 @@ import { PhoneBar } from "../../components/shell/PhoneBar";
  * outline).
  */
 export function CopyPage({ doc, rendered, eyebrow, footer }: { doc: CopyDocument; rendered: RenderedCopy; eyebrow?: ReactNode; footer?: ReactNode }) {
-  const facts = (["版本", "生效日期", "运营主体", "联系方式", "备案号"] as const).filter((k) => doc.meta[k]);
+  const t = useT();
+  // Keys of the document's own meta table, shown as the document writes them: its pages have no English edition.
+  const facts = [zh("版本"), zh("生效日期"), zh("运营主体"), zh("联系方式"), zh("备案号")].filter((k) => doc.meta[k]);
   const info = facts.length > 0 && (
-    <RailSection title="文档信息">
+    <RailSection title={t("文档信息", "Document info")}>
       <dl className="space-y-2 text-ui-caption-lg">
         {facts.map((k) => (
           <div key={k}>
@@ -24,8 +27,8 @@ export function CopyPage({ doc, rendered, eyebrow, footer }: { doc: CopyDocument
     </RailSection>
   );
   const outline = rendered.outline.length > 2 && (
-    <RailSection title="目录">
-      <nav aria-label="目录">
+    <RailSection title={t("目录", "Contents")}>
+      <nav aria-label={t("目录", "Contents")}>
         <ol className="-ml-px space-y-0.5 border-l border-line">
           {rendered.outline.map((o) => (
             <li key={o.id}>
@@ -40,7 +43,7 @@ export function CopyPage({ doc, rendered, eyebrow, footer }: { doc: CopyDocument
   );
   return (
     <>
-    <PhoneBar back={{ to: "/more", label: "我的" }} title={doc.title} />
+    <PhoneBar back={{ to: "/more", label: t("我的", "Me") }} title={doc.title} />
     <ArticleLayout
       left={info}
       right={

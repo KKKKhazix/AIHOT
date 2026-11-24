@@ -1,12 +1,12 @@
 import { SITE, SOURCE_DEFAULTS } from "@aihot/site";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
 import type { Route } from "./+types/source-new";
 import type { AdminSourceCreated, AdminSourcePreview } from "@aihot/contracts/admin";
 import { useAdminAction } from "../../features/admin/action";
 import { bj } from "../../features/admin/format";
 import { KIND_LABEL, MODE_LABEL, SELECTION_CLASS_LABEL, TIER_LABEL } from "../../features/admin/labels";
 import { AdminPage, Button, Card, Empty, Field, Input, Select, Textarea } from "../../features/admin/ui";
+import { Link, useNavigate } from "../../lib/link";
 
 export const meta: Route.MetaFunction = () => [{ title: `新建信源 · ${SITE.name} 后台` }];
 

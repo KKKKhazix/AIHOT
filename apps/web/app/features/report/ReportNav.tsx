@@ -5,43 +5,48 @@ import { useEffect, useState } from "react";
 import { REPORT_NAMES, type ReportNavigationEntry, type ReportNavigationResponse, type ReportKind } from "@aihot/contracts/site";
 import { PillTabs } from "../../components/ui/Tabs";
 import { IconChevronRight } from "../../components/icons";
-import { KINDS, KIND_PATH, archiveGroups, archiveMark, chipLabel, reportPath } from "./format";
+import { KINDS, KIND_PATH, archiveGroups, archiveMark, chipLabel, kindName, reportPath } from "./format";
+import { localizePath, useLocale, useT } from "../../lib/i18n";
 
 /**
  * 日报 / 周报 / 月报 as the site's pill switch: spread across the archive column, or compact in the phone bar
  * (opening at the top). Every place keeps its own layoutId: all of them stay mounted, hidden by width.
  */
 export function KindSwitch({ kind, phone = false, layoutId = phone ? "report-kind-phone" : "report-kind" }: { kind: ReportKind; phone?: boolean; layoutId?: string }) {
+  const locale = useLocale();
+  const t = useT();
   return (
     <PillTabs
       fill={!phone}
       size={phone ? "sm" : "md"}
       layoutId={layoutId}
-      label="切换日报、周报、月报"
+      label={t("切换日报、周报、月报", "Switch between daily, weekly and monthly")}
       active={kind}
-      items={KINDS.map((k) => ({ key: k, label: REPORT_NAMES[k], to: KIND_PATH[k], resetScroll: phone, prefetchOnPress: true }))}
+      items={KINDS.map((k) => ({ key: k, label: kindName(k, locale), to: KIND_PATH[k], resetScroll: phone, prefetchOnPress: true }))}
     />
   );
 }
 
 /** Wide desktop archive column: every issue of this kind, grouped, the current one highlighted. */
 export function ReportArchive({ kind, index, current }: { kind: ReportKind; index: ReportNavigationEntry[]; current: string | null }) {
-  const groups = archiveGroups(kind, index);
+  const locale = useLocale();
+  const t = useT();
+  const groups = archiveGroups(kind, index, locale);
   const openId = groups.find((g) => g.entries.some((e) => e.key === current))?.id ?? groups[0]?.id;
   return (
     <aside className="sticky top-0 hidden h-dvh w-[280px] shrink-0 flex-col border-r border-line bg-[color-mix(in_srgb,var(--sidebar)_50%,var(--surface))] pl-5 pr-3 side:flex dark:bg-[color-mix(in_srgb,var(--sidebar)_50%,var(--bg))]">
       <div className="pb-4 pt-8">
         <KindSwitch kind={kind} />
       </div>
-      <div className="border-b border-line-strong pb-2 pl-1 text-ui-caption-md font-semibold tracking-[0.3em] text-ink">往期</div>
-      <nav aria-label={`${REPORT_NAMES[kind]}历史`} className="scrollbar-thin -mr-3 flex-1 overflow-y-auto pb-6 pr-3">
+      <div className={`border-b border-line-strong pb-2 pl-1 text-ui-caption-md font-semibold ${t("tracking-[0.3em]", "uppercase tracking-[0.08em]")} text-ink`}>{t("往期", "Past issues")}</div>
+      <nav aria-label={t(`${REPORT_NAMES[kind]}历史`, `Past ${kindName(kind, locale).toLowerCase()} issues`)} className="scrollbar-thin -mr-3 flex-1 overflow-y-auto pb-6 pr-3">
         {groups.map((g) => (
           <ArchiveGroup key={g.id} g={g} kind={kind} current={current} initiallyOpen={g.id === openId} />
         ))}
       </nav>
       {kind === "daily" && (
         <IntentLink to="/daily/archive" className="flex h-12 shrink-0 items-center justify-between border-t border-line pl-1 pr-1.5 text-ui-caption-lg font-medium text-ink-2 transition-colors hover:text-accent">
-          日报合订本 <IconChevronRight size={14} />
+          {t("日报合订本 ", "Daily archive ")}<IconChevronRight size={14} />
         </IntentLink>
       )}
     </aside>
@@ -52,6 +57,8 @@ export function ReportArchive({ kind, index, current }: { kind: ReportKind; inde
 function ArchiveGroup({ g, kind, current, initiallyOpen }: {
   g: ReturnType<typeof archiveGroups>[number]; kind: ReportKind; current: string | null; initiallyOpen: boolean;
 }) {
+  const locale = useLocale();
+  const t = useT();
   const [open, setOpen] = useState(initiallyOpen);
   useEffect(() => setOpen(initiallyOpen), [initiallyOpen]);
   const [loaded, setLoaded] = useState<ReportNavigationEntry[] | null>(null);
@@ -65,7 +72,7 @@ function ArchiveGroup({ g, kind, current, initiallyOpen }: {
     return () => controller.abort();
   }, [open, kind, g.id, loaded]);
   const entries = loaded ?? g.entries;
-  const mark = (key: string) => archiveMark(kind, key);
+  const mark = (key: string) => archiveMark(kind, key, locale);
   return (
     <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="disclosure group/month border-b border-line">
       <summary className="flex h-11 items-center gap-1.5 pl-1 pr-1.5 text-ui-label text-ink transition-colors hover:text-accent">
@@ -89,36 +96,38 @@ function ArchiveGroup({ g, kind, current, initiallyOpen }: {
                   <span className={`num text-ui-heading-md font-black leading-none tracking-[-0.03em] ${on ? "text-accent" : "text-ink"}`}>{mark(e.key).big}</span>
                   {mark(e.key).small && <span className="mt-1 whitespace-nowrap text-ui-micro-7 leading-none text-ink-4">{mark(e.key).small}</span>}
                 </span>
-                <span className={`line-clamp-2 min-w-0 text-ui-caption-lg leading-[18px] transition-colors ${on ? "font-semibold text-ink" : "text-ink-2 group-hover:text-ink"}`}>{e.title ?? `${REPORT_NAMES[kind]} ${e.key}`}</span>
+                <span className={`line-clamp-2 min-w-0 text-ui-caption-lg leading-[18px] transition-colors ${on ? "font-semibold text-ink" : "text-ink-2 group-hover:text-ink"}`}>{e.title ?? `${kindName(kind, locale)} ${e.key}`}</span>
               </IntentLink>
             </li>
           );
         })}
       </ul>}
-      {kind === "daily" && !open && <noscript><a href="/daily/archive">查看完整日报归档</a></noscript>}
+      {kind === "daily" && !open && <noscript><a href={localizePath("/daily/archive", locale)}>{t("查看完整日报归档", "See the full daily archive")}</a></noscript>}
     </details>
   );
 }
 
 /** Phones under the bar, narrow desktops above the paper: the three latest issues and a way further back. */
 export function ReportPhoneNav({ kind, index, current, today }: { kind: ReportKind; index: ReportNavigationEntry[]; current: string | null; today: string }) {
+  const locale = useLocale();
+  const t = useT();
   const recent = index.slice(0, 3);
   const earlier = kind === "daily" ? "/daily/archive" : "#report-history";
   const chip = "inline-flex h-11 shrink-0 items-center rounded-full border px-4 text-ui-label transition-colors";
   if (recent.length === 0) return null;
   return (
-    <nav aria-label={`最近的${REPORT_NAMES[kind]}`} className="scrollbar-none bleed flex gap-2 overflow-x-auto pb-1 pt-1.5 lg:mx-0 lg:w-full lg:max-w-[1160px] lg:px-0 lg:pb-4 lg:pt-3 side:hidden">
+    <nav aria-label={t(`最近的${REPORT_NAMES[kind]}`, "Recent issues")} className="scrollbar-none bleed flex gap-2 overflow-x-auto pb-1 pt-1.5 lg:mx-0 lg:w-full lg:max-w-[1160px] lg:px-0 lg:pb-4 lg:pt-3 side:hidden">
       {recent.map((e) => {
         const on = e.key === current;
         return (
           <IntentLink key={e.key} to={reportPath(kind, e.key)} aria-current={on ? "page" : undefined} className={`${chip} ${on ? "border-ink bg-ink font-semibold text-bg" : "border-line-strong bg-surface text-ink-2 active:bg-bg-sunk"}`}>
-            {chipLabel(kind, e.key, index, today)}
+            {chipLabel(kind, e.key, index, today, locale)}
           </IntentLink>
         );
       })}
       {index.length > 3 && (
         <IntentLink to={earlier} viewTransition={kind === "daily"} className={`${chip} border-line-strong bg-surface text-ink-2 active:bg-bg-sunk`}>
-          更早
+          {t("更早", "Earlier")}
         </IntentLink>
       )}
     </nav>

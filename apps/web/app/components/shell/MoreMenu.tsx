@@ -3,6 +3,7 @@ import { Presence } from "../ui/Presence";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { FontSelect } from "./FontSelect";
 import { webModules } from "../../site-modules";
+import { useT } from "../../lib/i18n";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -21,6 +22,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
  * behind the row it came from.
  */
 export function MoreMenu({ anchor }: { anchor: () => HTMLElement | null }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [at, setAt] = useState<{ left: number; bottom: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -71,14 +73,14 @@ export function MoreMenu({ anchor }: { anchor: () => HTMLElement | null }) {
           open ? "bg-bg-sunk text-ink" : "text-ink-3 hover:bg-bg-sunk hover:text-ink"
         }`}
       >
-        更多
+        {t("更多", "More")}
       </button>
       <div inert={!open} aria-hidden={!open || undefined}>
         <Presence show={open} enter="anim-fade-in" exit="anim-fade-out" duration={160}>
           <div
             ref={panelRef}
             role="dialog"
-            aria-label="更多"
+            aria-label={t("更多", "More")}
             style={at ? { left: at.left, bottom: at.bottom } : undefined}
             className="fixed z-50 w-[236px] overflow-hidden rounded-tile border border-line bg-raised py-1 shadow-[var(--shadow-pop)]"
           >
@@ -92,10 +94,10 @@ export function MoreMenu({ anchor }: { anchor: () => HTMLElement | null }) {
                 <div className="my-1 h-px bg-line-soft" />
               </>
             )}
-            <Row label="外观">
+            <Row label={t("外观", "Appearance")}>
               <ThemeSwitch compact className="w-24" />
             </Row>
-            <Row label="字体">
+            <Row label={t("字体", "Font")}>
               <FontSelect />
             </Row>
           </div>

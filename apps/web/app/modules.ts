@@ -8,6 +8,7 @@
 import type { ComponentType, ReactNode } from "react";
 import type { TopicSummary } from "@aihot/contracts/site";
 import type { NavItem, Tab } from "./components/shell/nav";
+import type { Text } from "./lib/i18n";
 
 export type Part<T> = () => Promise<{ default: T }>;
 
@@ -26,10 +27,10 @@ export interface AgentTrack {
   name: string;
   /** Where the page and the 我的 page list the ways in a few words. */
   short: string;
-  badge?: string;
-  pitch: string;
+  badge?: Text;
+  pitch: Text;
   /** What it suits, under the pitch. */
-  fit: string;
+  fit: Text;
   icon: ComponentType<{ size?: number }>;
   Panel: ComponentType<AgentPanelProps>;
   /** Ids of sections in its panel: the page's address with one as its fragment opens this tab and scrolls there. */
@@ -49,8 +50,8 @@ export interface CopyTag {
   userAgent: (value: string) => string;
   /** What it is: under the chooser, under the MCP address and under the feeds. */
   Note: ComponentType;
-  mcp: string;
-  rss: string;
+  mcp: Text;
+  rss: Text;
 }
 
 /** Links from a module's part of the agent page into a panel's section. */
@@ -74,25 +75,25 @@ export interface AgentPart {
   /** Its clients built on the Agent guide, by name: named next to the guide in the resources and in the API panel's table. */
   guideClients?: string[];
   /** The aside's resources, after the engine's: [label, address, what it is for]. */
-  resources?: Array<[label: string, href: string, note: string]>;
+  resources?: Array<[label: Text, href: string, note: Text]>;
   /** The MCP panel's tool table: its tools. */
-  tools?: Array<{ name: string; does: string; ask: string }>;
+  tools?: Array<{ name: string; does: Text; ask: Text }>;
   /** The MCP panel's 连不上怎么办: entries after the engine's first. */
-  mcpTroubles?: ReactNode[];
+  mcpTroubles?: Text[];
   /** What the RSS panel's opening sentence goes on to say, a clause each after "；". */
-  rssLead?: string[];
+  rssLead?: Text[];
   /** The API panel's table: a group of its addresses. */
-  api?: { group: string; rows: Array<[path: string, does: string, often: string]> };
+  api?: { group: Text; rows: Array<[path: string, does: Text, often: Text]> };
   /** The API panel's usage tabs: one each, after the engine's. */
-  recipes?: Array<{ key: string; label: string; Body: ComponentType<{ base: string; curl: string }> }>;
+  recipes?: Array<{ key: string; label: Text; Body: ComponentType<{ base: string; curl: string }> }>;
   /** The API panel's 出错了怎么办: [status, what to do], after the engine's. */
-  apiErrors?: Array<[status: string, what: ReactNode]>;
+  apiErrors?: Array<[status: Text, what: ReactNode]>;
 }
 
 /** A module's part of a topic page (routes/topic.tsx), from what its server module's topics.page returned for it. */
 export interface TopicPagePart {
   /** What it is called: after "最新动态与" in the page's title, and in the name of its structured-data list. */
-  name: string;
+  name: Text;
   /** Whether it has anything on this page; without, the page leaves it out of its body and its head. */
   shows: (data: unknown, topic: TopicSummary) => boolean;
   /** Drawn between the page's header and its list. */
@@ -114,11 +115,11 @@ export interface WebModule {
   /** The email of the reader signed in in this browser, or null (read after hydration). */
   signedInEmail?: () => string | null;
   /** Desktop sidebar: entries in a section between the engine's 内容 and 更多; modules sharing sectionKey (or section title) share it. */
-  sidebar?: { sectionKey?: string; section: string; items: NavItem[] };
+  sidebar?: { sectionKey?: string; section: Text; items: NavItem[] };
   /** Phone tab bar: tabs before 我的. */
   tabs?: Tab[];
   /** The 我的 page: rows ahead of the engine's tools. */
-  tools?: Array<{ to: string; label: string; icon: ReactNode }>;
+  tools?: Array<{ to: string; label: Text; icon: ReactNode }>;
   /** Parts of every public page (root.tsx); the admin has its own chrome and gets none of them. */
   root?: {
     /** An inline script in <head>, after the theme's: it runs before the page paints. */
@@ -135,7 +136,7 @@ export interface WebModule {
   /** Paths of the marks it serves that are drawn in white, for a dark tile (components/BrandMark.tsx). */
   darkMarks?: string[];
   /** The starred page (routes/starred.tsx): buttons ahead of 导入文件 that bring stars in from elsewhere, each resolving to the line it reports. */
-  starredImports?: Array<{ label: string; run: () => Promise<{ ok: boolean; text: string }> }>;
+  starredImports?: Array<{ label: Text; run: () => Promise<{ ok: boolean; text: Text }> }>;
   /**
    * The feedback page (routes/feedback.tsx): a draft kept elsewhere in this browser, read when the page
    * keeps none of its own ({ content, email, pageUrl }), and cleared once its own is saved or sent.

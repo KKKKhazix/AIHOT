@@ -11,7 +11,7 @@ import { MoreMenu } from "./MoreMenu";
 import { Filings } from "./Filings";
 import { IconGithub } from "../icons";
 import { Link } from "../../lib/link";
-import { useLocale, useT } from "../../lib/i18n";
+import { pagePath, useLocale, useT } from "../../lib/i18n";
 
 /** True while the changelog has an entry newer than the one this reader last opened; never on English pages, which have no changelog. */
 export function useChangelogDot(latestVersion: string | null): boolean {
@@ -49,7 +49,7 @@ function SideLink({ item, dot, active }: { item: NavItem; dot: boolean; active: 
  * the rest of the sidebar sits under 我的, as on phones.
  */
 function Rail({ dot }: { dot: boolean }) {
-  const { pathname } = useLocation();
+  const pathname = pagePath(useLocation().pathname);
   const locale = useLocale();
   const t = useT();
   const { tab: screenTab, home } = useScreen();
@@ -87,7 +87,7 @@ function Rail({ dot }: { dot: boolean }) {
 
 export function Sidebar({ changelogVersion }: { changelogVersion: string | null }) {
   const dot = useChangelogDot(changelogVersion);
-  const { pathname } = useLocation();
+  const pathname = pagePath(useLocation().pathname);
   const locale = useLocale();
   const t = useT();
   const [columnRef, columnOverscroll] = useContainedScroll<HTMLElement>();

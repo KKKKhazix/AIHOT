@@ -257,7 +257,7 @@ function pagesOf(report: ReportDetail, leadStory: ReportCitation | null, locale:
   return report.sections
     .map((s, i) => ({
       id: s.key ? `s-${s.key}` : `s-${i + 1}`,
-      label: sectionLabelIn(s.label, locale),
+      label: sectionLabelIn(s.label, locale, s.key),
       summary: s.summary,
       items: s.items
         .filter((c) => {

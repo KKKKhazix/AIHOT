@@ -41,6 +41,8 @@ export function historyIndex(): number {
 const SCREENS_KEY = "aihot:screens";
 const MAX_SCREENS = 60;
 
+// A name is kept as the words shown (a string), so a release before or after this one reads it; an entry may still
+// hold both languages (Text) from a release that kept them.
 interface HistoryScreen { key: string; name: Text; tab?: TabKey }
 
 function readScreens(): Record<string, HistoryScreen> {
@@ -49,7 +51,7 @@ function readScreens(): Record<string, HistoryScreen> {
 }
 
 /** Records which page the current history entry shows ("" for one named by its content). */
-export function noteScreen(name: Text | undefined, key: string, tab: TabKey | undefined) {
+export function noteScreen(name: string | undefined, key: string, tab: TabKey | undefined) {
   // POP changes browser history before its loader commits the next React location. An effect from
   // the page still on screen must not overwrite the destination entry during that interval.
   const browserKey = (window.history.state as { key?: string } | null)?.key ?? "default";

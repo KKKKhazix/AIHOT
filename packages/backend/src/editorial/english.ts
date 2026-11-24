@@ -15,7 +15,8 @@ import { chatJson } from "../providers/llm.ts";
 import { completeReceipt, failedReceiptId, failureKind, ProviderRejectedError } from "../providers/receipts.ts";
 import { shutdownSignal } from "../jobs/queue.ts";
 import * as english from "../publication/english.ts";
-import { copyKey, HAN, needsEnglish, originalShown, usableCopy, wantedIn, type CopyKind, type Wanted } from "../publication/english.ts";
+import { copyKey, HAN, needsEnglish, originalShown, usableCopy, wantedIn, type Wanted, type WantedText } from "../publication/english.ts";
+import { serverModules } from "../modules.ts";
 import { latestHotRanking } from "../publication/hot.ts";
 import { listReports, loadReport, type ReportKind } from "../publication/reports.ts";
 import { publicSourceName } from "../publication/rules.ts";
@@ -47,10 +48,7 @@ const HOT_STORIES = 10;
 const Output = z.object({ t: z.array(z.object({ id: z.number().int(), en: z.string() })) });
 
 /** A text to translate, with the article it belongs to (its original title and source lend names their spelling). */
-interface Text {
-  zh: string;
-  kind: CopyKind;
-  item: string | null;
+interface Text extends WantedText {
   attempts?: number;
 }
 
@@ -130,6 +128,11 @@ async function latestIssues(): Promise<Text[]> {
 
 async function topics(): Promise<Text[]> {
   return fromWanted(await wantedIn(await listTopicSummaries(), english.topics));
+}
+
+/** What the site's modules show in Chinese on their English pages (modules.ts `english`). */
+async function moduleTexts(): Promise<Text[]> {
+  return (await Promise.all(serverModules().map((m) => m.english?.() ?? []))).flat();
 }
 
 /** Every source a page may name (the about page's river names the ones collected now), as readers see its name. */
@@ -390,6 +393,7 @@ export async function translateEnglish(opts: { budgetMs?: number } = {}): Promis
     latestIssues,
     topics,
     sourceNames,
+    moduleTexts,
     () => items("reachable", 100),
   ];
   try {

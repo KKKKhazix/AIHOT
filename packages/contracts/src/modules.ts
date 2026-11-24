@@ -42,6 +42,8 @@ export interface ModuleDeclaration {
   redirects?: RedirectRule[];
   /** Paths the api process answers; the web server and the internal router send them there. */
   apiPaths?: RegExp[];
+  /** Its site api answers (/api/site/…) that also answer in English, at /api/site/en/…: what its English pages read. */
+  englishApi?: RegExp[];
 }
 
 export function defineModule(module: ModuleDeclaration): ModuleDeclaration {

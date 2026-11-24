@@ -11,6 +11,7 @@ import type { Db } from "./db.ts";
 import type { QueueOptions } from "./jobs/queue.ts";
 import type { Finding } from "./notify/feishu.ts";
 import type { ContentPart } from "./providers/llm.ts";
+import type { WantedText } from "./publication/english.ts";
 import type { Topic, TopicMember } from "./publication/topics.ts";
 
 /** A cron schedule (Asia/Shanghai), recorded in job_runs like the engine's (apps/worker/src/schedules.ts). */
@@ -201,6 +202,11 @@ export interface ServerModule {
   /** Its share of the daily retention run (operations/retention.ts): what it deleted or aggregated. */
   retention?: (now: Date) => Promise<Record<string, unknown>>;
   on?: Partial<EngineHooks>;
+  /**
+   * The Chinese its English answers show, for the worker to translate (editorial/english.ts; publication/english.ts
+   * textsIn gathers them through the answers' own overlays). Called every few minutes: keep it cheap when nothing changed.
+   */
+  english?: () => Promise<WantedText[]>;
   /** Topic pages (publication/topics.ts). */
   topics?: {
     /**

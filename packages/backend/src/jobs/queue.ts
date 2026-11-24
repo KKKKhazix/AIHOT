@@ -42,6 +42,15 @@ export const QUEUES = {
   prepareMedia: "media.prepare",
 } as const satisfies Record<string, QueueName>;
 
+/**
+ * Queue order (pg-boss serves higher priority first): live work before history, so a new source's
+ * first import or a backfill never holds up today's news; discussion evidence waits behind reports
+ * in the serial grouping queue, history behind both.
+ */
+export function articlePriority({ historical, signal = false }: { historical: boolean; signal?: boolean }): number {
+  return historical ? -2 : signal ? -1 : 0;
+}
+
 export type QueueOptions = NonNullable<Parameters<PgBoss["createQueue"]>[1]>;
 
 /** Queue definitions in one place; created on first use by any process. */

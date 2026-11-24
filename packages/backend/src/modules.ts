@@ -360,7 +360,7 @@ export interface EditorialPolicy {
   reviewTranslation?: (input: EditorialTranslationReviewInput) => Promise<{ allow: boolean; reason?: string; receiptIds?: number[] }>;
   /** Reviews a generated event title and digest before saving (events/digest.ts). */
   reviewStoryDigest?: (input: EditorialStoryDigestReviewInput) => Promise<{ title: string; digest: string; receiptIds?: number[] } | null>;
-  /** Sanitizes stored fact and story copy when a report is grouped, revised or overridden (events/group.ts). */
+  /** Sanitizes stored fact and story copy when a report is grouped, revised or overridden. */
   sanitizeEventCopy?: (input: EditorialEventCopyInput) => EditorialEventCopyOutcome;
 }
 

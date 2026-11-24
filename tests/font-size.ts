@@ -15,7 +15,7 @@ const writtenSize = new RegExp([
 
 export function fontSizeViolations() {
   const result = new Map<string, Violation[]>();
-  for (const file of sourceFiles("apps/web", "modules/*/web.*", "modules/*/web/**")) {
+  for (const file of sourceFiles("apps/web", "modules/*/web.*", "modules/*/web/**", "site")) {
     if (!/\.(?:[jt]sx?|css)$/.test(file) || /\/(?:tests?|__tests__)\//.test(file)) continue;
     const hits: Violation[] = [];
     const withoutComments = readFileSync(new URL("../" + file, import.meta.url), "utf8")

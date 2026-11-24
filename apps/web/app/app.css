@@ -71,6 +71,8 @@
   --text-ui-display-7: 48px;
   --text-ui-display-8: 56px;
   --text-ui-display-9: 64px;
+  --text-ui-display-10: 96px;
+  --text-ui-display-11: 170px;
   --text-ui-title-fluid: clamp(var(--text-ui-heading-lg), 2.6vw, var(--text-ui-title-6));
 
   /* Semantic colours. */

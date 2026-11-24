@@ -3,7 +3,7 @@
 // wins over a name inside it, and a Latin name must stand as a whole word.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { linkMentions, mentionedTargets, withoutSharedNames, type MentionRun, type MentionTarget } from "@aihot/contracts/mentions";
+import { linkMentions, prepareMentionLookup, withoutSharedNames, type MentionRun, type MentionTarget } from "@aihot/contracts/mentions";
 
 const targets: MentionTarget[] = [
   { href: "/models/opus", names: ["Claude Opus 5.5"] },
@@ -91,13 +91,13 @@ test("a name two pages claim links to neither, but a shorter name inside it does
 });
 
 test("a page is sent only the targets its texts name, with the names it found", () => {
-  assert.deepEqual(mentionedTargets(["Claude Opus 5.5 发布，Anthropic 说"], targets), [
+  assert.deepEqual(prepareMentionLookup(targets)(["Claude Opus 5.5 发布，Anthropic 说"]), [
     { href: "/models/opus", names: ["Claude Opus 5.5"] },
     { href: "/topics/anthropic", names: ["Anthropic"] },
   ]);
 });
 
-// The api sends a page only the targets its texts name (mentionedTargets); the page links with those.
+// The api sends a page only the targets its texts name (prepareMentionLookup); the page links with those.
 // A name that holds its place without linking ("阿里巴巴" before an English name) must reach the page too,
 // or the page links the shorter name inside it.
 test("a page linking with the targets sent for it links exactly as with the whole list", () => {
@@ -107,6 +107,7 @@ test("a page linking with the targets sent for it links exactly as with the whol
     ["阿里云 Qwen3.8-27B 上线", "阿里巴巴说 Claude Code 和 GPT-5.5 Pro 更新，GPT-5.5 和 Claude 都在"],
     ["GPT-5.55 和 GPT-5.5-mini 不是 Metaverse 里的 Meta，Kimi K3.1 也不是。"],
   ];
-  for (const texts of pages) assert.deepEqual(show(linkMentions(texts, mentionedTargets(texts, all))), show(linkMentions(texts, all)), texts[0]);
-  assert.deepEqual(show(linkMentions(pages[0], mentionedTargets(pages[0], all))), ["阿里巴巴 [Qwen3.8-27B→/models/q] 开源，[阿里→/topics/qwen]说"]);
+  const lookup = prepareMentionLookup(all);
+  for (const texts of pages) assert.deepEqual(show(linkMentions(texts, lookup(texts))), show(linkMentions(texts, all)), texts[0]);
+  assert.deepEqual(show(linkMentions(pages[0], lookup(pages[0]))), ["阿里巴巴 [Qwen3.8-27B→/models/q] 开源，[阿里→/topics/qwen]说"]);
 });

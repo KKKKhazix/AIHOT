@@ -146,21 +146,23 @@ export function linkMentions(texts: ReadonlyArray<string | null | undefined>, ta
 }
 
 /**
- * The targets these texts name, in order of first mention, with the names they used. Names that only hold
+ * Prepare the dictionary once, then find the targets each page names in order of first mention. Names that only hold
  * their place are among them, so a page linking with these links as it would with the whole list.
  */
-export function mentionedTargets(texts: ReadonlyArray<string | null | undefined>, targets: readonly MentionTarget[]): MentionTarget[] {
+export function prepareMentionLookup(targets: readonly MentionTarget[]) {
   const names = namesOf(targets);
-  const found = new Map<string | null, Set<string>>();
-  for (const text of texts) {
-    if (!text) continue;
-    for (const s of spans(text, names)) {
-      const used = found.get(s.name.href) ?? new Set<string>();
-      used.add(s.name.text);
-      found.set(s.name.href, used);
+  return (texts: ReadonlyArray<string | null | undefined>): MentionTarget[] => {
+    const found = new Map<string | null, Set<string>>();
+    for (const text of texts) {
+      if (!text) continue;
+      for (const s of spans(text, names)) {
+        const used = found.get(s.name.href) ?? new Set<string>();
+        used.add(s.name.text);
+        found.set(s.name.href, used);
+      }
     }
-  }
-  return [...found].map(([href, used]) => ({ href, names: [...used] }));
+    return [...found].map(([href, used]) => ({ href, names: [...used] }));
+  };
 }
 
 /** Names that more than one page goes by link to none of them; they stay under no page, holding their place. */

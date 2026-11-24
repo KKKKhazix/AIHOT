@@ -12,7 +12,7 @@ import * as english from "@aihot/backend/publication/english";
 import { loadItemOgCard, loadItemPoster } from "@aihot/backend/publication/og";
 import { loadReport, type ReportKind } from "@aihot/backend/publication/reports";
 import { findTopic, TOPIC_GROUPS, TOPICS } from "@aihot/backend/publication/topics";
-import { loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
+import { loadStoryShare, resolveStory } from "@aihot/backend/publication/stories";
 import { ogEtag, renderOg, type OgCard } from "@aihot/backend/media/og";
 import { posterEtag, renderPoster } from "@aihot/backend/media/poster";
 import { CARDS, REPORTS, SITE, subjectAfter, withSubject } from "@aihot/site";
@@ -99,7 +99,7 @@ function registerIn(app: FastifyInstance, lang: Locale) {
     if (!["daily", "weekly", "monthly"].includes(kind) || !file.endsWith(".png")) return notFound(reply);
     const found = await loadReport(kind as ReportKind, file.slice(0, -4));
     if (!found) return notFound(reply);
-    const r = en ? await english.inEnglish(found, english.report) : found;
+    const r = en ? await english.inEnglish(found, english.reportHeading) : found;
     const count = r.sections.reduce((n, s) => n + s.items.length, 0);
     // A quiet day's issue (REPORTS.quiet) has nothing to count.
     if (en) {
@@ -144,10 +144,10 @@ function registerIn(app: FastifyInstance, lang: Locale) {
       return reply.code(308).header("Location", `${og}/stories/${found.target}.png`).header("Cache-Control", CONTENT_IMAGE_CACHE).send();
     }
     if (found.kind !== "found") return notFound(reply);
-    const detail = await loadStoryDetail(found.storyId);
+    const detail = await loadStoryShare(found.storyId);
     if (!detail) return notFound(reply);
-    const s = en ? await english.inEnglish(detail, english.story) : detail;
-    const rank = s.whyHot.rank;
+    const s = en ? await english.inEnglish(detail, english.storyHeading) : detail;
+    const { rank } = s;
     return send(req, reply, en
       ? {
         kicker: rank ? `No. ${rank} on Trending · Story` : "Story",

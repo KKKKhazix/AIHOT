@@ -53,7 +53,7 @@ export function Ask({ text }: { text: string }) {
 }
 
 /** One address to copy: the MCP server, a feed. */
-export function Address({ url, label = "复制" }: { url: string; label?: string }) {
+export function Address({ url, label }: { url: string; label?: string }) {
   return (
     <div className="mt-2.5 flex items-center gap-2 rounded-tile border border-line bg-surface py-2 pl-3.5 pr-2">
       <code className="mono min-w-0 flex-1 truncate text-ui-caption-lg text-ink">{url}</code>

@@ -1,5 +1,5 @@
 import { SITE } from "@aihot/site";
-import { Form, Link, useNavigate, useSearchParams } from "react-router";
+import { Form, useSearchParams } from "react-router";
 import type { Route } from "./+types/sources";
 import type { AdminSources } from "@aihot/contracts/admin";
 import { SELECTION } from "@aihot/industry/selection";
@@ -7,6 +7,7 @@ import { adminGet } from "../../lib/admin.server";
 import { num } from "../../features/admin/format";
 import { HEALTH_LABEL, KIND_LABEL, MODE_LABEL } from "../../features/admin/labels";
 import { AdminPage, Badge, ButtonLink, Card, DataTable, Dot, FilterChips, healthTone, Input, Pager, Select, Stat, Time } from "../../features/admin/ui";
+import { Link, useNavigate } from "../../lib/link";
 
 
 

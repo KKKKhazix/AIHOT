@@ -1,6 +1,5 @@
 import { SITE } from "@aihot/site";
 import { useState, type ReactNode } from "react";
-import { Link } from "react-router";
 import { CATEGORY_KEYS, CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
 import type { Route } from "./+types/content-item";
 import type { AdminContentChain, AdminPresentationRefresh } from "@aihot/contracts/admin";
@@ -9,6 +8,7 @@ import { useAdminAction } from "../../features/admin/action";
 import { bj, money } from "../../features/admin/format";
 import { KIND_LABEL, MODE_LABEL, VISIBILITY_LABEL } from "../../features/admin/labels";
 import { AdminPage, Badge, Button, Card, Empty, Field, Input, Json, KV, ReasonDialog, Select, Textarea } from "../../features/admin/ui";
+import { Link } from "../../lib/link";
 
 
 export async function loader({ request, params }: Route.LoaderArgs) {

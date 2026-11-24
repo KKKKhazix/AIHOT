@@ -11,6 +11,7 @@ import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
+import { translator, type Locale } from "../../lib/i18n";
 
 const LABELS: Record<string, string> = {
   bash: "Shell", css: "CSS", javascript: "JavaScript", json: "JSON", markdown: "Markdown", python: "Python", sql: "SQL",
@@ -19,12 +20,13 @@ const LABELS: Record<string, string> = {
 for (const [name, language] of Object.entries({ bash, css, javascript, json, markdown, python, sql, typescript, xml, yaml })) hljs.registerLanguage(name, language);
 
 /** Coloured HTML (escaped text and hljs spans only) and a language label, or null when unsure. */
-export function highlightCode(source: string): { html: string; label: string } | null {
+export function highlightCode(source: string, locale: Locale): { html: string; label: string } | null {
   const text = source.replace(/\r\n?/g, "\n");
   const length = text.trim().length;
   if (length < 40 || length > 12_000) return null;
   const result = hljs.highlightAuto(text, Object.keys(LABELS));
   if (!result.language || result.relevance < 4) return null;
   const clear = result.relevance >= 6 && result.relevance - (result.secondBest?.relevance ?? 0) >= 2;
-  return { html: result.value, label: clear ? (LABELS[result.language] ?? "代码") : "代码" };
+  const t = translator(locale);
+  return { html: result.value, label: clear ? (LABELS[result.language] ?? t("代码", "Code")) : t("代码", "Code") };
 }

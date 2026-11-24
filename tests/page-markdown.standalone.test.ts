@@ -28,6 +28,19 @@ test("Markdown responses carry canonical/noindex, ETag/304 and HEAD without an a
 
 test("pageMeta advertises only an explicitly supplied Markdown representation", () => {
   const alternate = { tagName: "link", rel: "alternate", type: "text/markdown", href: `${siteUrl()}/fixture.md` };
-  assert.ok(pageMeta({ path: "/fixture", markdown: "/fixture.md" }).some((tag) => JSON.stringify(tag) === JSON.stringify(alternate)));
-  assert.ok(!pageMeta({ path: "/fixture" }).some((tag) => "rel" in tag && tag.rel === "alternate"));
+  const markdown = (tag: object) => "type" in tag && tag.type === "text/markdown";
+  assert.ok(pageMeta({ locale: "zh", path: "/fixture", markdown: "/fixture.md" }).some((tag) => JSON.stringify(tag) === JSON.stringify(alternate)));
+  assert.ok(!pageMeta({ locale: "zh", path: "/fixture" }).some(markdown));
+  // The Markdown versions are the Chinese pages'; an English page does not offer them.
+  assert.ok(!pageMeta({ locale: "en", path: "/hot", markdown: "/hot.md" }).some(markdown));
+});
+
+test("an English page names its English address and language", () => {
+  const tags = pageMeta({ locale: "en", path: "/hot" });
+  const find = (key: string, value: string) => tags.find((tag) => (tag as Record<string, unknown>)[key] === value) as Record<string, string> | undefined;
+  assert.equal(find("rel", "canonical")?.href, `${siteUrl()}/en/hot`);
+  assert.equal(find("property", "og:url")?.content, `${siteUrl()}/en/hot`);
+  assert.equal(find("property", "og:locale")?.content, "en_US");
+  // A page without an English edition keeps its one address.
+  assert.equal((pageMeta({ locale: "en", path: "/changelog" }).find((tag) => (tag as Record<string, unknown>).rel === "canonical") as Record<string, string>).href, `${siteUrl()}/changelog`);
 });

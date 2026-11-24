@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { Link } from "react-router";
 import { IconChevronRight } from "../icons";
+import { Link } from "../../lib/link";
 
 /**
  * The reading template, one of the site's two page widths (the other is the full-width feeds and

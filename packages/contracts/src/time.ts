@@ -28,6 +28,20 @@ export function monthDay(date: string, today?: string): string {
   return `${year}${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日`;
 }
 
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** "Nov 24" of a calendar date (YYYY-MM-DD); a day of another year than `today` carries it: "Feb 19, 2019". English pages. */
+export function monthDayEn(date: string, today?: string): string {
+  const md = `${MONTHS[Number(date.slice(5, 7)) - 1]!.slice(0, 3)} ${Number(date.slice(8, 10))}`;
+  return today && date.slice(0, 4) !== today.slice(0, 4) ? `${md}, ${date.slice(0, 4)}` : md;
+}
+
+/** "November 24, 2026" of a calendar date, "November 2026" of a month label (YYYY-MM). English pages. */
+export function longDateEn(date: string): string {
+  const month = MONTHS[Number(date.slice(5, 7)) - 1]!;
+  return date.length > 7 ? `${month} ${Number(date.slice(8, 10))}, ${date.slice(0, 4)}` : `${month} ${date.slice(0, 4)}`;
+}
+
 /** "9月29日" in Beijing time. */
 export const beijingDay = (instant: Date | string | number) => monthDay(beijingDate(instant));
 
@@ -56,6 +70,13 @@ const WEEKDAYS = ["星期日", "星期一", "星期二", "星期三", "星期四
 
 export function beijingWeekday(date: string): string {
   return WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]!;
+}
+
+const WEEKDAYS_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** "Tuesday" of a calendar date (YYYY-MM-DD). English pages. */
+export function weekdayEn(date: string): string {
+  return WEEKDAYS_EN[new Date(`${date}T00:00:00Z`).getUTCDay()]!;
 }
 
 /** ISO week label (e.g. 2026-W38) of a calendar date. */

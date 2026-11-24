@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { SITE } from "@aihot/site";
-import { Link, useFetcher } from "react-router";
+import { useFetcher } from "react-router";
 import { useEffect } from "react";
 import type { Route } from "./+types/runs";
 import type { AdminDeliveryIssue, AdminReceiptIssue, AdminRuns } from "@aihot/contracts/admin";
@@ -8,6 +8,7 @@ import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { ago, bj, duration, num } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, DataTable, Dot, Empty, Field, Json, ReasonDialog, Select, Stat, Time } from "../../features/admin/ui";
+import { Link } from "../../lib/link";
 
 
 export async function loader({ request }: Route.LoaderArgs) {

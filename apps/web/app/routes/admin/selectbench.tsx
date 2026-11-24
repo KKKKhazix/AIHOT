@@ -1,6 +1,5 @@
 import { SITE } from "@aihot/site";
 import { useRef } from "react";
-import { Link } from "react-router";
 import type { Route } from "./+types/selectbench";
 import type { AdminSelectBenchRuns } from "@aihot/contracts/admin";
 import { adminGet } from "../../lib/admin.server";
@@ -8,6 +7,7 @@ import { useAdminAction } from "../../features/admin/action";
 import { bj, num, pct } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, Empty } from "../../features/admin/ui";
 import { toast } from "../../features/admin/toast";
+import { Link } from "../../lib/link";
 
 
 export async function loader({ request }: Route.LoaderArgs) {

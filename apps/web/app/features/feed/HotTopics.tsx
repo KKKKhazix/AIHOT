@@ -1,7 +1,8 @@
-import { Link } from "react-router";
 import type { HotStripEntry } from "@aihot/contracts/site";
 import { IconArrowRight, IconMinus, IconTrendDown, IconTrendUp } from "../../components/icons";
 import { Faces } from "../hot/Faces";
+import { Link } from "../../lib/link";
+import { useT } from "../../lib/i18n";
 
 // As on the original list: the top three in the ranking colours at the heaviest weight.
 const RANK_COLOR = ["text-ui-body font-black text-rank-1", "text-ui-body font-black text-rank-2", "text-ui-body font-black text-rank-3"];
@@ -12,11 +13,12 @@ function hrefOf(e: HotStripEntry): string {
 
 /** Where the heat is heading, as a small arrow (a "新" mark for a story new to the ranking). */
 function TrendMark({ trend }: { trend: HotStripEntry["trend"] }) {
-  if (trend === "up") return <IconTrendUp size={14} strokeWidth={2.2} className="text-hot" aria-label="热度上升" />;
-  if (trend === "down") return <IconTrendDown size={14} strokeWidth={2.2} className="text-ink-4" aria-label="热度回落" />;
-  if (trend === "new") return <span className="rounded-full bg-accent-soft px-1.5 text-ui-micro-8 font-semibold leading-4 text-accent">新</span>;
+  const t = useT();
+  if (trend === "up") return <IconTrendUp size={14} strokeWidth={2.2} className="text-hot" aria-label={t("热度上升", "Rising")} />;
+  if (trend === "down") return <IconTrendDown size={14} strokeWidth={2.2} className="text-ink-4" aria-label={t("热度回落", "Cooling")} />;
+  if (trend === "new") return <span className="rounded-full bg-accent-soft px-1.5 text-ui-micro-8 font-semibold leading-4 text-accent">{t("新", "New")}</span>;
   if (trend === "unknown") return null; // sources behind on collection: no comparison to show
-  return <IconMinus size={14} strokeWidth={2.2} className="text-ink-4" aria-label="热度持平" />;
+  return <IconMinus size={14} strokeWidth={2.2} className="text-ink-4" aria-label={t("热度持平", "Steady")} />;
 }
 
 /**
@@ -26,6 +28,7 @@ function TrendMark({ trend }: { trend: HotStripEntry["trend"] }) {
  * the feed starts on the first screen.
  */
 export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
+  const t = useT();
   if (entries.length === 0) return null;
   return (
     <section
@@ -38,10 +41,10 @@ export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-hot opacity-40" />
             <span className="relative inline-flex size-2 rounded-full bg-hot" />
           </span>
-          当前热点
+          {t("当前热点", "Trending now")}
         </h2>
         <Link to="/hot" className="group -my-2 -mr-1.5 inline-flex h-10 items-center gap-1 px-1.5 text-ui-caption-lg text-ink-3 transition-colors hover:text-accent lg:my-0 lg:mr-0 lg:h-auto lg:px-0">
-          完整榜单 <IconArrowRight size={13} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+          {t("完整榜单", "Full list")} <IconArrowRight size={13} className="transition-transform duration-200 group-hover:translate-x-0.5" />
         </Link>
       </div>
       <ol>
@@ -57,8 +60,8 @@ export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
                 <Faces participants={e.participants} total={e.participantCount} size={20} interactive={false} />
               </span>
               <span className="flex items-center justify-end gap-2.5 sm:contents">
-                <span className="whitespace-nowrap text-right text-ui-caption-lg text-ink-4" title="热度指数">
-                  <span className="num text-ui-label-lg font-semibold text-ink-2">{Math.round(e.heat)}</span> 热度
+                <span className="whitespace-nowrap text-right text-ui-caption-lg text-ink-4" title={t("热度指数", "Heat index")}>
+                  <span className="num text-ui-label-lg font-semibold text-ink-2">{t(String(Math.round(e.heat)), Math.round(e.heat).toLocaleString("en-US"))}</span> {t("热度", "heat")}
                 </span>
                 <span className="flex w-5 justify-center">
                   <TrendMark trend={e.trend} />

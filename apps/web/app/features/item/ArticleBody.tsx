@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Lightbox, type LightboxImage } from "../../components/ui/Lightbox";
 import { copyText } from "../../lib/clipboard";
+import { translator, useLocale, type Locale } from "../../lib/i18n";
 
 /** Pictures worth enlarging: not inside a link, not tiny icons. */
 function canZoom(img: HTMLImageElement): boolean {
@@ -14,7 +15,8 @@ function zoomable(root: HTMLElement): HTMLImageElement[] {
   return [...root.querySelectorAll<HTMLImageElement>("img")].filter(canZoom);
 }
 
-function enhanceCode(root: HTMLElement): () => void {
+function enhanceCode(root: HTMLElement, locale: Locale): () => void {
+  const t = translator(locale);
   const blocks = [...root.querySelectorAll<HTMLPreElement>("pre")].filter((pre) => pre.textContent?.trim());
   if (!blocks.length) return () => {};
   let disposed = false;
@@ -52,12 +54,12 @@ function enhanceCode(root: HTMLElement): () => void {
     const head = document.createElement("div");
     head.className = "code-block-head";
     const label = document.createElement("span");
-    label.textContent = "代码";
+    label.textContent = t("代码", "Code");
     const button = document.createElement("button");
     button.type = "button";
     button.className = "code-block-copy";
-    button.textContent = "复制";
-    button.setAttribute("aria-label", "复制代码");
+    button.textContent = t("复制", "Copy");
+    button.setAttribute("aria-label", t("复制代码", "Copy code"));
     button.addEventListener("click", async () => {
       let ok = true;
       try {
@@ -66,11 +68,11 @@ function enhanceCode(root: HTMLElement): () => void {
         ok = false;
       }
       button.dataset.status = ok ? "copied" : "error";
-      button.textContent = ok ? "已复制" : "请手动复制";
+      button.textContent = ok ? t("已复制", "Copied") : t("请手动复制", "Copy manually");
       const timer = setTimeout(() => {
         timers.delete(timer);
         button.dataset.status = "";
-        button.textContent = "复制";
+        button.textContent = t("复制", "Copy");
       }, ok ? 1800 : 2400);
       timers.add(timer);
     });
@@ -83,7 +85,7 @@ function enhanceCode(root: HTMLElement): () => void {
     void (highlighter ??= import("./highlight"))
       .then(({ highlightCode }) => {
         if (disposed || !code.isConnected || code.classList.contains("hljs")) return;
-        const coloured = highlightCode(source);
+        const coloured = highlightCode(source, locale);
         if (!coloured) return;
         // highlight.js escapes the text it is given; its output is only that text and its own spans.
         code.innerHTML = coloured.html;
@@ -96,24 +98,26 @@ function enhanceCode(root: HTMLElement): () => void {
     disposed = true;
     observer.disconnect();
     pending.clear();
-    for (const t of timers) clearTimeout(t);
+    for (const timer of timers) clearTimeout(timer);
   };
 }
 
 export function ArticleBody({ html }: { html: string }) {
+  const locale = useLocale();
   const ref = useRef<HTMLDivElement>(null);
   const [images, setImages] = useState<LightboxImage[]>([]);
   const [open, setOpen] = useState<number | null>(null);
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
-    const cleanCode = enhanceCode(root);
+    const cleanCode = enhanceCode(root, locale);
+    const t = translator(locale);
     const mark = (img: HTMLImageElement) => {
       if (canZoom(img)) {
         img.classList.add("zoomable");
         img.tabIndex = 0;
         img.setAttribute("role", "button");
-        img.setAttribute("aria-label", img.alt ? `查看大图：${img.alt}` : "查看大图");
+        img.setAttribute("aria-label", img.alt ? t(`查看大图：${img.alt}`, `View full size: ${img.alt}`) : t("查看大图", "View full size"));
       } else if (img.classList.contains("zoomable")) {
         img.classList.remove("zoomable");
         img.removeAttribute("tabindex");
@@ -147,7 +151,7 @@ export function ArticleBody({ html }: { html: string }) {
       root.removeEventListener("click", showImage);
       root.removeEventListener("keydown", onKeyDown);
     };
-  }, [html]);
+  }, [html, locale]);
   return (
     <>
       <div ref={ref} className="prose" dangerouslySetInnerHTML={{ __html: html }} />

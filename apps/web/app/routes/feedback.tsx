@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { useLocation, useSearchParams } from "react-router";
 import { SITE } from "@aihot/site";
+import { ENGLISH } from "@aihot/contracts/english";
+import type { Route } from "./+types/feedback";
 import { Presence } from "../components/ui/Presence";
 import { edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
@@ -13,15 +15,26 @@ import type { Screen } from "../components/shell/screens";
 import { isHydrated } from "../lib/hydration";
 import type { WebModule } from "../modules";
 import { webModules } from "../site-modules";
+import { Link, useNavigate } from "../lib/link";
+import { L, localeOf, translator, useLocale, useT, type Phrase } from "../lib/i18n";
 
-export const handle: Screen = { tab: "me", name: "反馈" };
+export const handle: Screen = { tab: "me", name: L("反馈", "Feedback") };
 
 export function headers() {
   return edgeTtl(300);
 }
 
-export function meta() {
-  return pageMeta({ title: "反馈", description: `告诉 ${SITE.name} 哪里可以做得更好：内容、功能、接入或来源方的更正与下架请求。`, path: "/feedback", image: "/og/pages/feedback.png", noindex: true });
+export function meta({ location }: Route.MetaArgs) {
+  const locale = localeOf(location.pathname);
+  const t = translator(locale);
+  return pageMeta({
+    locale,
+    title: t("反馈", "Feedback"),
+    description: t(`告诉 ${SITE.name} 哪里可以做得更好：内容、功能、接入或来源方的更正与下架请求。`, `Tell ${SITE.name} what could be better: content, features, integrations, or corrections and takedown requests from sources.`),
+    path: "/feedback",
+    image: "/og/pages/feedback.png",
+    noindex: true,
+  });
 }
 
 interface Draft {
@@ -55,7 +68,24 @@ function writeDraft(d: Draft | null): boolean {
   return saved;
 }
 
-const TIPS = ["出问题的页面或文章链接", "你看到了什么，原本想做什么", "有截图更好，记得先遮盖敏感信息"];
+const TIPS: Phrase[] = [
+  L("出问题的页面或文章链接", "A link to the page or article with the problem"),
+  L("你看到了什么，原本想做什么", "What you saw, and what you were trying to do"),
+  L("有截图更好，记得先遮盖敏感信息", "A screenshot helps; cover anything sensitive first"),
+];
+const BACK = { to: "/more", label: L("我的", "Me") };
+
+/**
+ * A refusal in the reader's language. The server explains its refusals in Chinese only: an English page says what
+ * each kind means instead.
+ */
+function refusal(body: { detail?: string; code?: string }): Phrase {
+  return L(body.detail ?? "提交失败，请稍后再试。", body.code === "rate_limited"
+    ? "Too many submissions for now. Try again later; your draft is saved."
+    : body.code === "invalid_request"
+      ? "Part of the form couldn't be accepted. Check your email address and screenshot, then try again."
+      : "Couldn't send it. Try again later.");
+}
 
 type Guide = NonNullable<WebModule["feedbackGuide"]>;
 
@@ -72,20 +102,21 @@ function carriedText(state: unknown): string | null {
 }
 
 function FeedbackAside({ tips }: { tips: string[] }) {
+  const t = useT();
   return (
     <>
-      <AsideCard title="写清楚这几点，处理更快">
+      <AsideCard title={t("写清楚这几点，处理更快", "These help us sort it out faster")}>
         <ol className="space-y-2.5">
-          {tips.map((t, i) => (
-            <li key={t} className="flex gap-2.5 text-ui-label leading-[1.6] text-ink-3">
+          {tips.map((tip, i) => (
+            <li key={tip} className="flex gap-2.5 text-ui-label leading-[1.6] text-ink-3">
               <span className="mono mt-px text-ui-caption-sm font-bold text-accent">{String(i + 1).padStart(2, "0")}</span>
-              {t}
+              {tip}
             </li>
           ))}
         </ol>
       </AsideCard>
-      <AsideCard title="来源方">
-        <p className="text-ui-label leading-[1.75] text-ink-3">如果你是来源方，希望更正、下架或调整展示方式，写明对应的文章链接和你的诉求即可。</p>
+      <AsideCard title={t("来源方", "For sources")}>
+        <p className="text-ui-label leading-[1.75] text-ink-3">{t("如果你是来源方，希望更正、下架或调整展示方式，写明对应的文章链接和你的诉求即可。", "If you represent one of our sources and want something corrected, taken down or shown differently, include a link to the article and let us know.")}</p>
       </AsideCard>
     </>
   );
@@ -109,14 +140,17 @@ const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_TEXT = 2000;
 
 export default function FeedbackPage() {
+  const t = useT();
+  const locale = useLocale();
   const [params] = useSearchParams();
   // The guide comes with the button's navigation, which the server never sees: a page the server drew starts with
-  // the site's own words, and turns to the guide once hydrated.
+  // the site's own words, and turns to the guide once hydrated. Guides are written in Chinese only (their modules'
+  // pages have no English edition), so English pages keep the site's own words.
   const { state: navigation, pathname, search } = useLocation();
   const navigate = useNavigate();
   const [hydrated, setHydrated] = useState(isHydrated);
   useEffect(() => setHydrated(true), []);
-  const guide = hydrated ? guideFor(navigation) : null;
+  const guide = hydrated && locale === "zh" ? guideFor(navigation) : null;
   const [draft, setDraft] = useState<Draft>({ content: "", email: "", pageUrl: params.get("from") ?? "" });
   const [shot, setShot] = useState<{ file: File; url: string } | null>(null);
   const [state, setState] = useState<{ kind: "idle" | "sending" | "done" | "error"; message?: string; id?: number }>({ kind: "idle" });
@@ -154,9 +188,9 @@ export default function FeedbackPage() {
   const pick = (picked: File | null | undefined) => {
     if (!picked) return;
     const type = screenshotType(picked);
-    if (!/^image\/(png|jpeg|webp)$/.test(type)) return setState({ kind: "error", message: "截图需要是 PNG、JPEG 或 WebP。" });
+    if (!/^image\/(png|jpeg|webp)$/.test(type)) return setState({ kind: "error", message: t("截图需要是 PNG、JPEG 或 WebP。", "The screenshot needs to be a PNG, JPEG or WebP.") });
     const file = type === picked.type ? picked : new File([picked], picked.name, { type });
-    if (file.size > MAX_IMAGE) return setState({ kind: "error", message: "截图原图不超过 5 MB。" });
+    if (file.size > MAX_IMAGE) return setState({ kind: "error", message: t("截图原图不超过 5 MB。", "Screenshots must be 5 MB or smaller.") });
     setShot({ file, url: URL.createObjectURL(file) });
     setState({ kind: "idle" });
   };
@@ -172,7 +206,7 @@ export default function FeedbackPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (draft.content.trim().length < 2) return setState({ kind: "error", message: "请写下反馈内容。" });
+    if (draft.content.trim().length < 2) return setState({ kind: "error", message: t("请写下反馈内容。", "Please enter your feedback.") });
     setState({ kind: "sending" });
     try {
       const form = new FormData();
@@ -182,13 +216,13 @@ export default function FeedbackPage() {
       if (shot) form.set("screenshot", shot.file);
       const res = await fetch("/api/site/feedback", { method: "POST", body: form });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) return setState({ kind: "error", message: body.detail ?? "提交失败，请稍后再试。" });
+      if (!res.ok) return setState({ kind: "error", message: t(refusal(body)) });
       writeDraft(null);
       setState({ kind: "done", id: body.id });
       setDraft({ content: "", email: prefilled.current, pageUrl: "" });
       setShot(null);
     } catch {
-      setState({ kind: "error", message: "网络不太顺，草稿已保存在本机，稍后再提交。" });
+      setState({ kind: "error", message: t("网络不太顺，草稿已保存在本机，稍后再提交。", "Connection failed. Your draft is saved on this device—try sending again later.") });
     }
   };
 
@@ -199,12 +233,15 @@ export default function FeedbackPage() {
           <div className="anim-pop-in mx-auto flex size-14 items-center justify-center rounded-full bg-accent text-accent-contrast">
             <IconCheck size={26} />
           </div>
-          <h1 className="mt-6 text-ui-heading-lg-sm font-semibold text-ink">收到了，谢谢你</h1>
+          <h1 className="mt-6 text-ui-heading-lg-sm font-semibold text-ink">{t("收到了，谢谢你", "Got it. Thank you")}</h1>
           <p className="mt-2 text-ui-body-sm text-ink-3">
-            反馈编号 <span className="mono font-semibold text-ink">#{state.id}</span>，需要回复时我们会引用这个编号。
+            {t(
+              <>反馈编号 <span className="mono font-semibold text-ink">#{state.id}</span>，需要回复时我们会引用这个编号。</>,
+              <>Your feedback number is <span className="mono font-semibold text-ink">#{state.id}</span>. We'll mention it if we reply.</>,
+            )}
           </p>
           <Link to="/" className="mt-8 inline-flex h-10 items-center rounded-full bg-ink px-6 text-ui-body-sm font-medium text-bg transition-opacity hover:opacity-90">
-            回到精选
+            {t("回到精选", "Back to Top Picks")}
           </Link>
         </div>
       </ReadingLayout>
@@ -216,11 +253,11 @@ export default function FeedbackPage() {
   const canSend = draft.content.trim().length >= 2 && state.kind !== "sending";
   return (
     <>
-    <PhoneBar back={{ to: "/more", label: "我的" }} title="意见反馈" />
-    <ReadingLayout aside={<FeedbackAside tips={guide?.tips ?? TIPS} />}>
+    <PhoneBar back={BACK} title={t("意见反馈", "Feedback")} />
+    <ReadingLayout aside={<FeedbackAside tips={guide?.tips ?? TIPS.map((tip) => t(tip))} />}>
       <header>
-        <h1 data-page-title="" className="text-ui-heading-lg font-semibold leading-[1.3] text-ink">{guide?.title ?? "说说你的想法"}</h1>
-        <p className="mt-2 text-ui-body-sm-plus leading-relaxed text-ink-3">{guide?.lead ?? SITE.feedbackLead}</p>
+        <h1 data-page-title="" className="text-ui-heading-lg font-semibold leading-[1.3] text-ink">{guide?.title ?? t("说说你的想法", "Tell us what you think")}</h1>
+        <p className="mt-2 text-ui-body-sm-plus leading-relaxed text-ink-3">{guide?.lead ?? t(SITE.feedbackLead, ENGLISH?.feedback.lead ?? SITE.feedbackLead)}</p>
       </header>
 
       <form
@@ -242,7 +279,7 @@ export default function FeedbackPage() {
         <div className="space-y-5 p-5 sm:p-6">
           <div>
             <label htmlFor="fb-content" className={label}>
-              想说点什么？
+              {t("想说点什么？", "What's on your mind?")}
             </label>
             <div className="relative">
               <textarea
@@ -252,7 +289,7 @@ export default function FeedbackPage() {
                 maxLength={MAX_TEXT}
                 value={draft.content}
                 onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-                placeholder={guide?.example ?? SITE.feedbackExample}
+                placeholder={guide?.example ?? t(SITE.feedbackExample, ENGLISH?.feedback.example ?? SITE.feedbackExample)}
                 className={`${field} block resize-y px-4 pb-8 pt-3.5 text-ui-body-lg leading-relaxed sm:text-ui-body-sm-plus`}
               />
               <span className="mono pointer-events-none absolute bottom-3 right-4 text-ui-caption-sm text-ink-4">
@@ -263,23 +300,23 @@ export default function FeedbackPage() {
 
           <div>
             <label htmlFor="fb-email" className={label}>
-              邮箱 <span className="font-normal text-ink-4">（选填）</span>
+              {t(<>邮箱 <span className="font-normal text-ink-4">（选填）</span></>, <>Email <span className="font-normal text-ink-4">(optional)</span></>)}
             </label>
-            <input id="fb-email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder={SITE.feedbackEmailHint} className={`${field} h-11 px-4 text-ui-body-lg sm:text-ui-body-sm-plus`} />
+            <input id="fb-email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder={t(SITE.feedbackEmailHint, ENGLISH?.feedback.emailHint ?? SITE.feedbackEmailHint)} className={`${field} h-11 px-4 text-ui-body-lg sm:text-ui-body-sm-plus`} />
           </div>
 
           <div>
             <span className={label}>
-              截图 <span className="font-normal text-ink-4">（选填）</span>
+              {t(<>截图 <span className="font-normal text-ink-4">（选填）</span></>, <>Screenshot <span className="font-normal text-ink-4">(optional)</span></>)}
             </span>
             {shot ? (
               <div className="flex items-center gap-4 well rounded-card p-3">
-                <img src={shot.url} alt="截图预览" className="h-16 w-24 shrink-0 rounded-control border border-line bg-surface object-cover" />
+                <img src={shot.url} alt={t("截图预览", "Screenshot preview")} className="h-16 w-24 shrink-0 rounded-control border border-line bg-surface object-cover" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-ui-label font-medium text-ink-2">{shot.file.name}</div>
                   <div className="mono mt-0.5 text-ui-caption-md text-ink-4">{(shot.file.size / 1024 / 1024).toFixed(2)} MB</div>
                 </div>
-                <button type="button" aria-label="移除截图" onClick={() => setShot(null)} className="grid size-8 shrink-0 place-items-center rounded-full text-ink-4 transition-colors hover:bg-surface hover:text-ink">
+                <button type="button" aria-label={t("移除截图", "Remove screenshot")} onClick={() => setShot(null)} className="grid size-8 shrink-0 place-items-center rounded-full text-ink-4 transition-colors hover:bg-surface hover:text-ink">
                   <IconClose size={15} />
                 </button>
               </div>
@@ -293,8 +330,8 @@ export default function FeedbackPage() {
                   <IconImage size={19} />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-ui-label-lg font-semibold text-ink-2">添加一张问题截图</span>
-                  <span className="mt-0.5 block text-ui-caption leading-relaxed text-ink-4">粘贴或拖到这里也可以 · 请先遮盖敏感信息；PNG、JPEG 或 WebP，原图不超过 5 MB</span>
+                  <span className="block text-ui-label-lg font-semibold text-ink-2">{t("添加一张问题截图", "Add a screenshot of the problem")}</span>
+                  <span className="mt-0.5 block text-ui-caption leading-relaxed text-ink-4">{t("粘贴或拖到这里也可以 · 请先遮盖敏感信息；PNG、JPEG 或 WebP，原图不超过 5 MB", "You can also paste or drop it here · Cover anything sensitive first. PNG, JPEG or WebP, up to 5 MB")}</span>
                 </span>
               </button>
             )}
@@ -310,11 +347,24 @@ export default function FeedbackPage() {
 
         <div className="flex flex-col-reverse gap-4 border-t border-line-soft bg-bg-sunk/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:bg-bg-muted/30">
           <p className="text-ui-caption leading-relaxed text-ink-4 sm:max-w-[400px]">
-            请勿提交密钥、身份证件或与问题无关的敏感信息。提交即表示你知悉反馈内容、选填邮箱、页面信息和截图将按
-            <Link viewTransition to="/privacy" className="text-accent hover:underline">
-              隐私说明
-            </Link>
-            处理。
+            {t(
+              <>
+                请勿提交密钥、身份证件或与问题无关的敏感信息。提交即表示你知悉反馈内容、选填邮箱、页面信息和截图将按
+                <Link viewTransition to="/privacy" className="text-accent hover:underline">
+                  隐私说明
+                </Link>
+                处理。
+              </>,
+              // The privacy notice has no English edition: the link goes to the Chinese page.
+              <>
+                Please don't include passwords, API keys, ID documents or sensitive details unrelated to the problem. By sending, you understand that your
+                feedback, optional email, page details and screenshot are handled as described in the{" "}
+                <a href="/privacy" className="text-accent hover:underline">
+                  privacy notice
+                </a>{" "}
+                (in Chinese).
+              </>,
+            )}
           </p>
           <button
             type="submit"
@@ -322,7 +372,7 @@ export default function FeedbackPage() {
             className="inline-flex h-10 shrink-0 items-center justify-center gap-2 self-start rounded-full bg-accent px-6 text-ui-body-sm font-medium text-accent-contrast transition-[background-color,opacity] hover:bg-accent-ink disabled:bg-line-strong disabled:text-ink-4 sm:self-auto"
           >
             {state.kind === "sending" && <RingMark className="size-4" spinning />}
-            发送反馈
+            {t("发送反馈", "Send feedback")}
           </button>
         </div>
       </form>

@@ -2,7 +2,7 @@
 // but it is served from the same public read layer as v1, RSS and MCP.
 import type { MentionTarget } from "./mentions.ts";
 import type { CategoryKey, ChannelKey } from "./taxonomy.ts";
-import { isoWeekRange, monthDay } from "./time.ts";
+import { isoWeekRange, longDateEn, monthDay, monthDayEn } from "./time.ts";
 
 export interface SourceRef {
   /** Stable canonical source id (`sources.id`); optional for legacy/unbacked citations. */
@@ -319,6 +319,7 @@ export type ReportKind = "daily" | "weekly" | "monthly";
 
 /** What each kind of report is called. */
 export const REPORT_NAMES: Record<ReportKind, string> = { daily: "日报", weekly: "周报", monthly: "月报" };
+export const REPORT_NAMES_EN: Record<ReportKind, string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
 
 /** An issue's date as Chinese readers write and search it: "10月17日", "10月12日—18日" (or "9月28日—10月4日"), "2026年10月". */
 export function reportDateLabel(kind: ReportKind, key: string): string {
@@ -326,6 +327,14 @@ export function reportDateLabel(kind: ReportKind, key: string): string {
   if (kind === "monthly") return `${key.slice(0, 4)}年${Number(key.slice(5, 7))}月`;
   const { start, end } = isoWeekRange(key)!;
   return `${monthDay(start)}—${start.slice(5, 7) === end.slice(5, 7) ? `${Number(end.slice(8, 10))}日` : monthDay(end)}`;
+}
+
+/** reportDateLabel on English pages: "Oct 17", "Oct 12–18" (or "Sep 28 – Oct 4"), "October 2026". */
+export function reportDateLabelEn(kind: ReportKind, key: string): string {
+  if (kind === "daily") return monthDayEn(key);
+  if (kind === "monthly") return longDateEn(key);
+  const { start, end } = isoWeekRange(key)!;
+  return start.slice(5, 7) === end.slice(5, 7) ? `${monthDayEn(start)}–${Number(end.slice(8, 10))}` : `${monthDayEn(start)} – ${monthDayEn(end)}`;
 }
 
 export interface ReportCitation {

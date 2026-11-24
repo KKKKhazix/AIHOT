@@ -1,4 +1,5 @@
 import { ITEM_COPY } from "@aihot/site";
+import { useT } from "../../lib/i18n";
 
 /**
  * The AI score as a small pill, tinted by tier instead of drawn as a bar: strong picks (85+) in a wash of
@@ -17,20 +18,21 @@ export function shownScore(score: number | null): number | null {
 
 /** "AI 评分 · 88" on desktop cards; `compact` keeps only the number (phones). */
 export function ScoreLabel({ score, compact = false }: { score: number | null; compact?: boolean }) {
+  const t = useT();
   const shown = shownScore(score);
   if (shown === null) return null;
   const value = Math.round(shown);
-  const tier = TIERS.find((t) => value >= t.min)!;
+  const tier = TIERS.find((level) => value >= level.min)!;
   return (
     <span
-      title={`AI 评分 ${value}/100`}
-      aria-label={`AI 评分 ${value} 分`}
+      title={t(`AI 评分 ${value}/100`, `AI score ${value}/100`)}
+      aria-label={t(`AI 评分 ${value} 分`, `AI score: ${value} out of 100`)}
       className={`inline-flex h-[20px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2 ring-1 ring-inset ${tier.className}`}
     >
       {!compact && (
         <>
           {/* The nudges center the ink, not the line box: the CJK label sits ~1px low and the mono digits ~0.5px high. */}
-          <span className="-translate-y-px text-ui-caption-sm font-medium leading-none opacity-80">AI 评分</span>
+          <span className="-translate-y-px text-ui-caption-sm font-medium leading-none opacity-80">{t("AI 评分", "AI score")}</span>
           <span className="h-2.5 w-px bg-current opacity-25" aria-hidden="true" />
         </>
       )}

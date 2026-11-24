@@ -3,11 +3,13 @@
 import type { QuotedPostView, XPostView } from "@aihot/contracts/site";
 import { shortAddresses } from "@aihot/contracts/addresses";
 import { IconArrowUpRight } from "../../components/icons";
+import { useT } from "../../lib/i18n";
 
 function Author({ quoted }: { quoted: Pick<QuotedPostView, "authorName" | "handle"> }) {
+  const t = useT();
   return (
     <>
-      <span className="text-ink-4">引用</span>
+      <span className="text-ink-4">{t("引用", "Quoting")}</span>
       <span className="font-semibold text-ink-2">{quoted.authorName || `@${quoted.handle}`}</span>
       {quoted.authorName && quoted.handle && <span className="text-ink-4">@{quoted.handle}</span>}
     </>
@@ -19,6 +21,7 @@ function Author({ quoted }: { quoted: Pick<QuotedPostView, "authorName" | "handl
  * original), set as the post's own text is: paragraphs, lists, addresses as short links.
  */
 export function QuotedPost({ quoted, original = false }: { quoted: QuotedPostView; original?: boolean }) {
+  const t = useT();
   const zh = original ? null : quoted.translationHtml;
   return (
     <figure className="mt-6 rounded-tile border border-line px-4 py-3.5">
@@ -28,13 +31,13 @@ export function QuotedPost({ quoted, original = false }: { quoted: QuotedPostVie
       <blockquote className="prose prose-quote mt-2" dangerouslySetInnerHTML={{ __html: zh ?? quoted.html }} />
       {zh && (
         <details className="mt-2 text-ui-label text-ink-4">
-          <summary className="cursor-pointer select-none hover:text-ink-3">原文</summary>
+          <summary className="cursor-pointer select-none hover:text-ink-3">{t("原文", "Original")}</summary>
           <div className="prose prose-quote-original mt-1.5" dangerouslySetInnerHTML={{ __html: quoted.html }} />
         </details>
       )}
       {quoted.url && (
         <a href={quoted.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-0.5 text-ui-label text-accent hover:text-accent-ink">
-          在 X 查看被引用的帖子 <IconArrowUpRight size={13} />
+          {t("在 X 查看被引用的帖子 ", "View the quoted post on X ")}<IconArrowUpRight size={13} />
         </a>
       )}
     </figure>

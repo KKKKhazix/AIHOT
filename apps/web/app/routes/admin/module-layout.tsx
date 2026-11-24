@@ -1,12 +1,13 @@
 // The back office's shell for the modules' admin pages (ModulePage.admin): its own sidebar, listing those pages by
 // their nav names, instead of the site's. Only the admins a site module names get past its loader; everyone else
 // gets the site's 404. The engine's own admin pages keep their layout (layout.tsx).
-import { data, Link, NavLink, Outlet, useNavigation } from "react-router";
+import { data, Outlet, useNavigation } from "react-router";
 import { SITE } from "@aihot/site";
 import { RingMark } from "@aihot/site/brand/Logo.tsx";
 import { MODULES } from "@aihot/site/modules";
 import { NavigationProgress } from "../../components/shell/Chrome";
 import { adminPageAccess, GRAY_HEADERS } from "../../lib/admin.server";
+import { Link, NavLink } from "../../lib/link";
 
 /** The sidebar: every admin page without parameters in its address, in the order the site lists its modules. */
 const NAV = MODULES.flatMap((m) => (m.pages ?? []).flatMap((p) => ("layout" in p || !p.admin || p.path.includes(":") ? [] : [{ to: `/admin/${p.path}`, label: p.nav ?? p.path }])));

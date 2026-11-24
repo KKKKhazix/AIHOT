@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router";
 import type { Route } from "./+types/models";
 import type { AdminModels } from "@aihot/contracts/admin";
 import { SITE } from "@aihot/site";
@@ -7,6 +6,7 @@ import { adminGet } from "../../lib/admin.server";
 import { useAdminAction } from "../../features/admin/action";
 import { bj, money, num } from "../../features/admin/format";
 import { AdminPage, Badge, Button, Card, DataTable, Empty, Field, FilterChips, ReasonDialog, Select } from "../../features/admin/ui";
+import { Link } from "../../lib/link";
 
 
 

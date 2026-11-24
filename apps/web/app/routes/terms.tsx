@@ -16,7 +16,7 @@ export function headers() {
 }
 
 export function meta() {
-  return pageMeta({ title: POLICY.terms.name, description: POLICY.terms.description, path: "/terms", image: "/og/pages/terms.png" });
+  return pageMeta({ locale: "zh", title: POLICY.terms.name, description: POLICY.terms.description, path: "/terms", image: "/og/pages/terms.png" });
 }
 
 export default function TermsPage() {

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useT } from "../../lib/i18n";
 
 type Tone = "selected" | "accent" | "amber" | "hot" | "ok" | "neutral";
 
@@ -23,14 +24,16 @@ export function Badge({ tone = "neutral", dot = false, children, className = "",
 
 /** The "精选" mark on a report. */
 export function SelectedBadge() {
+  const t = useT();
   return (
     <Badge tone="selected" dot>
-      精选
+      {t("精选", "Top Pick")}
     </Badge>
   );
 }
 
 /** A selected report whose fact is shown by another report (the one holding its selected seat). */
 export function SameEventBadge() {
-  return <Badge title="这件事已有另一篇入选精选">同事件</Badge>;
+  const t = useT();
+  return <Badge title={t("这件事已有另一篇入选精选", "Another report on this story is already in Top Picks")}>{t("同事件", "Same story")}</Badge>;
 }

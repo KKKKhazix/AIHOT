@@ -6,6 +6,7 @@ import { Sheet } from "../../components/ui/Sheet";
 import { IconBookmark, IconExternal, IconList, IconShare } from "../../components/icons";
 import { useStar } from "../feed/parts";
 import type { FeedItemSummary } from "@aihot/contracts/site";
+import { useT } from "../../lib/i18n";
 
 type Starrable = Pick<FeedItemSummary, "id" | "title" | "summary" | "source" | "publishedAt" | "score" | "selected">;
 
@@ -63,26 +64,27 @@ export function ReaderToolbar({ item, originalUrl, originalLabel, onOutline, onS
   onOutline?: () => void;
   onShare: () => void;
 }) {
+  const t = useT();
   const hidden = useReadingDown();
   const star = useStar(item);
   return (
     <nav
-      aria-label="阅读工具"
+      aria-label={t("阅读工具", "Reading tools")}
       className={`fixed inset-x-0 bottom-0 z-40 bg-surface/90 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] shadow-[0_-1px_0_var(--line)] backdrop-blur-xl backdrop-saturate-150 transition-transform duration-300 ease-[var(--ease-out-quart)] lg:hidden ${hidden ? "translate-y-full" : ""}`}
     >
       <div className={`mx-auto grid h-[50px] max-w-[640px] ${onOutline ? "grid-cols-4" : "grid-cols-3"}`}>
         <Tool
           pressed={star.on}
           onClick={star.toggle}
-          label={star.on ? "已收藏" : "收藏"}
+          label={star.on ? t("已收藏", "Saved") : t("收藏", "Save")}
           icon={
             <span key={star.pulse} className={`flex ${star.pulse ? "anim-bump" : ""}`}>
               <IconBookmark size={22} filled={star.on} />
             </span>
           }
         />
-        {onOutline && <Tool onClick={onOutline} label="目录" icon={<IconList size={22} />} />}
-        <Tool onClick={onShare} label="分享" icon={<IconShare size={22} />} />
+        {onOutline && <Tool onClick={onOutline} label={t("目录", "Contents")} icon={<IconList size={22} />} />}
+        <Tool onClick={onShare} label={t("分享", "Share")} icon={<IconShare size={22} />} />
         {originalUrl ? <Tool href={originalUrl} label={originalLabel} icon={<IconExternal size={22} />} /> : <Tool label={originalLabel} icon={<IconExternal size={22} />} />}
       </div>
     </nav>
@@ -100,9 +102,10 @@ export interface ActionRow {
 
 /** The article's further actions as a sheet of rows (phones; desktop keeps its menu). */
 export function ActionsSheet({ open, onClose, rows }: { open: boolean; onClose: () => void; rows: ActionRow[] }) {
+  const t = useT();
   const row = "flex h-[52px] w-full items-center gap-3.5 rounded-tile px-3 text-left text-ui-body-lg text-ink transition-colors active:bg-bg-sunk";
   return (
-    <Sheet open={open} onClose={onClose} label="更多操作">
+    <Sheet open={open} onClose={onClose} label={t("更多操作", "More actions")}>
       <ul className="px-2 pt-2">
         {rows.map((r) => (
           <li key={r.key}>

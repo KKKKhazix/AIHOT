@@ -1,9 +1,10 @@
 // Shared admin building blocks: page frame, cards, stats, badges, tables, buttons, fields and a
 // reason dialog (manual changes always carry a reason for the audit log).
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { Presence } from "../../components/ui/Presence";
 import { ago, bj } from "./format";
+import { Link } from "../../lib/link";
 
 export function AdminPage({ title, subtitle, actions, children }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (

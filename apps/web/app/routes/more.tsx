@@ -18,7 +18,7 @@ import { LanguageSwitch } from "../components/shell/LanguageSwitch";
 import { Filings } from "../components/shell/Filings";
 import { IconBookmark, IconChevronRight, IconGlobe, IconGrid, IconHeart, IconMessage, IconMoon, IconPlug, IconSparkles } from "../components/icons";
 import { Link } from "../lib/link";
-import { hasEnglish, L, localeOf, translator, useLocale, useT, type Locale, type Text } from "../lib/i18n";
+import { feedPath, hasEnglish, L, localeOf, translator, useLocale, useT, type Locale, type Text } from "../lib/i18n";
 
 export const handle: Screen = { tab: "me", name: L("我的", "Me") };
 
@@ -81,6 +81,7 @@ function RowLink({ row, dot = false }: { row: Row; dot?: boolean }) {
 
 export default function MorePage() {
   const t = useT();
+  const locale = useLocale();
   const root = useRouteLoaderData<typeof rootLoader>("root");
   const changelogDot = useChangelogDot(root?.changelogVersion ?? null);
   const starred = useStarred();
@@ -133,7 +134,7 @@ export default function MorePage() {
         {/* The terms and the privacy notice have no English edition: English links to the Chinese pages. */}
         {t(<Link viewTransition to="/terms" className="hover:text-ink-2">{POLICY.terms.name}</Link>, <a href="/terms" className="hover:text-ink-2">{ENGLISH?.policyLinks.terms ?? POLICY.terms.name}</a>)}
         {t(<Link viewTransition to="/privacy" className="hover:text-ink-2">隐私说明</Link>, <a href="/privacy" className="hover:text-ink-2">{ENGLISH?.policyLinks.privacy ?? "Privacy"}</a>)}
-        <a href="/feed.xml" className="hover:text-ink-2">RSS</a>
+        <a href={feedPath("/feed.xml", locale)} className="hover:text-ink-2">RSS</a>
         {SITE.github && <a href={SITE.github} target="_blank" rel="noopener noreferrer" className="hover:text-ink-2">{t("GitHub 开源", "Open source on GitHub")}</a>}
         {SITE.poweredBy && <a href={SITE.poweredBy.url} target="_blank" rel="noopener" className="hover:text-ink-2">{t(<>由 {SITE.poweredBy.name} 驱动</>, <>Powered by {SITE.poweredBy.name}</>)}</a>}
         <Filings className="hover:text-ink-2" badgeSize={13} />

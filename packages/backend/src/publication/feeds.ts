@@ -1,8 +1,12 @@
 // RSS feeds. GUID = article id (isPermaLink=false), <link> = the site's page, pubDate = source
 // publication time (none when it is unknown). Summary feeds never carry content:encoded; full feeds
 // inline bodies only for sources that explicitly allow redistribution. Titles come from the site's
-// name and categories.
-import { feedCategoryLabel, PUBLIC_API_CATEGORY_KEYS, toPublicApiCategory, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
+// name and categories. On a site with an English edition every feed is also at /en/feed…, in English and
+// linking to the English pages: an article enters it once its title and summary are in English, an issue once
+// its headline and lead are; a full feed carries the original text there (a body written in Chinese, none).
+import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
+import { REPORT_NAMES_EN } from "@aihot/contracts/site";
+import { feedCategoryLabelIn, PUBLIC_API_CATEGORY_KEYS, toPublicApiCategory, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { EDITION_WHEN, REPORTS, SITE, subjectAfter } from "@aihot/site";
 import { config } from "../config.ts";
 import { sql } from "../db.ts";
@@ -11,11 +15,19 @@ import { proxyBodyImages } from "../media/imgproxy.ts";
 import { withCover, type Cover } from "../content/cover.ts";
 import { feedIssues, type FeedIssue, type ReportKind } from "./reports.ts";
 import { textToHtml } from "../content/sanitize.ts";
+import { isChineseText } from "../lib/text.ts";
+import * as english from "./english.ts";
 import { xArticleBody } from "../content/posts.ts";
 import { PUBLIC_ITEM_COLUMNS, publicCategoryCondition, exportTranslation, xView, type ItemRow } from "./items.ts";
 import { publicSourceName } from "./rules.ts";
 import { browsedCondition, seatedCondition } from "./scope.ts";
-import { dailyUrl, itemUrl, periodUrl, siteUrl } from "./links.ts";
+import { siteUrl } from "./links.ts";
+
+/** A feed's language: Chinese at /feed…, English at /en/feed… (on a site with an English edition). */
+export type FeedLanguage = "zh" | "en";
+
+/** A page's or feed's path in the feed's language. */
+const inLanguage = (path: string, lang: FeedLanguage) => (lang === "en" ? `/en${path === "/" ? "" : path}` : path);
 
 interface FeedMeta {
   id: string;
@@ -38,9 +50,23 @@ const FEEDS: FeedMeta[] = [
   { id: "monthly", path: "/feed/monthly.xml", title: `${SITE.name} 月报`, description: `${SITE.name} ${EDITION_WHEN.monthly}（北京时间）发布的月报：整理自上月日报的${REPORTS.entry.noun}，按栏目归类并附总述，保留最近 12 期。`, homePath: "/monthly", pollHintMinutes: 360, ...CACHE },
 ];
 
+/** The English feeds' titles and descriptions; the rest as the Chinese feed's. */
+function englishMeta(id: ItemFeedKind | ReportKind): Pick<FeedMeta, "title" | "description"> {
+  const when = ENGLISH?.editionWhen ?? { daily: "daily", weekly: "weekly", monthly: "monthly" };
+  return {
+    selected: { title: `${SITE.name} — Top Picks`, description: `The latest 50 ${SITE.name} top picks in English, with links to read them on the site and at the source; for full text in your reader, subscribe to /en/feed/full.xml instead.` },
+    "selected-full": { title: `${SITE.name} — Top Picks, Full Text`, description: `The latest 50 ${SITE.name} top picks in English; sources that allow republishing come with their original full text, the rest with a summary and links.` },
+    all: { title: `${SITE.name} — All ${SITE.subject} News`, description: `${SITE.subject} news from the last 7 days in English, newest first, with duplicates and low-value items filtered out.` },
+    daily: { title: `${SITE.name} ${REPORT_NAMES_EN.daily}`, description: `${SITE.name}'s daily briefing, out ${when.daily}; the last 30 issues.` },
+    weekly: { title: `${SITE.name} ${REPORT_NAMES_EN.weekly}`, description: `${SITE.name}'s weekly roundup, out ${when.weekly}: last week's daily stories by section, with an overview; the last 12 issues.` },
+    monthly: { title: `${SITE.name} ${REPORT_NAMES_EN.monthly}`, description: `${SITE.name}'s monthly review, out ${when.monthly}: last month's daily stories by section, with an overview; the last 12 issues.` },
+  }[id];
+}
+
 /** A feed by its id; a category feed shares the poll hint and caching of the feed it narrows. */
-export function feedMeta(id: ItemFeedKind | ReportKind): FeedMeta {
-  return FEEDS.find((f) => f.id === id)!;
+export function feedMeta(id: ItemFeedKind | ReportKind, lang: FeedLanguage = "zh"): FeedMeta {
+  const meta = FEEDS.find((f) => f.id === id)!;
+  return lang === "en" ? { ...meta, ...englishMeta(id), path: inLanguage(meta.path, "en"), homePath: inLanguage(meta.homePath, "en") } : meta;
 }
 
 export function feedCacheControl(id: ItemFeedKind | ReportKind): string {
@@ -59,14 +85,14 @@ function rfc822(d: Date): string {
   return d.toUTCString();
 }
 
-function channel(meta: { title: string; description: string; homePath: string; selfPath: string; ttl: number }, items: string[]): string {
+function channel(meta: { title: string; description: string; homePath: string; selfPath: string; ttl: number }, items: string[], lang: FeedLanguage): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
   <channel>
     <title>${escapeXml(meta.title)}</title>
     <link>${escapeXml(siteUrl(meta.homePath))}</link>
     <description>${escapeXml(meta.description)}</description>
-    <language>zh-CN</language>
+    <language>${lang === "en" ? "en" : "zh-CN"}</language>
     <atom:link href="${escapeXml(siteUrl(meta.selfPath))}" rel="self" type="application/rss+xml" />
     <ttl>${meta.ttl}</ttl>
     <generator>${escapeXml(`${SITE.name} (${siteUrl("/agent")})`)}</generator>
@@ -86,45 +112,53 @@ const FEED_IMAGE_SECONDS = 7 * 86400;
 
 /**
  * The body a full feed carries, in Chinese when the page has it: an X post's translation (with the post
- * it quotes, translated too), else a complete Chinese translation of the article, else the original. It
- * ends with an attribution line (also a mark on copies taken from the feed).
+ * it quotes, translated too), else a complete Chinese translation of the article, else the original. In
+ * English, the original, unless it is written in Chinese (then none). It ends with an attribution line (also
+ * a mark on copies taken from the feed).
  */
-function fullContent(r: FeedRow, aihot: string): string | null {
+function fullContent(r: FeedRow, aihot: string, lang: FeedLanguage): string | null {
+  const en = lang === "en";
   let html: string | null = null;
   const x = r.channel === "x" ? xView({ x_post: r.x_post ?? null, x_article: r.x_article ?? null, zh_text: r.zh_text ?? null, quoted_zh: r.quoted_zh ?? null }) : null;
   if (x) {
     // A long X Article as its page shows it (after what the post says besides its link), in Chinese when
     // its translation is complete, as an article's body is.
     const article = r.x_article?.html;
+    if (en && isChineseText(r.x_article?.text ?? x.text, r.language)) return null;
     html = article
-      ? exportTranslation({ language: r.language, body_text: r.x_article?.text ?? "", tr_html: r.tr_html, tr_complete: r.tr_complete }) ?? xArticleBody(String(r.x_post?.text ?? ""), article)
-      : textToHtml(x.translation ?? x.text);
+      ? (en ? null : exportTranslation({ language: r.language, body_text: r.x_article?.text ?? "", tr_html: r.tr_html, tr_complete: r.tr_complete })) ?? xArticleBody(String(r.x_post?.text ?? ""), article)
+      : textToHtml(en ? x.text : x.translation ?? x.text);
     if (x.quoted?.text) {
-      html += `<blockquote><p>引用 @${escapeXml(x.quoted.handle)}：</p>${textToHtml(x.quoted.translation ?? x.quoted.text)}${x.quoted.url ? `<p><a href="${escapeXml(x.quoted.url)}">${escapeXml(x.quoted.url)}</a></p>` : ""}</blockquote>`;
+      const quoted = en ? x.quoted.text : x.quoted.translation ?? x.quoted.text;
+      html += `<blockquote><p>${en ? "Quoting" : "引用"} @${escapeXml(x.quoted.handle)}${en ? ":" : "："}</p>${textToHtml(quoted)}${x.quoted.url ? `<p><a href="${escapeXml(x.quoted.url)}">${escapeXml(x.quoted.url)}</a></p>` : ""}</blockquote>`;
     }
     for (const media of r.x_post?.media ?? []) {
       const url = String(media.url ?? "");
       if (!/^https?:\/\//i.test(url)) continue;
       html += media.kind === "video"
-        ? `<p><a href="${escapeXml(url)}">视频</a></p>`
+        ? `<p><a href="${escapeXml(url)}">${en ? "Video" : "视频"}</a></p>`
         : `<p><img src="${escapeXml(url)}" alt="${escapeXml(String(media.alt ?? ""))}"></p>`;
     }
   } else if (r.body_html) {
-    html = withCover(exportTranslation(r) ?? r.body_html, r.cover, r.body_html);
+    if (en && isChineseText(r.body_text ?? "", r.language)) return null;
+    html = withCover((en ? null : exportTranslation(r)) ?? r.body_html, r.cover, r.body_html);
   }
   if (!html) return null;
-  return `${proxyBodyImages(html, true, FEED_IMAGE_SECONDS)}<p>—— 本文由 ${escapeXml(SITE.name)} 聚合整理，完整版与${escapeXml(subjectAfter("更多", "动态"))}见 <a href="${aihot}">${aihot}</a></p>`;
+  const credit = en
+    ? `<p>— Collected by ${escapeXml(SITE.name)}; the full page and more ${escapeXml(SITE.subject)} news at <a href="${aihot}">${aihot}</a></p>`
+    : `<p>—— 本文由 ${escapeXml(SITE.name)} 聚合整理，完整版与${escapeXml(subjectAfter("更多", "动态"))}见 <a href="${aihot}">${aihot}</a></p>`;
+  return `${proxyBodyImages(html, true, FEED_IMAGE_SECONDS)}${credit}`;
 }
 
-function itemXml(r: FeedRow, includeContent: boolean): string {
-  const aihot = itemUrl(r.id);
+function itemXml(r: FeedRow, includeContent: boolean, lang: FeedLanguage): string {
+  const aihot = siteUrl(inLanguage(`/items/${r.id}`, lang));
   const summary = r.summary ?? "";
-  const description = `<p>${escapeXml(summary)}</p>\n<p>🔗 <a href="${escapeXml(r.url)}">阅读原文</a></p>\n<p>via ${escapeXml(SITE.name)} · <a href="${aihot}">${aihot}</a></p>`;
+  const description = `<p>${escapeXml(summary)}</p>\n<p>🔗 <a href="${escapeXml(r.url)}">${lang === "en" ? "Read the original" : "阅读原文"}</a></p>\n<p>via ${escapeXml(SITE.name)} · <a href="${aihot}">${aihot}</a></p>`;
   const publicCategory = toPublicApiCategory(r.category);
-  const category = publicCategory ? `\n      <category>${escapeXml(feedCategoryLabel(publicCategory))}</category>` : "";
+  const category = publicCategory ? `\n      <category>${escapeXml(feedCategoryLabelIn(publicCategory, lang))}</category>` : "";
   let content = "";
   if (includeContent && r.syndicate) {
-    const html = fullContent(r, aihot);
+    const html = fullContent(r, aihot, lang);
     if (html) content = `\n      <content:encoded>${cdata(html)}</content:encoded>`;
   }
   const pubDate = r.published_at ? `\n      <pubDate>${rfc822(r.published_at)}</pubDate>` : "";
@@ -133,16 +167,22 @@ function itemXml(r: FeedRow, includeContent: boolean): string {
       <link>${aihot}</link>
       <description>${cdata(description)}</description>${content}${category}${pubDate}
       <guid isPermaLink="false">${escapeXml(r.id)}</guid>
-      <author>${escapeXml(AUTHOR)} (${escapeXml(publicSourceName(r.source_name))})</author>
+      <author>${escapeXml(AUTHOR)} (${escapeXml(r.source_name)})</author>
     </item>`;
 }
+
+/** An English feed's articles as the English pages show them: the title and summary together, the source's name. */
+const feedRows: english.Overlay<FeedRow[]> = (rows, c) => rows.map((r) => {
+  const [title, summary] = c.all([["headline", r.title], ["text", r.summary]]);
+  return { ...r, title, summary, source_name: c.one("name", r.source_name) };
+});
 
 export type ItemFeedKind = "selected" | "selected-full" | "all";
 
 // Items are the newest by their original publish time (the pubDate shown): 50 per feed; a category
 // feed holds only its last 7 days (by original publish time).
 
-export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKey | null, { now = new Date() }: { now?: Date } = {}): Promise<string> {
+export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKey | null, { now = new Date(), lang = "zh" }: { now?: Date; lang?: FeedLanguage } = {}): Promise<string> {
   const includeContent = kind === "selected-full";
   const scope = kind === "all"
     ? sql`${browsedCondition(now)} AND coalesce(p.published_at, p.discovered_at) > ${now}::timestamptz - interval '7 days'
@@ -163,22 +203,32 @@ export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKe
       LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh' AND tr.revision >= a.revision
       LEFT JOIN quote_translations qt ON p.channel = 'x' AND qt.tweet_id = coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)'))` : sql``}
     ORDER BY coalesce(p.published_at, p.discovered_at) DESC, p.article_id DESC`;
-  const m = feedMeta(kind);
+  const named = rows.map((r) => ({ ...r, source_name: publicSourceName(r.source_name) }));
+  // In English, an article whose title or summary is not yet is left out.
+  const shown = lang === "en" ? (await english.inEnglish(named, feedRows)).filter((r) => !needsEnglish(r.title) && !needsEnglish(r.summary)) : named;
+  const m = feedMeta(kind, lang);
   let meta = { title: m.title, description: m.description, homePath: m.homePath, selfPath: m.path, ttl: m.pollHintMinutes };
   if (category) {
-    const label = feedCategoryLabel(category);
-    meta = {
-      title: includeContent ? `${SITE.name} — ${label}全文` : `${SITE.name} — ${label}`,
-      description: includeContent
-        ? `${SITE.name}「${label}」分类精选：允许转载的来源直接附上全文，其余提供摘要与阅读链接。`
-        : `${SITE.name}「${label}」分类精选摘要，方便只订阅自己关心的方向。`,
-      homePath: "/",
-      selfPath: includeContent ? `/feed/full/category/${category}.xml` : `/feed/category/${category}.xml`,
-      ttl: m.pollHintMinutes,
-    };
+    const label = feedCategoryLabelIn(category, lang);
+    const selfPath = inLanguage(includeContent ? `/feed/full/category/${category}.xml` : `/feed/category/${category}.xml`, lang);
+    meta = lang === "en"
+      ? {
+        title: includeContent ? `${SITE.name} — ${label}, Full Text` : `${SITE.name} — ${label}`,
+        description: includeContent
+          ? `${SITE.name} top picks in ${label}, in English: sources that allow republishing come with their original full text, the rest with a summary and links.`
+          : `${SITE.name} top picks in ${label}, in English, for following just what you care about.`,
+        homePath: inLanguage("/", "en"), selfPath, ttl: m.pollHintMinutes,
+      }
+      : {
+        title: includeContent ? `${SITE.name} — ${label}全文` : `${SITE.name} — ${label}`,
+        description: includeContent
+          ? `${SITE.name}「${label}」分类精选：允许转载的来源直接附上全文，其余提供摘要与阅读链接。`
+          : `${SITE.name}「${label}」分类精选摘要，方便只订阅自己关心的方向。`,
+        homePath: "/", selfPath, ttl: m.pollHintMinutes,
+      };
   }
-  const items = rows.map((r) => itemXml(r, includeContent));
-  return channel(meta, items);
+  const items = shown.map((r) => itemXml(r, includeContent, lang));
+  return channel(meta, items, lang);
 }
 
 const ISSUE_NAME: Record<ReportKind, string> = { daily: "日报", weekly: "周报", monthly: "月报" };
@@ -186,11 +236,12 @@ const ISSUE_NAME: Record<ReportKind, string> = { daily: "日报", weekly: "周�
 const ISSUES_KEPT: Record<ReportKind, number> = { daily: 30, weekly: 12, monthly: 12 };
 
 /** One issue: its headline, its lead (a weekly's or monthly's overview) and its contents, each entry linking to its page. */
-function issueXml(kind: ReportKind, r: FeedIssue): string {
-  const url = kind === "daily" ? dailyUrl(r.key) : periodUrl(kind, r.key);
-  const name = `${SITE.name} ${ISSUE_NAME[kind]}`;
+function issueXml(kind: ReportKind, r: FeedIssue, lang: FeedLanguage): string {
+  const url = siteUrl(inLanguage(`/${kind}/${r.key}`, lang));
+  const name = `${SITE.name} ${lang === "en" ? REPORT_NAMES_EN[kind] : ISSUE_NAME[kind]}`;
   const title = r.headline ? `${name} · ${r.key} — ${r.headline}` : `${name} · ${r.key}`;
-  const contents = r.sections.map((s) => `<p><strong>${escapeXml(s.label)}</strong></p>\n<ul>${s.items.map((i) => `<li><a href="${escapeXml(i.link)}">${escapeXml(i.title)}</a></li>`).join("")}</ul>`);
+  const link = (id: string) => siteUrl(inLanguage(`/items/${id}`, lang));
+  const contents = r.sections.map((s) => `<p><strong>${escapeXml(s.label)}</strong></p>\n<ul>${s.items.map((i) => `<li><a href="${escapeXml(link(i.id))}">${escapeXml(i.title)}</a></li>`).join("")}</ul>`);
   const description = [`<p>${escapeXml(r.leadParagraph ?? r.headline ?? "")}</p>`, ...contents, `<p>via ${escapeXml(SITE.name)} · <a href="${url}">${url}</a></p>`].join("\n");
   return `    <item>
       <title>${cdata(title)}</title>
@@ -203,11 +254,15 @@ function issueXml(kind: ReportKind, r: FeedIssue): string {
 }
 
 /** The daily, weekly or monthly feed: one item per issue, newest first. */
-export async function reportFeed(kind: ReportKind): Promise<string> {
-  const m = feedMeta(kind);
+export async function reportFeed(kind: ReportKind, lang: FeedLanguage = "zh"): Promise<string> {
+  const m = feedMeta(kind, lang);
   const meta = { title: m.title, description: m.description, homePath: m.homePath, selfPath: m.path, ttl: m.pollHintMinutes };
-  const items = (await feedIssues(kind, ISSUES_KEPT[kind])).map((r) => issueXml(kind, r));
-  return channel(meta, items);
+  let issues = await feedIssues(kind, ISSUES_KEPT[kind]);
+  if (lang === "en") {
+    issues = (await english.inEnglish(issues, english.feedIssues(kind)))
+      .filter((r) => !needsEnglish(r.headline) && !needsEnglish(r.leadParagraph));
+  }
+  return channel(meta, issues.map((r) => issueXml(kind, r, lang)), lang);
 }
 
 export function isFeedCategory(v: string): v is PublicApiCategoryKey {

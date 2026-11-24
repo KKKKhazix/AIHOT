@@ -21,7 +21,7 @@ import { useHydratedFlag } from "./lib/hydration";
 import { titled } from "./lib/seo";
 import { webModules } from "./site-modules";
 import { Link } from "./lib/link";
-import { localeOf, localizePath, translator, useLocale, useT } from "./lib/i18n";
+import { feedPath, localeOf, translator, useLocale, useT } from "./lib/i18n";
 
 export const links: Route.LinksFunction = () => [
   { rel: "icon", href: "/favicon.ico", sizes: "any" },
@@ -64,7 +64,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {webModules().map((m) => m.root?.bootScript && <script key={m.name} dangerouslySetInnerHTML={{ __html: m.root.bootScript }} />)}
         <Meta />
         <Links />
-        <link rel="alternate" type="application/rss+xml" title={t(`${SITE.name} — 精选`, `${SITE.name} — Top Picks`)} href={localizePath("/feed.xml", locale)} />
+        <link rel="alternate" type="application/rss+xml" title={t(`${SITE.name} — 精选`, `${SITE.name} — Top Picks`)} href={feedPath("/feed.xml", locale)} />
       </head>
       <body>
         {children}

@@ -4,6 +4,7 @@
 // The words themselves (t, L, zh, Phrase, Text) are the engine's, in @aihot/contracts/i18n.
 import { matchPath, useLocation } from "react-router";
 import { MODULES } from "@aihot/site/modules";
+import { ENGLISH } from "@aihot/contracts/english";
 import { localeOf, pagePath, translator, type Locale, type Translate } from "@aihot/contracts/i18n";
 
 export { isPhrase, L, localeOf, pagePath, shownIn, translator, zh } from "@aihot/contracts/i18n";
@@ -56,6 +57,11 @@ export function localizePath(to: string, locale: Locale): string {
   const pathname = at < 0 ? to : to.slice(0, at);
   if (!hasEnglish(pathname)) return to;
   return `/en${pathname === "/" ? "" : pathname}${at < 0 ? "" : to.slice(at)}`;
+}
+
+/** A feed's address for a page in this language: English pages offer the English feeds (/en/feed…), on a site with an English edition. */
+export function feedPath(path: string, locale: Locale): string {
+  return locale === "en" && ENGLISH ? `/en${path}` : path;
 }
 
 /**

@@ -6,7 +6,7 @@ import { ENGLISH } from "@aihot/contracts/english";
 import { RELEASE } from "@aihot/industry/taxonomy";
 import { RELEASE_UNIT_EN } from "@aihot/industry/english";
 import { monthDay, weekdayLong, weekdayShort } from "../../lib/format.ts";
-import { L, pagePath, translator, zh, type Locale, type Phrase } from "../../lib/i18n.ts";
+import { feedPath, L, pagePath, translator, zh, type Locale, type Phrase } from "../../lib/i18n.ts";
 
 export const KINDS: ReportKind[] = ["daily", "weekly", "monthly"];
 export const KIND_PATH: Record<ReportKind, string> = { daily: "/daily", weekly: "/weekly", monthly: "/monthly" };
@@ -23,7 +23,7 @@ export function kindFromPath(pathname: string): ReportKind {
 export const kindName = (kind: ReportKind, locale: Locale): string => (locale === "en" ? REPORT_NAMES_EN : REPORT_NAMES)[kind];
 
 /** The kind's RSS feed, announced in the page head so a reader given the page finds it. */
-export const feedLink = (kind: ReportKind, locale: Locale) => ({ tagName: "link", rel: "alternate", type: "application/rss+xml", title: `${SITE.name} ${kindName(kind, locale)}`, href: `/feed/${kind}.xml` }) as const;
+export const feedLink = (kind: ReportKind, locale: Locale) => ({ tagName: "link", rel: "alternate", type: "application/rss+xml", title: `${SITE.name} ${kindName(kind, locale)}`, href: feedPath(`/feed/${kind}.xml`, locale) }) as const;
 
 export function reportPath(kind: ReportKind, key: string): string {
   return `${KIND_PATH[kind]}/${key}`;

@@ -6,6 +6,7 @@ import type { AdminModels, BeforeJson } from "@aihot/contracts/admin";
 import { sql } from "../db.ts";
 import { capabilities, capabilityAcceptsModel, fallbackModelFor, invalidateModelCache, modelSources } from "../editorial/models.ts";
 import { MODELS } from "../providers/llm.ts";
+import { estimatedCharge, priceFor } from "../providers/prices.ts";
 import { modelCircuits } from "../providers/circuit.ts";
 import { audit } from "../audit.ts";
 
@@ -63,11 +64,11 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
   // Cached prompt tokens at the cache price, the rest at the input price; calls that carry their own cost
   // are not estimated again. Match directly on the attempt's recorded service, never by guessing from MODELS.
   const priced = (u: UsageRow) => {
-    const p = prices.find((x) => x.service === u.service && x.model === u.model) ?? prices.find((x) => x.service === u.service && x.model === "");
+    const p = priceFor(prices, u.service, u.model);
     if (!p || (!p.input_per_mtok && !p.output_per_mtok)) return null;
     const cached = Number(u.tokens_cached ?? 0);
     const fresh = Number(u.tokens_in_uncosted ?? 0) - cached;
-    const amount = (fresh / 1e6) * Number(p.input_per_mtok ?? 0) + (cached / 1e6) * Number(p.cached_per_mtok ?? p.input_per_mtok ?? 0) + (Number(u.tokens_out_uncosted ?? 0) / 1e6) * Number(p.output_per_mtok ?? 0);
+    const amount = estimatedCharge(p, { fresh, cached, output: Number(u.tokens_out_uncosted ?? 0) });
     return { amount, currency: p.currency };
   };
   const steps = Object.entries(capabilities()).map(([key, c]) => {

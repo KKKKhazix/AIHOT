@@ -138,6 +138,45 @@ function embeddedJson(html: string, source: SourceRow): unknown {
   throw new FetchError(`embedded key ${key} not found`);
 }
 
+/** The keys an operator needs at the layer where a path stopped. */
+function keyList(obj: unknown): string {
+  return Object.keys(obj as object).slice(0, 8).join(", ") || "none";
+}
+
+/** The deepest layer a path still reached: a wrong path and a field the upstream moved differ exactly here. */
+function stoppedAt(data: unknown, path: string): string {
+  let cur: unknown = data;
+  let at = "(root)";
+  for (const seg of path.split(".")) {
+    if (cur === null || typeof cur !== "object") break;
+    const next = Array.isArray(cur) && /^\d+$/.test(seg) ? cur[Number(seg)] : (cur as Record<string, unknown>)[seg];
+    if (next === undefined) return `${at} (keys: ${keyList(cur)})`;
+    cur = next;
+    at = at === "(root)" ? seg : `${at}.${seg}`;
+  }
+  return `${at} (keys: ${keyList(cur)})`;
+}
+
+/** Failure envelopes answer 200 with the reason in a string field; a body without one still shows its keys. */
+function upstreamReason(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  for (const key of ["message", "msg", "error"]) {
+    const v = (data as Record<string, unknown>)[key];
+    if (typeof v === "string" && v.trim()) return collapseWhitespace(v).slice(0, 120);
+  }
+  return null;
+}
+
+/** What an items path found instead of an array, where it stopped, and what the API itself said. */
+function notAnArray(data: unknown, items: unknown, path: string | undefined): string {
+  const found = items === undefined ? `nothing at ${stoppedAt(data, path ?? "")}`
+    : items === null ? "null"
+    : typeof items === "object" ? `an object with keys ${keyList(items)}`
+    : `a ${typeof items}`;
+  const reason = upstreamReason(data);
+  return `items path ${path ?? "(root)"} did not resolve to an array: found ${found}${reason ? `; upstream said: ${reason}` : ""}`;
+}
+
 export async function fetchJsonList(source: SourceRow): Promise<Candidate[]> {
   const c = source.config;
   const url = String(c.url ?? "");
@@ -166,9 +205,10 @@ export async function fetchJsonList(source: SourceRow): Promise<Candidate[]> {
       throw new FetchError("response is not JSON");
     }
   }
-  let items = c.itemsPath ? getPath(data, c.itemsPath) : c.jsonKey ? getPath(data, c.jsonKey) : data;
+  const itemsPath = c.itemsPath || c.jsonKey || undefined;
+  let items = itemsPath ? getPath(data, itemsPath) : data;
   if (c.itemsObjectValues && items && typeof items === "object" && !Array.isArray(items)) items = Object.values(items);
-  if (!Array.isArray(items)) throw new FetchError("items path did not resolve to an array");
+  if (!Array.isArray(items)) throw new FetchError(notAnArray(data, items, itemsPath));
 
   const out: Candidate[] = [];
   for (const item of items) {

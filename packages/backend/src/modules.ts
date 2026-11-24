@@ -191,8 +191,8 @@ export interface ServerModule {
   };
   llms?: () => Promise<LlmsLines> | LlmsLines;
   sitemap?: {
-    /** After the stories. */
-    entries?: () => Promise<SitemapEntry[]>;
+    /** The XML lists URLs and dates. Change notifications also need content revisions. */
+    entries?: (withRevisions: boolean) => Promise<SitemapEntry[]>;
   };
   models?: Record<string, ModelStep>;
   /** Paid services it supplies, named in provider-access and budget alerts (operations/alerts.ts). */

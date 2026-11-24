@@ -40,11 +40,12 @@ export async function storyTexts(storyIds: number[], now = new Date()): Promise<
     ) latest ON true
     WHERE st.id = ANY(${storyIds}::bigint[])`;
   const reports = await digestReports(sql, rows.filter((r) => r.current && r.digest && r.inputs_hash).map((r) => Number(r.id)), now);
+  const byStory = Map.groupBy(reports, (p) => Number(p.story_id));
   return new Map(rows.map((r) => {
     // New reports may extend an event without changing the evidence behind its saved digest.
     const saved = new Set(r.article_ids ?? []);
     const current = r.current && saved.size > 0 && !!r.inputs_hash
-      && digestInputsHashMatches(reports.filter((p) => Number(p.story_id) === Number(r.id) && saved.has(p.id)), r.inputs_hash, r.digest_version);
+      && digestInputsHashMatches((byStory.get(Number(r.id)) ?? []).filter((p) => saved.has(p.id)), r.inputs_hash, r.digest_version);
     return [Number(r.id), {
       digest: current ? r.digest : null,
       digestUpdatedAt: current ? r.digest_updated_at : null,

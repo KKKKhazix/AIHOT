@@ -65,9 +65,13 @@ export function localizePath(to: string, locale: Locale): string {
  */
 const ENGLISH_API = /^\/api\/site\/(timeline|pool|items\/(?![^?]*\/original)|stories\/|groups\/|topics|search\/suggestions|hot|reports\/|stats)/;
 
-/** Where a page in this language reads a site api answer. */
+let moduleApi: readonly RegExp[] | null = null;
+
+/** Where a page in this language reads a site api answer: the engine's, or a module's that says it has English (englishApi). */
 export function apiIn(path: string, locale: Locale): string {
-  return locale === "en" && ENGLISH_API.test(path) ? `/api/site/en/${path.slice("/api/site/".length)}` : path;
+  moduleApi ??= MODULES.flatMap((m) => m.englishApi ?? []);
+  const english = ENGLISH_API.test(path) || moduleApi.some((pattern) => pattern.test(path));
+  return locale === "en" && english ? `/api/site/en/${path.slice("/api/site/".length)}` : path;
 }
 
 /** A page's path in the other language: what the language switch links to; null when there is no such page. */

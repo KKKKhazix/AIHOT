@@ -92,6 +92,38 @@ export async function wantedIn<T>(value: T, overlay: Overlay<T>): Promise<Map<st
   return gather.wanted;
 }
 
+/** A text an answer shows in Chinese, as the worker takes it. */
+export interface WantedText extends Wanted {
+  zh: string;
+}
+
+/** The same, as a list: what a module gives the worker (modules.ts `english`). */
+export async function textsIn<T>(value: T, overlay: Overlay<T>): Promise<WantedText[]> {
+  return [...(await wantedIn(value, overlay))].map(([zh, w]) => ({ zh, ...w }));
+}
+
+/**
+ * The overlay of a module's answer that has none of its own: each object's strings with Han characters go together; a
+ * string under a `names` key is a name; nothing under a `keep` key changes (data matched as written, like search aliases).
+ * A short line without sentence punctuation reads as a headline (labels, titles), anything longer as running text.
+ */
+export function everyText<T>(opts: { keep?: readonly string[]; names?: readonly string[] } = {}): Overlay<T> {
+  const keep = new Set(opts.keep ?? []);
+  const names = new Set(opts.names ?? []);
+  const kindOf = (key: string, text: string): CopyKind => (names.has(key) ? "name" : text.length <= 40 && !/[。！？；]/.test(text) ? "headline" : "text");
+  const walk = (value: unknown, c: Copy, key: string): unknown => {
+    if (typeof value === "string") return c.one(kindOf(key, value), value);
+    if (Array.isArray(value)) return value.map((v) => walk(v, c, key));
+    if (!value || typeof value !== "object") return value;
+    const entries = Object.entries(value);
+    const own = entries.filter((e): e is [string, string] => !keep.has(e[0]) && needsEnglish(typeof e[1] === "string" ? e[1] : null));
+    const shown = c.all(own.map(([k, v]) => [kindOf(k, v), v] as const));
+    const english = new Map(own.map(([k], i) => [k, shown[i]]));
+    return Object.fromEntries(entries.map(([k, v]) => [k, keep.has(k) ? v : english.has(k) ? english.get(k) : walk(v, c, k)]));
+  };
+  return (value, c) => walk(value, c, "") as T;
+}
+
 /** Whether the publication `alias` may still show its original: not withdrawn, its original not withheld. */
 export const originalShown = (alias: string) => sql`(${sql(alias)}.visibility <> 'withdrawn' AND NOT ${sql(alias)}.suppress_original)`;
 

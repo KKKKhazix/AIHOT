@@ -398,7 +398,19 @@ test("an English feed lists only what reads in English, links to the English pag
   const original = await report(wire, { title: `己公司发布年度报告${T}`, summary: "己公司发布了年度报告。", reason: "年度报告值得一读。", original: `Ji Corp publishes its annual report ${T}`, body: `The annual report is out, ${T}.` });
   const zhOriginal = await report(zhWire, { title: `庚公司发布新芯片${T}`, summary: "庚公司发布了新芯片。", reason: "新芯片值得关注。", body: `庚公司的芯片正文${T}。` });
   const left = await report(await source(`Example Feed ${T}`), { title: `戊公司的消息${T}`, summary: `戊公司的摘要总被漏掉${T}。`, reason: "戊公司的理由。" });
+  // Declared English, written in Chinese: its body is not carried in English either.
+  const mislabelled = await report(zhWire, { title: `壬公司发布新服务${T}`, summary: "壬公司发布了新服务。", reason: "新服务值得关注。", original: `Ren Corp ships a service ${T}`, body: `这篇正文登记成英文，其实是中文写的${T}。` });
   await translateEnglish(RUN);
+  // An issue whose lead is in English while one entry is not yet: it enters without that entry.
+  const lead = { title: `次日头条：己公司发布年度报告${T}`, leadParagraph: "己公司的年度报告是这一天最受关注的发布。" };
+  const later = (itemId: string, title: string) => ({ itemId, title, summary: "", sourceId: wire, sourceName: `English Wire ${T}`, sourceUrl: "https://example.com/x", firstParty: false, role: "媒体" });
+  await sql`INSERT INTO reports (kind, key, window_start, window_end, content, generated_at) VALUES ('daily', '2099-01-03', now(), now(), ${sql.json({
+    lead, highlights: [], flashes: [], metrics: { totalEvents: 2 },
+    sections: [{ key: "ai-models", label: "模型发布/更新", items: [later(original, `己公司发布年度报告${T}`), later(zhOriginal, `目录里总被漏掉的条目${T}`)] }],
+  } as never)}, now())`;
+  for (const [zh, kind] of [[lead.title, "headline"], [lead.leadParagraph, "text"]]) {
+    await sql`INSERT INTO english_copy (zh_hash, zh, kind, en) VALUES (${copyKey(zh!)}, ${zh!}, ${kind!}, ${english(zh!)})`;
+  }
   const read = async (url: string) => {
     const res = await app.inject({ method: "GET", url });
     assert.equal(res.statusCode, 200, `${url}: ${res.body}`);
@@ -416,7 +428,12 @@ test("an English feed lists only what reads in English, links to the English pag
   assert.ok(full.includes(`The annual report is out, ${T}.`), "the full feed carries the original text");
   assert.ok(full.includes(`/en/items/${zhOriginal}`) && (await app.inject({ method: "GET", url: "/feed/full.xml" })).body.includes(`庚公司的芯片正文${T}。`), "a body written in Chinese is carried in the Chinese feed only");
   assert.ok(!feeds["/feed/all.xml"]!.includes(`/items/${left}`) && (await app.inject({ method: "GET", url: "/feed/all.xml" })).body.includes(`/items/${left}`), "an article still in Chinese is left out");
+  const item = (xml: string, id: string) => xml.split("<item>").find((x) => x.includes(`/items/${id}<`)) ?? "";
+  assert.ok(item(full, mislabelled) && !item(full, mislabelled).includes("content:encoded"), "a body declared English but written in Chinese is not carried");
   const daily = feeds["/feed/daily.xml"]!;
   assert.ok(daily.includes("/en/daily/2099-01-02") && daily.includes(`/en/items/${site.a}`), "an issue links to its English page and its entries' English pages");
   assert.ok(daily.includes(english("今日头条：甲公司发布新模型")), "its headline in English");
+  const issue = daily.split("<item>").find((x) => x.includes("/en/daily/2099-01-03<")) ?? "";
+  assert.ok(issue.includes(`/en/items/${original}"`) && !issue.includes(`/items/${zhOriginal}"`), "an entry still in Chinese waits; the issue does not");
+  assert.ok((await app.inject({ method: "GET", url: "/feed/daily.xml" })).body.includes(`目录里总被漏掉的条目${T}`));
 });

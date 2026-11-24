@@ -3,7 +3,8 @@
 // inline bodies only for sources that explicitly allow redistribution. Titles come from the site's
 // name and categories. On a site with an English edition every feed is also at /en/feed…, in English and
 // linking to the English pages: an article enters it once its title and summary are in English, an issue once
-// its headline and lead are; a full feed carries the original text there (a body written in Chinese, none).
+// its headline and lead are (with the entries already in English); a full feed carries the original text there
+// (a body written in Chinese, none).
 import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
 import { REPORT_NAMES_EN } from "@aihot/contracts/site";
 import { feedCategoryLabelIn, PUBLIC_API_CATEGORY_KEYS, toPublicApiCategory, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
@@ -55,7 +56,7 @@ function englishMeta(id: ItemFeedKind | ReportKind): Pick<FeedMeta, "title" | "d
   const when = ENGLISH?.editionWhen ?? { daily: "daily", weekly: "weekly", monthly: "monthly" };
   return {
     selected: { title: `${SITE.name} — Top Picks`, description: `The latest 50 ${SITE.name} top picks in English, with links to read them on the site and at the source; for full text in your reader, subscribe to /en/feed/full.xml instead.` },
-    "selected-full": { title: `${SITE.name} — Top Picks, Full Text`, description: `The latest 50 ${SITE.name} top picks in English; sources that allow republishing come with their original full text, the rest with a summary and links.` },
+    "selected-full": { title: `${SITE.name} — Top Picks, Full Text`, description: `The latest 50 ${SITE.name} top picks in English; sources that allow republishing come with their original full text (not those written in Chinese), the rest with a summary and links.` },
     all: { title: `${SITE.name} — All ${SITE.subject} News`, description: `${SITE.subject} news from the last 7 days in English, newest first, with duplicates and low-value items filtered out.` },
     daily: { title: `${SITE.name} ${REPORT_NAMES_EN.daily}`, description: `${SITE.name}'s daily briefing, out ${when.daily}; the last 30 issues.` },
     weekly: { title: `${SITE.name} ${REPORT_NAMES_EN.weekly}`, description: `${SITE.name}'s weekly roundup, out ${when.weekly}: last week's daily stories by section, with an overview; the last 12 issues.` },
@@ -124,11 +125,10 @@ function fullContent(r: FeedRow, aihot: string, lang: FeedLanguage): string | nu
     // A long X Article as its page shows it (after what the post says besides its link), in Chinese when
     // its translation is complete, as an article's body is.
     const article = r.x_article?.html;
-    if (en && isChineseText(r.x_article?.text ?? x.text, r.language)) return null;
     html = article
       ? (en ? null : exportTranslation({ language: r.language, body_text: r.x_article?.text ?? "", tr_html: r.tr_html, tr_complete: r.tr_complete })) ?? xArticleBody(String(r.x_post?.text ?? ""), article)
       : textToHtml(en ? x.text : x.translation ?? x.text);
-    if (x.quoted?.text) {
+    if (x.quoted?.text && !(en && isChineseText(x.quoted.text))) {
       const quoted = en ? x.quoted.text : x.quoted.translation ?? x.quoted.text;
       html += `<blockquote><p>${en ? "Quoting" : "引用"} @${escapeXml(x.quoted.handle)}${en ? ":" : "："}</p>${textToHtml(quoted)}${x.quoted.url ? `<p><a href="${escapeXml(x.quoted.url)}">${escapeXml(x.quoted.url)}</a></p>` : ""}</blockquote>`;
     }
@@ -140,10 +140,11 @@ function fullContent(r: FeedRow, aihot: string, lang: FeedLanguage): string | nu
         : `<p><img src="${escapeXml(url)}" alt="${escapeXml(String(media.alt ?? ""))}"></p>`;
     }
   } else if (r.body_html) {
-    if (en && isChineseText(r.body_text ?? "", r.language)) return null;
     html = withCover((en ? null : exportTranslation(r)) ?? r.body_html, r.cover, r.body_html);
   }
   if (!html) return null;
+  // In English, a body written in Chinese is not carried: judged by its words, as a declared language can be wrong.
+  if (en && isChineseText(html.replace(/<[^>]+>/g, " "))) return null;
   const credit = en
     ? `<p>— Collected by ${escapeXml(SITE.name)}; the full page and more ${escapeXml(SITE.subject)} news at <a href="${aihot}">${aihot}</a></p>`
     : `<p>—— 本文由 ${escapeXml(SITE.name)} 聚合整理，完整版与${escapeXml(subjectAfter("更多", "动态"))}见 <a href="${aihot}">${aihot}</a></p>`;
@@ -215,7 +216,7 @@ export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKe
       ? {
         title: includeContent ? `${SITE.name} — ${label}, Full Text` : `${SITE.name} — ${label}`,
         description: includeContent
-          ? `${SITE.name} top picks in ${label}, in English: sources that allow republishing come with their original full text, the rest with a summary and links.`
+          ? `${SITE.name} top picks in ${label}, in English: sources that allow republishing come with their original full text (not those written in Chinese), the rest with a summary and links.`
           : `${SITE.name} top picks in ${label}, in English, for following just what you care about.`,
         homePath: inLanguage("/", "en"), selfPath, ttl: m.pollHintMinutes,
       }
@@ -259,8 +260,14 @@ export async function reportFeed(kind: ReportKind, lang: FeedLanguage = "zh"): P
   const meta = { title: m.title, description: m.description, homePath: m.homePath, selfPath: m.path, ttl: m.pollHintMinutes };
   let issues = await feedIssues(kind, ISSUES_KEPT[kind]);
   if (lang === "en") {
+    // An issue enters once its headline and lead are in English; an entry or section still in Chinese waits.
     issues = (await english.inEnglish(issues, english.feedIssues(kind)))
-      .filter((r) => !needsEnglish(r.headline) && !needsEnglish(r.leadParagraph));
+      .filter((r) => !needsEnglish(r.headline) && !needsEnglish(r.leadParagraph))
+      .map((r) => ({
+        ...r,
+        sections: r.sections.filter((s) => !needsEnglish(s.label))
+          .map((s) => ({ ...s, items: s.items.filter((i) => !needsEnglish(i.title)) })).filter((s) => s.items.length > 0),
+      }));
   }
   return channel(meta, issues.map((r) => issueXml(kind, r, lang)), lang);
 }

@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import * as cheerio from 'cheerio';
+import { ENGLISH } from '@aihot/contracts/english';
 import { MCP_TOOL_NAMES } from '@aihot/contracts/mcp';
 import { fakeApi, startWebServer, type WebServer } from './web-server.ts';
 
@@ -23,3 +24,13 @@ for (const [tab, names] of [
     for (const name of names) assert.ok(panel.includes(name), `${tab} panel omits ${name}`);
   });
 }
+
+test('English pages offer the English feeds: the RSS panel, every category row and the page head', { skip: ENGLISH === null }, async () => {
+  const response = await fetch(`${web.origin}/en/agent?tab=rss`);
+  assert.equal(response.status, 200, web.logs());
+  const $ = cheerio.load(await response.text());
+  const feeds = $('#agent-panel code').map((_, el) => $(el).text()).get().filter((text) => text.includes('/feed'));
+  assert.ok(feeds.some((a) => a.endsWith('/en/feed.xml')) && feeds.some((a) => a.includes('/en/feed/full/category/')), feeds.join(' '));
+  assert.deepEqual(feeds.filter((a) => !a.includes('/en/feed')), [], 'a feed address on an English page is an English feed');
+  assert.equal($('link[rel="alternate"][type="application/rss+xml"]').attr('href'), '/en/feed.xml');
+});

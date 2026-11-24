@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { IntentLink } from "../ui/IntentLink";
 import { useContainedScroll } from "../ui/Page";
@@ -7,10 +7,9 @@ import { RingMark, Wordmark } from "@aihot/site/brand/Logo.tsx";
 import { useChangelogSeen } from "../../lib/local-state";
 import { activeSidebarItem, rail, railIsActive, sidebar, type NavItem } from "./nav";
 import { useScreen } from "./screens";
-import { ThemeSwitch } from "./ThemeSwitch";
+import { MoreMenu } from "./MoreMenu";
 import { Filings } from "./Filings";
 import { IconGithub } from "../icons";
-import { webModules } from "../../site-modules";
 
 /** True while the changelog has an entry newer than the one this reader last opened. */
 export function useChangelogDot(latestVersion: string | null): boolean {
@@ -85,7 +84,7 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
   const { pathname } = useLocation();
   const [columnRef, columnOverscroll] = useContainedScroll<HTMLElement>();
   const [navRef, navOverscroll] = useContainedScroll<HTMLElement>();
-  const Account = webModules().find((m) => m.account)?.account;
+  const footRef = useRef<HTMLDivElement>(null);
   // The links scroll between the wordmark and the footer; in a short window the footer would leave them
   // only a few rows, so the whole column scrolls instead.
   return (
@@ -112,9 +111,8 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
           })}
         </nav>
         <div className="mt-2 space-y-2.5 px-1 pt-1">
-          {Account && <Account place="sidebar" />}
-          {/* GitHub shrinks to its mark beside the theme switch, so the foot is two rows rather than three stacked pills. */}
-          <div className="mx-1 flex items-center gap-2">
+          {/* GitHub keeps its mark on the left; the account and the settings sit under 更多 beside it. */}
+          <div ref={footRef} className="mx-1 flex items-center gap-2">
             {SITE.github && (
               <a
                 href={SITE.github}
@@ -127,7 +125,7 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
                 <IconGithub size={15} />
               </a>
             )}
-            <ThemeSwitch className="min-w-0 flex-1 touch:h-11" />
+            <MoreMenu anchor={() => footRef.current} />
           </div>
           {/* Centred under the buttons; the full width keeps the longer public-security number on one line. */}
           <div className="-mx-1 flex flex-col items-center gap-1.5">

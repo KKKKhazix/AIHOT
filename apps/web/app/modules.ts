@@ -103,8 +103,8 @@ export interface TopicPagePart {
   news: (data: unknown) => string[];
 }
 
-/** Where the reader's account shows: the 我的 page's first row, the desktop sidebar's foot, the 收藏 page's note, the 卡册. */
-export type AccountPlace = "me" | "sidebar" | "starred" | "album";
+/** Where the reader's account shows: the 我的 page's first row, the first row of the desktop sidebar's 更多 menu, the 收藏 page's note, the 卡册. */
+export type AccountPlace = "me" | "menu" | "starred" | "album";
 
 export interface WebModule {
   /** Its folder under modules/. */

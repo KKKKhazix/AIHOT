@@ -19,6 +19,7 @@ import { modelFor } from "../editorial/models.ts";
 import { serverModules } from "../modules.ts";
 import { feishuInternalEnabled, forwardFeedbackToFeishu } from "../notify/feishu.ts";
 import { chatJson } from "../providers/llm.ts";
+import { completeReceipt } from "../providers/receipts.ts";
 
 export class FeedbackRejected extends Error {
   readonly status: number;
@@ -246,10 +247,10 @@ export function moduleHandlesFeedback(pageUrl: string | null, surfaceId?: string
 }
 
 /** Only the words, whether a picture came with them, and a known feature page's path without its query. */
-async function readsAsNoise(fb: { id: number; content: string; screenshot_key: string | null; page_url: string | null; surface_id?: string | null }): Promise<boolean> {
+async function judgeFeedback(fb: { id: number; content: string; screenshot_key: string | null; page_url: string | null; surface_id?: string | null }) {
   const pathname = fb.surface_id ?? sitePath(fb.page_url);
   const sourcePage = MODULES.some((m) => m.pages?.some((p) => "path" in p && `/${p.path}` === pathname)) ? pathname : null;
-  const res = await chatJson({
+  return chatJson({
     model: await modelFor("feedback"),
     purpose: "judge_feedback",
     subject: `feedback:${fb.id}`,
@@ -262,7 +263,6 @@ async function readsAsNoise(fb: { id: number; content: string; screenshot_key: s
     // The report waits on this: past half a minute it goes out unread.
     timeoutMs: 30_000,
   });
-  return res.data.noise;
 }
 
 /**
@@ -274,14 +274,18 @@ async function pushFeedback(id: number): Promise<"sent" | "kept" | "disabled" | 
   if (!screenshotsForwarded()) return "disabled";
   const [fb] = await sql<{ id: number; content: string; screenshot_key: string | null; page_url: string | null; surface_id: string | null; status: string }[]>`
     SELECT id, content, screenshot_key, page_url, surface_id, status FROM feedback WHERE id = ${id} AND forwarded_at IS NULL`;
-  if (fb?.status === "new" && (await readsAsNoise(fb).catch(() => false))) {
+  const verdict = fb?.status === "new" ? await judgeFeedback(fb).catch(() => null) : null;
+  if (verdict?.data.noise) {
     const dropped = await sql.begin(async (tx) => {
       const rows = await tx`UPDATE feedback SET status = 'spam', kind = 'other', note = ${`${beijingStamp(new Date())} 模型判断没有内容，未转发`}, forward_error = NULL, updated_at = now()
         WHERE id = ${id} AND status = 'new' RETURNING id`;
       if (rows.length) await audit("feedback-auto", "feedback.update", `feedback:${id}`, "模型判断没有内容", { status: "new" }, { status: "spam", kind: "other" }, { db: tx });
+      await completeReceipt(tx, verdict.receiptId);
       return rows.length > 0;
     });
     if (dropped) return "dropped";
+  } else if (verdict) {
+    await completeReceipt(sql, verdict.receiptId);
   }
   return forwardFeedbackToFeishu(id, !fb || !moduleHandlesFeedback(fb.page_url, fb.surface_id));
 }

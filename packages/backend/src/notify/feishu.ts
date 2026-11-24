@@ -120,6 +120,8 @@ interface FindingFields {
  */
 export type Finding = FindingFields & ({ agentOnly?: undefined; agentType?: undefined } | { agentOnly: true; agentType: `alert.${string}` });
 
+export type FollowUp = Finding & { level: "later" };
+
 const MARK: Record<Exclude<Level, "later">, string> = { now: "🔴", today: "🟠" };
 
 

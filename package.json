@@ -26,6 +26,7 @@
     "test:web": "node --test --test-concurrency=1 \"apps/web/tests/*.test.ts\""
   },
   "devDependencies": {
+    "@babel/parser": "7.29.9",
     "@modelcontextprotocol/client": "2.3.0",
     "@playwright/test": "1.61.1",
     "@types/node": "26.6.3",

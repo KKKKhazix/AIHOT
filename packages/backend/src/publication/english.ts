@@ -41,6 +41,8 @@ export interface Wanted {
 }
 
 export interface Copy {
+  /** Link names only in the finished copy shown to readers. Gathering translation inputs needs no links. */
+  mentions: typeof mentionsIn;
   /** One object's texts: all in English, or all as they are while any of them has no English yet. `item`: their article. */
   all<const T extends readonly Part[]>(parts: T, item?: string | null): { -readonly [K in keyof T]: T[K][1] };
   /** A text on its own, such as a linked title; a name without English stays as written. */
@@ -51,6 +53,7 @@ export interface Copy {
 export const copyKey = (zh: string) => sha256(zh);
 
 class Gather implements Copy {
+  async mentions() { return []; }
   readonly wanted = new Map<string, Wanted>();
   private add(kind: CopyKind, text: string | null | undefined, item?: string | null) {
     if (!needsEnglish(text)) return;
@@ -70,6 +73,7 @@ class Gather implements Copy {
 }
 
 class Apply implements Copy {
+  mentions = mentionsIn;
   private readonly en: ReadonlyMap<string, string>;
   constructor(en: ReadonlyMap<string, string>) {
     this.en = en;
@@ -204,7 +208,7 @@ export const itemDetail: Overlay<SiteItemDetail> = async (d, c) => {
     hasTranslation: false,
     bodyLanguage: "original",
     markdownAvailable: false,
-    mentions: await mentionsIn([summary]),
+    mentions: await c.mentions([summary]),
   };
 };
 
@@ -237,13 +241,21 @@ const storyReport = (r: StoryReportView, c: Copy): StoryReportView => {
   return { ...r, title, summary, source: source(r.source, c) };
 };
 
-/** An event page: its head (title, digest or summary, or the first report's summary) reads in one language, as does each development with its report. */
-export const story: Overlay<StoryDetail> = async (s, c) => {
+/** The story headline and its opening copy switch language together on the page and its share image. */
+export function storyHeading<S extends Pick<StoryDetail, "title" | "digest" | "summary" | "excerpt" | "latest" | "latestReport">>(s: S, c: Copy): S {
   const [title, digest, summary, excerptText] = c.all([["headline", s.title], ["text", s.digest], ["text", s.summary], ["text", s.excerpt?.text]], s.excerpt?.itemId);
   const excerpt = s.excerpt && { ...s.excerpt, text: excerptText!, sourceName: c.one("name", s.excerpt.sourceName) };
   return {
     ...s, title, digest, summary, excerpt,
     latest: c.one("headline", s.latest, s.latestReport?.id),
+  };
+}
+
+export const story: Overlay<StoryDetail> = async (s, c) => {
+  const head = storyHeading(s, c);
+  const { digest, summary, excerpt } = head;
+  return {
+    ...head,
     developments: s.developments.map((f) => {
       const [factTitle, reportTitle, reportSummary] = c.all([["headline", f.title], ["headline", f.representative.title], ["text", f.representative.summary]], f.representative.id);
       return { ...f, title: factTitle, representative: { ...f.representative, title: reportTitle, summary: reportSummary, source: source(f.representative.source, c) } };
@@ -252,7 +264,7 @@ export const story: Overlay<StoryDetail> = async (s, c) => {
     timeline: s.timeline.map((r) => storyReport(r, c)),
     related: s.related.map((r) => ({ ...r, title: c.one("headline", r.title) })),
     topics: s.topics.map(topicLink),
-    mentions: await mentionsIn([digest ?? summary ?? excerpt?.text]),
+    mentions: await c.mentions([digest ?? summary ?? excerpt?.text]),
   };
 };
 
@@ -291,6 +303,9 @@ function front(r: ReportDetail, c: Copy): Pick<ReportDetail, "lead" | "overview"
   const overview = composedOverview(r.kind, composed.count, titles as string[]);
   return { lead: r.lead && { title: title!, leadParagraph: overview }, overview };
 }
+
+/** Only the issue title and lead appear on its share image. */
+export const reportHeading: Overlay<ReportDetail> = (r, c) => ({ ...r, ...front(r, c), title: issueTitle(r, c) });
 
 /** A composed overview in English, from the titles it names (already in English). */
 function composedOverview(kind: ReportKind, count: number, titles: string[]): string {
@@ -340,7 +355,7 @@ export const report: Overlay<ReportDetail> = async (r, c) => {
     sections,
     flashes: r.flashes.map((x) => citation(x, c)),
     cover: r.cover && { ...r.cover, caption: c.one("headline", r.cover.caption) },
-    mentions: await mentionsIn([lead?.leadParagraph, overview, ...sections.flatMap((s) => [s.summary, ...s.items.map((i) => i.summary)])]),
+    mentions: await c.mentions([lead?.leadParagraph, overview, ...sections.flatMap((s) => [s.summary, ...s.items.map((i) => i.summary)])]),
   };
 };
 

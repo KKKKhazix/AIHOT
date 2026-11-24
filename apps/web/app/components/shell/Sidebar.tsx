@@ -86,11 +86,12 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
   const [navRef, navOverscroll] = useContainedScroll<HTMLElement>();
   const footRef = useRef<HTMLDivElement>(null);
   // The links scroll between the wordmark and the footer; in a short window the footer would leave them
-  // only a few rows, so the whole column scrolls instead.
+  // only a few rows, so the whole column scrolls instead. Sticky makes the column its own layer: z-30 puts it
+  // over the page's sticky day bars (z-20), so the 更多 panel it opens covers the timeline, not the other way round.
   return (
     <>
       <Rail dot={dot} />
-      <aside ref={columnRef} className={`scrollbar-thin sticky top-0 hidden h-dvh w-[180px] shrink-0 flex-col border-r border-line bg-sidebar px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-6 wide:flex short:overflow-y-auto ${columnOverscroll}`}>
+      <aside ref={columnRef} className={`scrollbar-thin sticky top-0 z-30 hidden h-dvh w-[180px] shrink-0 flex-col border-r border-line bg-sidebar px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-6 wide:flex short:overflow-y-auto ${columnOverscroll}`}>
         <Link to="/" className="mb-4 flex h-[50px] shrink-0 items-center px-1 text-ink" aria-label={`${SITE.name} 首页`}>
           <Wordmark size={26} />
         </Link>

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Presence } from "../ui/Presence";
-import { Select } from "../ui/Controls";
 import { ThemeSwitch } from "./ThemeSwitch";
-import { setFontPreference, useFontPreference } from "../../lib/local-state";
+import { FontSelect } from "./FontSelect";
 import { webModules } from "../../site-modules";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -18,14 +17,14 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
  * 更多 at the foot of the desktop sidebar: one word, no icon (product decision 2026-11-24), opening a small
  * panel that holds the reader's account and the appearance and font settings the phone keeps under 我的.
  * The panel rises from the foot row it belongs to and is placed on the page, not in the sidebar, so a short
- * window (where the sidebar scrolls) does not cut it off.
+ * window (where the sidebar scrolls) does not cut it off; any scroll or resize closes it rather than leave it
+ * behind the row it came from.
  */
 export function MoreMenu({ anchor }: { anchor: () => HTMLElement | null }) {
   const [open, setOpen] = useState(false);
   const [at, setAt] = useState<{ left: number; bottom: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const font = useFontPreference();
   const Account = webModules().find((m) => m.account)?.account;
 
   const toggle = () => {
@@ -47,14 +46,16 @@ export function MoreMenu({ anchor }: { anchor: () => HTMLElement | null }) {
       setOpen(false);
       triggerRef.current?.focus();
     };
-    const onResize = () => setOpen(false);
+    const onMove = () => setOpen(false);
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
-    window.addEventListener("resize", onResize);
+    document.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
     return () => {
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
+      document.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
     };
   }, [open]);
 
@@ -83,8 +84,9 @@ export function MoreMenu({ anchor }: { anchor: () => HTMLElement | null }) {
           >
             {Account && (
               <>
-                {/* Its row opens the account panel; the menu steps aside for it. */}
-                <div onClick={() => setOpen(false)}>
+                {/* Its row opens the account panel and the menu steps aside. Focus moves to 更多 first, before the
+                    panel opens, so closing the panel brings it back there rather than to a row that is gone. */}
+                <div onClickCapture={() => { triggerRef.current?.focus(); setOpen(false); }}>
                   <Account place="menu" />
                 </div>
                 <div className="my-1 h-px bg-line-soft" />
@@ -94,10 +96,7 @@ export function MoreMenu({ anchor }: { anchor: () => HTMLElement | null }) {
               <ThemeSwitch compact className="w-24" />
             </Row>
             <Row label="字体">
-              <Select aria-label="字体" value={font ?? "system"} onChange={(e) => setFontPreference(e.target.value === "browser" ? "browser" : null)}>
-                <option value="system">默认字体</option>
-                <option value="browser">浏览器默认字体</option>
-              </Select>
+              <FontSelect />
             </Row>
           </div>
         </Presence>

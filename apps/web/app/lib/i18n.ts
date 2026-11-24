@@ -64,6 +64,11 @@ export function feedPath(path: string, locale: Locale): string {
   return locale === "en" && ENGLISH ? `/en${path}` : path;
 }
 
+/** A share image's address for a page in this language: English pages show the English cards (/og/en/…). */
+export function ogPath(path: string, locale: Locale): string {
+  return locale === "en" && ENGLISH && path.startsWith("/og/") ? `/og/en/${path.slice(4)}` : path;
+}
+
 /**
  * The site api's answers with an English edition, under /api/site/en (apps/api routes/site.ts registerReading):
  * what readers read. The site-wide answers (meta, contact, changelog, feedback) and the modules' own are

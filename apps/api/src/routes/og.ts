@@ -1,22 +1,37 @@
 // Share images (1200×630 PNG) for pages, items, reports, topics and events. Only public content
-// gets a card; anything else is a real 404.
+// gets a card; anything else is a real 404. On a site with an English edition every card is also
+// drawn in English under /og/en/…, for the English pages: the language is in the path, as a CDN may
+// keep one copy of an image whatever its query.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { reportDateLabel } from "@aihot/contracts/site";
-import { CATEGORY_LABELS } from "@aihot/contracts/taxonomy";
-import { beijingDate } from "@aihot/contracts/time";
+import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
+import type { Locale } from "@aihot/contracts/i18n";
+import { REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn } from "@aihot/contracts/site";
+import { categoryLabel, topicDefinition, topicName } from "@aihot/contracts/taxonomy";
+import { beijingDate, longDateEn } from "@aihot/contracts/time";
+import { TOPIC_GROUP_EN } from "@aihot/industry/english";
+import * as english from "@aihot/backend/publication/english";
 import { loadItemOgCard, loadItemShare } from "@aihot/backend/publication/og";
 import { loadReport, type ReportKind } from "@aihot/backend/publication/reports";
 import { findTopic, TOPIC_GROUPS, TOPICS } from "@aihot/backend/publication/topics";
 import { loadStoryDetail, resolveStory } from "@aihot/backend/publication/stories";
 import { ogEtag, renderOg, type OgCard } from "@aihot/backend/media/og";
 import { posterEtag, renderPoster, type Poster } from "@aihot/backend/media/poster";
-import { CARDS, ITEM_COPY, REPORTS, subjectAfter, withSubject } from "@aihot/site";
+import { CARDS, ITEM_COPY, REPORTS, SITE, subjectAfter, withSubject } from "@aihot/site";
 import { config } from "@aihot/backend/config";
 
+/** "A, B and C". */
+const listEn = (words: string[]) => (words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : (words[0] ?? ""));
+
 /** The pages' share cards: the site's texts, and the topic count of the topic list. */
-const PAGES: Record<string, OgCard> = {
-  ...CARDS,
-  topics: { kicker: "主题", title: `${TOPICS.length} ${subjectAfter("个长期追踪的", "方向")}`, subtitle: `${TOPIC_GROUPS.map((g) => g.name).join("、")}。` },
+const PAGES: Record<Locale, Record<string, OgCard>> = {
+  zh: {
+    ...CARDS,
+    topics: { kicker: "主题", title: `${TOPICS.length} ${subjectAfter("个长期追踪的", "方向")}`, subtitle: `${TOPIC_GROUPS.map((g) => g.name).join("、")}。` },
+  },
+  en: Object.fromEntries(Object.entries({
+    ...ENGLISH?.cards,
+    topics: { kicker: "Topics", title: `${TOPICS.length} ${SITE.subject} topics we follow`, subtitle: `${listEn(TOPIC_GROUPS.map((g) => TOPIC_GROUP_EN[g.key]?.name ?? g.name))}.` },
+  }).map(([name, card]) => [name, { ...card, lang: "en" as const }])),
 };
 
 /**
@@ -24,10 +39,13 @@ const PAGES: Record<string, OgCard> = {
  * minutes; shared caches are refreshed on publication changes. Brand images keep their own lifetime.
  */
 const CONTENT_IMAGE_CACHE = "public, max-age=300, s-maxage=3600, must-revalidate";
+/** An English card whose words are not all in English yet: kept a minute, so it turns English soon after they are. */
+const WAITING_IMAGE_CACHE = "public, max-age=60, s-maxage=60, must-revalidate";
 
 async function send(req: FastifyRequest, reply: FastifyReply, card: OgCard, maxAge: number, cacheControl = `public, max-age=${maxAge}, s-maxage=${maxAge * 7}, stale-while-revalidate=86400`) {
   const tag = `"og-${ogEtag(card)}"`;
-  reply.header("ETag", tag).header("Cache-Control", cacheControl);
+  const waiting = card.lang === "en" && (needsEnglish(card.title) || needsEnglish(card.subtitle));
+  reply.header("ETag", tag).header("Cache-Control", waiting ? WAITING_IMAGE_CACHE : cacheControl);
   if (String(req.headers["if-none-match"] ?? "").split(",").some((t) => t.trim().replace(/^W\//, "") === tag)) return reply.code(304).send();
   return reply.type("image/png").send((await renderOg(card)).png);
 }
@@ -39,82 +57,125 @@ function notFound(reply: FastifyReply) {
 const REPORT_NAMES: Record<ReportKind, string> = { daily: withSubject("日报"), weekly: withSubject("周报"), monthly: withSubject("月报") };
 
 export function registerOg(app: FastifyInstance) {
-  app.get("/og/site.png", (req, reply) => send(req, reply, PAGES.site!, 86400));
+  registerIn(app, "zh");
+  if (ENGLISH) registerIn(app, "en");
+}
 
-  app.get("/og/pages/:file", async (req, reply) => {
+function registerIn(app: FastifyInstance, lang: Locale) {
+  const og = lang === "en" ? "/og/en" : "/og";
+  const en = lang === "en";
+  const pages = PAGES[lang];
+
+  app.get(`${og}/site.png`, (req, reply) => send(req, reply, pages.site!, 86400));
+
+  app.get(`${og}/pages/:file`, async (req, reply) => {
     const name = (req.params as { file: string }).file.replace(/\.png$/, "");
-    const card = Object.hasOwn(PAGES, name) ? PAGES[name] : undefined;
+    const card = Object.hasOwn(pages, name) ? pages[name] : undefined;
     if (!card || !(req.params as { file: string }).file.endsWith(".png")) return notFound(reply);
     return send(req, reply, card, 86400);
   });
 
-  app.get("/og/items/:file", async (req, reply) => {
+  app.get(`${og}/items/:file`, async (req, reply) => {
     const file = (req.params as { file: string }).file;
     if (!file.endsWith(".png")) return notFound(reply);
-    const card = await loadItemOgCard(file.slice(0, -4));
+    const card = await loadItemOgCard(file.slice(0, -4), lang);
     if (!card) return notFound(reply);
     return send(req, reply, card, 3600, CONTENT_IMAGE_CACHE);
   });
 
   // Phone share poster for an article (1080×1440), generated on first request and cached by content.
-  app.get("/og/posters/:file", async (req, reply) => {
+  app.get(`${og}/posters/:file`, async (req, reply) => {
     const file = (req.params as { file: string }).file;
     if (!file.endsWith(".png")) return notFound(reply);
-    const d = await loadItemShare(file.slice(0, -4));
+    const d = await loadItemShare(file.slice(0, -4), lang);
     if (!d) return notFound(reply);
     const poster: Poster = {
-      url: `${config.siteUrl}/items/${d.id}`,
-      kicker: d.category ? CATEGORY_LABELS[d.category] : withSubject("动态"),
+      url: `${config.siteUrl}${en ? "/en" : ""}/items/${d.id}`,
+      kicker: d.category ? categoryLabel(d.category, lang) : withSubject(en ? "News" : "动态"),
       title: d.title,
       summary: d.summary,
       source: d.source.name,
-      date: beijingDate(d.timelineAt),
+      date: en ? longDateEn(beijingDate(d.timelineAt)) : beijingDate(d.timelineAt),
       score: d.selected && ITEM_COPY.showScore ? d.score : null,
+      // Only an English poster says so: a Chinese one keeps the cache key it had.
+      ...(en ? { lang: "en" as const } : {}),
     };
     const tag = `"poster-${posterEtag(poster)}"`;
-    reply.header("ETag", tag).header("Cache-Control", CONTENT_IMAGE_CACHE);
+    const waiting = en && (needsEnglish(poster.title) || needsEnglish(poster.summary));
+    reply.header("ETag", tag).header("Cache-Control", waiting ? WAITING_IMAGE_CACHE : CONTENT_IMAGE_CACHE);
     if (String(req.headers["if-none-match"] ?? "").split(",").some((t) => t.trim().replace(/^W\//, "") === tag)) return reply.code(304).send();
     return reply.type("image/png").send((await renderPoster(poster)).png);
   });
 
-  app.get("/og/reports/:kind/:file", async (req, reply) => {
+  app.get(`${og}/reports/:kind/:file`, async (req, reply) => {
     const { kind, file } = req.params as { kind: string; file: string };
     if (!["daily", "weekly", "monthly"].includes(kind) || !file.endsWith(".png")) return notFound(reply);
-    const r = await loadReport(kind as ReportKind, file.slice(0, -4));
-    if (!r) return notFound(reply);
+    const found = await loadReport(kind as ReportKind, file.slice(0, -4));
+    if (!found) return notFound(reply);
+    const r = en ? await english.inEnglish(found, english.report) : found;
     const count = r.sections.reduce((n, s) => n + s.items.length, 0);
+    // A quiet day's issue (REPORTS.quiet) has nothing to count.
+    if (en) {
+      const unit = count === 1 ? ENGLISH!.reports.entry.one : ENGLISH!.reports.shareUnit;
+      return send(req, reply, {
+        kicker: `${withSubject(REPORT_NAMES_EN[r.kind])} · ${reportDateLabelEn(r.kind, r.key)}`,
+        title: r.lead?.title ?? r.title,
+        subtitle: r.lead?.leadParagraph ?? r.overview,
+        meta: count > 0 ? `${count} ${unit} · ${r.readingMinutes} min read` : null,
+        lang: "en",
+      }, 3600, CONTENT_IMAGE_CACHE);
+    }
     return send(req, reply, {
       kicker: `${REPORT_NAMES[r.kind]} · ${reportDateLabel(r.kind, r.key)}`,
       title: r.lead?.title ?? r.title,
       subtitle: r.lead?.leadParagraph ?? r.overview,
-      // A quiet day's issue (REPORTS.quiet) has nothing to count.
       meta: count > 0 ? `${count} ${REPORTS.shareUnit} · 约 ${r.readingMinutes} 分钟读完` : null,
     }, 3600, CONTENT_IMAGE_CACHE);
   });
 
-  app.get("/og/topics/:file", async (req, reply) => {
+  app.get(`${og}/topics/:file`, async (req, reply) => {
     const file = (req.params as { file: string }).file;
     const t = file.endsWith(".png") ? findTopic(file.slice(0, -4)) : null;
     if (!t) return notFound(reply);
-    return send(req, reply, { kicker: `主题 · ${TOPIC_GROUPS.find((g) => g.key === t.group)?.name ?? ""}`, title: `${t.name} 最新动态`, subtitle: t.definition }, 86400);
+    const group = TOPIC_GROUPS.find((g) => g.key === t.group);
+    if (en) {
+      return send(req, reply, {
+        kicker: `Topic · ${TOPIC_GROUP_EN[t.group]?.name ?? group?.name ?? ""}`,
+        title: `${topicName(t.slug, t.name, "en")}: the latest`,
+        subtitle: topicDefinition(t.slug, t.definition, "en"),
+        lang: "en",
+      }, 86400);
+    }
+    return send(req, reply, { kicker: `主题 · ${group?.name ?? ""}`, title: `${t.name} 最新动态`, subtitle: t.definition }, 86400);
   });
 
-  app.get("/og/stories/:file", async (req, reply) => {
+  app.get(`${og}/stories/:file`, async (req, reply) => {
     const file = (req.params as { file: string }).file;
     if (!file.endsWith(".png")) return notFound(reply);
     const found = await resolveStory(file.slice(0, -4));
     if (found.kind === "merged") {
-      return reply.code(308).header("Location", `/og/stories/${found.target}.png`).header("Cache-Control", CONTENT_IMAGE_CACHE).send();
+      return reply.code(308).header("Location", `${og}/stories/${found.target}.png`).header("Cache-Control", CONTENT_IMAGE_CACHE).send();
     }
     if (found.kind !== "found") return notFound(reply);
-    const s = await loadStoryDetail(found.storyId);
-    if (!s) return notFound(reply);
-    return send(req, reply, {
-      kicker: s.whyHot.rank ? `热点第 ${s.whyHot.rank} 名 · 事件` : "事件",
-      title: s.title,
-      subtitle: s.latest ?? s.digest,
-      meta: `${s.sourceCount} 个来源 · ${s.reportCount} 篇报道`,
-      accent: s.whyHot.rank ? "hot" : "teal",
-    }, 3600, CONTENT_IMAGE_CACHE);
+    const detail = await loadStoryDetail(found.storyId);
+    if (!detail) return notFound(reply);
+    const s = en ? await english.inEnglish(detail, english.story) : detail;
+    const rank = s.whyHot.rank;
+    return send(req, reply, en
+      ? {
+        kicker: rank ? `No. ${rank} on Trending · Story` : "Story",
+        title: s.title,
+        subtitle: s.latest ?? s.digest,
+        meta: `${s.sourceCount} ${s.sourceCount === 1 ? "source" : "sources"} · ${s.reportCount} ${s.reportCount === 1 ? "report" : "reports"}`,
+        accent: rank ? "hot" : "teal",
+        lang: "en",
+      }
+      : {
+        kicker: rank ? `热点第 ${rank} 名 · 事件` : "事件",
+        title: s.title,
+        subtitle: s.latest ?? s.digest,
+        meta: `${s.sourceCount} 个来源 · ${s.reportCount} 篇报道`,
+        accent: rank ? "hot" : "teal",
+      }, 3600, CONTENT_IMAGE_CACHE);
   });
 }

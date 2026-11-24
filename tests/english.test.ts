@@ -21,6 +21,7 @@ import { translateEnglish } from "@aihot/backend/editorial/english";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { autoReleaseUnknownReceipts } from "@aihot/backend/operations/recover";
 import { copyKey, englishOf, report as englishReport, wantedIn } from "@aihot/backend/publication/english";
+import { loadItemOgCard } from "@aihot/backend/publication/og";
 import { loadReport } from "@aihot/backend/publication/reports";
 import { publishArticle } from "@aihot/backend/publication/publish";
 import { digestInputsHash, digestReports } from "@aihot/backend/publication/story-evidence";
@@ -214,7 +215,7 @@ const englishAnswers = () => [
 ];
 
 test("without an English edition there are no English answers and nothing to translate", { skip: ENGLISH !== null }, async () => {
-  for (const url of ["/api/site/en/timeline", "/en/feed.xml", "/en/feed/daily.xml"]) assert.equal((await app.inject({ method: "GET", url })).statusCode, 404, url);
+  for (const url of ["/api/site/en/timeline", "/en/feed.xml", "/en/feed/daily.xml", "/og/en/site.png"]) assert.equal((await app.inject({ method: "GET", url })).statusCode, 404, url);
   for (const url of ["/api/v1/items?lang=en", "/api/v1/agent/hot?lang=en"]) assert.equal((await app.inject({ method: "GET", url })).statusCode, 400, `${url}: no lang to take`);
   assert.deepEqual(await translateEnglish(), { stored: 0, failed: 0, calls: 0 });
 });
@@ -509,4 +510,34 @@ test("v1, the Agent addresses and the MCP tools in English: English pages, the n
   assert.ok(top.links.aihot.includes("/en/"), "its JSON links the English pages");
   assert.deepEqual(top.sourceNames, (await get("/api/v1/hot-topics")).items[0].sourceNames, "and keeps the stored source names");
   assert.ok(HAN.test((await tool(MCP_TOOL_NAMES.hot, {})).content[0]!.text), "without lang it answers in Chinese");
+});
+
+test("the English pages' share images: articles, posters, issues, events, topics and pages in English, the Chinese ones as they were", { skip: ENGLISH === null }, async () => {
+  const get = (url: string) => app.inject({ method: "GET", url });
+  const card = await loadItemOgCard(site.a, "en");
+  assert.deepEqual(hanIn(JSON.stringify(card)), [], "an article's English card says nothing in Chinese");
+  assert.equal(card!.badge?.label, "AI score");
+  const zhCard = await loadItemOgCard(site.a);
+  assert.ok(HAN.test(zhCard!.title) && !("lang" in zhCard!), "its Chinese card is as it was");
+  const pages = ["/site.png", "/pages/topics.png", ...Object.keys(ENGLISH!.cards).map((name) => `/pages/${name}.png`)];
+  for (const path of [`/items/${site.a}.png`, `/posters/${site.a}.png`, "/reports/daily/2099-01-02.png", "/reports/weekly/2099-W01.png", "/reports/monthly/2099-01.png", `/stories/${site.story}.png`, "/topics/model-releases.png", ...pages]) {
+    const [en, zh] = [await get(`/og/en${path}`), await get(`/og${path}`)];
+    assert.equal(en.statusCode, 200, path);
+    assert.equal(en.headers["content-type"], "image/png", path);
+    assert.notEqual(en.headers.etag, zh.headers.etag, `${path}: a card of its own`);
+    assert.doesNotMatch(String(en.headers["cache-control"]), /max-age=60,/, `${path}: its words are in English, so it keeps as long as the Chinese one`);
+  }
+  assert.equal((await get("/og/en/pages/changelog.png")).statusCode, 404, "a page with no English edition has no English card");
+  // An article whose words are not in English yet is kept a minute, so its card turns English soon after they are.
+  const waiting = await report(await source(`等待翻译的媒体${T}`), { title: `还没翻译的报道${T}`, summary: "还没有英文的摘要。", reason: "还没有英文的理由。" });
+  for (const path of [`/og/en/items/${waiting}.png`, `/og/en/posters/${waiting}.png`]) {
+    const res = await get(path);
+    assert.equal(res.statusCode, 200, path);
+    assert.match(String(res.headers["cache-control"]), /max-age=60,/, path);
+  }
+  const [merged] = await sql<{ public_id: string }[]>`
+    INSERT INTO stories (public_id, title, merged_into) SELECT gen_random_uuid(), ${`并入的事件${T}`}, id FROM stories WHERE public_id = ${site.story}::uuid RETURNING public_id::text`;
+  const moved = await get(`/og/en/stories/${merged!.public_id}.png`);
+  assert.equal(moved.statusCode, 308);
+  assert.equal(moved.headers.location, `/og/en/stories/${site.story}.png`, "a merged event's English card leads to the English one");
 });

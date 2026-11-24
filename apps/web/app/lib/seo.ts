@@ -8,7 +8,7 @@ import {
 import { isCategoryKey, isChannelKey, sectionLabelIn, topicName } from "@aihot/contracts/taxonomy";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
 import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
-import { feedPath, hasEnglish, localizePath, translator, type Locale, type Text } from "./i18n.ts";
+import { feedPath, hasEnglish, localizePath, ogPath, translator, type Locale, type Text } from "./i18n.ts";
 
 /**
  * The site's address: SITE_URL while rendering on the server (what crawlers and share previews read),
@@ -96,7 +96,7 @@ export function pageMeta(input: PageMetaInput): MetaDescriptor[] {
   const title = input.title ? (input.rawTitle ? input.title : titled(input.title)) : home;
   const description = input.description ?? english?.description ?? SITE_DESCRIPTION;
   const url = address(input.path, input.locale);
-  const image = input.image ? (input.image.startsWith("http") ? input.image : `${base}${input.image}`) : `${base}/og/site.png`;
+  const image = input.image?.startsWith("http") ? input.image : `${base}${ogPath(input.image || "/og/site.png", input.locale)}`;
   const tags: MetaDescriptor[] = [
     { title },
     { name: "description", content: description },
@@ -267,7 +267,7 @@ export function articleLd(input: { locale: Locale; path: string; headline: strin
     inLanguage: inLanguage(input.locale),
     ...(input.publishedAt ? { datePublished: input.publishedAt } : {}),
     ...(input.modifiedAt ? { dateModified: input.modifiedAt } : {}),
-    ...(input.image ? { image: new URL(input.image, base).href } : {}),
+    ...(input.image ? { image: new URL(ogPath(input.image, input.locale), base).href } : {}),
     ...(input.section?.length ? { articleSection: input.section } : {}),
     isAccessibleForFree: true,
     author: siteOrganization(),
@@ -360,7 +360,7 @@ export function storyLd(story: StoryDetail, locale: Locale) {
     url,
     name: story.title,
     ...(description ? { description } : {}),
-    image: `${base}/og/stories/${story.publicId}.png`,
+    image: `${base}${ogPath(`/og/stories/${story.publicId}.png`, locale)}`,
     inLanguage: inLanguage(locale),
     isPartOf: websiteRef(locale),
     publisher: siteOrganization(),

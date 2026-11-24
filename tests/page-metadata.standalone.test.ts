@@ -22,6 +22,7 @@ import { createServer } from "node:http";
 import { after, before, test } from "node:test";
 import * as cheerio from "cheerio";
 import { reportDateLabel, type FeedItemSummary, type ReportCitation, type ReportDetail, type ReportKind, type SiteItemDetail, type StoryDetail, type TopicPage } from "@aihot/contracts/site";
+import { ENGLISH } from "@aihot/contracts/english";
 import { SEO_TITLES, SITE, withSubject } from "@aihot/site";
 import { articleLd, readFilters, reportLd } from "../apps/web/app/lib/seo.ts";
 import { dateLine } from "../apps/web/app/features/report/format.ts";
@@ -65,7 +66,8 @@ const topicPage = (pageNum: number): TopicPage => ({
 let web: WebServer;
 const api = createServer((req, res) => {
   const url = new URL(req.url!, "http://local");
-  const path = url.pathname;
+  // English pages ask the English answers: the fixtures stand for them too.
+  const path = url.pathname.replace(/^\/api\/site\/en\//, "/api/site/");
   res.setHeader("Content-Type", "application/json");
   const send = (value: unknown) => res.end(JSON.stringify(value));
   if (path === "/api/site/meta") return send({ changelogVersion: "fixture" });
@@ -242,6 +244,17 @@ test("an article whose own text is a summary's worth asks only Google not to ind
   const hidden = await page("/items/metadata-hidden");
   assert.equal(hidden("meta[name=robots]").attr("content"), "noindex, follow");
   assert.equal(hidden("meta[name=googlebot]").length, 0, "robots already covers Google");
+});
+
+test("English pages share the English cards; Chinese pages keep theirs", { skip: ENGLISH === null }, async () => {
+  const image = ($: cheerio.CheerioAPI) => $('meta[property="og:image"]').attr("content");
+  const english = await page(`/en/items/${item.id}`);
+  assert.equal(image(english), `${web.origin}/og/en/items/${item.id}.png`);
+  assert.equal(structured(english).find((entry) => entry["@type"] === "NewsArticle")!.image, `${web.origin}/og/en/items/${item.id}.png`);
+  assert.equal(image(await page("/en")), `${web.origin}/og/en/site.png`);
+  const story_ = await page(`/en/story/${story.publicId}`);
+  assert.equal(structured(story_).find((entry) => entry["@type"] === "CollectionPage")!.image, `${web.origin}/og/en/stories/${story.publicId}.png`);
+  assert.equal(image(await page(`/items/${item.id}`)), `${web.origin}/og/items/${item.id}.png`);
 });
 
 test("story metadata describes the visible collection, current summary and report list", async () => {

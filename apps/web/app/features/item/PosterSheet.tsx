@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { SITE } from "@aihot/site";
 import { Sheet } from "../../components/ui/Sheet";
 import { IconDownload, IconShare } from "../../components/icons";
-import { useT } from "../../lib/i18n";
+import { ogPath, useLocale, useT } from "../../lib/i18n";
 
 export default function PosterSheet({ id, title, open, onClose }: { id: string; title: string; open: boolean; onClose: () => void }) {
   const t = useT();
-  const src = `/og/posters/${id}.png`;
+  const src = ogPath(`/og/posters/${id}.png`, useLocale());
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [canShareFile, setCanShareFile] = useState(false);

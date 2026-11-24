@@ -9,6 +9,7 @@ import { createServer } from 'node:http';
 import { after, before, test } from 'node:test';
 import Fastify from 'fastify';
 import { closeDb } from '@aihot/backend/db';
+import { ENGLISH } from '@aihot/contracts/english';
 import { resolveRedirect } from '@aihot/contracts/http-policy';
 import { registerOg } from '../apps/api/src/routes/og.ts';
 import { startWebServer, type WebServer } from '../apps/web/tests/web-server.ts';
@@ -25,18 +26,22 @@ after(async () => { await app.close(); await closeDb(); await web?.stop(); });
 
 test('inherited object names are nonexistent share cards', async () => {
   for (const name of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', '__defineGetter__', 'missing']) {
-    const response = await app.inject(`/og/pages/${name}.png`);
-    assert.equal(response.statusCode, 404, `${name}: ${response.body}`);
+    for (const og of ['/og', ...(ENGLISH ? ['/og/en'] : [])]) {
+      const response = await app.inject(`${og}/pages/${name}.png`);
+      assert.equal(response.statusCode, 404, `${og} ${name}: ${response.body}`);
+    }
   }
 });
 
 test('ordinary share cards keep their PNG and conditional cache responses', async () => {
-  const response = await app.inject('/og/pages/topics.png');
-  assert.equal(response.statusCode, 200, response.body);
-  assert.equal(response.headers['content-type'], 'image/png');
-  assert.deepEqual([...response.rawPayload.subarray(0, 8)], [137,80,78,71,13,10,26,10]);
-  const cached = await app.inject({ url: '/og/pages/topics.png', headers: { 'if-none-match': response.headers.etag! } });
-  assert.equal(cached.statusCode, 304);
+  for (const url of ['/og/pages/topics.png', ...(ENGLISH ? ['/og/en/pages/topics.png'] : [])]) {
+    const response = await app.inject(url);
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(response.headers['content-type'], 'image/png');
+    assert.deepEqual([...response.rawPayload.subarray(0, 8)], [137,80,78,71,13,10,26,10]);
+    const cached = await app.inject({ url, headers: { 'if-none-match': response.headers.etag! } });
+    assert.equal(cached.statusCode, 304, url);
+  }
 });
 
 test('decoded controls in topic paths cut the path there without injecting response headers', async () => {

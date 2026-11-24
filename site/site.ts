@@ -4,6 +4,9 @@
 
 import type { Founder } from "@aihot/contracts/site-config";
 
+/** 英文版（/en/…）上本站自己写的文案；不做英文版就保持 null，网站只有中文版。 */
+export const ENGLISH = null;
+
 /**
  * 日报、周报、月报什么时候出（北京时间，HH:mm）：日报收这个时间之前的 24 小时，周报在每个自然周之后的周一出，
  * 月报在每月 1 日出。排程、成刊时间窗口、缺期告警和所有提到时间的文案都读它（public/ 里的文件写占位

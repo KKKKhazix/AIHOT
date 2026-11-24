@@ -8,7 +8,7 @@ import { ENGLISH } from "@aihot/contracts/english";
 import { beijingTime } from "@aihot/contracts/time";
 import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { filterParams, hasFeedFilters, itemListLd, listPath, pageMeta, readFilters } from "../lib/seo";
+import { feedListPath, filterParams, hasFeedFilters, itemListLd, listPath, pageMeta, readFilters } from "../lib/seo";
 import { ActiveFilters, CategoryTabs, FeedBar, SearchField } from "../features/feed/Filters";
 import { PillTabs } from "../components/ui/Tabs";
 import { DayList, Pagination } from "../features/feed/DayList";
@@ -72,14 +72,7 @@ export function meta({ loaderData, location }: Route.MetaArgs) {
 const ALL_BACK = L("全部", "All");
 
 function pageHref(params: URLSearchParams, page: number) {
-  const sp = new URLSearchParams(params);
-  sp.delete("deep");
-  sp.delete("anchorAt");
-  sp.delete("search");
-  if (page <= 1) sp.delete("page");
-  else sp.set("page", String(page));
-  const s = sp.toString();
-  return s ? `/all?${s}` : "/all";
+  return feedListPath("/all", params, { page: page > 1 ? page : null });
 }
 
 export default function AllPage() {
@@ -92,13 +85,7 @@ export default function AllPage() {
   const busy = navigation.state === "loading" && !!navigation.location && pagePath(navigation.location.pathname) === "/all";
   const { channel, category } = filterParams(f);
   const keep = { channel, category };
-  const searchTabHref = (tab: "time" | "relevance") => {
-    const sp = new URLSearchParams(params);
-    sp.delete("page");
-    if (tab === "relevance") sp.set("tab", "relevance");
-    else sp.delete("tab");
-    return `/all?${sp}`;
-  };
+  const searchTabHref = (tab: "time" | "relevance") => feedListPath("/all", params, { tab: tab === "relevance" ? tab : null });
   const shownTag = f.tag ? displayTagIn(f.tag, locale) : null;
   const title = f.q ? t(`搜索“${f.q}”`, `Search: “${f.q}”`) : f.tag ? (shownTag ? `#${shownTag}` : t("标签筛选", "Tag filter")) : null;
   const updated = beijingTime(data.freshness);

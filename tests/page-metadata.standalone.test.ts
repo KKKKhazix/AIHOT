@@ -107,6 +107,22 @@ function structured($: cheerio.CheerioAPI): Array<Record<string, unknown>> {
   return $("script[type='application/ld+json']").toArray().flatMap((node) => JSON.parse($(node).text()));
 }
 
+test("feed navigation in both languages shares the same functional links across referral addresses", async () => {
+  for (const locale of ENGLISH ? ["", "/en"] : [""]) {
+    for (const [route, query] of [["/", "tag=Agent"], ["/all", "q=model&tab=relevance&tag=Agent&page=2"]] as const) {
+      const path = (route === "/" ? locale || "/" : locale + route) + "?" + query;
+      const links = async (address: string) => {
+        const $ = await page(address);
+        return $("main a[href]").toArray().map(el => $(el).attr("href"));
+      };
+      const expected = await links(path);
+      assert(expected.some(href => href?.includes("category=")), path);
+      if (route === "/all") assert(expected.some(href => href?.includes("page=3") && href.includes("q=model")), path);
+      assert.deepEqual(await links(path + "&utm_source=newsletter&from=reader"), expected, path);
+    }
+  }
+});
+
 test("filtered feeds keep their exact content address but leave indexing to the public landing pages", async () => {
   for (const base of ["/", "/all"]) for (const query of ["channel=news", "category=ai-models", "tag=Agent", "channel=x&category=paper&tag=Agent"]) {
     const $ = await page(`${base}?${query}&utm_source=fixture&anchorAt=old&deep=1`);

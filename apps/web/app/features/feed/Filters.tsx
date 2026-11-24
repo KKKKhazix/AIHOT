@@ -10,21 +10,9 @@ import { ChoiceTick, Sheet, sheetChoice } from "../../components/ui/Sheet";
 import { Wordmark } from "@aihot/site/brand/Logo.tsx";
 import { BarButton, PhoneBar } from "../../components/shell/PhoneBar";
 import { openSearch } from "../search/SearchOverlay";
+import { feedListPath } from "../../lib/seo";
 import { Link } from "../../lib/link";
 import { localizePath, pagePath, useLocale, useT, type Locale } from "../../lib/i18n";
-
-/** Same page with some query parameters changed (paging state dropped). */
-function hrefWith(base: string, params: URLSearchParams, patch: Record<string, string | null>) {
-  const sp = new URLSearchParams(params);
-  for (const [k, v] of Object.entries(patch)) {
-    if (v === null || v === "") sp.delete(k);
-    else sp.set(k, v);
-  }
-  sp.delete("page");
-  sp.delete("cursor");
-  const s = sp.toString();
-  return s ? `${base}?${s}` : base;
-}
 
 /**
  * The feed's one filter (精选 and 全部动态 alike): none, 一手, or a category. One choice at a time: picking
@@ -32,8 +20,8 @@ function hrefWith(base: string, params: URLSearchParams, patch: Record<string, s
  * choice then shows as none.
  */
 function filterOptions(base: string, params: URLSearchParams, noneLabel: string, locale: Locale) {
-  const option = (key: string, label: string, patch: Record<string, string | null>) => {
-    const to = hrefWith(base, params, patch);
+  const option = (key: string, label: string, patch: Partial<Record<"category" | "channel", string | null>>) => {
+    const to = feedListPath(base, params, patch);
     // Filtered feed views are noindex; keep crawler focus on the unfiltered list.
     return { key, label, to, rel: to.includes("?") ? "nofollow" : undefined };
   };
@@ -65,7 +53,7 @@ export function FeedBar({ base, category, channel }: { base: "/" | "/all"; categ
   const t = useT();
   const [sheet, setSheet] = useState(false);
   const scope = (to: string) => {
-    const href = hrefWith(to, params, { q: null, tab: null, search: null });
+    const href = feedListPath(to, params, { q: null, tab: null });
     return { to: href, rel: href.includes("?") ? "nofollow" : undefined };
   };
   const filtered = filterKey(category, channel) !== "all";
@@ -143,8 +131,8 @@ export function ActiveFilters({ base, category, channel, tag }: { base: string; 
   const shownTag = tag ? displayTagIn(tag, locale) : null;
   if (!label && !tag) return null;
   const chip = "inline-flex min-h-11 max-w-full items-center gap-1 rounded-full bg-accent-soft pl-3 pr-2 text-ui-label font-medium text-accent transition-opacity active:opacity-60";
-  const clearFilter = hrefWith(base, params, { category: null, channel: null });
-  const clearTag = hrefWith(base, params, { tag: null });
+  const clearFilter = feedListPath(base, params, { category: null, channel: null });
+  const clearTag = feedListPath(base, params, { tag: null });
   return (
     <div className="flex flex-wrap gap-2 pb-3 pt-1 lg:hidden">
       {label && (

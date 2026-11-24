@@ -79,6 +79,15 @@ export function filterParams(f: TimelineFilters) {
   return { channel: f.channel === "all" ? null : f.channel, category: f.category, tag: f.tag };
 }
 
+/** Links in shared feed HTML carry only the destination's filters. Pagination starts over unless requested. */
+export function feedListPath(base: string, params: URLSearchParams, changes: Partial<Record<"q" | "tab" | "page" | "tag" | "category" | "channel", string | number | null>>) {
+  const q = base === "/all" ? params.get("q")?.trim().slice(0, 200) : null;
+  return listPath(base, {
+    ...filterParams(readFilters(params)), q, tab: q && params.get("tab") === "relevance" ? "relevance" : null,
+    ...changes,
+  });
+}
+
 /** Filter combinations are browsing views; the unfiltered feed and its archive pages remain indexable. */
 export function hasFeedFilters(filters: TimelineFilters | undefined): boolean {
   return !!filters && (filters.channel !== "all" || !!filters.category || !!filters.tag);

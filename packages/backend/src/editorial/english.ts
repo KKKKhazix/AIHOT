@@ -270,6 +270,18 @@ interface Totals {
   calls: number;
 }
 
+/**
+ * The source names these texts mention that have English: a Chinese name the model would otherwise leave as written
+ * goes with the texts, so it reads the same as on the source's own label.
+ */
+async function namesIn(texts: Text[]): Promise<Array<[string, string]>> {
+  const rows = await sql<{ zh: string; en: string }[]>`
+    SELECT c.zh, c.en FROM english_copy c
+    WHERE c.kind = 'name' AND c.en IS NOT NULL AND c.en !~ ${HAN}
+      AND EXISTS (SELECT 1 FROM unnest(${texts.filter((t) => t.kind !== "name").map((t) => t.zh)}::text[]) AS t(zh) WHERE strpos(t.zh, c.zh) > 0)`;
+  return rows.map((r) => [r.zh, r.en]);
+}
+
 /** One request: the texts that came back usable are stored, the others counted as failed; the receipt is closed with them. */
 async function translateBatch(texts: Text[], totals: Totals): Promise<void> {
   const ids = [...new Set(texts.map((t) => t.item).filter((id): id is string => !!id))];
@@ -281,6 +293,7 @@ async function translateBatch(texts: Text[], totals: Totals): Promise<void> {
     const original = c?.original_title && !needsEnglish(c.original_title) ? c.original_title : undefined;
     return { id, kind: t.kind, zh: t.zh, ...(original ? { original } : {}), ...(c ? { source: publicSourceName(c.source_name) } : {}) };
   });
+  const names = await namesIn(texts);
   const chars = texts.reduce((n, t) => n + t.zh.length, 0);
   const retry = texts.find((t) => t.attempts)?.attempts;
   totals.calls += 1;
@@ -292,7 +305,7 @@ async function translateBatch(texts: Text[], totals: Totals): Promise<void> {
       subject: `english:${copyKey(texts[0]!.zh).slice(0, 16)}${texts.length > 1 ? `+${texts.length - 1}` : ""}`,
       promptVersion: ENGLISH_PROMPT_VERSION,
       system: SYSTEM,
-      user: JSON.stringify({ texts: input }),
+      user: JSON.stringify({ texts: input, ...(names.length ? { names: Object.fromEntries(names) } : {}) }),
       schema: Output,
       temperature: 0.2,
       maxTokens: Math.min(8000, chars * 3 + 400),
@@ -386,13 +399,14 @@ export async function translateEnglish(opts: { budgetMs?: number } = {}): Promis
     }
     return true;
   };
+  // Source names first: a new source's English is there for the texts that mention it (namesIn).
   const sources: Array<() => Promise<Text[]>> = [
+    sourceNames,
     () => items("recent", 200),
     recentStories,
     hot,
     latestIssues,
     topics,
-    sourceNames,
     moduleTexts,
     () => items("reachable", 100),
   ];

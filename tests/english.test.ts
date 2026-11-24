@@ -5,8 +5,9 @@
 // that article is withdrawn or its original withheld, and is made again without it; what readers do not see (a hidden
 // reason, an event's stale digest) is never sent; a text the model leaves out goes alone next time while readers still
 // see it, and one whose request may have been billed waits for that request's release, then goes alone once more and no
-// more; after three attempts it stays Chinese. Without an English edition (the open source site) there are no English
-// routes and the worker does nothing.
+// more; after three attempts it stays Chinese. A source name the site has in English goes with the texts that mention
+// it, and a name with nothing to translate reads in English punctuation. Without an English edition (the open source
+// site) there are no English routes and the worker does nothing.
 import { LOST, pointModels, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -17,7 +18,7 @@ import { upsertMaterial } from "@aihot/backend/content/materials";
 import { translateEnglish } from "@aihot/backend/editorial/english";
 import { stopBoss } from "@aihot/backend/jobs/queue";
 import { autoReleaseUnknownReceipts } from "@aihot/backend/operations/recover";
-import { englishOf, report as englishReport, wantedIn } from "@aihot/backend/publication/english";
+import { copyKey, englishOf, report as englishReport, wantedIn } from "@aihot/backend/publication/english";
 import { loadReport } from "@aihot/backend/publication/reports";
 import { publishArticle } from "@aihot/backend/publication/publish";
 import { digestInputsHash, digestReports } from "@aihot/backend/publication/story-evidence";
@@ -30,11 +31,13 @@ const english = (zh: string) => `EN ${createHash("sha256").update(zh).digest("he
 const RUN = { budgetMs: 10 * 60_000 };
 
 // The model answers every text with its marker, except a text it keeps leaving out, and a request whose answer is
-// always lost; each request's texts are kept.
+// always lost; each request's texts are kept, and the source names that went with them.
 const requests: string[][] = [];
+const namesSent: Array<Record<string, string> | undefined> = [];
 const provider = await stub(async (_hit, req) => {
-  const { texts } = JSON.parse(JSON.parse(req.body).messages[1].content) as { texts: Array<{ id: number; zh: string; original?: string }> };
+  const { texts, names } = JSON.parse(JSON.parse(req.body).messages[1].content) as { texts: Array<{ id: number; zh: string; original?: string }>; names?: Record<string, string> };
   requests.push(texts.map((x) => x.zh));
+  namesSent.push(names);
   if (texts.some((x) => x.zh.includes("回答总丢"))) return LOST;
   const t = texts.filter((x) => !x.zh.includes("总被漏掉")).map((x) => ({ id: x.id, en: `${english(x.zh)}${x.original ? " (named after the original)" : ""}` }));
   return { id: "stub", choices: [{ message: { content: JSON.stringify({ t }) } }], usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } };
@@ -88,6 +91,15 @@ async function report(sourceId: string, texts: { title: string; summary: string;
 }
 
 const site: Record<string, any> = {};
+
+/** Runs the worker once; the source names that went with the request carrying this text. */
+async function namesWith(text: string) {
+  const from = requests.length;
+  await translateEnglish(RUN);
+  const at = requests.findIndex((texts, i) => i >= from && texts.includes(text));
+  assert.ok(at >= 0, `${text} was sent`);
+  return namesSent[at];
+}
 
 before(async () => {
   if (!ENGLISH) return;
@@ -353,4 +365,28 @@ test("a text goes to the model with its own article: each title a composed overv
     return value;
   });
   assert.equal(later.get("先在别处出现的标题")?.item, "item-1", "met again with its article, the article goes along");
+});
+
+test("a source name the site has in English goes with the texts that mention it, and only with those", { skip: ENGLISH === null }, async () => {
+  const name = `新闻之家${T}`;
+  await sql`INSERT INTO english_copy (zh_hash, zh, kind, en) VALUES (${copyKey(name)}, ${name}, 'name', ${`News Home ${T}`})`;
+  const mentions = `据${name}报道，丙公司发布了新产品。`;
+  await report(await source(`Example Wire ${T}`), { title: `丙公司发布新产品${T}`, summary: mentions, reason: "新产品值得一看。" });
+  assert.deepEqual(await namesWith(mentions), { [name]: `News Home ${T}` });
+  const other = "丁公司发布了新服务。";
+  await report(await source(`Example Post ${T}`), { title: `丁公司发布新服务${T}`, summary: other, reason: "新服务值得一看。" });
+  assert.equal(await namesWith(other), undefined, "a request whose texts do not mention it goes without");
+});
+
+test("a new source's name is translated before the texts that mention it, so they go with its English", { skip: ENGLISH === null }, async () => {
+  const name = `新开的媒体${T}`;
+  const mentions = `${name}报道，辛公司发布了新工具。`;
+  await report(await source(name), { title: `辛公司发布新工具${T}`, summary: mentions, reason: "新工具值得一看。" });
+  assert.deepEqual(await namesWith(mentions), { [name]: english(name) });
+});
+
+test("a name with nothing to translate reads in English punctuation on English pages, as written on Chinese ones", { skip: ENGLISH === null }, async () => {
+  const id = await report(await source(`Example Wire：AI ${T}`), { title: `丁公司发布新模型${T}`, summary: "丁公司发布了新模型。", reason: "新模型值得一看。" });
+  assert.equal((await get(`/api/site/en/items/${id}`)).source.name, `Example Wire: AI ${T}`);
+  assert.equal((await get(`/api/site/items/${id}`)).source.name, `Example Wire：AI ${T}`);
 });

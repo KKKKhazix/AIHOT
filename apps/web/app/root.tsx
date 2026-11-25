@@ -12,7 +12,7 @@ import { TabBar } from "./components/shell/TabBar";
 import { PullToRefresh } from "./components/shell/PullToRefresh";
 import { usePageTransition } from "./components/shell/transitions";
 import { SearchOverlay } from "./features/search/SearchOverlay";
-import { BackToTop, NavigationProgress } from "./components/shell/Chrome";
+import { BackToTop, NavigationProgress, refreshAsked } from "./components/shell/Chrome";
 import { EnglishHint } from "./components/shell/EnglishHint";
 import { buttonClass } from "./components/ui/Controls";
 import { rememberPage, APPEARANCE_BOOT_SCRIPT, useAppearanceSync } from "./lib/local-state";
@@ -82,6 +82,7 @@ export function meta({ error, location }: Route.MetaArgs) {
 function SiteShell({ changelogVersion, children }: { changelogVersion: string | null; children: ReactNode }) {
   const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const asked = revalidator.state === "loading" && refreshAsked.current;
   const t = useT();
   // The phone search and pull-to-refresh are client-side, mounted once the page is interactive.
   const [interactive, setInteractive] = useState(false);
@@ -90,7 +91,7 @@ function SiteShell({ changelogVersion, children }: { changelogVersion: string | 
     // The desktop shell also opens on large phones held sideways, where the notch takes a side: the whole
     // shell keeps clear of it (the phone shell does so through its gutters).
     <div className="flex min-h-dvh lg:pl-[env(safe-area-inset-left)] lg:pr-[env(safe-area-inset-right)]">
-      <NavigationProgress active={navigation.state === "loading" || revalidator.state === "loading"} immediate={revalidator.state === "loading"} />
+      <NavigationProgress active={navigation.state === "loading" || asked} immediate={asked} />
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[70] focus:rounded-control focus:bg-surface focus:px-3 focus:py-2">
         {t("跳到正文", "Skip to content")}
       </a>

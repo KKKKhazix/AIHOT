@@ -66,6 +66,7 @@ export default function StarredPage() {
   };
   const restar = (item: LocalStarredItem) => {
     if (restoreStar(item)) setRemoved((rs) => rs.filter((r) => r.item.id !== item.id));
+    else setNotice({ kind: "error", text: t("没能放回收藏：收藏已满 500 条，或浏览器存储不可用。", "Couldn't put it back: Saved is full (500 items), or browser storage isn't available.") });
   };
 
   const starredIds = starred.map((s) => s.id).join(",");

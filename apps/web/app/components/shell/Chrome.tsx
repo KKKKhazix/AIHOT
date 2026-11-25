@@ -3,6 +3,12 @@ import { IconArrowUp } from "../icons";
 import { scrollBehavior } from "../../lib/motion";
 import { useT } from "../../lib/i18n";
 
+/**
+ * Set by the tab bar as the reader taps the tab they are on at the top: the refresh that follows shows the line at
+ * once. A page refreshing itself (the reset tracker's new version) or pull-to-refresh (its own ring) does not.
+ */
+export const refreshAsked = { current: false };
+
 /** A thin accent line while a navigation is in flight (shown only if it takes a moment). */
 export function NavigationProgress({ active, immediate = false }: { active: boolean; immediate?: boolean }) {
   const [visible, setVisible] = useState(false);
@@ -15,6 +21,7 @@ export function NavigationProgress({ active, immediate = false }: { active: bool
     else {
       if (timer.current) clearTimeout(timer.current);
       setVisible(false);
+      refreshAsked.current = false;
     }
     return () => {
       if (timer.current) clearTimeout(timer.current);

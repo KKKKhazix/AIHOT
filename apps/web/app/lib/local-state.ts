@@ -218,6 +218,8 @@ export function restoreStar(item: LocalStarredItem): boolean {
   cache.delete(KEYS.starred);
   const list = getStarred();
   if (list.some((s) => s.id === item.id)) return true;
+  // Full again since it was taken out (an import filled the place): it stays out, as a new star would not fit either.
+  if (list.length >= STARRED_LIMIT) return false;
   const at = list.findIndex((s) => s.savedAt < item.savedAt);
   const next = at < 0 ? [...list, item] : [...list.slice(0, at), item, ...list.slice(at)];
   const saved = writeRaw(KEYS.starred, JSON.stringify(next));

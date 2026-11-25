@@ -10,7 +10,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { SITE, withSubject } from "@aihot/site";
 import { EDITION } from "../report/format";
 import { watchAppearance } from "../../lib/local-state";
-import { reducedMotion, seededRandom } from "../../lib/motion";
+import { MOTION, reducedMotion, seededRandom } from "../../lib/motion";
 import { useT, type Translate } from "../../lib/i18n";
 
 export interface RiverSource {
@@ -331,6 +331,8 @@ export function SignalRiver({
     let last = 0;
     // The intro starts the first time the river is seen.
     let introAt = still ? -Infinity : 0;
+    const dims = [0, 0, 0, 0];
+    let dimAt = 0;
     // On screen now (the observer keeps it current after), so the intro plays where it is seen.
     const box = wrap.getBoundingClientRect();
     let visible = box.bottom > 0 && box.top < window.innerHeight;
@@ -420,10 +422,16 @@ export function SignalRiver({
       const f = (now - flashAt) / FLASH_MS;
       if (f >= 0 && f < 1) paintPaper(ctx, L, col, 1 - f);
 
+      // The stages not in focus dim, and come back, over about the feedback length rather than at once.
       const fx = focusRef.current;
-      if (fx !== null && fx !== undefined) {
-        ctx.fillStyle = rgba(col.bg, 0.62);
-        for (let k = 0; k < 4; k++) if (k !== fx) ctx.fillRect(L.w * STAGES[k]!, 0, L.w * (STAGES[k + 1]! - STAGES[k]!), L.h);
+      const step = still || !dimAt ? 1 : Math.min(1, (now - dimAt) / MOTION.feedback);
+      dimAt = now;
+      for (let k = 0; k < 4; k++) {
+        const target = fx !== null && fx !== undefined && k !== fx ? 1 : 0;
+        dims[k] = dims[k]! + (target - dims[k]!) * step;
+        if (dims[k]! < 0.01) continue;
+        ctx.fillStyle = rgba(col.bg, 0.62 * dims[k]!);
+        ctx.fillRect(L.w * STAGES[k]!, 0, L.w * (STAGES[k + 1]! - STAGES[k]!), L.h);
       }
     };
 

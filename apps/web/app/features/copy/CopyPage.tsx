@@ -4,6 +4,7 @@ import { ArticleLayout, RailSection } from "../../components/ui/Page";
 import { PhoneBar } from "../../components/shell/PhoneBar";
 import { Link } from "../../lib/link";
 import { useT, zh } from "../../lib/i18n";
+import { jumpTo } from "../../lib/motion";
 
 /**
  * Legal and policy pages, read like articles: the document on the page in one column, its facts in the
@@ -32,7 +33,7 @@ export function CopyPage({ doc, rendered, eyebrow, footer }: { doc: CopyDocument
         <ol className="-ml-px space-y-0.5 border-l border-line">
           {rendered.outline.map((o) => (
             <li key={o.id}>
-              <a href={`#${o.id}`} className="-ml-px block border-l border-transparent py-1 pl-3 text-ui-caption-lg leading-snug text-ink-3 transition-colors hover:border-accent hover:text-ink">
+              <a href={`#${o.id}`} onClick={(e) => jumpTo(e, o.id)} className="-ml-px block border-l border-transparent py-1 pl-3 text-ui-caption-lg leading-snug text-ink-3 transition-colors hover:border-accent hover:text-ink">
                 {o.text}
               </a>
             </li>

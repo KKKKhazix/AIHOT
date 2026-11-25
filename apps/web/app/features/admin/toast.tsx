@@ -39,7 +39,7 @@ export function Toaster() {
       {list.map((t) => (
         <div
           key={t.id}
-          className={`anim-notice-in pointer-events-auto max-w-md rounded-card px-4 py-2.5 text-ui-label-lg shadow-lg ring-1 backdrop-blur ${
+          className={`animate-fade-up pointer-events-auto max-w-md rounded-card px-4 py-2.5 text-ui-label-lg shadow-lg ring-1 backdrop-blur ${
             t.tone === "error" ? "bg-hot text-white ring-hot/40" : t.tone === "ok" ? "bg-ink text-bg ring-line-strong" : "bg-surface text-ink ring-line-strong"
           }`}
         >

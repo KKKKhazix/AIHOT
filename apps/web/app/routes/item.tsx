@@ -18,6 +18,7 @@ import { copyText } from "../lib/clipboard";
 import { SameEventBadge, SelectedBadge } from "../components/ui/Badge";
 import { ScoreLabel, shownScore } from "../components/ui/Score";
 import { PillTabs } from "../components/ui/Tabs";
+import { Presence } from "../components/ui/Presence";
 import { ArticleLayout, RailSection, useContainedScroll } from "../components/ui/Page";
 import { Menu, MenuItem } from "../components/ui/Menu";
 import { StarButton } from "../features/feed/parts";
@@ -29,7 +30,7 @@ import { ArticleBody } from "../features/item/ArticleBody";
 import { MentionText } from "../components/ui/MentionText";
 import { ActionsSheet, inWeChat, ReaderToolbar, type ActionRow } from "../features/item/ReaderTools";
 import { OutlineSheet } from "../components/ui/OutlineSheet";
-import { scrollToAnchor } from "../lib/motion";
+import { jumpTo, useSwapped } from "../lib/motion";
 import { takePreview } from "../features/item/preview";
 import { IconArrowLeft, IconCopy, IconDownload, IconExternal, IconImage, IconList, IconMore, IconShare } from "../components/icons";
 import { BarButton, PhoneBar } from "../components/shell/PhoneBar";
@@ -114,15 +115,8 @@ function ReadingProgress() {
       window.removeEventListener("resize", schedule);
     };
   }, []);
-  return <div ref={ref} aria-hidden="true" className="fixed inset-x-0 top-0 z-50 h-[2px] origin-left scale-x-0 bg-accent transition-transform duration-150 ease-out" />;
-}
-
-/** An outline link: a plain click scrolls in place (above); modifier clicks keep the browser's behaviour. */
-function jumpTo(e: React.MouseEvent, id: string) {
-  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-  if (!document.getElementById(id)) return;
-  e.preventDefault();
-  scrollToAnchor(id);
+  // It follows the scroll as it happens: a transition would trail the reader's thumb.
+  return <div ref={ref} aria-hidden="true" className="fixed inset-x-0 top-0 z-50 h-[2px] origin-left bg-accent" style={{ transform: "scaleX(0)" }} />;
 }
 
 /**
@@ -205,7 +199,7 @@ function sharesBySheet(): boolean {
 }
 
 /** 分享: the system share sheet where there is one; otherwise, or when it fails other than by the reader cancelling, the link is copied. */
-async function shareOrCopy(item: Pick<SiteItemDetail, "id" | "title">, locale: Locale, notify: (text: string) => void): Promise<void> {
+async function shareOrCopy(item: Pick<SiteItemDetail, "id" | "title">, locale: Locale, notify: (text: string, problem?: boolean) => void): Promise<void> {
   const t = translator(locale);
   const url = `${siteUrl()}${localizePath(`/items/${item.id}`, locale)}`;
   if (sharesBySheet()) {
@@ -220,37 +214,44 @@ async function shareOrCopy(item: Pick<SiteItemDetail, "id" | "title">, locale: L
     await copyText(`${item.title}\n${url}`);
     notify(t("链接已复制", "Link copied"));
   } catch {
-    notify(t("复制失败", "Couldn't copy"));
+    notify(t("复制失败", "Couldn't copy"), true);
   }
 }
 
-/** A short line over the page's foot, gone after a moment. */
-function useToast(): [string | null, (text: string) => void] {
-  const [toast, setToast] = useState<string | null>(null);
+/**
+ * A short line over the page's foot, gone after a moment (longer for one that says something went wrong). Shown
+ * again while it is up, it stays for its full time again.
+ */
+function useToast(): [string | null, (text: string, problem?: boolean) => void] {
+  const [toast, setToast] = useState<{ text: string; problem: boolean } | null>(null);
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 1600);
+    const t = setTimeout(() => setToast(null), toast.problem ? 2400 : 1600);
     return () => clearTimeout(t);
   }, [toast]);
-  return [toast, setToast];
+  return [toast?.text ?? null, (text, problem = false) => setToast({ text, problem })];
 }
 
 function Toast({ text }: { text: string | null }) {
-  if (!text) return null;
   return (
-    <div role="status" className="fixed bottom-[calc(80px+env(safe-area-inset-bottom))] left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-ui-label text-bg shadow-[var(--shadow-pop)] lg:bottom-8">
-      {text}
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(80px+env(safe-area-inset-bottom))] z-50 flex justify-center lg:bottom-8">
+      <Presence show={!!text} motion="float">
+        <div role="status" className="rounded-full bg-ink px-4 py-2 text-ui-label text-bg shadow-[var(--shadow-pop)]">
+          {text}
+        </div>
+      </Presence>
     </div>
   );
 }
 
+
 export default function ItemPage() {
   const data = useLoaderData<typeof clientLoader>() as Loaded | Preview;
-  if (data.item) return <ItemView key={`${data.item.id}:${data.item.bodyLanguage}`} item={data.item} followups={data.followups} />;
+  if (data.item) return <ItemView key={data.item.id} item={data.item} followups={data.followups} />;
   return (
     <Suspense fallback={<ItemPreview preview={data.preview} />}>
       <Await resolve={data.detail} errorElement={<ItemGone />}>
-        {(loaded) => <ItemView key={`${loaded.item.id}:${loaded.item.bodyLanguage}`} item={loaded.item} followups={loaded.followups} />}
+        {(loaded) => <ItemView key={loaded.item.id} item={loaded.item} followups={loaded.followups} arrived />}
       </Await>
     </Suspense>
   );
@@ -343,7 +344,8 @@ function ItemGone() {
   );
 }
 
-function ItemView({ item, followups }: Loaded) {
+/** `arrived`: shown in place of the phone's preview, its text fading in over the placeholder lines. */
+function ItemView({ item, followups, arrived = false }: Loaded & { arrived?: boolean }) {
   const t = useT();
   const locale = useLocale();
   const navigate = useNavigate();
@@ -355,6 +357,9 @@ function ItemView({ item, followups }: Loaded) {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [toast, setToast] = useToast();
   useEffect(() => { markRead(item.id); }, [item.id]);
+  // Switched between 中文 and 原文, the new text fades in where the old one was while the bars, the toolbar and the
+  // place on the page stay; arriving at the article, it is just there.
+  const switched = useSwapped(lang);
   const closePoster = useCallback(() => setPosterOpen(false), []);
   const openPoster = () => {
     setPosterRequested(true);
@@ -366,7 +371,7 @@ function ItemView({ item, followups }: Loaded) {
       await copyText(`${siteUrl()}${localizePath(`/items/${item.id}`, locale)}`);
       setToast(t("链接已复制", "Link copied"));
     } catch {
-      setToast(t("复制失败", "Couldn't copy"));
+      setToast(t("复制失败", "Couldn't copy"), true);
     }
   };
   const copyMarkdown = async () => {
@@ -376,7 +381,7 @@ function ItemView({ item, followups }: Loaded) {
       await copyText(await res.text());
       setToast(t("Markdown 已复制", "Markdown copied"));
     } catch {
-      setToast(t("复制失败，请在浏览器中打开后导出", "Couldn't copy. Open this page in a browser to export it."));
+      setToast(t("复制失败，请在浏览器中打开后导出", "Couldn't copy. Open this page in a browser to export it."), true);
     }
   };
 
@@ -648,7 +653,9 @@ function ItemView({ item, followups }: Loaded) {
               {hasTranslation && lang === "zh" && !item.body.complete && (
                 <p className="mb-5 rounded-control bg-bg-sunk px-3 py-2 text-ui-label text-ink-3">{t("译文尚不完整，完整内容请切换到原文。", "The translation isn't complete yet. Switch to the original for the full text.")}</p>
               )}
-              <ArticleBody html={bodyHtml} />
+              <div key={lang} className={switched || arrived ? "anim-fade-in" : undefined}>
+                <ArticleBody html={bodyHtml} />
+              </div>
             </section>
           )}
 

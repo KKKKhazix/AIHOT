@@ -17,10 +17,15 @@ const OPTIONS: Array<{ key: Choice; label: Phrase; icon: ReactNode }> = [
 export function ThemeSwitch({ className = "", compact = false }: { className?: string; compact?: boolean }) {
   const pref = useThemePreference();
   const t = useT();
-  // Mounted after hydration (the 更多 menu opening, the 我的 page reached in the site), it shows the reader's choice
-  // at once rather than sliding over from 跟随系统.
+  // Opened after hydration (the 更多 menu), it is drawn at this browser's choice from its first frame. The thumb
+  // glides only once it has taken that choice: arriving there after hydration is not a change.
   const [mounted, setMounted] = useState(isHydrated);
-  useEffect(() => setMounted(true), []);
+  const [glides, setGlides] = useState(isHydrated);
+  useEffect(() => {
+    setMounted(true);
+    const frame = requestAnimationFrame(() => setGlides(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const current: Choice = !mounted ? "system" : (pref ?? "system");
   const index = OPTIONS.findIndex((o) => o.key === current);
 
@@ -31,7 +36,9 @@ export function ThemeSwitch({ className = "", compact = false }: { className?: s
       applyTheme(resolvedTheme(nextPref), nextPref === null);
     };
     const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
-    if (doc.startViewTransition && !reducedMotion()) {
+    // The page cross-fades only when its colours change (system to the theme it already shows does not).
+    const changes = resolvedTheme(nextPref) !== doc.documentElement.getAttribute("data-theme");
+    if (changes && doc.startViewTransition && !reducedMotion()) {
       delete doc.documentElement.dataset.vt; // a cross-fade, not the last page change's slide (transitions.ts)
       doc.startViewTransition(apply);
     } else apply();
@@ -41,7 +48,7 @@ export function ThemeSwitch({ className = "", compact = false }: { className?: s
     <div role="radiogroup" aria-label={t("外观", "Appearance")} className={`relative grid ${compact ? "h-7" : "h-[34px]"} grid-cols-3 rounded-full border border-line bg-bg-sunk p-[3px] ${className}`}>
       <span
         aria-hidden="true"
-        className="absolute inset-y-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-full border border-line bg-surface shadow-[var(--shadow-card)] transition-transform duration-200 ease-[var(--ease-out-quart)]"
+        className={`absolute inset-y-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-full border border-line bg-surface shadow-[var(--shadow-card)] ${glides ? "transition-transform duration-(--dur-move)" : ""}`}
         style={{ transform: `translateX(${index * 100}%)` }}
       />
       {OPTIONS.map((o) => (
@@ -52,7 +59,7 @@ export function ThemeSwitch({ className = "", compact = false }: { className?: s
           aria-checked={current === o.key}
           title={t(o.label)}
           onClick={() => choose(o.key)}
-          className={`relative z-10 flex items-center justify-center rounded-full transition-colors duration-150 touch:before:absolute touch:before:inset-x-0 touch:before:top-1/2 touch:before:h-11 touch:before:-translate-y-1/2 touch:before:content-[''] ${current === o.key ? "text-ink" : "text-ink-4 hover:text-ink-2"}`}
+          className={`relative z-10 flex items-center justify-center rounded-full transition-colors touch:before:absolute touch:before:inset-x-0 touch:before:top-1/2 touch:before:h-11 touch:before:-translate-y-1/2 touch:before:content-[''] ${current === o.key ? "text-ink" : "text-ink-4 hover:text-ink-2"}`}
         >
           {o.icon}
           <span className="sr-only">{t(o.label)}</span>

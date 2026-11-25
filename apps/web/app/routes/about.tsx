@@ -15,6 +15,7 @@ import { SignalRiver, type RiverSource } from "../features/about/SignalRiver";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 import { Link } from "../lib/link";
+import { useSwapped } from "../lib/motion";
 import { apiIn, L, localeOf, translator, useLocale, useT, type Text, type Translate } from "../lib/i18n";
 
 export const handle: Screen = { tab: "me", name: L("关于", "About") };
@@ -221,12 +222,15 @@ function Maker({ maker, contact }: { maker: NonNullable<typeof ABOUT.maker>; con
 /** The latest 精选 under the river's paper; it moves on each time an item reaches the paper. */
 function Latest({ item, className = "" }: { item: SiteStats["latest"][number] | undefined; className?: string }) {
   const t = useT();
+  // The first is there with the page; each one after it rises in where the last one was.
+  const moved = useSwapped(item?.id ?? null);
   if (!item) return null;
   return (
     <IntentLink viewTransition to={`/items/${item.id}`} className={`group block ${className}`}>
       <span className="text-ui-caption-sm font-semibold tracking-[0.2em] text-accent">{t("最近精选", "Latest top pick")}</span>
-      <span key={item.id} className="animate-fade-up mt-1.5 block">
-        <span className="line-clamp-2 text-ui-label-lg font-semibold leading-[1.55] text-ink transition-colors group-hover:text-accent">{item.title}</span>
+      <span key={item.id} className={`mt-1.5 block ${moved ? "animate-fade-up" : ""}`}>
+        {/* Two lines held whatever the title's length, so what follows does not move as the titles change. */}
+        <span className="line-clamp-2 min-h-[3.1em] text-ui-label-lg font-semibold leading-[1.55] text-ink transition-colors group-hover:text-accent">{item.title}</span>
         <span className="mt-1 block truncate text-ui-caption text-ink-4">{item.source}</span>
       </span>
     </IntentLink>

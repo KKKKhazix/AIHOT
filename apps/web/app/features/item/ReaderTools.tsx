@@ -28,7 +28,8 @@ function useReadingDown(): boolean {
       if (y < 80 || y > end - 120) {
         setDown(false);
         last = y;
-      } else if (Math.abs(y - last) > 6) {
+      } else if (Math.abs(y - last) > 12) {
+        // A clear move, not a finger settling: the bar does not flicker in and out on small reversals.
         setDown(y > last);
         last = y;
       }
@@ -46,7 +47,7 @@ function useReadingDown(): boolean {
 }
 
 function Tool({ icon, label, onClick, href, pressed }: { icon: ReactNode; label: string; onClick?: () => void; href?: string; pressed?: boolean }) {
-  const cls = `flex flex-col items-center justify-center gap-[2px] text-ui-micro-8 transition-colors active:opacity-50 disabled:opacity-40 ${pressed ? "font-semibold text-accent" : "text-ink-3"}`;
+  const cls = `flex flex-col items-center justify-center gap-[2px] text-ui-micro-8 transition-[color,opacity] active:opacity-50 disabled:opacity-40 ${pressed ? "font-semibold text-accent" : "text-ink-3"}`;
   return href ? (
     <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
       {icon}
@@ -75,7 +76,7 @@ export function ReaderToolbar({ item, originalUrl, originalLabel, onOutline, onS
   return (
     <nav
       aria-label={t("阅读工具", "Reading tools")}
-      className={`fixed inset-x-0 bottom-0 z-40 bg-surface/90 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] shadow-[0_-1px_0_var(--line)] backdrop-blur-xl backdrop-saturate-150 transition-transform duration-300 ease-[var(--ease-out-quart)] lg:hidden ${hidden ? "translate-y-full" : ""}`}
+      className={`fixed inset-x-0 bottom-0 z-40 bg-surface/90 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] shadow-[0_-1px_0_var(--line)] backdrop-blur-xl backdrop-saturate-150 transition-transform duration-(--dur-move) lg:hidden ${hidden ? "translate-y-full" : ""}`}
     >
       <div className={`mx-auto grid h-[50px] max-w-[640px] ${onOutline ? "grid-cols-4" : "grid-cols-3"}`}>
         <Tool

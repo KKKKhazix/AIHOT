@@ -4,7 +4,7 @@ import type { ItemAvailability } from "@aihot/contracts/site";
 import { shortAddresses } from "@aihot/contracts/addresses";
 import { SITE } from "@aihot/site";
 import type { Route } from "./+types/starred";
-import { Presence } from "../components/ui/Presence";
+import { Collapse } from "../components/ui/Presence";
 import { edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
 import { exportBundle, importBundle, ImportError, removeStar, restoreStar, useStarred, type ImportReport, type LocalStarredItem } from "../lib/local-state";
@@ -64,8 +64,13 @@ export default function StarredPage() {
     setRemoved((rs) => [...rs.filter((r) => r.item.id !== item.id), { item, index }]);
     removeStar(item.id);
   };
+  // Put back, its bookmark bumps as it does on a card.
+  const [bumped, setBumped] = useState<Record<string, number>>({});
   const restar = (item: LocalStarredItem) => {
-    if (restoreStar(item)) setRemoved((rs) => rs.filter((r) => r.item.id !== item.id));
+    if (restoreStar(item)) {
+      setRemoved((rs) => rs.filter((r) => r.item.id !== item.id));
+      setBumped((b) => ({ ...b, [item.id]: (b[item.id] ?? 0) + 1 }));
+    }
     else setNotice({ kind: "error", text: t("没能放回收藏：收藏已满 500 条，或浏览器存储不可用。", "Couldn't put it back: Saved is full (500 items), or browser storage isn't available.") });
   };
 
@@ -156,17 +161,20 @@ export default function StarredPage() {
         </div>
       </header>
       {Account ? <Account place="starred" /> : localNote}
-      <Presence show={!!notice} enter="anim-notice-in" exit="anim-fade-out" duration={160}>
-        <div
-          role="status"
-          className={`mt-3 flex items-start justify-between gap-3 rounded-tile px-4 py-2.5 text-ui-label ${notice?.kind === "ok" ? "bg-accent-soft text-accent-ink dark:text-accent" : "bg-hot-soft text-hot"}`}
-        >
-          {notice?.text}
-          <button type="button" aria-label={t("关闭", "Close")} onClick={() => setNotice(null)} className="relative shrink-0 opacity-70 before:absolute before:-inset-[15px] before:content-[''] hover:opacity-100">
-            <IconClose size={14} />
-          </button>
+      {/* The gap above is padding inside the block, so it opens and closes with the notice. */}
+      <Collapse open={!!notice}>
+        <div className="pt-3">
+          <div
+            role="status"
+            className={`flex items-start justify-between gap-3 rounded-tile px-4 py-2.5 text-ui-label ${notice?.kind === "ok" ? "bg-accent-soft text-accent-ink dark:text-accent" : "bg-hot-soft text-hot"}`}
+          >
+            {notice?.text}
+            <button type="button" aria-label={t("关闭", "Close")} onClick={() => setNotice(null)} className="relative shrink-0 opacity-70 transition-opacity before:absolute before:-inset-[15px] before:content-[''] hover:opacity-100">
+              <IconClose size={14} />
+            </button>
+          </div>
         </div>
-      </Presence>
+      </Collapse>
       {!mounted ? null : rows.length === 0 ? (
         <div className="mt-3 flex flex-col items-center rounded-card border border-dashed border-line-strong px-6 py-12 text-center">
           <IconBookmark size={20} className="text-ink-4" />
@@ -199,9 +207,11 @@ export default function StarredPage() {
                     aria-label={on ? t("取消收藏", "Remove from Saved") : t("收藏", "Save")}
                     title={on ? t("取消收藏", "Remove from Saved") : t("收藏", "Save")}
                     onClick={() => (on ? unstar(s, index) : restar(s))}
-                    className={`relative z-10 -my-[11px] -mr-3 ml-auto grid size-11 shrink-0 place-items-center rounded-control transition-colors sm:ml-0 lg:-my-1 lg:mr-0 lg:size-[26px] lg:touch:before:absolute lg:touch:before:-inset-[9px] lg:touch:before:content-[''] ${on ? "text-accent" : "text-ink-4 hover:bg-bg-sunk hover:text-ink-2"}`}
+                    className={`relative z-10 -my-[11px] -mr-3 ml-auto grid size-11 shrink-0 place-items-center rounded-control press sm:ml-0 lg:-my-1 lg:mr-0 lg:size-[26px] lg:touch:before:absolute lg:touch:before:-inset-[9px] lg:touch:before:content-[''] ${on ? "text-accent" : "text-ink-4 hover:bg-bg-sunk hover:text-ink-2"}`}
                   >
-                    <IconBookmark size={16} filled={on} />
+                    <span key={bumped[s.id] ?? 0} className={`flex ${bumped[s.id] ? "anim-bump" : ""}`}>
+                      <IconBookmark size={16} filled={on} />
+                    </span>
                   </button>
                 </div>
                 <h2 className="mt-1.5 text-ui-body-lg font-[650] leading-[1.55] text-ink">

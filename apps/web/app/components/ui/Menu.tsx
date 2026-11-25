@@ -58,7 +58,7 @@ export function Menu({ trigger, label, children }: { trigger: ReactNode; label: 
         {trigger}
       </button>
       <div inert={!open} aria-hidden={!open || undefined}>
-        <Presence show={open} enter="anim-drop-in" exit="anim-drop-out" duration={140}>
+        <Presence show={open} motion="pop">
           <div
             ref={menuRef}
             role="menu"

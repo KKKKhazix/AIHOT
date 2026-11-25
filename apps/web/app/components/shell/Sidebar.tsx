@@ -37,7 +37,7 @@ function SideLink({ item, dot, active }: { item: NavItem; dot: boolean; active: 
     <IntentLink
       to={item.to}
       aria-current={active ? "page" : undefined}
-      className={`flex h-10 items-center gap-2.5 rounded-control px-2.5 text-ui-body-sm transition-colors duration-150 touch:h-11 ${
+      className={`flex h-10 items-center gap-2.5 rounded-control px-2.5 text-ui-body-sm transition-colors touch:h-11 ${
         active ? "bg-accent/10 font-semibold text-ink dark:bg-accent-soft" : "font-medium text-ink-3 hover:bg-bg-sunk hover:text-ink"
       }`}
     >
@@ -75,7 +75,7 @@ function Rail({ dot }: { dot: boolean }) {
               key={tab.key}
               to={tab.to}
               aria-current={on ? "page" : undefined}
-              className={`relative flex h-14 shrink-0 flex-col items-center justify-center gap-[3px] rounded-control text-ui-caption-sm transition-colors duration-150 short:h-12 ${
+              className={`relative flex h-14 shrink-0 flex-col items-center justify-center gap-[3px] rounded-control text-ui-caption-sm transition-colors short:h-12 ${
                 on ? "bg-accent/10 font-semibold text-ink dark:bg-accent-soft" : "font-medium text-ink-3 hover:bg-bg-sunk hover:text-ink"
               }`}
             >

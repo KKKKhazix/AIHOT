@@ -7,7 +7,7 @@
 // covers it once drawn. Mark the accent part of `children` with data-accent.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { watchAppearance } from "../../lib/local-state";
-import { reducedMotion, seededRandom } from "../../lib/motion";
+import { MOTION, easeOutBack, reducedMotion, seededRandom } from "../../lib/motion";
 
 interface Dot {
   x: number;
@@ -49,7 +49,6 @@ function valueNoise(seed: number) {
 
 const TAU = Math.PI * 2;
 const INTRO_MS = 950;
-const easeOutBack = (p: number) => 1 + 2.2 * (p - 1) ** 3 + 1.2 * (p - 1) ** 2;
 
 export function Halftone({ seed, className = "", children }: { seed: string; className?: string; children: ReactNode }) {
   const hostRef = useRef<HTMLSpanElement>(null);
@@ -83,6 +82,11 @@ export function Halftone({ seed, className = "", children }: { seed: string; cla
     let started = 0;
     let frame = 0;
     let pointer: { x: number; y: number } | null = null;
+    // The swell under the pointer comes and goes at feedback speed rather than vanishing as the pointer leaves.
+    let swell = 0;
+    let swellAt = 0;
+    let swellTo = 0;
+    let swellFrom = 0;
     let disposed = false;
 
     // The silhouette: the title itself in its own colours, drawn faintly under the dots.
@@ -223,7 +227,9 @@ export function Halftone({ seed, className = "", children }: { seed: string; cla
         ctx.drawImage(tint, -pad, -pad, width + 2 * pad, height + 2 * pad);
         ctx.globalAlpha = 1;
       }
-      const near = (x: number, y: number) => (pointer ? Math.max(0, 1 - Math.hypot(x - pointer.x, y - pointer.y) / reach) : 0);
+      const s = Math.min(1, (now - swellAt) / MOTION.feedback);
+      swell = swellFrom + (swellTo - swellFrom) * (1 - (1 - s) ** 3);
+      const near = (x: number, y: number) => (pointer ? swell * Math.max(0, 1 - Math.hypot(x - pointer.x, y - pointer.y) / reach) : 0);
 
       // Unlit dots, and the ones the pointer lights up.
       ctx.globalAlpha = 1;
@@ -262,7 +268,8 @@ export function Halftone({ seed, className = "", children }: { seed: string; cla
         }
         ctx.fill();
       }
-      if (t < 1) frame = requestAnimationFrame(draw);
+      if (t < 1 || s < 1) frame = requestAnimationFrame(draw);
+      else if (swellTo === 0) pointer = null;
     };
 
     const redraw = () => {
@@ -279,10 +286,17 @@ export function Halftone({ seed, className = "", children }: { seed: string; cla
     const onMove = (e: PointerEvent) => {
       const box = host.getBoundingClientRect();
       pointer = { x: e.clientX - box.left, y: e.clientY - box.top };
+      if (swellTo !== 1) {
+        swellFrom = swell;
+        swellTo = 1;
+        swellAt = performance.now();
+      }
       redraw();
     };
     const onLeave = () => {
-      pointer = null;
+      swellFrom = swell;
+      swellTo = 0;
+      swellAt = performance.now();
       redraw();
     };
 
@@ -321,10 +335,10 @@ export function Halftone({ seed, className = "", children }: { seed: string; cla
 
   return (
     <span ref={hostRef} className={`relative inline-block ${className}`}>
-      <span ref={textRef} className={`transition-opacity duration-300 ${drawn ? "opacity-0" : ""}`}>
+      <span ref={textRef} className={`transition-opacity duration-(--dur-move) ${drawn ? "opacity-0" : ""}`}>
         {children}
       </span>
-      <canvas ref={canvasRef} aria-hidden="true" className={`absolute left-0 top-0 size-0 transition-opacity duration-300 ${drawn ? "opacity-100" : "opacity-0"}`} />
+      <canvas ref={canvasRef} aria-hidden="true" className={`absolute left-0 top-0 size-0 transition-opacity duration-(--dur-move) ${drawn ? "opacity-100" : "opacity-0"}`} />
     </span>
   );
 }

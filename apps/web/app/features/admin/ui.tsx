@@ -72,10 +72,7 @@ export function Badge({ tone = "muted", children, title }: { tone?: Tone; childr
 export function Dot({ tone }: { tone: Tone }) {
   const c = tone === "ok" ? "bg-ok" : tone === "warn" ? "bg-amber" : tone === "bad" ? "bg-hot" : tone === "accent" ? "bg-accent" : "bg-ink-4";
   return (
-    <span className="relative inline-flex size-2">
-      {tone === "bad" && <span className={`absolute inline-flex size-full animate-ping rounded-full opacity-50 ${c}`} />}
-      <span className={`relative inline-flex size-2 rounded-full ${c}`} />
-    </span>
+    <span className={tone === "bad" ? "live-dot text-hot" : `inline-flex size-2 rounded-full ${c}`} />
   );
 }
 
@@ -160,7 +157,7 @@ export function Button({
       type="button"
       {...rest}
       disabled={rest.disabled || busy}
-      className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-[opacity,background-color,transform] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45 ${
+      className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium press disabled:pointer-events-none disabled:opacity-45 ${
         size === "sm" ? "h-7 px-2.5 text-ui-caption-lg" : "h-9 px-3.5 text-ui-label-lg"
       } ${BTN[tone]} ${className}`}
     >
@@ -311,13 +308,13 @@ export function ReasonDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
   return (
-    <Presence show={open} enter="anim-fade-in" exit="anim-fade-out" duration={220}>
+    <Presence show={open} motion="sheet">
       <div className="fixed inset-0 z-[75] flex items-end justify-center p-3 sm:items-center">
-        <div className="absolute inset-0 bg-ink/30 backdrop-blur-[2px]" onClick={onClose} />
+        <div className="sheet-backdrop absolute inset-0 bg-ink/30 backdrop-blur-[2px]" onClick={onClose} />
         <form
           role="dialog"
           aria-modal="true"
-          className="sheet-panel anim-sheet-in relative w-full max-w-lg rounded-sheet bg-raised p-5 shadow-2xl ring-1 ring-line-strong"
+          className="sheet-panel sheet-centered relative w-full max-w-lg rounded-sheet bg-raised p-5 shadow-2xl ring-1 ring-line-strong"
           onSubmit={async (e) => {
             e.preventDefault();
             if (requireReason && !reason.trim()) return;

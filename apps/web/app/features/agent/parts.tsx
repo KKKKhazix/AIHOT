@@ -105,7 +105,7 @@ export function Details({ items }: { items: Array<{ title: string; body: ReactNo
         <details key={it.title} className="disclosure group border-t border-line">
           <summary className="flex items-center justify-between gap-3 py-3.5 text-ui-body-sm-plus font-medium text-ink transition-colors hover:text-accent">
             {it.title}
-            <IconChevronDown size={16} className="shrink-0 text-ink-4 transition-transform duration-200 group-open:rotate-180" />
+            <IconChevronDown size={16} className="shrink-0 text-ink-4 turn group-open:rotate-180" />
           </summary>
           <div className="pb-5 text-ui-body-sm leading-[1.8] text-ink-2">{it.body}</div>
         </details>

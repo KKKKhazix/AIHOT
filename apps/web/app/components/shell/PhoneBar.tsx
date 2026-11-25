@@ -33,17 +33,21 @@ export function PhoneBar({ back, title, leading, center, actions }: {
   return (
     <header
       data-phone-bar=""
-      className={`bleed sticky top-0 z-40 bg-bg/85 backdrop-blur-xl backdrop-saturate-150 transition-shadow duration-200 lg:hidden ${scrolled ? "shadow-[0_1px_0_var(--line-soft)]" : ""}`}
+      className={`bleed sticky top-0 z-40 bg-bg/85 backdrop-blur-xl backdrop-saturate-150 transition-shadow lg:hidden ${scrolled ? "shadow-[0_1px_0_var(--line-soft)]" : ""}`}
     >
       <div className={`-mx-2.5 grid h-[var(--bar-h)] items-center ${wideCenter ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"}`}>
         {!wideCenter && <div className="flex min-w-0 items-center">{back ? <BackButton {...back} /> : leading}</div>}
-        {/* A title not shown yet takes no width, so the back label is not cut short before it appears. */}
-        <div className={`flex min-w-0 justify-center ${wideCenter ? "" : "max-w-[calc(100vw-184px)]"}`} style={!center && !titleShown ? { maxWidth: 0 } : undefined}>
+        {/* A title not shown yet takes no width, so the back label is not cut short before it appears; one going
+            away keeps its width until it has faded. */}
+        <div
+          className={`flex min-w-0 justify-center ${wideCenter ? "" : "max-w-[calc(100vw-184px)]"}`}
+          style={!center && !titleShown ? { maxWidth: 0, transition: "max-width 0s linear var(--dur-leave)" } : undefined}
+        >
           {center ?? (
             title && (
               <span
                 aria-hidden={!titleShown}
-                className={`truncate text-ui-body-plus font-semibold text-ink transition-[opacity,transform] duration-200 ${titleShown ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"}`}
+                className={`truncate text-ui-body-plus font-semibold text-ink transition-[opacity,translate] ${titleShown ? "translate-y-0 opacity-100 duration-(--dur-move)" : "translate-y-1 opacity-0 duration-(--dur-leave)"}`}
               >
                 {title}
               </span>

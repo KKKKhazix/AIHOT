@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
 import { watchAppearance } from "../../lib/local-state";
-import { reducedMotion } from "../../lib/motion";
+import { MOTION, easeOutBack, reducedMotion } from "../../lib/motion";
 import { KIND_PATH, periodGrid } from "./format";
 import { useNavigate } from "../../lib/link";
 import { useLocale, useT } from "../../lib/i18n";
@@ -14,7 +14,6 @@ import { useLocale, useT } from "../../lib/i18n";
 const ROW = 20;
 const TAU = Math.PI * 2;
 const INTRO_MS = 700;
-const easeOutBack = (p: number) => 1 + 2.2 * (p - 1) ** 3 + 1.2 * (p - 1) ** 2;
 
 export function IssueDots({ kind, reportKey, issueNumber, index, className = "" }: { kind: ReportKind; reportKey: string; issueNumber: number; index: ReportNavigationEntry[]; className?: string }) {
   const locale = useLocale();
@@ -23,6 +22,8 @@ export function IssueDots({ kind, reportKey, issueNumber, index, className = "" 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const navigate = useNavigate();
   const rows = Math.ceil(grid.cells.length / grid.columns);
+  // The dots come up once, when the masthead first shows; going on to another issue moves only what changed.
+  const introduced = useRef(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -30,9 +31,15 @@ export function IssueDots({ kind, reportKey, issueNumber, index, className = "" 
     if (!canvas || !ctx) return;
     const { cells, columns } = grid;
     const still = reducedMotion();
+    const intro = !still && !introduced.current;
+    introduced.current = true;
     let width = 0;
     let cw = 0;
     let hovered = -1;
+    // The dot under the pointer swells and the ones it has left settle back, each from where it is, at about
+    // feedback speed: a pointer sweeping across several dots leaves a soft wake, not jumps.
+    const swell = new Float32Array(cells.length);
+    let drawnAt = 0;
     let started = 0;
     let frame = 0;
     let disposed = false;
@@ -62,14 +69,20 @@ export function IssueDots({ kind, reportKey, issueNumber, index, className = "" 
     const draw = (now: number) => {
       frame = 0;
       if (disposed || !width) return;
-      const t = still ? 1 : Math.min(1, (now - started) / INTRO_MS);
+      const t = intro ? Math.min(1, (now - started) / INTRO_MS) : 1;
+      const step = still ? 1 : 1 - Math.exp(-(drawnAt ? now - drawnAt : 16) / (MOTION.feedback / 3));
+      drawnAt = now;
+      let settling = false;
       ctx.clearRect(0, 0, width, rows * ROW);
       const unit = Math.min(cw, ROW);
       cells.forEach((c, i) => {
         if (c.state === "pad") return;
         const p = Math.min(1, Math.max(0, t * 1.6 - (i / cells.length) * 0.6));
         if (p <= 0) return;
-        const grow = easeOutBack(p) * (i === hovered ? 1.4 : 1);
+        const target = i === hovered ? 1 : 0;
+        swell[i] = swell[i]! + (target - swell[i]!) * step;
+        if (Math.abs(target - swell[i]!) > 0.01) settling = true;
+        const grow = easeOutBack(p) * (1 + 0.4 * swell[i]!);
         const x = ((i % columns) + 0.5) * cw;
         const y = (Math.floor(i / columns) + 0.5) * ROW;
         const r = (c.state === "current" ? 0.26 : c.state === "issue" ? 0.17 : 0.08) * unit * grow;
@@ -87,7 +100,8 @@ export function IssueDots({ kind, reportKey, issueNumber, index, className = "" 
           ctx.globalAlpha = 1;
         }
       });
-      if (t < 1) frame = requestAnimationFrame(draw);
+      if (t < 1 || settling) frame = requestAnimationFrame(draw);
+      else drawnAt = 0;
     };
     const redraw = () => {
       if (width && !frame) frame = requestAnimationFrame(draw);

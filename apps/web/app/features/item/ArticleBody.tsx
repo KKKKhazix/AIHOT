@@ -60,7 +60,13 @@ function enhanceCode(root: HTMLElement, locale: Locale): () => void {
     button.className = "code-block-copy";
     button.textContent = t("复制", "Copy");
     button.setAttribute("aria-label", t("复制代码", "Copy code"));
+    let reset: ReturnType<typeof setTimeout> | undefined;
     button.addEventListener("click", async () => {
+      // A second copy starts its own wait, so the label does not turn back early.
+      if (reset !== undefined) {
+        clearTimeout(reset);
+        timers.delete(reset);
+      }
       let ok = true;
       try {
         await copyText(source);
@@ -71,9 +77,11 @@ function enhanceCode(root: HTMLElement, locale: Locale): () => void {
       button.textContent = ok ? t("已复制", "Copied") : t("请手动复制", "Copy manually");
       const timer = setTimeout(() => {
         timers.delete(timer);
+        reset = undefined;
         button.dataset.status = "";
         button.textContent = t("复制", "Copy");
-      }, ok ? 1800 : 2400);
+      }, ok ? 1500 : 2400);
+      reset = timer;
       timers.add(timer);
     });
     head.append(label, button);
@@ -155,7 +163,7 @@ export function ArticleBody({ html }: { html: string }) {
   return (
     <>
       <div ref={ref} className="prose" dangerouslySetInnerHTML={{ __html: html }} />
-      <Lightbox images={images} index={open} onIndex={setOpen} onClose={() => setOpen(null)} />
+      <Lightbox images={images} index={open} onIndex={setOpen} onClose={() => setOpen(null)} origin={(i) => (ref.current ? zoomable(ref.current)[i] : null)} />
     </>
   );
 }

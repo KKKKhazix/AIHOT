@@ -79,13 +79,13 @@ export function MoreMenu({ anchor }: { anchor: () => HTMLElement | null }) {
         {t("更多", "More")}
       </button>
       <div inert={!open} aria-hidden={!open || undefined}>
-        <Presence show={open} enter="anim-fade-in" exit="anim-fade-out" duration={160}>
+        <Presence show={open} motion="pop">
           <div
             ref={panelRef}
             role="dialog"
             aria-label={t("更多", "More")}
             style={at ? { left: at.left, bottom: at.bottom } : undefined}
-            className="fixed z-50 w-[236px] overflow-hidden rounded-tile border border-line bg-raised py-1 shadow-[var(--shadow-pop)]"
+            className="fixed z-50 w-[236px] origin-bottom-left overflow-hidden rounded-tile border border-line bg-raised py-1 shadow-[var(--shadow-pop)]"
           >
             {Account && (
               <>

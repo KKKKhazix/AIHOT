@@ -18,6 +18,7 @@ import type { AgentTrack } from "../modules";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
 import { useNavigate } from "../lib/link";
+import { scrollBehavior, useSwapped } from "../lib/motion";
 import { L, localeOf, localizePath, shownIn, translator, useLocale, useT, type Locale, type Text } from "../lib/i18n";
 
 export const handle: Screen = { tab: "me", name: L("Agent 接入", "For Agents") };
@@ -153,6 +154,7 @@ export default function AgentPage() {
   const locale = useLocale();
   const tag = useTag();
   const tab = tabKey(params.get('tab'));
+  const chosen = useSwapped(tab);
   // A section to scroll to once its panel is on the page.
   const [target, setTarget] = useState<string | null>(null);
 
@@ -197,7 +199,7 @@ export default function AgentPage() {
                 onClick={(e) => {
                   e.preventDefault();
                   select(w.key);
-                  window.scrollTo({ top: 0, behavior: "smooth" });
+                  window.scrollTo({ top: 0, behavior: scrollBehavior() });
                 }}
                 aria-current={on ? "true" : undefined}
                 className={`flex items-center gap-2.5 rounded-control px-2 py-2 text-ui-label-lg transition-colors ${on ? "bg-accent-soft font-medium text-accent" : "text-ink-2 hover:bg-bg-sunk hover:text-ink"}`}
@@ -267,7 +269,7 @@ export default function AgentPage() {
                 e.preventDefault();
                 select(w.key);
               }}
-              className={`group flex flex-col rounded-card border p-3.5 transition-[border-color,background-color,box-shadow] duration-200 sm:p-4 ${on ? "border-accent/50 bg-accent-softer shadow-[inset_0_0_0_1px_var(--accent)]" : "border-line bg-surface shadow-[var(--shadow-card)] hover:border-line-strong hover:shadow-[var(--shadow-card-hover)]"}`}
+              className={`press group flex flex-col rounded-card border p-3.5 sm:p-4 ${on ? "border-accent/50 bg-accent-softer shadow-[inset_0_0_0_1px_var(--accent)]" : "border-line bg-surface shadow-[var(--shadow-card)] hover:border-line-strong hover:shadow-[var(--shadow-card-hover)]"}`}
             >
               <span className="flex items-center justify-between gap-2">
                 <span className={`grid size-9 place-items-center rounded-control transition-colors ${on ? "bg-accent text-accent-contrast" : "bg-bg-sunk text-ink-3 group-hover:text-ink"}`}>
@@ -285,8 +287,11 @@ export default function AgentPage() {
       {TAG && <TAG.Note />}
 
       <section id="agent-panel" role="tabpanel" aria-labelledby={`agent-tab-${tab}`} className="mt-9">
-        {track && <track.Panel key={track.key} base={base} tag={tag} />}
-        {BLOCKS.filter((b) => b.track === tab).map((b) => <b.Block key={b.anchor} base={base} tag={tag} />)}
+        {/* Another way in: its guide fades in where the last one was. */}
+        <div key={tab} className={chosen ? "anim-fade-in" : undefined}>
+          {track && <track.Panel key={track.key} base={base} tag={tag} />}
+          {BLOCKS.filter((b) => b.track === tab).map((b) => <b.Block key={b.anchor} base={base} tag={tag} />)}
+        </div>
       </section>
     </ReadingLayout>
     </>

@@ -5,6 +5,7 @@ import { Form, useNavigation, useSearchParams } from "react-router";
 import { CATEGORY_KEYS, categoryLabel, channelLabel, displayTagIn, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
 import { SITE } from "@aihot/site";
 import { IconClose, IconFilter, IconSearch } from "../../components/icons";
+import { Presence } from "../../components/ui/Presence";
 import { PillTabs } from "../../components/ui/Tabs";
 import { ChoiceTick, Sheet, sheetChoice } from "../../components/ui/Sheet";
 import { Wordmark } from "@aihot/site/brand/Logo.tsx";
@@ -245,21 +246,25 @@ export function SearchField({ defaultValue = "", keep = {} }: { defaultValue?: s
         autoComplete="off"
         className="h-[42px] w-full rounded-full bg-well pl-10 pr-10 text-ui-body-lg text-ink outline-none ring-1 ring-inset ring-line-soft transition-[background-color,box-shadow] placeholder:text-ink-4 hover:ring-line-strong focus:bg-surface focus:shadow-[0_0_0_3px_var(--accent-soft)] focus:ring-accent sm:text-ui-body-sm"
       />
-      {value ? (
-        <button
-          type="button"
-          aria-label={t("清空", "Clear")}
-          onClick={() => {
-            setValue("");
-            inputRef.current?.focus();
-          }}
-          className="absolute right-3 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-full text-ink-4 transition-colors before:absolute before:-inset-[10px] before:content-[''] hover:bg-bg-sunk hover:text-ink"
-        >
-          <IconClose size={13} />
-        </button>
-      ) : (
+      {/* The clear button and the shortcut hint take turns in one place, one fading out as the other fades in. */}
+      <Presence show={!!value} motion="fade">
+        <span className="absolute right-3 top-1/2 grid -translate-y-1/2">
+          <button
+            type="button"
+            aria-label={t("清空", "Clear")}
+            onClick={() => {
+              setValue("");
+              inputRef.current?.focus();
+            }}
+            className="relative grid size-6 place-items-center rounded-full text-ink-4 transition-colors before:absolute before:-inset-[10px] before:content-[''] hover:bg-bg-sunk hover:text-ink"
+          >
+            <IconClose size={13} />
+          </button>
+        </span>
+      </Presence>
+      <Presence show={!value} motion="fade">
         <kbd className="mono pointer-events-none absolute right-4 top-1/2 hidden -translate-y-1/2 rounded-mark border border-line-strong bg-surface px-1.5 text-ui-micro-8 leading-4 text-ink-4 lg:block">/</kbd>
-      )}
+      </Presence>
     </Form>
   );
 }

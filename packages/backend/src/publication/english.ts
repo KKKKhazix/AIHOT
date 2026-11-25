@@ -8,7 +8,7 @@ import { localizePath } from "@aihot/contracts/reader-pages";
 // Each answer's overlay runs twice: once to gather the texts it shows, once to put their English in. The worker
 // gathers through the same overlays, so what it translates is what the pages show.
 import type {
-  FeedItemSummary, GroupReportsResponse, HotEntryView, HotParticipant, HotResponse, HotStripEntry, ItemAvailability,
+  ChangelogResponse, FeedItemSummary, GroupReportsResponse, HotEntryView, HotParticipant, HotResponse, HotStripEntry, ItemAvailability,
   PoolResponse, ReportCitation, ReportDetail, ReportIndexResponse, ReportLatestPage, ReportNavigationResponse,
   SearchSuggestions, SiteItemDetail, SiteStats, SourceRef, StoryDetail, StoryFollowupsResponse, StoryReportView, TimelineResponse,
   TopicGroup, TopicLink, TopicPage, TopicSummary, TopicsResponse,
@@ -117,7 +117,7 @@ export async function textsIn<T>(value: T, overlay: Overlay<T>): Promise<WantedT
  * string under a `names` key is a name; nothing under a `keep` key changes (data matched as written, like search aliases).
  * A short line without sentence punctuation reads as a headline (labels, titles), anything longer as running text.
  */
-export function everyText<T>(opts: { keep?: readonly string[]; names?: readonly string[] } = {}): Overlay<T> {
+export function everyText<T>(opts: { keep?: readonly string[]; names?: readonly string[] } = {}): (value: T, c: Copy) => T {
   const keep = new Set(opts.keep ?? []);
   const names = new Set(opts.names ?? []);
   const kindOf = (key: string, text: string): CopyKind => (names.has(key) ? "name" : text.length <= 40 && !/[。！？；]/.test(text) ? "headline" : "text");
@@ -133,6 +133,18 @@ export function everyText<T>(opts: { keep?: readonly string[]; names?: readonly 
   };
   return (value, c) => walk(value, c, "") as T;
 }
+
+/** The entry kind is a filter value. The optional illustrated feature carries the site's own text. */
+const featureCopy = everyText<unknown>();
+export const changelog: Overlay<ChangelogResponse> = (data, c) => ({
+  ...data,
+  releases: data.releases.map(r => ({
+    ...r,
+    title: c.one("headline", r.title),
+    body: r.body.map(line => line.startsWith("- ") ? "- " + c.one("text", line.slice(2)) : c.one("text", line)),
+    ...(r.feature ? { feature: featureCopy(r.feature, c) } : {}),
+  })),
+});
 
 /** Whether the publication `alias` may still show its original: not withdrawn, its original not withheld. */
 export const originalShown = (alias: string) => sql`(${sql(alias)}.visibility <> 'withdrawn' AND NOT ${sql(alias)}.suppress_original)`;

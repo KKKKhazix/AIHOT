@@ -13,13 +13,12 @@ import { IconGithub } from "../icons";
 import { Link } from "../../lib/link";
 import { pagePath, useLocale, useT } from "../../lib/i18n";
 
-/** True while the changelog has an entry newer than the one this reader last opened; never on English pages, which have no changelog. */
+/** True while the changelog has an entry newer than the one this reader last opened. */
 export function useChangelogDot(latestVersion: string | null): boolean {
   const seen = useChangelogSeen();
-  const english = useLocale() === "en";
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  if (!mounted || !latestVersion || english) return false;
+  if (!mounted || !latestVersion) return false;
   return !seen || seen < latestVersion;
 }
 

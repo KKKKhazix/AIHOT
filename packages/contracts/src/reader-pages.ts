@@ -10,7 +10,7 @@ interface ReaderPage {
   chineseOnly?: true;
 }
 
-/** Both editions render the same route module. Legal texts and the changelog are published in Chinese only. */
+/** Both editions render the same route module. Legal texts are published in Chinese only. */
 export const READER_PAGES: readonly ReaderPage[] = [
   { path: "", file: "routes/home.tsx" },
   { path: "all", file: "routes/all.tsx" },
@@ -33,7 +33,7 @@ export const READER_PAGES: readonly ReaderPage[] = [
   { path: "about", file: "routes/about.tsx" },
   { path: "terms", file: "routes/terms.tsx", chineseOnly: true },
   { path: "privacy", file: "routes/privacy.tsx", chineseOnly: true },
-  { path: "changelog", file: "routes/changelog.tsx", chineseOnly: true },
+  { path: "changelog", file: "routes/changelog.tsx" },
   { path: "feedback", file: "routes/feedback.tsx" },
   { path: "more", file: "routes/more.tsx" },
   { path: "starred", file: "routes/starred.tsx" },

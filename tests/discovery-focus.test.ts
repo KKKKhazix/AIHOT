@@ -241,7 +241,7 @@ test("on a site with an English edition its pages are listed again at /en, an ar
   for (const path of ["/en", "/en/all", "/en/hot", "/en/daily", "/en/daily/2099-01-02", "/en/weekly/2099-W01", "/en/topics", "/en/agent", "/en/about", `/en/items/${ids.long}`]) {
     assert.ok(inventory.has(path), `${path} is listed`);
   }
-  for (const path of ["/en/terms", "/en/privacy", "/en/changelog", `/en/items/${untranslated}`, `/en/items/${ids.withdrawn}`]) {
+  for (const path of ["/en/terms", "/en/privacy", `/en/items/${untranslated}`, `/en/items/${ids.withdrawn}`]) {
     assert.ok(!inventory.has(path), `${path} is not: no English edition, its title still Chinese, or not public`);
   }
   // The sitemap (built earlier in this file and kept five minutes) has the English pages in sections of their own.

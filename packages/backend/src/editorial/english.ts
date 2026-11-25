@@ -16,6 +16,7 @@ import { completeReceipt, failedReceiptId, failureKind, ProviderRejectedError } 
 import { shutdownSignal } from "../jobs/queue.ts";
 import * as english from "../publication/english.ts";
 import { copyKey, HAN, needsEnglish, originalShown, usableCopy, wantedIn, type Wanted, type WantedText } from "../publication/english.ts";
+import { loadChangelog } from "../site/meta.ts";
 import { serverModules } from "../modules.ts";
 import { latestHotRanking } from "../publication/hot.ts";
 import { listReports, loadReport, type ReportKind } from "../publication/reports.ts";
@@ -411,6 +412,7 @@ export async function translateEnglish(opts: { budgetMs?: number } = {}): Promis
     hot,
     latestIssues,
     topics,
+    () => english.textsIn(loadChangelog(), english.changelog),
     moduleTexts,
     () => items("reachable", 100),
   ];

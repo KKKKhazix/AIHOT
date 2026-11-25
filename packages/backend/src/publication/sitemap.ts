@@ -102,7 +102,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
     ) citations ON true ORDER BY r.kind, r.key DESC`;
   const reportRevision = (kind: string) => limits ? undefined : sha256(stableJson(reports.filter((r) => r.kind === kind)));
   const topics = await topicPageCounts(at, !limits);
-  // The terms, the privacy notice and the changelog are in Chinese only.
+  // The terms and the privacy notice are in Chinese only.
   entries.push(
     { loc: "/", revision: activity?.selected ?? "", changefreq: "hourly", priority: 1 },
     { loc: "/all", revision: activity?.listed ?? "", changefreq: "hourly", priority: 0.9 },

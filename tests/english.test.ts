@@ -251,6 +251,16 @@ test("once the worker has run, English answers carry no Chinese the site wrote, 
   assert.deepEqual(await get("/api/site/timeline"), chineseBefore, "Chinese answers never read the English");
   assert.deepEqual(await get("/api/site/reports/weekly/2099-W01"), reportBefore);
 
+  const releases = (await get("/api/site/changelog")).releases;
+  const translated = (await get("/api/site/en/changelog")).releases;
+  assert.deepEqual(translated.map((r: { id: string }) => r.id), releases.map((r: { id: string }) => r.id));
+  for (const [i, r] of releases.entries()) {
+    assert.equal(translated[i].kind, r.kind);
+    assert.equal(translated[i].title, HAN.test(r.title) ? english(r.title) : r.title);
+    assert.equal(translated[i].body.length, r.body.length);
+    assert.deepEqual(hanIn(JSON.stringify([translated[i].body, translated[i].feature])), []);
+  }
+
   const again = await translateEnglish(RUN);
   assert.equal(again.calls, 0, "nothing translated twice");
 });
@@ -533,7 +543,7 @@ test("the English pages' share images: articles, posters, issues, events, topics
     assert.notEqual(en.headers.etag, zh.headers.etag, `${path}: a card of its own`);
     assert.equal(en.headers["cache-control"], zh.headers["cache-control"], `${path}: its words are in English, so it keeps as long as the Chinese one`);
   }
-  assert.equal((await get("/og/en/pages/changelog.png")).statusCode, 404, "a page with no English edition has no English card");
+  assert.equal((await get("/og/en/pages/free-tokens.png")).statusCode, 404, "a page with no English edition has no English card");
   // An article whose words are not in English yet is kept a minute, so its card turns English soon after they are.
   const waiting = await report(await source(`等待翻译的媒体${T}`), { title: `还没翻译的报道${T}`, summary: "还没有英文的摘要。", reason: "还没有英文的理由。" });
   for (const path of [`/og/en/items/${waiting}.png`, `/og/en/posters/${waiting}.png`]) {

@@ -73,10 +73,6 @@ export function registerSite(app: FastifyInstance) {
     return sendJsonWithEtag(req, reply, body, { etagPrefix: "contact", cacheControl: "public, max-age=300, s-maxage=300" });
   }));
 
-  app.get("/api/site/changelog", siteHandler(async (req, reply) => {
-    return sendJsonWithEtag(req, reply, loadChangelog(), { etagPrefix: "changelog", cacheControl: "public, max-age=300, s-maxage=300" });
-  }));
-
   registerFeedback(app);
 
   for (const lang of READER_LANGUAGES) registerReading(app, lang, readingApi("", lang));
@@ -103,6 +99,9 @@ function registerReading(app: FastifyInstance, lang: Locale, base: string) {
   const shown = <T>(data: T, overlay: english.Overlay<T>): T | Promise<T> => (en ? english.inEnglish(data, overlay) : data);
   const send = async <T>(req: FastifyRequest, reply: FastifyReply, data: T, overlay: english.Overlay<T>, opts: { etagPrefix: string; cacheControl: string }) =>
     sendJsonWithEtag(req, reply, await shown(data, overlay), { ...opts, etagPrefix: en ? `en-${opts.etagPrefix}` : opts.etagPrefix });
+
+  app.get(`${base}/changelog`, siteHandler(async (req, reply) =>
+    send(req, reply, loadChangelog(), english.changelog, { etagPrefix: "changelog", cacheControl: "public, max-age=300, s-maxage=300" })));
 
   app.get(`${base}/timeline`, siteHandler(async (req, reply) => {
     const q = looseQuery(req);

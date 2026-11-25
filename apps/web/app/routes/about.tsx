@@ -197,9 +197,8 @@ function Maker({ maker, contact }: { maker: NonNullable<typeof ABOUT.maker>; con
                 </Link>
                 告诉我。
               </>,
-              // The changelog is written for Chinese readers only: English leaves it out.
               <>
-                It keeps getting better. Have an idea or hit a problem? Tell me on the{" "}
+                You can follow what’s changed in the <Link viewTransition to="/changelog" className="text-accent hover:underline">changelog</Link>. Have an idea or hit a problem? Tell me on the{" "}
                 <Link viewTransition to="/feedback" className="text-accent hover:underline">
                   feedback page
                 </Link>

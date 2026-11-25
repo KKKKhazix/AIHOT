@@ -7,10 +7,9 @@ const CJK = /[\u3400-\u9fff\uf900-\ufaff\u3000-\u303f\uff00-\uffef]/;
 /** Web code with no English edition, and why. Everything else a reader can reach in English is checked. */
 export const CHINESE_ONLY: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /^apps\/web\/app\/(?:routes\/admin(?:\/|-login\.tsx)|features\/admin\/)/, why: "the back office is for the owner only" },
-  { pattern: /^apps\/web\/app\/(?:routes\/changelog\.tsx|features\/changelog\/)/, why: "the changelog is written for Chinese readers (product decision 2026-11-24)" },
   { pattern: /^apps\/web\/app\/routes\/(?:terms|privacy)\.tsx$/, why: "the terms and the privacy notice stay as they are; English pages link to them (2026-11-24)" },
   { pattern: /^modules\/free-tokens\/web/, why: "Token 羊毛 lists offers for readers in China (2026-11-24)" },
-  { pattern: /^modules\/codex-reset\/web/, why: "the reset tracker's English edition comes in the second batch (2026-11-24)" },
+  { pattern: /^modules\/codex-reset\/web\/agent\.tsx$/, why: "the module’s machine-readable answers are in Chinese" },
   { pattern: /^modules\/legacy\/web/, why: "the old domain's notices, migration and archived terms are for readers of the Chinese site; English pages leave them out" },
   { pattern: /^modules\/ops\/web\/expiry/, why: "an admin page" },
 ];

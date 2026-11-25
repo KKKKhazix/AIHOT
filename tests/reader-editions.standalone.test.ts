@@ -37,7 +37,7 @@ test("both editions reach the same route module and links agree with the registe
     }
   }
   assert.deepEqual(new Set([...files.keys()].filter(p => p === "/en" || p.startsWith("/en/"))), expected);
-  for (const path of ["/terms", "/privacy", "/changelog", "/api/health", "//other.example/all", "https://other.example/all"]) {
+  for (const path of ["/terms", "/privacy", "/api/health", "//other.example/all", "https://other.example/all"]) {
     assert.equal(localizePath(path, "en"), path);
   }
 });

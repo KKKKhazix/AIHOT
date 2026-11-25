@@ -26,6 +26,8 @@ export default function PosterSheet({ id, title, open, onClose }: { id: string; 
 
   useEffect(() => {
     if (!open) return;
+    // Opened again after a poster that failed, it tries again.
+    setFailed(false);
     try {
       setCanShareFile(!!navigator.canShare?.({ files: [new File([], "p.png", { type: "image/png" })] }));
     } catch {
@@ -46,14 +48,14 @@ export default function PosterSheet({ id, title, open, onClose }: { id: string; 
     <Sheet open={open} onClose={onClose} title={t("分享海报", "Share as image")} centered>
       <div className="flex flex-col items-center px-5 sm:px-7">
         <div className="relative aspect-[3/4] w-full max-w-[min(360px,calc((88dvh-200px)*0.75))] overflow-hidden rounded-card border border-line bg-bg-sunk">
-          {!loaded && !failed && <div className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,transparent_30%,rgba(255,255,255,0.35)_50%,transparent_70%)] bg-[length:200%_100%]" />}
+          {!loaded && !failed && <div className="skeleton absolute inset-0 rounded-none" />}
           {failed ? (
             <p className="absolute inset-0 grid place-items-center px-6 text-center text-ui-label text-ink-3">{t("海报生成失败，请稍后再试。", "Couldn't create the image. Please try again later.")}</p>
           ) : (
             <img
               src={src}
               alt={t(`${title} · 分享海报`, `${title} · share image`)}
-              className={`size-full object-contain transition-[opacity,transform] duration-[250ms] ${loaded ? "scale-100 opacity-100" : "scale-[0.985] opacity-0"}`}
+              className={`size-full object-contain transition-[opacity,scale] duration-(--dur-move) ${loaded ? "scale-100 opacity-100" : "scale-[0.985] opacity-0"}`}
               onLoad={() => setLoaded(true)}
               onError={() => setFailed(true)}
             />
@@ -69,13 +71,13 @@ export default function PosterSheet({ id, title, open, onClose }: { id: string; 
                 href={ready ? src : undefined}
                 download={`${SITE.mcpPrefix}-${id}.png`}
                 aria-disabled={ready ? undefined : true}
-                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-accent text-ui-body-sm font-medium text-accent-contrast transition-colors hover:bg-accent-ink aria-disabled:pointer-events-none aria-disabled:opacity-40 lg:h-10 sm:text-ui-label-lg"
+                className="press inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-accent text-ui-body-sm font-medium text-accent-contrast hover:bg-accent-ink aria-disabled:pointer-events-none aria-disabled:opacity-40 lg:h-10 sm:text-ui-label-lg"
               >
                 <IconDownload size={15} />{t(" 保存图片", " Save image")}
               </a>
             )}
             {canShareFile && (
-              <button type="button" onClick={share} disabled={!ready} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-line-strong bg-surface text-ui-body-sm font-medium text-ink transition-colors hover:border-ink-4 disabled:pointer-events-none disabled:opacity-40 lg:h-10 sm:text-ui-label-lg">
+              <button type="button" onClick={share} disabled={!ready} className="press inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-line-strong bg-surface text-ui-body-sm font-medium text-ink hover:border-ink-4 disabled:pointer-events-none disabled:opacity-40 lg:h-10 sm:text-ui-label-lg">
                 <IconShare size={15} />{t(" 分享", " Share")}
               </button>
             )}

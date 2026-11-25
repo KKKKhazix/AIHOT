@@ -37,14 +37,11 @@ export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
     >
       <div className="flex items-center justify-between lg:mb-1">
         <h2 id="hot-topics" className="flex items-center gap-2 text-ui-body-sm font-semibold text-ink">
-          <span className="relative flex size-2" aria-hidden="true">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-hot opacity-40" />
-            <span className="relative inline-flex size-2 rounded-full bg-hot" />
-          </span>
+          <span className="live-dot text-hot" aria-hidden="true" />
           {t("当前热点", "Trending now")}
         </h2>
         <Link to="/hot" className="group -my-2.5 -mr-1.5 inline-flex h-11 items-center gap-1 px-1.5 text-ui-caption-lg text-ink-3 transition-colors hover:text-accent lg:my-0 lg:mr-0 lg:h-auto lg:px-0">
-          {t("完整榜单", "Full list")} <IconArrowRight size={13} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+          {t("完整榜单", "Full list")} <IconArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
       <ol>

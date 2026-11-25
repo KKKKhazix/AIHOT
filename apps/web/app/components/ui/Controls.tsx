@@ -12,7 +12,7 @@ const SIZES: Record<Size, string> = { md: "h-11 px-4 text-ui-label-lg lg:h-9", l
 
 /** The pill button's classes, for links that look like buttons. */
 export function buttonClass(variant: Variant = "secondary", size: Size = "md"): string {
-  return `inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.98] ${SIZES[size]} ${VARIANTS[variant]}`;
+  return `inline-flex items-center justify-center gap-1.5 rounded-full font-medium press ${SIZES[size]} ${VARIANTS[variant]}`;
 }
 
 /** Native select as a pill, like the site's other controls. */
@@ -40,10 +40,10 @@ export function ToggleChip({ on, onToggle, children }: { on: boolean; onToggle: 
       type="button"
       aria-pressed={on}
       onClick={onToggle}
-      className={`inline-flex h-11 shrink-0 lg:h-8 touch:h-11 select-none items-center gap-1.5 whitespace-nowrap rounded-full border pl-2 pr-3.5 text-ui-label font-medium transition-colors duration-150 active:scale-[0.98] ${on ? "border-accent/35 bg-accent-soft text-accent" : "border-line-strong bg-surface text-ink-2 hover:border-ink-4 hover:text-ink"}`}
+      className={`inline-flex h-11 shrink-0 lg:h-8 touch:h-11 select-none items-center gap-1.5 whitespace-nowrap rounded-full border pl-2 pr-3.5 text-ui-label font-medium press ${on ? "border-accent/35 bg-accent-soft text-accent" : "border-line-strong bg-surface text-ink-2 hover:border-ink-4 hover:text-ink"}`}
     >
-      <span aria-hidden="true" className={`inline-flex size-4 items-center justify-center rounded-full border transition-colors duration-150 ${on ? "border-accent bg-accent text-accent-contrast" : "border-line-strong"}`}>
-        {on && <IconCheck size={11} strokeWidth={3} />}
+      <span aria-hidden="true" className={`inline-flex size-4 items-center justify-center rounded-full border transition-colors ${on ? "border-accent bg-accent text-accent-contrast" : "border-line-strong"}`}>
+        {on && <IconCheck size={11} strokeWidth={3} className="anim-swap-in" />}
       </span>
       {children}
     </button>

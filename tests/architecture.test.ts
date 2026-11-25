@@ -9,6 +9,7 @@ import { presentationAssertions, rawLoaderPaths } from "./lesson-checks.ts";
 import { clockViolationsByFile } from "./test-clock.ts";
 import { after, test } from "node:test";
 import { fontSizeViolations } from "./font-size.ts";
+import { cssMotionTokens, motionViolations } from "./motion.ts";
 import { routerLinkViolations, webTextViolations } from "./web-text.ts";
 import { closeDb, sql } from "@aihot/backend/db";
 
@@ -346,7 +347,7 @@ test("admin page loaders use adminPageGet and GRAY_HEADERS", async () => {
   }
 });
 
-// Animations use Presence.tsx (CSS keyframes) or the Web Animations API, not a runtime animation library.
+// Animations use Presence.tsx (CSS transitions), CSS keyframes or the Web Animations API, not a runtime animation library.
 test("web code does not import motion or framer-motion", () => {
   const found = violations([...sources("apps/web"), ...moduleWeb(), ...sources("site")], (_file, spec) => /^(?:motion|framer-motion)(?:$|\/)/.test(spec));
   assert.deepEqual(found, [], "animate with Presence.tsx, CSS keyframes or the Web Animations API instead of motion");
@@ -354,6 +355,17 @@ test("web code does not import motion or framer-motion", () => {
 
 test("web font sizes use the design scale", () => {
   assertNoViolations(fontSizeViolations());
+});
+
+// One motion language (app.css, "Motion"): curves and lengths come from its tokens, animation classes exist,
+// smooth scrolling respects reduced motion. Written by hand it had drifted into a dozen curves and timings.
+test("web motion uses the site's curves and lengths", () => {
+  assertNoViolations(motionViolations());
+});
+
+test("lib/motion.ts repeats app.css's motion tokens for scripts", async () => {
+  const { MOTION } = await import("../apps/web/app/lib/motion.ts");
+  assert.deepEqual({ ...MOTION }, cssMotionTokens(), "change the length or curve in app.css and lib/motion.ts together");
 });
 
 // The English edition (/en/…): reader-facing text is written in both languages where it is used, so a page

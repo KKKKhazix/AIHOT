@@ -20,6 +20,7 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import { Picture } from "../components/ui/Picture";
 import { navUp } from "../components/shell/nav";
 import { scrollBehavior } from "../lib/motion";
+import { foldTo } from "../lib/disclosure";
 import type { Screen } from "../components/shell/screens";
 import { apiIn, L, localeOf, translator, useLocale, useT, type Locale, type Phrase } from "../lib/i18n";
 
@@ -171,7 +172,7 @@ function Lead({ e }: { e: HotEntryView }) {
         </div>
         {e.cover ? (
           <div className="order-first overflow-hidden well rounded-panel xl:order-none">
-            <Picture src={e.cover.url} srcSet={e.cover.srcSet} sizes="(min-width: 1280px) calc(28vw - 96px), (min-width: 1024px) calc(58vw - 180px), (min-width: 640px) 568px, calc(100vw - 74px)" width={e.cover.width ?? undefined} height={e.cover.height ?? undefined} alt="" loading="eager" fetchPriority="high" decoding="async" className="aspect-[16/9] size-full object-cover transition-transform duration-500 group-hover:scale-[1.02] xl:aspect-[16/10]" />
+            <Picture src={e.cover.url} srcSet={e.cover.srcSet} sizes="(min-width: 1280px) calc(28vw - 96px), (min-width: 1024px) calc(58vw - 180px), (min-width: 640px) 568px, calc(100vw - 74px)" width={e.cover.width ?? undefined} height={e.cover.height ?? undefined} alt="" loading="eager" fetchPriority="high" decoding="async" className="aspect-[16/9] size-full object-cover transition-transform duration-(--dur-move) group-hover:scale-[1.02] xl:aspect-[16/10]" />
           </div>
         ) : (
           panel && <HeatPanel e={e} />
@@ -283,8 +284,9 @@ function Row({ e }: { e: HotEntryView }) {
 function showMethod() {
   const method = document.getElementById("hot-method") as HTMLDetailsElement | null;
   if (!method) return;
-  method.open = true;
-  method.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+  foldTo(method, true);
+  // To its start rather than its centre: the section is still opening, so its centre is not yet where it will be.
+  method.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
 }
 
 export default function HotPage() {
@@ -306,10 +308,7 @@ export default function HotPage() {
       <header className="pb-3 pt-0.5 lg:flex lg:flex-wrap lg:items-end lg:justify-between lg:gap-x-6 lg:gap-y-2 lg:pb-5 lg:pt-1">
         <div>
           <div className="hidden items-center gap-2 text-ui-caption font-semibold tracking-[0.08em] text-hot lg:flex">
-            <span className="relative flex size-2" aria-hidden="true">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-hot opacity-30" />
-              <span className="relative inline-flex size-2 rounded-full bg-hot" />
-            </span>
+            <span className="live-dot" aria-hidden="true" />
             {t("实时热度", "Live")}
           </div>
           <h1 data-page-title="" className="text-ui-title-5 font-bold leading-[1.25] tracking-[-0.01em] text-ink lg:mt-1.5 lg:text-ui-title-2 lg:leading-[1.3]">{t(withSubject("热点榜"), `Trending in ${SITE.subject}`)}</h1>
@@ -373,9 +372,9 @@ export default function HotPage() {
           <IconInfo size={15} />
           {t("热度是怎么算的？", "How is heat calculated?")}
           <span className="ml-auto inline-flex items-center gap-0.5">
-            <span className="group-open/method:hidden">{t("了解榜单", "Learn more")}</span>
-            <span className="hidden group-open/method:inline">{t("收起", "Hide")}</span>
-            <IconChevronDown size={13} className="transition-transform duration-200 group-open/method:rotate-180" />
+            <span className="while-closed group-open/method:hidden">{t("了解榜单", "Learn more")}</span>
+            <span className="while-open hidden group-open/method:inline">{t("收起", "Hide")}</span>
+            <IconChevronDown size={13} className="turn group-open/method:rotate-180" />
           </span>
         </summary>
         <div className="max-w-[760px] space-y-2 pb-2 pl-[21px] pt-2 leading-[1.75] text-ink-3">

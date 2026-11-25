@@ -2,7 +2,7 @@ import { REPORTS, SEO_TITLES, SITE } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import { TOPIC_GROUP_EN } from "@aihot/industry/english";
 import { topicDefinition, topicName } from "@aihot/contracts/taxonomy";
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/topic";
 import type { TopicPage } from "@aihot/contracts/site";
 import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
@@ -20,7 +20,7 @@ import { useHistoryBack, type Screen } from "../components/shell/screens";
 import type { TopicPagePart } from "../modules";
 import { loadParts } from "../site-modules";
 import { Link } from "../lib/link";
-import { apiIn, localeOf, localizePath, translator, useLocale, useT, type Locale } from "../lib/i18n";
+import { apiIn, localeOf, localizePath, pagePath, translator, useLocale, useT, type Locale } from "../lib/i18n";
 
 // Topics are reached from the topics page, as long as the site shows it.
 const UP = navUp("/topics");
@@ -115,6 +115,9 @@ export default function TopicRoute() {
   const href = (p: number) => (p <= 1 ? `/topics/${topic.slug}` : `/topics/${topic.slug}/page/${p}`);
   const first = (page - 1) * pageSize + 1;
   const last = first + items.length - 1;
+  // Another page of this topic on its way: the list it replaces dims, if the wait is long enough to notice.
+  const navigation = useNavigation();
+  const paging = navigation.state === "loading" && !!navigation.location && pagePath(navigation.location.pathname).startsWith(`/topics/${topic.slug}`);
   // Desktop back, as on the article page and the phone bar; opened directly, up to all topics.
   const { behind, onClick: goBack } = useHistoryBack();
   return (
@@ -177,6 +180,7 @@ export default function TopicRoute() {
       ))}
 
       <h2 className="sr-only">{page === 1 ? t(`${topic.name}的精选`, `Top picks on ${name}`) : t(`精选归档 · 第 ${page} 页`, `Top picks archive · Page ${page}`)}</h2>
+      <div className={`transition-opacity ${paging ? "opacity-55 delay-150" : ""}`}>
       {items.length === 0 ? (
         <div className="lg:card">
           <EmptyState title={t("这个主题暂时还没有精选内容", "No top picks on this topic yet")} />
@@ -187,6 +191,7 @@ export default function TopicRoute() {
           <>Items {first.toLocaleString("en-US")}–{last.toLocaleString("en-US")}<span className="hidden sm:inline"> of {topic.total.toLocaleString("en-US")}</span></>,
         )}</span>} />
       )}
+      </div>
       <Pagination page={page} pageCount={pageCount} href={href} />
     </div>
   );

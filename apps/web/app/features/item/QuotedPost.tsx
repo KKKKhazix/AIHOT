@@ -2,7 +2,7 @@
 // it. The item's own text and translation often only make sense next to it.
 import type { QuotedPostView, XPostView } from "@aihot/contracts/site";
 import { shortAddresses } from "@aihot/contracts/addresses";
-import { IconArrowUpRight } from "../../components/icons";
+import { IconArrowUpRight, IconChevronRight } from "../../components/icons";
 import { useT } from "../../lib/i18n";
 
 function Author({ quoted }: { quoted: Pick<QuotedPostView, "authorName" | "handle"> }) {
@@ -31,8 +31,11 @@ export function QuotedPost({ quoted, original = false }: { quoted: QuotedPostVie
       <blockquote className="prose prose-quote mt-2" dangerouslySetInnerHTML={{ __html: zh ?? quoted.html }} />
       {/* Phones and touch screens: the toggle and the link are 44px tall, their spacing taken into that height. */}
       {zh && (
-        <details className="mt-0 text-ui-label text-ink-4 lg:mt-2 touch:mt-0">
-          <summary className="cursor-pointer select-none py-3 hover:text-ink-3 lg:py-0 touch:py-3">{t("原文", "Original")}</summary>
+        <details className="disclosure group/original mt-0 text-ui-label text-ink-4 lg:mt-2 touch:mt-0">
+          <summary className="flex select-none items-center gap-0.5 py-3 hover:text-ink-3 lg:py-0 touch:py-3">
+            {t("原文", "Original")}
+            <IconChevronRight size={13} className="turn group-open/original:rotate-90" />
+          </summary>
           <div className="prose prose-quote-original mt-0 lg:mt-1.5 touch:mt-0" dangerouslySetInnerHTML={{ __html: quoted.html }} />
         </details>
       )}

@@ -103,7 +103,7 @@ test("a page that fails to load offers a retry that keeps the filter", async () 
     await page.goto(`${origin}/`);
     await expect(page.getByRole("link", { name: "第一页文章甲", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "只看未读" }).click();
-    const retry = page.getByRole("button", { name: "加载失败，点此重试" });
+    const retry = page.getByRole("button", { name: "加载失败，重试" });
     await expect(retry).toBeVisible();
     failNextPage = false;
     await retry.click();

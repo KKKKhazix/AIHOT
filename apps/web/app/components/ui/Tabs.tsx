@@ -1,18 +1,19 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { IntentLink } from "./IntentLink";
 import { useEntrance } from "../../lib/hydration";
-import { reducedMotion } from "../../lib/motion";
+import { MOTION, reducedMotion, scrollBehavior } from "../../lib/motion";
 import { Link } from "../../lib/link";
 import { useLocation } from "react-router";
 import { localizePath, useLocale } from "../../lib/i18n";
 
-/** Where each switch's thumb sat when it last left, relative to its track. */
+/** Where each switch's thumb was on screen when it last left, relative to its track. */
 const thumbs = new Map<string, { left: number; width: number; at: number }>();
 
+/** The thumb as it is drawn, mid-glide included, so a choice changed again turns it from where it is. */
 function placeOf(el: HTMLElement) {
-  const tab = el.parentElement!.getBoundingClientRect();
+  const thumb = el.getBoundingClientRect();
   const track = el.closest("[data-pill-track]")?.getBoundingClientRect();
-  return { left: tab.left - (track?.left ?? 0), width: tab.width, at: Date.now() };
+  return { left: thumb.left - (track?.left ?? 0), width: thumb.width, at: Date.now() };
 }
 
 /**
@@ -27,10 +28,10 @@ function Thumb({ id }: { id: string }) {
     if (!el) return;
     const now = placeOf(el);
     const prev = thumbs.get(id);
-    if (entrance && !reducedMotion() && prev && now.at - prev.at < 1000 && (prev.left !== now.left || prev.width !== now.width) && el.animate) {
+    if (entrance && !reducedMotion() && prev && now.at - prev.at < 1000 && (Math.abs(prev.left - now.left) > 0.5 || Math.abs(prev.width - now.width) > 0.5) && el.animate) {
       el.animate(
         [{ transform: `translateX(${prev.left - now.left}px)`, width: `${prev.width}px` }, { transform: "translateX(0)", width: `${now.width}px` }],
-        { duration: 300, easing: "cubic-bezier(0.25, 1, 0.5, 1)" },
+        { duration: MOTION.move, easing: MOTION.easeOut },
       );
     }
     return () => {
@@ -82,13 +83,30 @@ export function PillTabs({
 }) {
   const links = items.some((t) => t.to);
   const Track = links ? "nav" : "div";
+  // A row that scrolls sideways brings the chosen option into view: at once when the page opens on it,
+  // gliding when the reader chooses one half hidden at the edge.
+  const row = useRef<HTMLDivElement>(null);
+  const first = useRef(true);
+  useEffect(() => {
+    const box = row.current;
+    const tab = box?.querySelector<HTMLElement>('[aria-current="page"], [aria-selected="true"]');
+    const opened = first.current;
+    first.current = false;
+    if (!box || !tab || box.scrollWidth <= box.clientWidth) return;
+    const edge = 16;
+    const at = tab.getBoundingClientRect().left - box.getBoundingClientRect().left + box.scrollLeft;
+    const left = at - edge;
+    const right = at + tab.offsetWidth + edge - box.clientWidth;
+    const to = box.scrollLeft > left ? left : box.scrollLeft < right ? right : null;
+    if (to !== null) box.scrollTo({ left: to, behavior: opened ? "auto" : scrollBehavior() });
+  }, [active]);
   // The option already shown, pressed again, leaves the page as it is: following the same address would load the
   // list again from its top and lose what was scrolled to.
   const { pathname, search } = useLocation();
   const locale = useLocale();
   const here = `${pathname}${search}`;
   return (
-    <div className={`scrollbar-none max-w-full overflow-x-auto ${fill ? "w-full" : ""} ${className}`}>
+    <div ref={row} className={`scrollbar-none max-w-full overflow-x-auto ${fill ? "w-full" : ""} ${className}`}>
       <Track
         data-pill-track=""
         aria-label={label}
@@ -107,7 +125,7 @@ export function PillTabs({
               </span>
             </>
           );
-          const cls = `relative inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap rounded-full font-medium outline-offset-1 transition-colors duration-150 active:scale-[0.98] ${SIZES[size]} ${on ? "text-ink" : "text-ink-3 hover:text-ink"}`;
+          const cls = `relative inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap rounded-full font-medium outline-offset-1 press ${SIZES[size]} ${on ? "text-ink" : "text-ink-3 hover:text-ink"}`;
           const TabLink = t.prefetchOnPress ? IntentLink : Link;
           return t.to ? (
             <TabLink key={t.key} to={t.to} rel={t.rel} replace={t.replace} preventScrollReset={!t.resetScroll} aria-current={on ? "page" : undefined} onClick={on && localizePath(t.to, locale) === here ? (e) => e.preventDefault() : undefined} className={cls}>

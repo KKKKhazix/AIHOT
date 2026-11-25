@@ -3,7 +3,8 @@ import { useLocation, useSearchParams } from "react-router";
 import { SITE } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import type { Route } from "./+types/feedback";
-import { Presence } from "../components/ui/Presence";
+import { Collapse } from "../components/ui/Presence";
+import { scrollBehavior, useSwapped } from "../lib/motion";
 import { edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
 import { KEYS, lastPage, readJson, writeRaw } from "../lib/local-state";
@@ -244,6 +245,8 @@ export default function FeedbackPage() {
       writeDraft(null);
       sentOn.current = visit;
       setState({ kind: "done", id: body.id });
+      // The thanks takes the form's place at the top of the page; a reader who sent from further down is taken to it.
+      window.scrollTo({ top: 0, behavior: scrollBehavior() });
       setDraft({ content: "", email: prefilled.current, pageUrl: "" });
       setShot(null);
     } catch {
@@ -251,18 +254,23 @@ export default function FeedbackPage() {
     }
   };
 
+  // A picture removed: the place to add one fades back in where it was. (Above the thanks, which returns early.)
+  const shotSwapped = useSwapped(shot ? "shot" : "none");
+
   if (state.kind === "done") {
     // Back to where the reader was before coming here, when the site knows it.
     const before = lastPage();
     return (
       <>
-      <PhoneBar back={BACK} title={t("反馈", "Feedback")} />
+      {/* The bar stays: sending does not take the reader out of the page. A bar of its own, so it follows the
+          thanks' heading rather than the form's that has gone. */}
+      <PhoneBar key="done" back={BACK} title={t("反馈", "Feedback")} />
       <ReadingLayout>
-        <div className="card px-6 py-14 text-center">
+        <div className="anim-fade-in card px-6 py-14 text-center">
           <div className="anim-pop-in mx-auto flex size-14 items-center justify-center rounded-full bg-accent text-accent-contrast">
             <IconCheck size={26} />
           </div>
-          <h1 className="mt-6 text-ui-heading-lg-sm font-semibold text-ink">{t("收到了，谢谢你", "Got it. Thank you")}</h1>
+          <h1 data-page-title="" className="mt-6 text-ui-heading-lg-sm font-semibold text-ink">{t("收到了，谢谢你", "Got it. Thank you")}</h1>
           <p className="mt-2 text-ui-body-sm text-ink-3">
             {t(
               <>反馈编号 <span className="mono font-semibold text-ink">#{state.id}</span>，需要回复时我们会引用这个编号。</>,
@@ -339,8 +347,9 @@ export default function FeedbackPage() {
             <span className={label}>
               {t(<>截图 <span className="font-normal text-ink-4">（选填）</span></>, <>Screenshot <span className="font-normal text-ink-4">(optional)</span></>)}
             </span>
+            {/* The picture and the place to add one are the same height, so choosing or removing it moves nothing below. */}
             {shot ? (
-              <div className="flex items-center gap-4 well rounded-card p-3">
+              <div className="anim-fade-in flex min-h-[90px] items-center gap-4 well rounded-card p-3">
                 <img src={shot.url} alt={t("截图预览", "Screenshot preview")} className="h-16 w-24 shrink-0 rounded-control border border-line bg-surface object-cover" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-ui-label font-medium text-ink-2">{shot.file.name}</div>
@@ -354,7 +363,7 @@ export default function FeedbackPage() {
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                className={`group flex w-full items-center gap-3.5 rounded-card border border-dashed px-4 py-3.5 text-left transition-colors ${dragging ? "border-accent bg-accent-softer" : "border-line-strong hover:border-ink-4 hover:bg-bg-sunk/60"}`}
+                className={`group flex min-h-[90px] w-full items-center gap-3.5 rounded-card border border-dashed px-4 py-3.5 text-left transition-colors ${shotSwapped ? "anim-fade-in" : ""} ${dragging ? "border-accent bg-accent-softer" : "border-line-strong hover:border-ink-4 hover:bg-bg-sunk/60"}`}
               >
                 <span className="grid size-10 shrink-0 place-items-center well rounded-tile text-ink-3 transition-colors group-hover:text-accent">
                   <IconImage size={19} />
@@ -369,13 +378,15 @@ export default function FeedbackPage() {
             )}
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
           </div>
-
-          <Presence show={state.kind === "error"} enter="anim-notice-in" exit="anim-fade-out" duration={160}>
+        </div>
+        {/* Outside the spaced column, so the gap above it opens with it instead of appearing at once. */}
+        <Collapse open={state.kind === "error"}>
+          <div className="px-5 pb-5 sm:px-6">
             <p role="alert" className="rounded-tile bg-hot-soft px-3.5 py-2.5 text-ui-label text-hot">
               {state.kind === "error" ? state.message : ""}
             </p>
-          </Presence>
-        </div>
+          </div>
+        </Collapse>
 
         <div className="flex flex-col-reverse gap-4 border-t border-line-soft bg-bg-sunk/50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:bg-bg-muted/30">
           <p className="text-ui-caption leading-relaxed text-ink-4 sm:max-w-[400px]">
@@ -401,10 +412,17 @@ export default function FeedbackPage() {
           <button
             type="submit"
             disabled={!canSend}
-            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-full bg-accent px-6 lg:h-10 touch:h-11 text-ui-body-sm font-medium text-accent-contrast transition-[background-color,opacity] hover:bg-accent-ink disabled:bg-line-strong disabled:text-ink-4 sm:self-auto"
+            aria-busy={state.kind === "sending" || undefined}
+            className={`press inline-flex h-11 shrink-0 items-center justify-center self-start rounded-full px-6 text-ui-body-sm font-medium lg:h-10 touch:h-11 sm:self-auto ${state.kind === "sending" ? "bg-accent text-accent-contrast opacity-80" : "bg-accent text-accent-contrast hover:bg-accent-ink disabled:bg-line-strong disabled:text-ink-4"}`}
           >
-            {state.kind === "sending" && <RingMark className="size-4" spinning />}
-            {t("发送反馈", "Send feedback")}
+            {/* Both labels share one cell, so the button keeps its width while it sends. */}
+            <span className="grid justify-items-center">
+              <span aria-hidden={state.kind === "sending" || undefined} className={`[grid-area:1/1] transition-opacity ${state.kind === "sending" ? "opacity-0" : ""}`}>{t("发送反馈", "Send feedback")}</span>
+              <span aria-hidden={state.kind !== "sending" || undefined} className={`[grid-area:1/1] inline-flex items-center gap-2 transition-opacity ${state.kind === "sending" ? "" : "opacity-0"}`}>
+                <RingMark className="size-4" spinning={state.kind === "sending"} />
+                {t("发送中…", "Sending…")}
+              </span>
+            </span>
           </button>
         </div>
       </form>

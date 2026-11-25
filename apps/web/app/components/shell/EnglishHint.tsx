@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router";
 import { ENGLISH } from "@aihot/contracts/english";
 import { IconArrowRight, IconClose } from "../icons";
+import { Presence } from "../ui/Presence";
 import { KEYS, readRaw, writeRaw } from "../../lib/local-state";
 import { counterpart, useLocale } from "../../lib/i18n";
 
@@ -31,7 +32,7 @@ export function EnglishHint() {
     window.addEventListener(DISMISSED, close);
     return () => window.removeEventListener(DISMISSED, close);
   }, []);
-  if (!open || !english) return null;
+  if (!english) return null;
   const close = () => {
     dismissEnglishHint();
     setOpen(false);
@@ -39,7 +40,8 @@ export function EnglishHint() {
   return (
     // Above the phone's tab bar; at the foot of the window on a desktop. Only the bar itself takes clicks.
     <div lang="en" className="pointer-events-none fixed inset-x-0 bottom-[calc(62px+env(safe-area-inset-bottom))] z-30 flex justify-center px-4 lg:bottom-[max(24px,env(safe-area-inset-bottom))]">
-      <div role="region" aria-label="English edition" className="anim-fade-in pointer-events-auto flex h-11 items-center rounded-full border border-line bg-raised pl-4 pr-1 text-ui-label text-ink-2 shadow-[var(--shadow-pop)]">
+      <Presence show={open} motion="float">
+      <div role="region" aria-label="English edition" className="pointer-events-auto flex h-11 items-center rounded-full border border-line bg-raised pl-4 pr-1 text-ui-label text-ink-2 shadow-[var(--shadow-pop)]">
         <span>Prefer English?</span>
         <a href={`${english}${search}${hash}`} hrefLang="en" className="relative ml-1 flex h-9 items-center gap-1 rounded-full px-2.5 font-semibold text-accent-ink transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-bg-sunk dark:text-accent">
           Read in English
@@ -49,6 +51,7 @@ export function EnglishHint() {
           <IconClose size={14} />
         </button>
       </div>
+      </Presence>
     </div>
   );
 }

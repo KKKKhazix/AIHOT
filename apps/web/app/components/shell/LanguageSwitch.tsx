@@ -47,7 +47,7 @@ export function LanguageSwitch({ className = "", compact = false, page }: { clas
             if (o.key === locale) e.preventDefault();
           }}
           aria-current={o.key === locale ? "page" : undefined}
-          className={`relative z-10 flex items-center justify-center rounded-full ${compact ? "text-ui-caption" : "text-ui-label"} transition-colors duration-150 touch:before:absolute touch:before:inset-x-0 touch:before:top-1/2 touch:before:h-11 touch:before:-translate-y-1/2 touch:before:content-[''] ${o.key === locale ? "text-ink" : "text-ink-4 hover:text-ink-2"}`}
+          className={`relative z-10 flex items-center justify-center rounded-full ${compact ? "text-ui-caption" : "text-ui-label"} transition-colors touch:before:absolute touch:before:inset-x-0 touch:before:top-1/2 touch:before:h-11 touch:before:-translate-y-1/2 touch:before:content-[''] ${o.key === locale ? "text-ink" : "text-ink-4 hover:text-ink-2"}`}
         >
           {o.label}
         </a>

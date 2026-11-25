@@ -153,7 +153,7 @@ export default function AllPage() {
         </div>
       )}
 
-      <div className={`transition-opacity duration-200 ${busy ? "opacity-50" : ""}`}>
+      <div className={`transition-opacity ${busy ? "opacity-55 delay-150" : ""}`}>
         {data.items.length === 0 ? (
           <div className="mt-2 lg:card">
             <EmptyState

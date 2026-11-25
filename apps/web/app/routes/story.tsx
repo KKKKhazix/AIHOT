@@ -13,7 +13,7 @@ import { pageReuse } from "../lib/page-reuse";
 import { breadcrumbLd, pageMeta, storyArticleLd, storyLd, titled, titleCacheSeconds } from "../lib/seo";
 import { beijingDate, beijingTime } from "@aihot/contracts/time";
 import { byBeijingDay, monthDay, monthDayTime, relativeTime } from "../lib/format";
-import { useCurrentSection } from "../lib/motion";
+import { useCurrentSection, useHeightTween, useSwapped } from "../lib/motion";
 import { HeatChart } from "../features/story/HeatChart";
 import { sessionCache } from "../lib/session-cache";
 import { isReload } from "../lib/restore";
@@ -111,10 +111,12 @@ function TimelineRow({ r }: { r: StoryReportView }) {
   const [open, setOpen] = useState(false);
   const [clamped, setClamped] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
+  // Against two of its lines, not the box's height, which a fold or unfold under way is still changing.
   useIsoLayoutEffect(() => {
     const el = ref.current;
-    if (el && !open) setClamped(el.scrollHeight > el.clientHeight + 1);
+    if (el && !open) setClamped(el.scrollHeight > 2 * parseFloat(getComputedStyle(el).lineHeight) + 1);
   }, [r.summary, open]);
+  useHeightTween(ref, open);
   return (
     <li className="grid gap-x-3 border-b border-line-soft py-4 last:border-b-0 lg:grid-cols-[48px_minmax(0,1fr)]">
       <time dateTime={r.publishedAt} className="mono text-ui-caption leading-[20px] text-ink-4">
@@ -187,6 +189,7 @@ export default function StoryPage() {
   // A filter with no reports is not offered, nor the switch when 全部 is all that is left; one restored from before
   // (the timeline has changed since) shows them all.
   const shown: Filter = counts[filter] > 0 ? filter : "all";
+  const resorted = useSwapped(`${shown}:${order}`);
   const filters = [
     { key: "all", label: t("全部报道", "All reports"), count: counts.all },
     { key: "official", label: t("官方一手", "Official"), count: counts.official },
@@ -375,6 +378,8 @@ export default function StoryPage() {
                 items={filters}
               />
             )}
+            {/* Another filter or order: the list it gives fades in where the last one was. */}
+            <div key={`${shown}:${order}`} className={resorted ? "anim-fade-in" : undefined}>
             {days.length === 0 ? (
               <p className="py-10 text-center text-ui-label text-ink-4">{t("这个筛选下没有报道。", "No reports match this filter.")}</p>
             ) : (
@@ -389,6 +394,7 @@ export default function StoryPage() {
                 </div>
               ))
             )}
+            </div>
             {story.reportCount > story.timeline.length && (
               <p className="pt-3 text-center text-ui-caption text-ink-4">
                 {t(<>显示最近 {story.timeline.length} 篇，共 {story.reportCount} 篇报道。</>, <>Showing the latest {story.timeline.length} of {story.reportCount} reports.</>)}

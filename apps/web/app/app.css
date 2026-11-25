@@ -121,7 +121,13 @@
   --radius-panel: 14px;
   --radius-sheet: 16px;
 
+  /* Motion curves (the section "Motion" below says which change takes which): */
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Bare `transition`, `transition-colors` and the like move on the site's curve, at feedback speed. */
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: var(--ease-out-quart);
 
   /* Breakpoints: phones ≤ 640, the mobile shell up to 699, desktop pages above (an unfolded Android
      foldable upright is about 711px wide, an iPad mini 744, an iPhone Duo held sideways 951). Up to
@@ -150,6 +156,16 @@
   --bar-h: 48px;
   --gutter-l: max(16px, env(safe-area-inset-left));
   --gutter-r: max(16px, env(safe-area-inset-right));
+  /* Motion lengths (lib/motion.ts holds the same numbers for scripts; tests/architecture.test.ts compares). */
+  --dur-feedback: 150ms;
+  --dur-move: 240ms;
+  --dur-travel: 400ms;
+  --dur-leave: 160ms;
+  --dur-leave-travel: 280ms;
+  /* A line traced in as a chart first shows. */
+  --dur-draw: 900ms;
+  /* A wait whose end is not known: the page-load line creeps on until the page has come. */
+  --dur-creep: 2400ms;
   color-scheme: light;
   --bg: #faf9f6;
   --bg-sunk: #f3f3ef;
@@ -303,6 +319,13 @@
   button:disabled {
     cursor: default;
   }
+  /* Links and buttons change colour at feedback speed even where no transition is written (a class that names
+     its own transition replaces this). */
+  :where(a, button, summary) {
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+    transition-duration: var(--dur-feedback);
+    transition-timing-function: var(--ease-out-quart);
+  }
   img {
     max-width: 100%;
   }
@@ -327,7 +350,7 @@
     color: var(--ink-4);
     background: var(--bg-sunk);
     border: 1px solid var(--line-soft);
-    transition: color 120ms, background-color 120ms, border-color 120ms;
+    transition: color var(--dur-feedback) var(--ease-out-quart), background-color var(--dur-feedback) var(--ease-out-quart), border-color var(--dur-feedback) var(--ease-out-quart);
   }
   a.chip:hover {
     color: var(--accent);
@@ -374,21 +397,6 @@
   }
 }
 
-/* Where the browser can animate to an auto height, disclosures open and close smoothly. */
-@supports (interpolate-size: allow-keywords) {
-  .disclosure {
-    interpolate-size: allow-keywords;
-  }
-  .disclosure::details-content {
-    block-size: 0;
-    overflow: clip;
-    transition: block-size 220ms var(--ease-out-quart), content-visibility 220ms allow-discrete;
-  }
-  .disclosure[open]::details-content {
-    block-size: auto;
-  }
-}
-
 /* Phone shell: a band that runs out to the screen's edges through the gutters (bars, day headers). */
 @utility bleed {
   margin-inline: calc(-1 * var(--gutter-l)) calc(-1 * var(--gutter-r));
@@ -408,14 +416,46 @@
   background-color: var(--well);
   box-shadow: inset 0 0 0 1px var(--line-soft);
 }
-@utility card-hover {
-  transition: box-shadow 200ms var(--ease-out-quart), border-color 200ms, transform 200ms var(--ease-out-quart);
-  &:hover {
-    box-shadow: var(--shadow-card-hover);
-    border-color: var(--line-strong);
-    transform: translateY(-1px);
+/* A control that gives under the finger: it dips a little while pressed and its colours move at feedback speed. */
+@utility press {
+  transition-property: color, background-color, border-color, opacity, box-shadow, scale;
+  transition-duration: var(--dur-feedback);
+  transition-timing-function: var(--ease-out-quart);
+  &:active:not(:disabled) {
+    scale: 0.97;
   }
 }
+/* A mark that turns as the thing it opens or sorts does (a chevron, a "+"), in step with Collapse and .disclosure. */
+@utility turn {
+  transition-property: rotate, transform;
+  transition-duration: var(--dur-move);
+  transition-timing-function: var(--ease-out-quart);
+}
+/* Only where there is a pointer to rest: a tapped card on a touch screen would otherwise stay lifted. */
+@utility card-hover {
+  transition: box-shadow var(--dur-feedback) var(--ease-out-quart), border-color var(--dur-feedback) var(--ease-out-quart), translate var(--dur-feedback) var(--ease-out-quart);
+  @media (hover: hover) {
+    &:hover {
+      box-shadow: var(--shadow-card-hover);
+      border-color: var(--line-strong);
+      translate: 0 -1px;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Motion. One language for the whole site; every change of state on screen takes one of these:
+   - Feedback (hover, press, a colour or tint, a swapped icon): --dur-feedback on --ease-out-quart, the
+     default of bare `transition` utilities. Readers do these over and over, so they are the quickest.
+   - A part of the page that appears, opens, closes or moves (a menu, a block that unfolds, a switch's
+     thumb, a notice): --dur-move on --ease-out-quart; leaving takes --dur-leave.
+   - A whole surface that travels (a sheet, a page on phones): --dur-travel on --ease-drawer, the curve iOS
+     moves its sheets on; leaving takes --dur-leave-travel.
+   - A confirmation (saved, sent, copied): one small pop on --ease-spring, never a loop.
+   What appears or leaves does it as a transition (components/ui/Presence.tsx), so reversing either midway turns
+   around from where it is instead of starting over. Only opacity, translate, scale and the collapse's row
+   height move; what a finger or the scroll drives follows it with no transition until it is let go.
+   --------------------------------------------------------------------------- */
 
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 1; }
@@ -431,82 +471,152 @@
   to { transform: rotate(360deg); }
 }
 
+/* Content arriving into a list that is already there (new items, the next item of a ticker). */
 .animate-fade-up {
-  animation: fade-up 280ms var(--ease-out-quart) both;
+  animation: fade-up var(--dur-move) var(--ease-out-quart) both;
 }
 
-/* Enter/leave keyframes for components/ui/Presence.tsx; --anim-ms overrides a default length. */
-@keyframes aihot-collapse-in { from { grid-template-rows: 0fr; opacity: 0; } to { grid-template-rows: 1fr; opacity: 1; } }
-@keyframes aihot-collapse-out { from { grid-template-rows: 1fr; opacity: 1; } to { grid-template-rows: 0fr; opacity: 0; } }
-@keyframes aihot-fade-in { from { opacity: 0; } }
-@keyframes aihot-fade-out { to { opacity: 0; } }
-@keyframes aihot-drop-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
-@keyframes aihot-drop-out { to { opacity: 0; transform: translateY(-4px) scale(0.98); } }
-@keyframes aihot-notice-in { from { opacity: 0; transform: translateY(-6px); } }
-@keyframes aihot-zoom-in { from { transform: scale(0.96); } }
-@keyframes aihot-zoom-out { to { transform: scale(0.98); } }
-@keyframes aihot-sheet-in { from { transform: translateY(100%); } }
-@keyframes aihot-sheet-out { to { transform: translateY(100%); } }
-@keyframes aihot-swap-in { from { opacity: 0; transform: scale(0.7); } }
-@keyframes aihot-bump { from { transform: scale(0.7); } 55% { transform: scale(1.08); } to { transform: scale(1); } }
-@keyframes aihot-pop-in { from { opacity: 0; transform: scale(0.6); } 60% { opacity: 1; transform: scale(1.05); } to { transform: scale(1); } }
+/* Enter and leave (components/ui/Presence.tsx): each motion is a resting state and a hidden one, .fx-exit. A
+   shown element is inserted hidden and let go to rest; a removed one is sent back to hidden. The resting rule's
+   transition carries it in, .fx-exit's (shorter) carries it out. */
+/* Fade: overlays. */
+/* What is leaving no longer takes clicks: the page under it answers at once. */
+.fx-exit,
+.fx-exit * {
+  pointer-events: none !important;
+}
+.fx-fade { transition: opacity var(--dur-move) var(--ease-out-quart); }
+.fx-fade.fx-exit { opacity: 0; transition-duration: var(--dur-leave); }
+/* Pop: a menu or panel growing out of the control that opened it (its transform-origin points there). */
+.fx-pop { transition: opacity var(--dur-move) var(--ease-out-quart), scale var(--dur-move) var(--ease-out-quart); }
+.fx-pop.fx-exit { opacity: 0; scale: 0.96; transition-duration: var(--dur-leave); }
+/* Float: a small bar floating over the page (a hint, a toast), rising into place. */
+.fx-float { transition: opacity var(--dur-move) var(--ease-out-quart), translate var(--dur-move) var(--ease-out-quart); }
+.fx-float.fx-exit { opacity: 0; translate: 0 8px; transition-duration: var(--dur-leave); }
+/* Collapse: a block in the page opening to its height, pushing what follows down rather than jumping it. */
+.fx-collapse {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--dur-move) var(--ease-out-quart), opacity var(--dur-move) var(--ease-out-quart);
+}
+.fx-collapse.fx-exit { grid-template-rows: 0fr; opacity: 0; transition-duration: var(--dur-leave); }
+/* Sheet: the page dims while the panel rides up from the bottom edge. */
+.fx-sheet > .sheet-backdrop { transition: opacity var(--dur-travel) var(--ease-drawer); }
+.fx-sheet > .sheet-panel { transition: translate var(--dur-travel) var(--ease-drawer), opacity var(--dur-move) var(--ease-out-quart), scale var(--dur-move) var(--ease-out-quart); }
+.fx-sheet.fx-exit > .sheet-backdrop { opacity: 0; transition-duration: var(--dur-leave-travel); }
+.fx-sheet.fx-exit > .sheet-panel { translate: 0 100%; transition-duration: var(--dur-leave-travel); }
+/* From sm a centred sheet (the share poster, the owner's confirmations) is a dialog: it grows in place. */
+@media (min-width: 641px) {
+  .fx-sheet.fx-exit > .sheet-panel.sheet-centered { translate: none; opacity: 0; scale: 0.96; transition-duration: var(--dur-leave); }
+  .fx-sheet.fx-exit:has(> .sheet-centered) > .sheet-backdrop { transition-duration: var(--dur-leave); }
+}
+/* The picture viewer (Lightbox.tsx): the backdrop fades while the picture grows out of the thumbnail it was
+   opened from and shrinks back into it; a step brings the next picture in from the side it was asked for. */
+.lightbox-stage { transform-origin: var(--lightbox-origin, 50% 50%); transition: opacity var(--dur-move) var(--ease-out-quart), scale var(--dur-move) var(--ease-out-quart); }
+.fx-exit > .lightbox-stage { opacity: 0; scale: 0.6; transition-duration: var(--dur-leave); }
+.lightbox-img { transition: opacity var(--dur-move) var(--ease-out-quart), translate var(--dur-move) var(--ease-out-quart); }
+/* A stepped-to picture's start; browsers without @starting-style show it in place. */
+@starting-style {
+  .lightbox-img.lightbox-step { opacity: 0; translate: var(--lightbox-from-x, 0) 0; }
+}
+
+/* Something happening now (trending, live heat): a dot whose halo breathes out slowly; one per region. Under
+   reduced motion the halo stays gone and the dot is still. */
+.live-dot {
+  position: relative;
+  display: inline-flex;
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 9999px;
+  background: currentColor;
+}
+.live-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0;
+  animation: live-dot 2.4s var(--ease-out-quart) infinite;
+}
+@keyframes live-dot {
+  0% { scale: 1; opacity: 0.4; }
+  70%, 100% { scale: 2.6; opacity: 0; }
+}
+
+/* One-off marks of a change: a swapped icon, a count or star that took the press, a confirmation, a line drawn. */
+@keyframes aihot-swap-in { from { opacity: 0; scale: 0.7; } }
+@keyframes aihot-bump { from { scale: 0.7; } }
+@keyframes aihot-pop-in { from { opacity: 0; scale: 0.6; } }
 @keyframes aihot-reveal { from { clip-path: inset(-12px 100% -12px -12px); } to { clip-path: inset(-12px -12px -12px -12px); } }
-.anim-collapse-in { animation: aihot-collapse-in var(--anim-ms, 240ms) var(--ease-out-quart) both; }
-.anim-collapse-out { animation: aihot-collapse-out var(--anim-ms, 240ms) var(--ease-out-quart) both; }
-.anim-fade-in { animation: aihot-fade-in var(--anim-ms, 160ms) ease-out both; }
-.anim-fade-out { animation: aihot-fade-out var(--anim-ms, 160ms) ease-in both; }
-.anim-drop-in { animation: aihot-drop-in 140ms var(--ease-out-quart) both; }
-.anim-drop-out { animation: aihot-drop-out 140ms ease-in both; }
-.anim-notice-in { animation: aihot-notice-in 200ms var(--ease-out-quart) both; }
-.anim-zoom-in { animation: aihot-zoom-in 180ms var(--ease-out-quart) both; }
-.anim-fade-out > .lightbox-img { animation: aihot-zoom-out 160ms ease-in both; }
-.anim-sheet-in { animation: aihot-sheet-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-.anim-fade-out > .sheet-panel { animation: aihot-sheet-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
-.anim-swap-in { animation: aihot-swap-in 120ms var(--ease-out-quart) both; }
-.anim-bump { animation: aihot-bump 320ms var(--ease-out-quart) both; }
-.anim-pop-in { animation: aihot-pop-in 460ms var(--ease-out-quart) both; }
-.anim-reveal { animation: aihot-reveal 900ms var(--ease-out-quart) both; }
+@keyframes aihot-fade-in { from { opacity: 0; } }
+/* A swapped icon or label (copy → copied). */
+.anim-swap-in { animation: aihot-swap-in var(--dur-feedback) var(--ease-out-quart) both; }
+/* A mark that took the press (a star saved), and the one confirmation of a finished task (feedback sent). */
+.anim-bump { animation: aihot-bump var(--dur-move) var(--ease-spring) both; }
+.anim-pop-in { animation: aihot-pop-in var(--dur-travel) var(--ease-spring) both; }
+/* A drawing's line laid down once (a chart's curve); the one length outside the scale, as it is read, not felt. */
+.anim-reveal { animation: aihot-reveal var(--dur-draw) var(--ease-out-quart) both; }
+/* A fold closing (lib/disclosure.ts keeps it open until it has folded): its mark turns back, and what shows only
+   while it is open goes, with the fold rather than after it. Outside the layers, so it outranks group-open:. */
+details.disclosure[data-closing="1"] > summary .turn {
+  rotate: none;
+}
+details.disclosure[data-closing="1"] > summary .while-open {
+  display: none;
+}
+details.disclosure[data-closing="1"] > summary .while-closed {
+  display: inline;
+}
+
+/* Content replacing other content in place (a switched view, a chart's new range): it fades in where it is. */
+.anim-fade-in { animation: aihot-fade-in var(--dur-move) var(--ease-out-quart) both; }
 
 /* The theme switch cross-fades the whole document. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 200ms;
-  animation-timing-function: cubic-bezier(0.25, 1, 0.5, 1);
+  animation-duration: var(--dur-move);
+  animation-timing-function: var(--ease-out-quart);
 }
 
 /* Page changes (components/shell/transitions.ts sets data-vt): on phones a page opened from a link slides
-   in from the right over the one it came from, which drifts left; back reverses it. Otherwise instant. */
+   in from the right over the one it came from, which drifts left; back reverses it. On desktops pages change
+   at once: readers move between them constantly from the sidebar, and the content is the news. */
 :root[data-vt]::view-transition-old(root),
 :root[data-vt]::view-transition-new(root) {
   animation: none;
 }
 @media (max-width: 699px) {
   :root[data-vt="push"]::view-transition-old(root) {
-    animation: aihot-page-out-left 400ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    animation: aihot-page-out-left var(--dur-travel) var(--ease-drawer) both;
   }
   :root[data-vt="push"]::view-transition-new(root) {
-    animation: aihot-page-in-right 400ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    animation: aihot-page-in-right var(--dur-travel) var(--ease-drawer) both;
     box-shadow: -10px 0 28px rgba(0, 0, 0, 0.12);
   }
   :root[data-vt="back"]::view-transition-old(root) {
     z-index: 1;
-    animation: aihot-page-out-right 360ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    animation: aihot-page-out-right var(--dur-travel) var(--ease-drawer) both;
     box-shadow: -10px 0 28px rgba(0, 0, 0, 0.12);
   }
   :root[data-vt="back"]::view-transition-new(root) {
-    animation: aihot-page-in-left 360ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    animation: aihot-page-in-left var(--dur-travel) var(--ease-drawer) both;
   }
 }
 @keyframes aihot-page-in-right { from { transform: translateX(100%); } }
-@keyframes aihot-page-out-left { to { transform: translateX(-28%); } }
+/* The page left behind dims a little as it drifts under the new one, and brightens as it comes back. */
+@keyframes aihot-page-out-left { to { transform: translateX(-28%); filter: brightness(0.94); } }
 @keyframes aihot-page-out-right { to { transform: translateX(100%); } }
-@keyframes aihot-page-in-left { from { transform: translateX(-28%); } }
+@keyframes aihot-page-in-left { from { transform: translateX(-28%); filter: brightness(0.94); } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    /* Nothing waits its turn either (a list's stagger, a drawing's late parts). */
+    animation-delay: 0s !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
   ::view-transition-group(*),
@@ -555,7 +665,7 @@
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
   text-underline-offset: 3px;
-  transition: text-decoration-color 120ms;
+  transition: text-decoration-color var(--dur-feedback) var(--ease-out-quart);
 }
 .prose a:hover { text-decoration-color: var(--accent); }
 .prose strong, .prose b { color: var(--ink); font-weight: 650; }
@@ -615,9 +725,11 @@
 .prose .code-block { margin-top: 1.2em; border: 1px solid var(--line); border-radius: var(--radius-tile); overflow: hidden; background: var(--code-bg); }
 .prose .code-block pre { margin: 0; border: 0; border-radius: 0; }
 .prose .code-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--line-soft); font-size: var(--text-ui-caption); line-height: 1.4; color: var(--ink-4); letter-spacing: 0; }
-.prose .code-block-copy { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-mark); background: var(--surface); color: var(--ink-3); font-size: var(--text-ui-caption); transition: color 120ms, border-color 120ms; }
+.prose .code-block-copy { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-mark); background: var(--surface); color: var(--ink-3); font-size: var(--text-ui-caption); transition: color var(--dur-feedback) var(--ease-out-quart), border-color var(--dur-feedback) var(--ease-out-quart), scale var(--dur-feedback) var(--ease-out-quart); }
+.prose .code-block-copy:active { scale: 0.97; }
 .prose .code-block-copy:hover { color: var(--ink); border-color: var(--line-strong); }
 .prose .code-block-copy[data-status="copied"] { color: var(--ok-ink); }
+.prose .code-block-copy[data-status="error"] { color: var(--hot); }
 /* Touch screens: the copy button's hit area reaches 44px, from the head's top edge (the block clips above it) into the code's top padding. */
 @media (hover: none) {
   .prose .code-block-copy { position: relative; }

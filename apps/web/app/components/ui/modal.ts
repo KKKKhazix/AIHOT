@@ -4,6 +4,7 @@ import { useEffect, useRef, type RefObject } from "react";
 
 const layers: object[] = [];
 let pageOverflow = "";
+let pageGutter = "";
 
 export function useModal({ open, panel, onClose, initialFocus, returnFocus, onKeyDown }: {
   open: boolean;
@@ -23,8 +24,13 @@ export function useModal({ open, panel, onClose, initialFocus, returnFocus, onKe
     const opener = returnFocus ? returnFocus.current : (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     const layer = {};
     if (!layers.length) {
-      pageOverflow = document.documentElement.style.overflow;
-      document.documentElement.style.overflow = "hidden";
+      const root = document.documentElement;
+      pageOverflow = root.style.overflow;
+      pageGutter = root.style.scrollbarGutter;
+      // Where the page has a scrollbar that takes room (Windows), its room is kept while the page is held, so
+      // the page does not jump sideways as a layer opens and back as it closes.
+      if (window.innerWidth > root.clientWidth) root.style.scrollbarGutter = "stable";
+      root.style.overflow = "hidden";
     }
     layers.push(layer);
     if (!element.contains(document.activeElement)) (initialFocus?.current ?? element).focus({ preventScroll: true });
@@ -50,7 +56,10 @@ export function useModal({ open, panel, onClose, initialFocus, returnFocus, onKe
       element.inert = true;
       const wasTop = layers.at(-1) === layer;
       layers.splice(layers.indexOf(layer), 1);
-      if (!layers.length) document.documentElement.style.overflow = pageOverflow;
+      if (!layers.length) {
+        document.documentElement.style.overflow = pageOverflow;
+        document.documentElement.style.scrollbarGutter = pageGutter;
+      }
       if (wasTop && opener?.isConnected) opener.focus({ preventScroll: true });
     };
   }, [open, panel, initialFocus, returnFocus]);

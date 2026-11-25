@@ -13,6 +13,7 @@ import { IconChevronRight } from "../components/icons";
 import { Inline, dateHeading } from "../features/changelog/text";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import type { Screen } from "../components/shell/screens";
+import { jumpTo, useSwapped } from "../lib/motion";
 
 export const handle: Screen = { tab: "me", name: L("更新日志", "Changelog") };
 export { pageHeaders as headers } from "../lib/api.server";
@@ -144,6 +145,7 @@ export default function ChangelogPage() {
   const data = useLoaderData<typeof loader>();
   useEffect(() => setChangelogSeen(data.latestVersion), [data.latestVersion]);
   const [kind, setKind] = useState<Release["kind"] | null>(null);
+  const filtered = useSwapped(kind ?? "all");
   const groups = new Map<string, Release[]>();
   for (const r of data.releases) if (!kind || r.kind === kind) groups.set(r.date, [...(groups.get(r.date) ?? []), r]);
   // Month → the newest date shown in it (the jump target) and how many entries it holds.
@@ -178,7 +180,7 @@ export default function ChangelogPage() {
           {[...months.entries()].map(([month, m]) => {
             const [y, mo] = month.split("-").map(Number) as [number, number];
             return (
-              <a key={month} href={`#d-${m.first}`} className="flex items-center justify-between rounded-control px-2 py-2 text-ui-label-lg text-ink-2 transition-colors hover:bg-bg-sunk hover:text-ink">
+              <a key={month} href={`#d-${m.first}`} onClick={(e) => jumpTo(e, `d-${m.first}`)} className="flex items-center justify-between rounded-control px-2 py-2 text-ui-label-lg text-ink-2 transition-colors hover:bg-bg-sunk hover:text-ink">
                 {t(`${y} 年 ${mo} 月`, new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(month + "-01")))}<span className="num text-ui-caption text-ink-4">{t(`${m.count} 条`, String(m.count))}</span>
               </a>
             );
@@ -202,7 +204,8 @@ export default function ChangelogPage() {
         <h1 data-page-title="" className="text-ui-heading-lg font-semibold leading-[1.3] text-ink">{t("更新日志", "Changelog")}</h1>
         <p className="mt-1.5 text-ui-label text-ink-3">{t("新功能、调整、下线，都写在这里。", "New features, improvements and retirements.")}</p>
       </header>
-      <div className="space-y-4">
+      {/* Another type: its releases fade in where the last list was. */}
+      <div key={kind ?? "all"} className={`space-y-4 ${filtered ? "anim-fade-in" : ""}`}>
         {[...groups.entries()].map(([date, releases]) => {
           if (SITE_FEATURE && releases.some((r) => r.feature)) return <FeatureDay key={date} date={date} releases={releases} Drawing={SITE_FEATURE} />;
           return <Day key={date} id={`d-${date}`} date={date} releases={releases} />;

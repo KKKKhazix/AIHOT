@@ -5,6 +5,7 @@
 // linking to the English pages: an article enters it once its title and summary are in English, an issue once
 // its headline and lead are (with the entries already in English); a full feed carries the original text there
 // (a body written in Chinese, none).
+import { inLanguage, L, type Locale } from "@aihot/contracts/i18n";
 import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
 import { REPORT_NAMES_EN } from "@aihot/contracts/site";
 import { feedCategoryLabelIn, PUBLIC_API_CATEGORY_KEYS, toPublicApiCategory, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
@@ -25,10 +26,7 @@ import { browsedCondition, seatedCondition } from "./scope.ts";
 import { siteUrl } from "./links.ts";
 
 /** A feed's language: Chinese at /feed…, English at /en/feed… (on a site with an English edition). */
-export type FeedLanguage = "zh" | "en";
-
-/** A page's or feed's path in the feed's language. */
-const inLanguage = (path: string, lang: FeedLanguage) => (lang === "en" ? `/en${path === "/" ? "" : path}` : path);
+export type FeedLanguage = Locale;
 
 interface FeedMeta {
   id: string;
@@ -40,34 +38,69 @@ interface FeedMeta {
   edgeCacheSeconds: number;
 }
 
-const CACHE = { edgeCacheSeconds: 300 };
+const ITEMS_KEPT = 50;
+const ISSUES_KEPT: Record<ReportKind, number> = { daily: 30, weekly: 12, monthly: 12 };
+const when = ENGLISH?.editionWhen ?? { daily: "daily", weekly: "weekly", monthly: "monthly" };
 
-const FEEDS: FeedMeta[] = [
-  { id: "selected", path: "/feed.xml", title: `${SITE.name} — 精选`, description: `最新 50 条 ${SITE.name} 精选摘要，附站内阅读与原文链接；想在阅读器里直接看全文，可改订 /feed/full.xml。`, homePath: "/", pollHintMinutes: 30, ...CACHE },
-  { id: "selected-full", path: "/feed/full.xml", title: `${SITE.name} — 精选全文`, description: `最新 50 条 ${SITE.name} 精选；允许转载的来源会直接附上全文，其余提供摘要与阅读链接。`, homePath: "/", pollHintMinutes: 30, ...CACHE },
-  { id: "all", path: "/feed/all.xml", title: `${SITE.name} — ${subjectAfter("全部", "动态")}`, description: `${subjectAfter("最近 7 天发布的", "动态")}，按发布时间倒序，已过滤重复和低价值内容。`, homePath: "/all", pollHintMinutes: 30, ...CACHE },
-  { id: "daily", path: "/feed/daily.xml", title: `${SITE.name} 日报`, description: `${SITE.name} ${EDITION_WHEN.daily}（北京时间）发布的精编日报，保留最近 30 期。`, homePath: "/daily", pollHintMinutes: 30, ...CACHE },
-  { id: "weekly", path: "/feed/weekly.xml", title: `${SITE.name} 周报`, description: `${SITE.name} ${EDITION_WHEN.weekly}（北京时间）发布的周报：整理自上周日报的${REPORTS.entry.noun}，按栏目归类并附总述，保留最近 12 期。`, homePath: "/weekly", pollHintMinutes: 180, ...CACHE },
-  { id: "monthly", path: "/feed/monthly.xml", title: `${SITE.name} 月报`, description: `${SITE.name} ${EDITION_WHEN.monthly}（北京时间）发布的月报：整理自上月日报的${REPORTS.entry.noun}，按栏目归类并附总述，保留最近 12 期。`, homePath: "/monthly", pollHintMinutes: 360, ...CACHE },
-];
+const FEEDS = {
+  "selected": {
+    path: "/feed.xml", homePath: "/", pollHintMinutes: 30,
+    title: L(`${SITE.name} — 精选`, `${SITE.name} — Top Picks`),
+    description: L(
+      `最新 ${ITEMS_KEPT} 条 ${SITE.name} 精选摘要，附站内阅读与原文链接；想在阅读器里直接看全文，可改订 /feed/full.xml。`,
+      `The latest ${ITEMS_KEPT} ${SITE.name} top picks in English, with links to read them on the site and at the source; for full text in your reader, subscribe to /en/feed/full.xml instead.`,
+    ),
+  },
+  "selected-full": {
+    path: "/feed/full.xml", homePath: "/", pollHintMinutes: 30,
+    title: L(`${SITE.name} — 精选全文`, `${SITE.name} — Top Picks, Full Text`),
+    description: L(
+      `最新 ${ITEMS_KEPT} 条 ${SITE.name} 精选；允许转载的来源会直接附上全文，其余提供摘要与阅读链接。`,
+      `The latest ${ITEMS_KEPT} ${SITE.name} top picks in English; sources that allow republishing come with their original full text (not those written in Chinese), the rest with a summary and links.`,
+    ),
+  },
+  "all": {
+    path: "/feed/all.xml", homePath: "/all", pollHintMinutes: 30,
+    title: L(`${SITE.name} — ${subjectAfter("全部", "动态")}`, `${SITE.name} — All ${SITE.subject} News`),
+    description: L(
+      `${subjectAfter("最近 7 天发布的", "动态")}，按发布时间倒序，已过滤重复和低价值内容。`,
+      `${SITE.subject} news from the last 7 days in English, newest first, with duplicates and low-value items filtered out.`,
+    ),
+  },
+  "daily": {
+    path: "/feed/daily.xml", homePath: "/daily", pollHintMinutes: 30,
+    title: L(`${SITE.name} 日报`, `${SITE.name} ${REPORT_NAMES_EN.daily}`),
+    description: L(
+      `${SITE.name} ${EDITION_WHEN.daily}（北京时间）发布的精编日报，保留最近 ${ISSUES_KEPT.daily} 期。`,
+      `${SITE.name}'s daily briefing, out ${when.daily}; the last ${ISSUES_KEPT.daily} issues.`,
+    ),
+  },
+  "weekly": {
+    path: "/feed/weekly.xml", homePath: "/weekly", pollHintMinutes: 180,
+    title: L(`${SITE.name} 周报`, `${SITE.name} ${REPORT_NAMES_EN.weekly}`),
+    description: L(
+      `${SITE.name} ${EDITION_WHEN.weekly}（北京时间）发布的周报：整理自上周日报的${REPORTS.entry.noun}，按栏目归类并附总述，保留最近 ${ISSUES_KEPT.weekly} 期。`,
+      `${SITE.name}'s weekly roundup, out ${when.weekly}: last week's daily stories by section, with an overview; the last ${ISSUES_KEPT.weekly} issues.`,
+    ),
+  },
+  "monthly": {
+    path: "/feed/monthly.xml", homePath: "/monthly", pollHintMinutes: 360,
+    title: L(`${SITE.name} 月报`, `${SITE.name} ${REPORT_NAMES_EN.monthly}`),
+    description: L(
+      `${SITE.name} ${EDITION_WHEN.monthly}（北京时间）发布的月报：整理自上月日报的${REPORTS.entry.noun}，按栏目归类并附总述，保留最近 ${ISSUES_KEPT.monthly} 期。`,
+      `${SITE.name}'s monthly review, out ${when.monthly}: last month's daily stories by section, with an overview; the last ${ISSUES_KEPT.monthly} issues.`,
+    ),
+  },
+};
 
-/** The English feeds' titles and descriptions; the rest as the Chinese feed's. */
-function englishMeta(id: ItemFeedKind | ReportKind): Pick<FeedMeta, "title" | "description"> {
-  const when = ENGLISH?.editionWhen ?? { daily: "daily", weekly: "weekly", monthly: "monthly" };
-  return {
-    selected: { title: `${SITE.name} — Top Picks`, description: `The latest 50 ${SITE.name} top picks in English, with links to read them on the site and at the source; for full text in your reader, subscribe to /en/feed/full.xml instead.` },
-    "selected-full": { title: `${SITE.name} — Top Picks, Full Text`, description: `The latest 50 ${SITE.name} top picks in English; sources that allow republishing come with their original full text (not those written in Chinese), the rest with a summary and links.` },
-    all: { title: `${SITE.name} — All ${SITE.subject} News`, description: `${SITE.subject} news from the last 7 days in English, newest first, with duplicates and low-value items filtered out.` },
-    daily: { title: `${SITE.name} ${REPORT_NAMES_EN.daily}`, description: `${SITE.name}'s daily briefing, out ${when.daily}; the last 30 issues.` },
-    weekly: { title: `${SITE.name} ${REPORT_NAMES_EN.weekly}`, description: `${SITE.name}'s weekly roundup, out ${when.weekly}: last week's daily stories by section, with an overview; the last 12 issues.` },
-    monthly: { title: `${SITE.name} ${REPORT_NAMES_EN.monthly}`, description: `${SITE.name}'s monthly review, out ${when.monthly}: last month's daily stories by section, with an overview; the last 12 issues.` },
-  }[id];
-}
-
-/** A feed by its id; a category feed shares the poll hint and caching of the feed it narrows. */
+/** A category feed inherits the metadata of the feed it narrows. */
 export function feedMeta(id: ItemFeedKind | ReportKind, lang: FeedLanguage = "zh"): FeedMeta {
-  const meta = FEEDS.find((f) => f.id === id)!;
-  return lang === "en" ? { ...meta, ...englishMeta(id), path: inLanguage(meta.path, "en"), homePath: inLanguage(meta.homePath, "en") } : meta;
+  const meta = FEEDS[id];
+  return {
+    id, path: inLanguage(meta.path, lang), homePath: inLanguage(meta.homePath, lang),
+    title: meta.title[lang], description: meta.description[lang],
+    pollHintMinutes: meta.pollHintMinutes, edgeCacheSeconds: 300,
+  };
 }
 
 export function feedCacheControl(id: ItemFeedKind | ReportKind): string {
@@ -193,7 +226,7 @@ export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKe
   const rows = await sql<FeedRow[]>`
     WITH page AS MATERIALIZED (
       SELECT p.article_id FROM publications p WHERE ${scope}
-      ORDER BY coalesce(p.published_at, p.discovered_at) DESC, p.article_id DESC LIMIT 50
+      ORDER BY coalesce(p.published_at, p.discovered_at) DESC, p.article_id DESC LIMIT ${ITEMS_KEPT}
     )
     SELECT ${PUBLIC_ITEM_COLUMNS}
       ${includeContent ? sql`, p.channel, p.syndicate, a.language, a.x_post, a.x_article,
@@ -234,7 +267,6 @@ export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKe
 
 const ISSUE_NAME: Record<ReportKind, string> = { daily: "日报", weekly: "周报", monthly: "月报" };
 /** Issues each report feed keeps: a month of dailies, a quarter of weeklies, a year of monthlies. */
-const ISSUES_KEPT: Record<ReportKind, number> = { daily: 30, weekly: 12, monthly: 12 };
 
 /** One issue: its headline, its lead (a weekly's or monthly's overview) and its contents, each entry linking to its page. */
 function issueXml(kind: ReportKind, r: FeedIssue, lang: FeedLanguage): string {

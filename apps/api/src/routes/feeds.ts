@@ -1,7 +1,8 @@
+import { inLanguage } from "@aihot/contracts/i18n";
 // RSS routes. Unknown query parameters are accepted and never change content. On a site with an English edition every
 // feed is also at /en/feed…, in English (publication/feeds.ts).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { ENGLISH } from "@aihot/contracts/english";
+import { READER_LANGUAGES } from "@aihot/contracts/english";
 import { feedCacheControl, isFeedCategory, itemFeed, reportFeed, type FeedLanguage, type ItemFeedKind } from "@aihot/backend/publication/feeds";
 import { serverModules } from "@aihot/backend/modules";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
@@ -17,11 +18,11 @@ function feedError(reply: FastifyReply) {
 }
 
 export function registerFeeds(app: FastifyInstance) {
-  for (const lang of ENGLISH ? (["zh", "en"] as const) : (["zh"] as const)) registerIn(app, lang);
+  for (const lang of READER_LANGUAGES) registerIn(app, lang);
 }
 
 function registerIn(app: FastifyInstance, lang: FeedLanguage) {
-  const at = (path: string) => (lang === "en" ? `/en${path}` : path);
+  const at = (path: string) => inLanguage(path, lang);
   // A preflight gets 204 and the allowed methods; feeds send no CORS headers.
   for (const url of ["/feed.xml", "/feed/full.xml", "/feed/all.xml", "/feed/daily.xml", "/feed/weekly.xml", "/feed/monthly.xml", "/feed/category/:file", "/feed/full/category/:file"]) {
     app.options(at(url), async (_req, reply) => reply.code(204).header("Allow", "GET, HEAD, OPTIONS").send());

@@ -4,7 +4,7 @@ import { REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn, type
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
 import { apiGet, cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { breadcrumbLd, pageMeta, reportDescription, reportLd, reportTitle, titled } from "../lib/seo";
+import { breadcrumbLd, pageMeta, reportDescription, reportLd, reportTitle, titled, titleCacheSeconds } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
 import { ReportLayout } from "../features/report/ReportLayout";
 import { ReportPaper, reportOutline } from "../features/report/ReportPaper";
@@ -28,10 +28,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const key = params.key ?? "";
   if (!PATTERN[kind].test(key)) throw data({ message: "not_found" }, { status: 404 });
   const [report, { items: index }] = await Promise.all([
-    loadOr404<ReportDetail>(apiIn(`/api/site/reports/${kind}/${key}`, locale), { signal: request.signal }),
-    apiGet<ReportNavigationResponse>(apiIn(`/api/site/reports/${kind}/navigation/${key}`, locale), { signal: request.signal }),
+    loadOr404<ReportDetail>(apiIn(`/reports/${kind}/${key}`, locale), { signal: request.signal }),
+    apiGet<ReportNavigationResponse>(apiIn(`/reports/${kind}/navigation/${key}`, locale), { signal: request.signal }),
   ]);
-  return cachedPage(3600, { report, index, today: beijingDate(Date.now()) });
+  const title = reportTitle(report, locale);
+  return cachedPage(titleCacheSeconds(3600, locale, title), { report, title, index, today: beijingDate(Date.now()) });
 }
 
 export function meta({ loaderData, location }: Route.MetaArgs) {
@@ -43,7 +44,7 @@ export function meta({ loaderData, location }: Route.MetaArgs) {
   const path = `/${r.kind}/${r.key}`;
   return [...pageMeta({
     locale,
-    title: reportTitle(r, locale),
+    title: loaderData.title,
     description,
     path,
     image: `/og/reports/${r.kind}/${r.key}.png`,

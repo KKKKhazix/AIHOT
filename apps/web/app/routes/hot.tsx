@@ -28,7 +28,7 @@ export { pageHeaders as headers } from "../lib/api.server";
 export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
-  return cachedPage(120, { hot: await loadOr404<HotResponse>(apiIn("/api/site/hot", localeOf(pagePathname(request))), { signal: request.signal }) });
+  return cachedPage(120, { hot: await loadOr404<HotResponse>(apiIn("/hot", localeOf(pagePathname(request))), { signal: request.signal }) });
 }
 
 export function meta({ loaderData, location }: Route.MetaArgs) {

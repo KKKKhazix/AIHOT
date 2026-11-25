@@ -5,7 +5,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { EDITION_TIMES, SITE } from "@aihot/site";
-import { CONTACT_ALIASES, PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
+import { CONTACT_ALIASES, PUBLIC_INTERFACE_VERSION, robotsForReaders } from "@aihot/contracts/http-policy";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT, config } from "@aihot/backend/config";
 import { applyPublicHeaders, etagMatches, sendTextWithEtag } from "../http/respond.ts";
@@ -81,6 +81,7 @@ async function loadFile(file: string, fill = false): Promise<Entry> {
   if (cached && cached.mtime === s.mtimeMs) return cached;
   let body = await readFile(file);
   if (fill && body.includes("{{")) body = Buffer.from(fillPlaceholders(body.toString("utf8"), /\.(json|webmanifest)$/.test(file)));
+  if (file === path.join(PUBLIC, "robots.txt")) body = Buffer.from(robotsForReaders(body.toString("utf8")));
   const entry = { body, etag: etagOf(body), mtime: s.mtimeMs };
   fileCache.set(file, entry);
   return entry;

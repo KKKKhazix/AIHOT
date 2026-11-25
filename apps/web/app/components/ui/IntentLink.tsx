@@ -15,26 +15,6 @@ export function IntentLink({ onPointerDown, onTouchStart, onTouchMove, onTouchEn
   // A press belongs to the page it was made on: it serves the navigation it starts, and a link that
   // stays on screen (a tab) does not keep prefetching once the reader is somewhere else.
   const [pressedOn, setPressedOn] = useState<string | null>(null);
-  const ready = pressedOn === location.key;
-  // What the link will open: the address Link resolves to in this page's language (lib/link.tsx).
-  const href = useHref(localizeTo(props.to, useLocale()));
-  const context = useContext(UNSAFE_DataRouterContext);
-  const framework = useContext(UNSAFE_FrameworkContext);
-  // Router prefetch loads chunks but opts clientLoader routes out of data prefetch. Their
-  // serverLoader still reads this same single-fetch URL; prefetch it with the same browser TTL.
-  const target = new URL(href, 'http://page.local');
-  const differentPage = target.pathname + target.search !== location.pathname + location.search;
-  // Router prefetch also asks shouldRevalidate. A selected/remembered page needs neither its
-  // assets nor that revalidation decision, which is reserved for an actual refresh. The prefetch is
-  // mounted here rather than through Link's prop: Link keeps prefetching after the prop is switched
-  // off, and would ask that question again about the page its own click has just opened.
-  const shouldPrefetch = ready && differentPage && !hasFreshPage(target);
-  const clients = shouldPrefetch && href.startsWith('/') && !href.startsWith('//')
-    ? context?.router.match(href)?.filter(m => framework?.manifest.routes[m.route.id]?.hasLoader && framework.manifest.routes[m.route.id]?.hasClientLoader).map(m => m.route.id) ?? []
-    : [];
-  target.hash = '';
-  target.pathname += target.pathname.endsWith('/') ? '_.data' : '.data';
-  target.searchParams.set('_routes', clients.join(','));
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clear = () => {
     if (timer.current !== null) clearTimeout(timer.current);
@@ -57,5 +37,30 @@ export function IntentLink({ onPointerDown, onTouchStart, onTouchMove, onTouchEn
     onTouchMove={(e) => { onTouchMove?.(e); cancel(); }}
     onTouchEnd={(e) => { onTouchEnd?.(e); cancel(); }}
     onTouchCancel={(e) => { onTouchCancel?.(e); cancel(); }}
-  />{shouldPrefetch && <PrefetchPageLinks page={href} />}{clients.length > 0 && <link rel="prefetch" as="fetch" href={target.pathname + target.search} />}</>;
+  />{pressedOn === location.key && <PressedPrefetch to={props.to} />}</>;
+}
+
+function PressedPrefetch({ to }: Pick<LinkProps, "to">) {
+  const location = useLocation();
+  // What the link will open: the address Link resolves to in this page's language (lib/link.tsx).
+  const href = useHref(localizeTo(to, useLocale()));
+  const context = useContext(UNSAFE_DataRouterContext);
+  const framework = useContext(UNSAFE_FrameworkContext);
+  // Router prefetch loads chunks but opts clientLoader routes out of data prefetch. Their
+  // serverLoader still reads this same single-fetch URL; prefetch it with the same browser TTL.
+  const target = new URL(href, 'http://page.local');
+  const differentPage = target.pathname + target.search !== location.pathname + location.search;
+  // Router prefetch also asks shouldRevalidate. A selected/remembered page needs neither its
+  // assets nor that revalidation decision, which is reserved for an actual refresh. The prefetch is
+  // mounted here rather than through Link's prop: Link keeps prefetching after the prop is switched
+  // off, and would ask that question again about the page its own click has just opened.
+  if (!differentPage || hasFreshPage(target)) return null;
+  const clients = href.startsWith('/') && !href.startsWith('//')
+    ? context?.router.match(href)?.filter(m => framework?.manifest.routes[m.route.id]?.hasLoader && framework.manifest.routes[m.route.id]?.hasClientLoader).map(m => m.route.id) ?? []
+    : [];
+  if (clients.length === 0) return <PrefetchPageLinks page={href} />;
+  target.hash = '';
+  target.pathname += target.pathname.endsWith('/') ? '_.data' : '.data';
+  target.searchParams.set('_routes', clients.join(','));
+  return <><PrefetchPageLinks page={href} /><link rel="prefetch" as="fetch" href={target.pathname + target.search} /></>;
 }

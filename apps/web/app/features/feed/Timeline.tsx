@@ -133,7 +133,7 @@ export function TimelineSlot({ at, children, fresh = false, delay = 0, dataKey }
 
 export function Timeline({ initial, filters }: { initial: TimelineResponse; filters: TimelineFilters }) {
   const t = useT();
-  const api = apiIn("/api/site/timeline", useLocale());
+  const api = apiIn("/timeline", useLocale());
   const location = useLocation();
   const navigation = useNavigation();
   const readSet = useReadSet();

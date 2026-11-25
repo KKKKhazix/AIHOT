@@ -1,7 +1,7 @@
 import {
   isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration, useLoaderData, useLocation, useNavigation, useRouteError, useRouteLoaderData, type ShouldRevalidateFunction,
 } from "react-router";
-import type { SiteMeta } from "@aihot/contracts/site";
+import { latestVersion } from "../../../site/changelog.json";
 import { SITE } from "@aihot/site";
 import { RingMark } from "@aihot/site/brand/Logo.tsx";
 import { useEffect, useState, type ReactNode } from "react";
@@ -16,7 +16,7 @@ import { BackToTop, NavigationProgress } from "./components/shell/Chrome";
 import { EnglishHint } from "./components/shell/EnglishHint";
 import { buttonClass } from "./components/ui/Controls";
 import { rememberPage, APPEARANCE_BOOT_SCRIPT, useAppearanceSync } from "./lib/local-state";
-import { apiGet } from "./lib/api.server";
+import { documentRead } from "./lib/api.server";
 import { useHydratedFlag } from "./lib/hydration";
 import { titled } from "./lib/seo";
 import { webModules } from "./site-modules";
@@ -31,17 +31,12 @@ export const links: Route.LinksFunction = () => [
 ];
 
 /** The release rendering this document: once a newer one is deployed, a render error reloads the page (entry.client). */
-export async function loader({ request }: Route.LoaderArgs) {
-  const release = process.env.AIHOT_RELEASE ?? null;
-  try {
-    const meta = await apiGet<SiteMeta>("/api/site/meta", {
-      headers: Object.assign({}, ...webModules().map((m) => m.root?.documentHeaders?.(request) ?? {})),
-      signal: request.signal,
-    });
-    return { ...meta, release };
-  } catch {
-    return { changelogVersion: null, release };
+export function loader({ request, context }: Route.LoaderArgs) {
+  for (const m of webModules()) {
+    const headers = m.root?.documentHeaders?.(request);
+    if (headers) context.set(documentRead, { ...context.get(documentRead), ...headers });
   }
+  return { changelogVersion: latestVersion, release: process.env.AIHOT_RELEASE ?? null };
 }
 
 export const shouldRevalidate: ShouldRevalidateFunction = () => false;

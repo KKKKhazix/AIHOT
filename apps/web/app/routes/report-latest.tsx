@@ -20,7 +20,7 @@ export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: Route.LoaderArgs) {
   const kind = kindFromPath(pagePathname(request));
-  const { index, report } = await loadOr404<ReportLatestPage>(apiIn(`/api/site/reports/${kind}/latest-page`, localeOf(pagePathname(request))), { signal: request.signal });
+  const { index, report } = await loadOr404<ReportLatestPage>(apiIn(`/reports/${kind}/latest-page`, localeOf(pagePathname(request))), { signal: request.signal });
   return cachedPage(600, { kind, report, index, today: beijingDate(Date.now()) });
 }
 

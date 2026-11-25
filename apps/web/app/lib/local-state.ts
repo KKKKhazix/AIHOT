@@ -134,13 +134,6 @@ function invalidate(key: string) {
   emit(key);
 }
 
-// Another tab may have written since this tab cached its snapshots (its storage event can still be on
-// the way): every edit reads fresh values first.
-function editLocalData<T>(change: () => T): T {
-  cache.clear();
-  return change();
-}
-
 // starred
 function isStarredItem(v: unknown): v is LocalStarredItem {
   if (!v || typeof v !== "object") return false;
@@ -190,15 +183,15 @@ function isStarred(id: string): boolean {
 }
 
 export function toggleStar(item: Omit<LocalStarredItem, "savedAt">): boolean {
-  return editLocalData(() => {
-    if (starredUnreadable()) return false;
-    const list = getStarred();
-    const exists = list.some((s) => s.id === item.id);
-    const next = exists ? list.filter((s) => s.id !== item.id) : [{ ...item, savedAt: new Date().toISOString() }, ...list].slice(0, (list.length > STARRED_LIMIT ? list.length + 1 : STARRED_LIMIT));
-    const saved = writeRaw(KEYS.starred, JSON.stringify(next));
-    invalidate(KEYS.starred);
-    return saved && !exists;
-  });
+  if (starredUnreadable()) return false;
+  // Read this key again before editing: a different tab's storage event can still be on its way.
+  cache.delete(KEYS.starred);
+  const list = getStarred();
+  const exists = list.some((s) => s.id === item.id);
+  const next = exists ? list.filter((s) => s.id !== item.id) : [{ ...item, savedAt: new Date().toISOString() }, ...list].slice(0, (list.length > STARRED_LIMIT ? list.length + 1 : STARRED_LIMIT));
+  const saved = writeRaw(KEYS.starred, JSON.stringify(next));
+  invalidate(KEYS.starred);
+  return saved && !exists;
 }
 
 /** Calls `listener` whenever the stars change, in this tab or another, for code outside React (a sync). */
@@ -207,19 +200,16 @@ export const watchStarred = (listener: () => void) => subscribeStarred(listener)
 /** Stores this list as the stars, newest first; false when nothing was saved. */
 // Account merges can exceed the ordinary 500-item local window; never trim an imported account snapshot.
 export function replaceStarred(items: LocalStarredItem[]): boolean {
-  return editLocalData(() => {
-    const saved = writeRaw(KEYS.starred, JSON.stringify(items));
-    invalidate(KEYS.starred);
-    return saved;
-  });
+  const saved = writeRaw(KEYS.starred, JSON.stringify(items));
+  invalidate(KEYS.starred);
+  return saved;
 }
 
 export function removeStar(id: string) {
-  editLocalData(() => {
-    if (starredUnreadable()) return;
-    writeRaw(KEYS.starred, JSON.stringify(getStarred().filter((s) => s.id !== id)));
-    invalidate(KEYS.starred);
-  });
+  if (starredUnreadable()) return;
+  cache.delete(KEYS.starred);
+  writeRaw(KEYS.starred, JSON.stringify(getStarred().filter((s) => s.id !== id)));
+  invalidate(KEYS.starred);
 }
 
 // read items (LRU, newest first)
@@ -241,14 +231,13 @@ function getReadSet(): Set<string> {
 }
 
 export function markRead(id: string) {
-  editLocalData(() => {
-    if (!ID_PATTERN.test(id)) return;
-    const ids = getReadIds();
-    if (ids[0] === id) return;
-    const next = [id, ...ids.filter((v) => v !== id)].slice(0, READ_LIMIT);
-    writeRaw(KEYS.read, JSON.stringify(next));
-    invalidate(KEYS.read);
-  });
+  if (!ID_PATTERN.test(id)) return;
+  cache.delete(KEYS.read);
+  const ids = getReadIds();
+  if (ids[0] === id) return;
+  const next = [id, ...ids.filter((v) => v !== id)].slice(0, READ_LIMIT);
+  writeRaw(KEYS.read, JSON.stringify(next));
+  invalidate(KEYS.read);
 }
 
 // Keep a reader's filter choice independently of a particular list's saved scroll position.
@@ -466,49 +455,48 @@ function starredUnreadable(): boolean {
 }
 
 function mergeLocalData(incoming: { starred: unknown[]; read: unknown[]; theme: unknown; font?: unknown }): ImportReport {
-  return editLocalData(() => {
-    // The reader's own data stays recoverable (export it, or fix it) rather than replaced by the import.
-    if (starredUnreadable()) throw new ImportError(L("这台设备上已有的收藏数据无法读取，为避免覆盖，这次没有导入。", "Couldn't read the saved items on this device. Nothing was imported so your data isn't overwritten."));
-    const current = getStarred();
-    const have = new Set(current.map((s) => s.id));
-    const additions: LocalStarredItem[] = [];
-    let starredSkipped = 0;
-    for (const s of incoming.starred) {
-      if (!isStarredItem(s)) { starredSkipped++; continue; }
-      if (have.has(s.id)) continue;
-      have.add(s.id);
-      additions.push(normalizeStarred(s as unknown as Record<string, unknown>));
-    }
-    const room = Math.max(0, STARRED_LIMIT - current.length);
-    const accepted = additions.slice(0, room);
-    starredSkipped += additions.length - accepted.length;
-    const mergedStarred = [...current, ...accepted].sort((a, b) => Date.parse(b.savedAt) - Date.parse(a.savedAt));
-    // An import is reported only after it was written; a failure here leaves the browser as it was.
-    if (!writeRaw(KEYS.starred, JSON.stringify(mergedStarred))) throw new ImportError(L("浏览器存储已满或不可用，这次没有导入任何内容。", "Browser storage is full or unavailable, so nothing was imported."));
+  // The reader's own data stays recoverable (export it, or fix it) rather than replaced by the import.
+  if (starredUnreadable()) throw new ImportError(L("这台设备上已有的收藏数据无法读取，为避免覆盖，这次没有导入。", "Couldn't read the saved items on this device. Nothing was imported so your data isn't overwritten."));
+  cache.clear();
+  const current = getStarred();
+  const have = new Set(current.map((s) => s.id));
+  const additions: LocalStarredItem[] = [];
+  let starredSkipped = 0;
+  for (const s of incoming.starred) {
+    if (!isStarredItem(s)) { starredSkipped++; continue; }
+    if (have.has(s.id)) continue;
+    have.add(s.id);
+    additions.push(normalizeStarred(s as unknown as Record<string, unknown>));
+  }
+  const room = Math.max(0, STARRED_LIMIT - current.length);
+  const accepted = additions.slice(0, room);
+  starredSkipped += additions.length - accepted.length;
+  const mergedStarred = [...current, ...accepted].sort((a, b) => Date.parse(b.savedAt) - Date.parse(a.savedAt));
+  // An import is reported only after it was written; a failure here leaves the browser as it was.
+  if (!writeRaw(KEYS.starred, JSON.stringify(mergedStarred))) throw new ImportError(L("浏览器存储已满或不可用，这次没有导入任何内容。", "Browser storage is full or unavailable, so nothing was imported."));
 
-    const readIds = getReadIds();
-    const readHave = new Set(readIds);
-    const readAdditions: string[] = [];
-    let readSkipped = 0;
-    for (const id of incoming.read) {
-      if (typeof id !== "string" || !ID_PATTERN.test(id)) { readSkipped++; continue; }
-      if (readHave.has(id)) continue;
-      readHave.add(id);
-      readAdditions.push(id);
-    }
-    const readRoom = Math.max(0, READ_LIMIT - readIds.length);
-    readSkipped += Math.max(0, readAdditions.length - readRoom);
-    const readFailed = !writeRaw(KEYS.read, JSON.stringify([...readIds, ...readAdditions.slice(0, readRoom)]));
+  const readIds = getReadIds();
+  const readHave = new Set(readIds);
+  const readAdditions: string[] = [];
+  let readSkipped = 0;
+  for (const id of incoming.read) {
+    if (typeof id !== "string" || !ID_PATTERN.test(id)) { readSkipped++; continue; }
+    if (readHave.has(id)) continue;
+    readHave.add(id);
+    readAdditions.push(id);
+  }
+  const readRoom = Math.max(0, READ_LIMIT - readIds.length);
+  readSkipped += Math.max(0, readAdditions.length - readRoom);
+  const readFailed = !writeRaw(KEYS.read, JSON.stringify([...readIds, ...readAdditions.slice(0, readRoom)]));
 
-    let themeApplied = false;
-    if (!getThemePreference() && (incoming.theme === "light" || incoming.theme === "dark")) {
-      themeApplied = writeRaw(KEYS.theme, incoming.theme);
-    }
-    const fontApplied = !getFontPreference() && incoming.font === "browser" && writeRaw(KEYS.font, "browser");
-    cache.clear();
-    emit();
-    return { starredAdded: accepted.length, starredSkipped, readAdded: readFailed ? 0 : Math.min(readAdditions.length, readRoom), readSkipped, themeApplied, fontApplied, readFailed };
-  });
+  let themeApplied = false;
+  if (!getThemePreference() && (incoming.theme === "light" || incoming.theme === "dark")) {
+    themeApplied = writeRaw(KEYS.theme, incoming.theme);
+  }
+  const fontApplied = !getFontPreference() && incoming.font === "browser" && writeRaw(KEYS.font, "browser");
+  cache.clear();
+  emit();
+  return { starredAdded: accepted.length, starredSkipped, readAdded: readFailed ? 0 : Math.min(readAdditions.length, readRoom), readSkipped, themeApplied, fontApplied, readFailed };
 }
 
 /** Imports from elsewhere (the site's modules') merge through the same path. */

@@ -46,7 +46,7 @@ const suggestions = new Map<Locale, Promise<SearchSuggestions>>();
 function loadSuggestions(locale: Locale) {
   let read = suggestions.get(locale);
   if (!read) {
-    read = fetch(apiIn("/api/site/search/suggestions", locale))
+    read = fetch(apiIn("/search/suggestions", locale))
       .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json() as Promise<SearchSuggestions>; })
       .finally(() => { suggestions.delete(locale); });
     suggestions.set(locale, read);

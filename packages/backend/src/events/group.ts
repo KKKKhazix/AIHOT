@@ -116,23 +116,22 @@ async function judgeSignal(articleId: string, query: ReportView, cands: Candidat
 
 // Writes
 
-async function createStory(db: Db, title: string, at: Date): Promise<number> {
-  const cleanTitle = editorialPolicy().sanitizeEventCopy
-    ? editorialPolicy().sanitizeEventCopy!({ title }).title
-    : title;
+async function createStory(db: Db, title: string, at: Date, reportContext: string): Promise<number> {
+  const cleanTitle = editorialPolicy().sanitizeEventCopy?.({ title, reportContext }).title ?? title;
   const [row] = await db<{ id: number }[]>`
     INSERT INTO stories (public_id, title, first_report_at, latest_at, origin)
     VALUES (${newUuid()}, ${cleanTitle}, ${at}, ${at}, 'model') RETURNING id`;
   return row!.id;
 }
 
-async function createFact(db: Db, storyId: number, title: string, frame: Record<string, any> | null, at: Date): Promise<number> {
+async function createFact(db: Db, storyId: number, title: string, frame: Record<string, any> | null, at: Date, reportContext: string): Promise<number> {
   let occurred = typeof frame?.occurredAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(frame.occurredAt) ? beijingMidnight(frame.occurredAt) : null;
   if (occurred && (!Number.isFinite(+occurred) || beijingDate(occurred) !== frame!.occurredAt)) occurred = null;
   const rawConditions = Array.isArray(frame?.conditions) ? frame.conditions.map((c: { text?: string }) => c.text).filter(Boolean).join("；") || null : null;
   const cleaned = editorialPolicy().sanitizeEventCopy
     ? editorialPolicy().sanitizeEventCopy!({
         title,
+        reportContext,
         conditions: rawConditions,
         subject: frame?.subject ?? null,
         action: frame?.action ?? null,
@@ -546,8 +545,9 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
       const [current] = await tx`SELECT id FROM stories WHERE id = ${storyId} AND merged_into IS NULL FOR UPDATE`;
       if (!current) throw new Error("Grouping target changed; retry against the current story");
     }
-    const story = storyId ?? (await createStory(tx, newTitle, observedAt));
-    const fact = factId ?? (await createFact(tx, story, newTitle, frame, observedAt));
+    const reportContext = [a.title, an.title_zh, an.summary_zh].filter(Boolean).join("\n");
+    const story = storyId ?? (await createStory(tx, newTitle, observedAt, reportContext));
+    const fact = factId ?? (await createFact(tx, story, newTitle, frame, observedAt, reportContext));
     const [hasPrimary] = await tx<{ n: number }[]>`SELECT count(*) AS n FROM fact_articles WHERE fact_id = ${fact} AND role = 'primary'`;
     const role = a.first_party && Number(hasPrimary?.n ?? 0) === 0 ? "primary" : "report";
     const suppressEvidence = Boolean(an?.output?.suppressOriginal);

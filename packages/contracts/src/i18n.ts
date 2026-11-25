@@ -43,6 +43,11 @@ export function pagePath(pathname: string): string {
   return pathname.replace(/^\/en(?=\/|$)/, "") || "/";
 }
 
+/** A known reader or feed path, in the requested edition. */
+export function inLanguage(path: string, lang: Locale): string {
+  return lang === "en" ? `/en${path === "/" ? "" : path}` : path;
+}
+
 export interface Translate {
   /** The Chinese or the English, by the page's language. */
   <T>(zh: T, en: T): T;
@@ -62,3 +67,7 @@ const TRANSLATORS: Record<Locale, Translate> = { zh: make("zh"), en: make("en") 
 export function translator(locale: Locale): Translate {
   return TRANSLATORS[locale];
 }
+
+/** Names in an English sentence: "A", "A and B", "A, B and C". */
+export const namesEn = (names: string[]): string =>
+  names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names.join("");

@@ -105,7 +105,7 @@ export interface SitemapEntry {
   lastmod?: Date | null;
   changefreq?: string;
   priority?: number;
-  /** The page has an English edition at /en<loc> (on a site with one), listed with it in the sitemap. */
+  /** Set false while content needs translation. Only registered English pages are listed. */
   english?: boolean;
 }
 
@@ -336,6 +336,8 @@ export interface EditorialStoryDigestReviewInput {
 
 export interface EditorialEventCopyInput {
   title: string;
+  /** The member report's title and summary, to disambiguate a shorter event title. */
+  reportContext?: string;
   fallbackTitle?: string | null;
   conditions?: string | null;
   subject?: string | null;

@@ -25,7 +25,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (q && q.trim()) throw redirect(localizePath(`/all${url.search}`, locale));
   const filters = readFilters(url.searchParams);
   const upstream = new Headers();
-  const data = await loadOr404<TimelineResponse>(listPath(apiIn("/api/site/timeline", locale), filterParams(filters)), { responseHeaders: upstream, signal: request.signal });
+  const data = await loadOr404<TimelineResponse>(listPath(apiIn("/timeline", locale), filterParams(filters)), { responseHeaders: upstream, signal: request.signal });
   // A minute at most, here and on /all: new selections must not wait longer at the edge or in a browser.
   return cachedPage(60, { data, filters }, upstream);
 }

@@ -36,14 +36,14 @@ export interface ModuleLayout {
 export interface ModuleDeclaration {
   /** Its folder under modules/. */
   name: string;
+  /** Publish this module’s public pages and their redirects in both languages. */
+  en?: true;
   /** Public pages, beside the engine's. */
   pages?: Array<ModulePage | ModuleLayout>;
   /** Matched after the engine's redirects, in this order. */
   redirects?: RedirectRule[];
   /** Paths the api process answers; the web server and the internal router send them there. */
   apiPaths?: RegExp[];
-  /** Its site api answers (/api/site/…) that also answer in English, at /api/site/en/…: what its English pages read. */
-  englishApi?: RegExp[];
 }
 
 export function defineModule(module: ModuleDeclaration): ModuleDeclaration {

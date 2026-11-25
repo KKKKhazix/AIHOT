@@ -4,7 +4,7 @@ import { describePublicationTime } from "../sources/dates.ts";
 import { sql } from "../db.ts";
 import { collapseWhitespace, htmlBlockText, mergeDistinctText, truncate } from "../lib/text.ts";
 import { produceImage, rasterImage, SVG_PASSTHROUGH_MAX_BYTES } from "../media/images.ts";
-import type { EditorialLoadedImages } from "../modules.ts";
+import { editorialPolicy, type EditorialLoadedImages } from "../modules.ts";
 import type { ContentPart } from "../providers/llm.ts";
 import { MAX_BODY_CHARS } from "./writing.ts";
 import { withXArticle } from "../content/posts.ts";
@@ -48,13 +48,15 @@ export interface AnalyzeInputArticle {
 }
 
 export async function loadAnalyzeInput(articleId: string): Promise<AnalyzeInputArticle | null> {
+  const review = Boolean(editorialPolicy().reviewAnalysis);
   const [row] = await sql<{
     id: string; revision: number; title: string; url: string; author: string | null; published_at: Date | null; publication_time: string | null; discovered_at: Date;
     body_text: string | null; body_html: string | null; excerpt: string | null; body_status: string; x_post: Record<string, any> | null; x_article: { title?: string; text?: string; html?: string } | null;
     cover: Record<string, any> | null; media: Array<Record<string, any>>; source_name: string; source_kind: string; tier: string; selection_class: string | null; source_tags: string[]; owner_entity_id: string | null;
     config: Record<string, any>; translation_zh: string | null;
   }[]>`
-    SELECT a.id, a.revision, a.title, a.url, a.author, a.published_at, a.publication_time, a.discovered_at, a.body_text, a.body_html, a.excerpt, a.body_status, a.x_post, a.x_article, a.cover, a.media,
+    SELECT a.id, a.revision, a.title, a.url, a.author, a.published_at, a.publication_time, a.discovered_at, a.body_text, a.excerpt, a.body_status, a.x_post, a.x_article, a.media,
+           ${review ? sql`a.body_html, a.cover` : sql`NULL AS body_html, NULL AS cover`},
            s.name AS source_name, s.kind AS source_kind, s.tier, s.selection_class, s.tags AS source_tags, s.owner_entity_id, s.config,
            tr.body_text AS translation_zh
     FROM articles a JOIN sources s ON s.id = a.source_id
@@ -64,12 +66,14 @@ export async function loadAnalyzeInput(articleId: string): Promise<AnalyzeInputA
   return {
     id: row.id, revision: row.revision, title: row.title, url: row.url, author: row.author, publishedAt: row.published_at, publicationTime: row.publication_time, discoveredAt: row.discovered_at,
     bodyText: row.body_text,
-    fullBodyText: mergeDistinctText(row.body_text, htmlBlockText(row.body_html), htmlAltText(row.body_html), mediaAltText(row.media), typeof row.cover?.alt === "string" ? row.cover.alt : null) || null,
     excerpt: row.excerpt, bodyStatus: row.body_status, xPost: withXArticle(row.x_post, row.x_article),
-    rawXPostText: mergeDistinctText(row.x_post?.text ? String(row.x_post.text) : null, mediaAltText(row.x_post?.media)) || null,
-    rawXQuotedText: mergeDistinctText(row.x_post?.quoted?.text ? String(row.x_post.quoted.text) : null, mediaAltText(row.x_post?.quoted?.media)) || null,
-    xArticleText: mergeDistinctText(row.x_article?.title, row.x_article?.text, htmlBlockText(row.x_article?.html), htmlAltText(row.x_article?.html)) || null,
-    imageUrls: collectImageUrls({ html: row.body_html, xArticleHtml: row.x_article?.html ?? null, cover: row.cover, media: row.media, xPost: row.x_post }),
+    ...(review ? {
+      fullBodyText: mergeDistinctText(row.body_text, htmlBlockText(row.body_html), htmlAltText(row.body_html), mediaAltText(row.media), typeof row.cover?.alt === "string" ? row.cover.alt : null) || null,
+      rawXPostText: mergeDistinctText(row.x_post?.text ? String(row.x_post.text) : null, mediaAltText(row.x_post?.media)) || null,
+      rawXQuotedText: mergeDistinctText(row.x_post?.quoted?.text ? String(row.x_post.quoted.text) : null, mediaAltText(row.x_post?.quoted?.media)) || null,
+      xArticleText: mergeDistinctText(row.x_article?.title, row.x_article?.text, htmlBlockText(row.x_article?.html), htmlAltText(row.x_article?.html)) || null,
+      imageUrls: collectImageUrls({ html: row.body_html, xArticleHtml: row.x_article?.html ?? null, cover: row.cover, media: row.media, xPost: row.x_post }),
+    } : {}),
     media: row.media,
     source: {
       name: row.source_name, kind: row.source_kind, tier: row.tier, selectionClass: row.selection_class, firstParty: row.tier === "T1", tags: row.source_tags, ownerEntityId: row.owner_entity_id,

@@ -1,10 +1,24 @@
 // Streaming SSR with the framework's shell/bot timing and request-aware error logging.
 import { PassThrough } from "node:stream";
 import { createReadableStreamFromReadable } from "@react-router/node";
-import { ServerRouter, type EntryContext } from "react-router";
+import { ServerRouter, type EntryContext, type ServerInstrumentation } from "react-router";
 import { renderToPipeableStream, type RenderToPipeableStreamOptions } from "react-dom/server";
 import { isbot } from "isbot";
+import { apiGet, documentRead } from "./lib/api.server.ts";
 import { handleError } from "./lib/errors.server.ts";
+
+/** Count just the page reads the root loader marked, with the final wire status (including .data redirects). */
+export const instrumentations: ServerInstrumentation[] = [{
+  handler(handler) {
+    handler.instrument({
+      async request(handle, { context }) {
+        const result = await handle();
+        const headers = context?.get(documentRead);
+        if (headers) void apiGet("/api/site/meta", { headers: { ...headers, "x-aihot-ssr-status": String(result.statusCode) } }).catch(() => {});
+      },
+    });
+  },
+}];
 
 export { handleError };
 export const streamTimeout = 5_000;

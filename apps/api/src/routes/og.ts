@@ -3,8 +3,8 @@
 // drawn in English under /og/en/…, for the English pages: the language is in the path, as a CDN may
 // keep one copy of an image whatever its query.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
-import type { Locale } from "@aihot/contracts/i18n";
+import { ENGLISH, READER_LANGUAGES, WAITING_ENGLISH_SECONDS, needsEnglish } from "@aihot/contracts/english";
+import { namesEn, type Locale } from "@aihot/contracts/i18n";
 import { REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn } from "@aihot/contracts/site";
 import { topicDefinition, topicName } from "@aihot/contracts/taxonomy";
 import { TOPIC_GROUP_EN } from "@aihot/industry/english";
@@ -17,9 +17,6 @@ import { ogEtag, renderOg, type OgCard } from "@aihot/backend/media/og";
 import { posterEtag, renderPoster } from "@aihot/backend/media/poster";
 import { CARDS, REPORTS, SITE, subjectAfter, withSubject } from "@aihot/site";
 
-/** "A, B and C". */
-const listEn = (words: string[]) => (words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : (words[0] ?? ""));
-
 /** The pages' share cards: the site's texts, and the topic count of the topic list. */
 const PAGES: Record<Locale, Record<string, OgCard>> = {
   zh: {
@@ -28,7 +25,7 @@ const PAGES: Record<Locale, Record<string, OgCard>> = {
   },
   en: Object.fromEntries(Object.entries({
     ...ENGLISH?.cards,
-    topics: { kicker: "Topics", title: `${TOPICS.length} ${SITE.subject} topics we follow`, subtitle: `${listEn(TOPIC_GROUPS.map((g) => TOPIC_GROUP_EN[g.key]?.name ?? g.name))}.` },
+    topics: { kicker: "Topics", title: `${TOPICS.length} ${SITE.subject} topics we follow`, subtitle: `${namesEn(TOPIC_GROUPS.map((g) => TOPIC_GROUP_EN[g.key]?.name ?? g.name))}.` },
   }).map(([name, card]) => [name, { ...card, lang: "en" as const }])),
 };
 
@@ -38,7 +35,7 @@ const PAGES: Record<Locale, Record<string, OgCard>> = {
  */
 const CONTENT_IMAGE_CACHE = "public, max-age=300, s-maxage=3600, must-revalidate";
 /** An English card whose words are not all in English yet: kept a minute, so it turns English soon after they are. */
-const WAITING_IMAGE_CACHE = "public, max-age=60, s-maxage=60, must-revalidate";
+const WAITING_IMAGE_CACHE = `public, max-age=${WAITING_ENGLISH_SECONDS}, s-maxage=${WAITING_ENGLISH_SECONDS}, must-revalidate`;
 
 async function send(req: FastifyRequest, reply: FastifyReply, card: OgCard, maxAge: number, cacheControl = `public, max-age=${maxAge}, s-maxage=${maxAge * 7}, stale-while-revalidate=86400`) {
   const tag = `"og-${ogEtag(card)}"`;
@@ -55,8 +52,7 @@ function notFound(reply: FastifyReply) {
 const REPORT_NAMES: Record<ReportKind, string> = { daily: withSubject("日报"), weekly: withSubject("周报"), monthly: withSubject("月报") };
 
 export function registerOg(app: FastifyInstance) {
-  registerIn(app, "zh");
-  if (ENGLISH) registerIn(app, "en");
+  for (const lang of READER_LANGUAGES) registerIn(app, lang);
 }
 
 function registerIn(app: FastifyInstance, lang: Locale) {

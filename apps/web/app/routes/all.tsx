@@ -35,7 +35,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Older deep-paging parameters (deep, anchorAt) still open a normal page.
   const page = Math.min(Math.max(Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1, 1), 50);
   const data = await loadOr404<PoolResponse>(
-    listPath(apiIn("/api/site/pool", locale), { ...filterParams(readFilters(url.searchParams)), q, tab, page: page > 1 ? page : null }),
+    listPath(apiIn("/pool", locale), { ...filterParams(readFilters(url.searchParams)), q, tab, page: page > 1 ? page : null }),
     // The busy page keeps the search, so it can be tried again as it was.
     { signal: request.signal, busyRedirect: localizePath(`/all/search-busy${url.search}`, locale) },
   );

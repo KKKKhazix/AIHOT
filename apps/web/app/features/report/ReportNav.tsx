@@ -64,7 +64,7 @@ function ArchiveSection({ g, kind, current, initiallyOpen }: {
   useEffect(() => {
     if (!open || loaded || kind !== "daily" || !g.entries.some((e) => e.title === undefined)) return;
     const controller = new AbortController();
-    fetch(apiIn(`/api/site/reports/daily/months/${g.id}`, locale), { signal: controller.signal })
+    fetch(apiIn(`/reports/daily/months/${g.id}`, locale), { signal: controller.signal })
       .then((r) => r.ok ? r.json() : null)
       .then((data: ReportNavigationResponse | null) => { if (data && !controller.signal.aborted) setLoaded(data.items); })
       .catch(() => {});

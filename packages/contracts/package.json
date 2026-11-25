@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@aihot/industry": "*",
-    "@aihot/site": "*"
+    "@aihot/site": "*",
+    "react-router": "8.4.0"
   }
 }

@@ -1,3 +1,4 @@
+import { localizePath } from "@aihot/contracts/reader-pages";
 // The English edition's answers (/api/site/en/…, only where the site has an English edition): the same answers
 // as the Chinese ones, with each Chinese text the site wrote (titles, summaries, reasons, event digests, report
 // paragraphs, source names) replaced by its English. The worker (editorial/english.ts) translates the Chinese
@@ -488,8 +489,6 @@ export const v1PeriodIndex: Overlay<Awaited<ReturnType<typeof v1Periods>>> = (r,
   ...r, items: r.items.map((e) => ({ ...e, headline: c.one("headline", e.headline) })),
 });
 
-/** The site's pages a v1 answer links to that have an English edition, and its own v1 addresses. */
-const PAGE_LINK = new RegExp(`^(${siteUrl("").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})/(items|story|daily|weekly|monthly)(?=[/?#]|$)`);
 const LINK_KEYS = new Set(["aihot", "story", "api", "url", "link"]);
 
 /**
@@ -501,8 +500,9 @@ export function englishLinks<T>(value: T): T {
   const walk = (v: unknown, key: string): unknown => {
     if (typeof v === "string") {
       if (!LINK_KEYS.has(key)) return v;
-      if (PAGE_LINK.test(v)) return v.replace(PAGE_LINK, "$1/en/$2");
-      return v.startsWith(api) ? `${v}${v.includes("?") ? "&" : "?"}lang=en` : v;
+      if (v.startsWith(api)) return `${v}${v.includes("?") ? "&" : "?"}lang=en`;
+      const base = siteUrl("");
+      return v.startsWith(base + "/") ? base + localizePath(v.slice(base.length), "en") : v;
     }
     if (Array.isArray(v)) return v.map((x) => walk(x, key));
     if (v instanceof Map) return new Map([...v].map(([k, x]) => [k, walk(x, key)]));

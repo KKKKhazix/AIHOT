@@ -37,12 +37,14 @@ test("pageMeta advertises only an explicitly supplied Markdown representation", 
   assert.ok(!pageMeta({ locale: "en", path: "/hot", markdown: "/hot.md" }).some(markdown));
 });
 
-test("an English page names its English address and language", () => {
-  const tags = pageMeta({ locale: "en", path: "/hot" });
+test("a published page names its own address and language", () => {
+  const locale = ENGLISH ? "en" : "zh";
+  const url = siteUrl() + (ENGLISH ? "/en/hot" : "/hot");
+  const tags = pageMeta({ locale, path: "/hot" });
   const find = (key: string, value: string) => tags.find((tag) => (tag as Record<string, unknown>)[key] === value) as Record<string, string> | undefined;
-  assert.equal(find("rel", "canonical")?.href, `${siteUrl()}/en/hot`);
-  assert.equal(find("property", "og:url")?.content, `${siteUrl()}/en/hot`);
-  assert.equal(find("property", "og:locale")?.content, "en_US");
+  assert.equal(find("rel", "canonical")?.href, url);
+  assert.equal(find("property", "og:url")?.content, url);
+  assert.equal(find("property", "og:locale")?.content, ENGLISH ? "en_US" : SITE.locale.replace("-", "_"));
   // A page without an English edition keeps its one address.
   assert.equal((pageMeta({ locale: "en", path: "/changelog" }).find((tag) => (tag as Record<string, unknown>).rel === "canonical") as Record<string, string>).href, `${siteUrl()}/changelog`);
 });

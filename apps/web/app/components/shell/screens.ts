@@ -1,7 +1,9 @@
 // What a page tells the phone shell about itself, as its route `handle` (a Screen): the tab it sits under, the short
 // name a back button shows when it leads there, and whether it brings its own bottom toolbar. Also the
 // names of the pages in this tab's history, so a back button can say where it goes ("‹ 精选").
-import { useMatches } from "react-router";
+import { useEffect, useLayoutEffect, useState, type MouseEvent } from "react";
+import { useLocation, useMatches } from "react-router";
+import { useNavigate } from "../../lib/link";
 import { readJson, writeRaw } from "../../lib/local-state";
 import type { Text } from "../../lib/i18n";
 import type { TabKey } from "./nav";
@@ -11,9 +13,10 @@ export interface Screen {
    *  reader came from; `home` stands in when such a page is opened directly. */
   tab?: TabKey;
   home?: TabKey;
-  /** Short name for back buttons that lead to this page (精选, 热点, 收藏 …). Pages named by their
-   *  content leave it out; a back button to them reads "返回". */
-  name?: Text;
+  /** Short name for back buttons that lead to this page (精选, 热点, 收藏 …), or one that depends on the
+   *  page's path (a route module serving 日报, 周报 and 月报). Pages named by their content leave it out; a
+   *  back button to them reads "返回". */
+  name?: Text | ((path: string) => Text);
   /** The page draws its own bottom toolbar instead of the tab bar (articles). */
   toolbar?: boolean;
 }
@@ -23,6 +26,26 @@ export function useScreen(): Screen {
   let out: Screen = {};
   for (const m of useMatches()) if (m.handle && typeof m.handle === "object") out = { ...out, ...(m.handle as Screen) };
   return out;
+}
+
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+/**
+ * A desktop back link that goes where the phone bar's back goes: through the reader's history when a page of ours
+ * is behind it, else to its own address (which the link keeps, for a new tab and for crawlers). `behind` lets it
+ * read a plain 返回 once hydrated: the server knows no history.
+ */
+export function useHistoryBack(): { behind: boolean; onClick: (event: MouseEvent) => void } {
+  const { key } = useLocation();
+  const navigate = useNavigate();
+  const [behind, setBehind] = useState(false);
+  useIsoLayoutEffect(() => setBehind(historyIndex() > 0), [key]);
+  const onClick = (event: MouseEvent) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || historyIndex() === 0) return;
+    event.preventDefault();
+    navigate(-1);
+  };
+  return { behind, onClick };
 }
 
 /** Below the lg breakpoint (700px): the phone shell. */

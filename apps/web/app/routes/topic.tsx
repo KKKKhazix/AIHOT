@@ -16,7 +16,7 @@ import { beijingDate } from "@aihot/contracts/time";
 import { monthDay, monthDayTime } from "../lib/format";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import { navUp } from "../components/shell/nav";
-import type { Screen } from "../components/shell/screens";
+import { useHistoryBack, type Screen } from "../components/shell/screens";
 import type { TopicPagePart } from "../modules";
 import { loadParts } from "../site-modules";
 import { Link } from "../lib/link";
@@ -115,11 +115,13 @@ export default function TopicRoute() {
   const href = (p: number) => (p <= 1 ? `/topics/${topic.slug}` : `/topics/${topic.slug}/page/${p}`);
   const first = (page - 1) * pageSize + 1;
   const last = first + items.length - 1;
+  // Desktop back, as on the article page and the phone bar; opened directly, up to all topics.
+  const { behind, onClick: goBack } = useHistoryBack();
   return (
     <div className="pb-6">
       <PhoneBar back={{ to: UP.to, label: UP.back }} title={name} />
-      <Link to={UP.to} className="hidden items-center gap-1.5 py-2 text-ui-label text-ink-3 transition-colors hover:text-accent lg:inline-flex">
-        <IconArrowLeft size={14} />{t(<> 返回{t(UP.back)}</>, <> Back to {t(UP.name)}</>)}
+      <Link to={UP.to} onClick={goBack} className="hidden items-center gap-1.5 py-2 text-ui-label text-ink-3 transition-colors hover:text-accent lg:inline-flex touch:min-h-11">
+        <IconArrowLeft size={14} />{behind ? t(" 返回", " Back") : t(<> 返回{t(UP.back)}</>, <> Back to {t(UP.name)}</>)}
       </Link>
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 pb-5 pt-3 lg:pt-1">
         <div className="min-w-0 max-w-[760px]">
@@ -180,7 +182,7 @@ export default function TopicRoute() {
           <EmptyState title={t("这个主题暂时还没有精选内容", "No top picks on this topic yet")} />
         </div>
       ) : (
-        <DayList items={items} tagTopics={data.tagTopics} currentTopicSlug={topic.slug} headerAside={<span className="num whitespace-nowrap">{t(
+        <DayList items={items} tagTopics={data.tagTopics} currentTopicSlug={topic.slug} inPicks headerAside={<span className="num whitespace-nowrap">{t(
           <>第 {first}–{last} 条<span className="hidden sm:inline"> · 共 {topic.total.toLocaleString("zh-CN")} 条</span></>,
           <>Items {first.toLocaleString("en-US")}–{last.toLocaleString("en-US")}<span className="hidden sm:inline"> of {topic.total.toLocaleString("en-US")}</span></>,
         )}</span>} />

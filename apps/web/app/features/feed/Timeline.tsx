@@ -16,7 +16,7 @@ import { beijingDate, beijingTime, monthDay, monthDayEn } from "@aihot/contracts
 import { byBeijingDay, weekdayLong, weekdayShort } from "../../lib/format";
 import { apiIn, useLocale, useT } from "../../lib/i18n";
 import { isHydrated } from "../../lib/hydration";
-import { markRead, setUnreadOnly, useReadSet, useUnreadOnly } from "../../lib/local-state";
+import { getReadIds, markRead, setUnreadOnly, useReadSet, useUnreadOnly } from "../../lib/local-state";
 import { filterParams, listPath } from "../../lib/seo";
 import { isReload, readSnapshot, restoreAnchor, saveSnapshot, useSaveOnLeave } from "../../lib/restore";
 
@@ -30,6 +30,9 @@ interface ListState {
   collapsed: string[];
   batches: number;
 }
+
+/** What this browser has read, now. */
+const readNow = () => new Set(getReadIds());
 
 function fromResponse(r: TimelineResponse): ListState {
   return { version: 2, cards: r.cards, nextCursor: r.nextCursor, dayCounts: r.dayCounts, collapsed: [], batches: 1 };
@@ -85,7 +88,7 @@ export function DayHeader({ day, today, count, collapsed, onToggle, aside, aside
             onClick={onToggle}
             aria-expanded={!collapsed}
             aria-label={fold}
-            className="grid size-6 place-items-center justify-self-center rounded-full text-ink-4 transition-colors hover:bg-bg-sunk hover:text-ink"
+            className="grid size-6 place-items-center justify-self-center rounded-full text-ink-4 transition-colors hover:bg-bg-sunk hover:text-ink touch:size-11"
           >
             <IconChevronDown size={14} className={`transition-transform duration-200 ${collapsed ? "-rotate-90" : ""}`} />
           </button>
@@ -150,6 +153,8 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
     return fromResponse(initial);
   });
   const restoredRef = useRef(false);
+  // 只看未读: what had been read when this visit began (see unreadVisible below).
+  const [readBefore, setReadBefore] = useState<Set<string> | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [freshKeys, setFreshKeys] = useState<Set<string>>(() => new Set());
@@ -177,6 +182,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
       } else {
         setState(fromResponse(initial));
       }
+      setReadBefore(readNow());
     }
   }, [filterKey, initial, historyKey]);
 
@@ -192,6 +198,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
     setLoadingMore(false);
     setLoadError(false);
     setState(fromResponse(initial));
+    setReadBefore(readNow());
   }, [initial, filterKey]);
 
   useLayoutEffect(() => {
@@ -277,10 +284,16 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
   // 只看未读 hides cards read in this browser: an ordinary card by its own id, a reading group by any
   // of its selected reports, so a read representative does not hide the unread reports behind it.
   // A group kept that way is not drawn as read; its expansion marks which reports are unread.
+  // What it hides is what had been read when the list opened (or was refreshed, or the filter turned on): a card
+  // read on this visit stays where it is, drawn as read, so opening one (in this tab or a new one) does not pull
+  // the list from under the reader. Coming back to the list is a new visit: the report just read is gone.
+  useEffect(() => setReadBefore(readNow()), []);
+  const hidden = readBefore ?? readSet;
   const unreadVisible = useCallback(
-    (card: TimelineCard) => !readSet.has(card.item.id) || (card.group?.memberIds?.some((id) => !readSet.has(id)) ?? false),
-    [readSet],
+    (card: TimelineCard) => !hidden.has(card.item.id) || (card.group?.memberIds?.some((id) => !hidden.has(id)) ?? false),
+    [hidden],
   );
+  const unreadMember = (card: TimelineCard) => card.group?.memberIds?.some((id) => !readSet.has(id)) ?? false;
   const days = useMemo(
     () => byBeijingDay(unreadOnly ? state.cards.filter(unreadVisible) : state.cards, (c) => c.anchorAt),
     [state.cards, unreadOnly, unreadVisible],
@@ -296,12 +309,39 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
     void loadMore();
   }, [unreadOnly, visibleCount, loadingMore, loadError, state.nextCursor, state.batches, loadMore]);
 
-  const toggleDay = (day: string) =>
+  // With 只看未读 on and cards on show, one press of 加载更多 keeps loading until something unread shows up or the
+  // list ends (a few pages at most), so a press over pages that were all read is never answered by nothing. With
+  // none on show, the list says the pages were all read and each press loads one more.
+  const chase = useRef<{ from: number; left: number } | null>(null);
+  const pressMore = () => {
+    chase.current = unreadOnly && visibleCount > 0 ? { from: visibleCount, left: 4 } : null;
+    void loadMore();
+  };
+  useEffect(() => {
+    const c = chase.current;
+    if (!c || loadingMore) return;
+    if (loadError || !state.nextCursor || visibleCount > c.from || c.left <= 0) {
+      chase.current = null;
+      return;
+    }
+    c.left -= 1;
+    void loadMore();
+  }, [visibleCount, loadingMore, loadError, state.nextCursor, loadMore]);
+
+  const toggleDay = (day: string) => {
+    // Folding a day from its bar stuck at the top first brings that bar back to where the day starts, so the next
+    // day opens right below it rather than the page landing somewhere days further on.
+    if (!stateRef.current.collapsed.includes(day)) {
+      const top = document.querySelector<HTMLElement>(`section[aria-label="${day}"]`)?.getBoundingClientRect().top;
+      const bar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--bar-h")) || 0;
+      if (top !== undefined && top < bar) window.scrollTo({ top: window.scrollY + top - bar });
+    }
     setState((s) => ({ ...s, collapsed: s.collapsed.includes(day) ? s.collapsed.filter((d) => d !== day) : [...s.collapsed, day] }));
+  };
 
   let order = 0;
   const unreadToggle = (
-    <ToggleChip on={unreadOnly} onToggle={() => setUnreadOnly(!unreadOnly)}>
+    <ToggleChip on={unreadOnly} onToggle={() => { if (!unreadOnly) setReadBefore(readNow()); setUnreadOnly(!unreadOnly); }}>
       {t("只看未读", "Unread only")}
     </ToggleChip>
   );
@@ -342,7 +382,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
                     const delay = fresh ? Math.min(order++, 10) * 40 : 0;
                     return (
                       <TimelineSlot key={c.key} dataKey={c.key} at={c.anchorAt} fresh={fresh} delay={delay}>
-                        <FeedItem item={c.item} group={c.group} filters={filters} read={readSet.has(c.item.id) && !(unreadOnly && unreadVisible(c))} onOpen={markRead} at={c.anchorAt} />
+                        <FeedItem item={c.item} group={c.group} filters={filters} read={readSet.has(c.item.id) && !(unreadOnly && unreadMember(c))} onOpen={markRead} at={c.anchorAt} inPicks />
                       </TimelineSlot>
                     );
                   })}
@@ -353,7 +393,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
       })}
 
       <div ref={sentinel} aria-hidden="true" />
-      <FeedEnd loading={loadingMore} error={loadError} hasMore={!!state.nextCursor} manual={state.batches >= AUTO_BATCHES} empty={visibleCount === 0} onMore={loadMore} />
+      <FeedEnd loading={loadingMore} error={loadError} hasMore={!!state.nextCursor} manual={state.batches >= AUTO_BATCHES} empty={visibleCount === 0} onMore={pressMore} />
     </div>
   );
 }
@@ -368,12 +408,12 @@ function FeedEnd({ loading, error, hasMore, manual, empty, onMore }: { loading: 
           <RingMark className="size-4 text-accent" spinning /> {t("正在加载", "Loading")}
         </span>
       ) : error ? (
-        <button type="button" onClick={onMore} className="h-9 rounded-full border border-hot/30 px-4 text-ui-label text-hot hover:bg-hot-soft">
+        <button type="button" onClick={onMore} className="h-11 rounded-full border border-hot/30 px-4 text-ui-label text-hot hover:bg-hot-soft lg:h-9 touch:h-11">
           {t("加载失败，点此重试", "Couldn't load. Try again")}
         </button>
       ) : hasMore ? (
         manual && (
-          <button type="button" onClick={onMore} className="h-9 rounded-full border border-line-strong bg-surface px-5 text-ui-label font-medium text-ink-2 transition-colors hover:border-ink-4 hover:text-ink">
+          <button type="button" onClick={onMore} className="h-11 rounded-full border border-line-strong bg-surface px-5 text-ui-label font-medium text-ink-2 transition-colors hover:border-ink-4 hover:text-ink lg:h-9 touch:h-11">
             {t("加载更多", "Load more")}
           </button>
         )

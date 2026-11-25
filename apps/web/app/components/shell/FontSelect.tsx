@@ -8,8 +8,8 @@ export function FontSelect() {
   const t = useT();
   return (
     <Select aria-label={t("字体", "Font")} value={font ?? "system"} onChange={(e) => setFontPreference(e.target.value === "browser" ? "browser" : null)}>
-      <option value="system">{t("默认字体", "Default")}</option>
-      <option value="browser">{t("浏览器默认字体", "Browser default")}</option>
+      <option value="system">{t("网站字体", "Site font")}</option>
+      <option value="browser">{t("浏览器字体", "Browser font")}</option>
     </Select>
   );
 }

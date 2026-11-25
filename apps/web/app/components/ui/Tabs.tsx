@@ -3,6 +3,8 @@ import { IntentLink } from "./IntentLink";
 import { useEntrance } from "../../lib/hydration";
 import { reducedMotion } from "../../lib/motion";
 import { Link } from "../../lib/link";
+import { useLocation } from "react-router";
+import { localizePath, useLocale } from "../../lib/i18n";
 
 /** Where each switch's thumb sat when it last left, relative to its track. */
 const thumbs = new Map<string, { left: number; width: number; at: number }>();
@@ -54,9 +56,9 @@ export interface TabItem {
 }
 
 const SIZES = {
-  md: "h-11 px-4 text-ui-body-sm lg:h-9",
-  sm: "h-11 px-3.5 text-ui-label lg:h-8",
-  xs: "h-11 px-3 text-ui-caption-lg lg:h-7",
+  md: "h-11 px-4 text-ui-body-sm lg:h-9 touch:h-11",
+  sm: "h-11 px-3.5 text-ui-label lg:h-8 touch:h-11",
+  xs: "h-11 px-3 text-ui-caption-lg lg:h-7 touch:h-11",
 } as const;
 
 /**
@@ -80,6 +82,11 @@ export function PillTabs({
 }) {
   const links = items.some((t) => t.to);
   const Track = links ? "nav" : "div";
+  // The option already shown, pressed again, leaves the page as it is: following the same address would load the
+  // list again from its top and lose what was scrolled to.
+  const { pathname, search } = useLocation();
+  const locale = useLocale();
+  const here = `${pathname}${search}`;
   return (
     <div className={`scrollbar-none max-w-full overflow-x-auto ${fill ? "w-full" : ""} ${className}`}>
       <Track
@@ -103,7 +110,7 @@ export function PillTabs({
           const cls = `relative inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap rounded-full font-medium outline-offset-1 transition-colors duration-150 active:scale-[0.98] ${SIZES[size]} ${on ? "text-ink" : "text-ink-3 hover:text-ink"}`;
           const TabLink = t.prefetchOnPress ? IntentLink : Link;
           return t.to ? (
-            <TabLink key={t.key} to={t.to} rel={t.rel} replace={t.replace} preventScrollReset={!t.resetScroll} aria-current={on ? "page" : undefined} className={cls}>
+            <TabLink key={t.key} to={t.to} rel={t.rel} replace={t.replace} preventScrollReset={!t.resetScroll} aria-current={on ? "page" : undefined} onClick={on && localizePath(t.to, locale) === here ? (e) => e.preventDefault() : undefined} className={cls}>
               {inner}
             </TabLink>
           ) : (

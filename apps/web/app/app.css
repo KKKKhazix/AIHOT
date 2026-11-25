@@ -333,6 +333,20 @@
     color: var(--accent);
     border-color: var(--line-strong);
   }
+  /* Touch screens: a 44px tall hit area over the pill, its look unchanged; rows of chips keep 18px apart there (touch:gap-y-4.5). */
+  @media (hover: none) {
+    a.chip {
+      position: relative;
+    }
+    a.chip::before {
+      content: "";
+      position: absolute;
+      inset-inline: 0;
+      top: 50%;
+      height: 2.75rem;
+      transform: translateY(-50%);
+    }
+  }
   .skeleton {
     background: var(--bg-muted);
     border-radius: var(--radius-control);
@@ -604,6 +618,11 @@
 .prose .code-block-copy { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius-mark); background: var(--surface); color: var(--ink-3); font-size: var(--text-ui-caption); transition: color 120ms, border-color 120ms; }
 .prose .code-block-copy:hover { color: var(--ink); border-color: var(--line-strong); }
 .prose .code-block-copy[data-status="copied"] { color: var(--ok-ink); }
+/* Touch screens: the copy button's hit area reaches 44px, from the head's top edge (the block clips above it) into the code's top padding. */
+@media (hover: none) {
+  .prose .code-block-copy { position: relative; }
+  .prose .code-block-copy::before { content: ""; position: absolute; inset: -7px 0 -13px; }
+}
 .prose .hljs-comment, .prose .hljs-quote { color: var(--ink-4); font-style: italic; }
 .prose .hljs-keyword, .prose .hljs-selector-tag, .prose .hljs-doctag, .prose .hljs-name { color: var(--code-keyword); }
 .prose .hljs-string, .prose .hljs-regexp, .prose .hljs-link, .prose .hljs-attribute, .prose .hljs-addition { color: var(--code-string); }

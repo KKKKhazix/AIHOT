@@ -22,7 +22,8 @@ export function KindSwitch({ kind, phone = false, layoutId = phone ? "report-kin
       layoutId={layoutId}
       label={t("切换日报、周报、月报", "Switch between daily, weekly and monthly")}
       active={kind}
-      items={KINDS.map((k) => ({ key: k, label: kindName(k, locale), to: KIND_PATH[k], resetScroll: phone, prefetchOnPress: true }))}
+      // Another kind is another paper: it opens at its top, also from the wide archive column that stays in view.
+      items={KINDS.map((k) => ({ key: k, label: kindName(k, locale), to: KIND_PATH[k], resetScroll: true, prefetchOnPress: true }))}
     />
   );
 }

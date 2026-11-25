@@ -86,10 +86,10 @@ export function AsideCard({ title, children, className = "" }: { title: ReactNod
   );
 }
 
-/** "完整榜单 →" style link used in card headers. */
-export function MoreLink({ to, children }: { to: string; children: ReactNode }) {
+/** "完整榜单 →" style link used in card headers; `className` adds to it (a larger hit area where it needs one). */
+export function MoreLink({ to, children, className = "" }: { to: string; children: ReactNode; className?: string }) {
   return (
-    <Link viewTransition to={to} className="inline-flex items-center gap-0.5 whitespace-nowrap text-ui-caption font-semibold text-accent hover:text-accent-ink">
+    <Link viewTransition to={to} className={`inline-flex items-center gap-0.5 whitespace-nowrap text-ui-caption font-semibold text-accent hover:text-accent-ink ${className}`}>
       {children}
       <IconChevronRight size={13} />
     </Link>

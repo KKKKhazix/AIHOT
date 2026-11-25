@@ -98,7 +98,7 @@ export function MoreMenu({ anchor }: { anchor: () => HTMLElement | null }) {
               </>
             )}
             <Row label={t("外观", "Appearance")}>
-              <ThemeSwitch compact className="w-24" />
+              <ThemeSwitch compact className="w-24 touch:w-[138px]" />
             </Row>
             <Row label={t("字体", "Font")}>
               <FontSelect />

@@ -33,9 +33,11 @@ export interface FeedItemProps {
   currentTopicSlug?: string;
   /** The time the item sits at in its list; phones show it in the source line (desktop: on the rail). */
   at?: string;
+  /** In the 精选 list itself, where every card is a pick: the 精选 badge would say nothing (同事件 still shows). */
+  inPicks?: boolean;
 }
 
-export const FeedItem = memo(function FeedItem({ item, group, filters, read = false, onOpen, showTags = false, tagTopics, currentTopicSlug, at }: FeedItemProps) {
+export const FeedItem = memo(function FeedItem({ item, group, filters, read = false, onOpen, showTags = false, tagTopics, currentTopicSlug, at, inPicks = false }: FeedItemProps) {
   const t = useT();
   const locale = useLocale();
   const isX = item.channel === "x" && !!item.x;
@@ -65,7 +67,7 @@ export const FeedItem = memo(function FeedItem({ item, group, filters, read = fa
             · {beijingTime(at)}
           </time>
         )}
-        {item.selected && (
+        {item.selected && (item.sameEvent || !inPicks) && (
           <span className="hidden lg:inline-flex">
             {item.sameEvent ? <SameEventBadge /> : <SelectedBadge />}
           </span>
@@ -78,7 +80,7 @@ export const FeedItem = memo(function FeedItem({ item, group, filters, read = fa
             <ScoreLabel score={item.score} compact />
           </span>
           <span className="-my-[11px] -mr-3 inline-flex lg:-my-1 lg:mr-0">
-            <StarButton item={item} className="size-11 lg:size-[26px]" />
+            <StarButton item={item} className="size-11 lg:size-[26px] lg:touch:before:absolute lg:touch:before:-inset-[9px] lg:touch:before:content-['']" />
           </span>
         </span>
       </header>

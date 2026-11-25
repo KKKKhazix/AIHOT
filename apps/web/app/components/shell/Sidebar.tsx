@@ -4,7 +4,7 @@ import { IntentLink } from "../ui/IntentLink";
 import { useContainedScroll } from "../ui/Page";
 import { SITE } from "@aihot/site";
 import { RingMark, Wordmark } from "@aihot/site/brand/Logo.tsx";
-import { useChangelogSeen } from "../../lib/local-state";
+import { setChangelogSeen, useChangelogSeen } from "../../lib/local-state";
 import { activeSidebarItem, rail, railIsActive, sidebar, type NavItem } from "./nav";
 import { useScreen } from "./screens";
 import { MoreMenu } from "./MoreMenu";
@@ -13,13 +13,20 @@ import { IconGithub } from "../icons";
 import { Link } from "../../lib/link";
 import { pagePath, useLocale, useT } from "../../lib/i18n";
 
-/** True while the changelog has an entry newer than the one this reader last opened. */
+/**
+ * True while the changelog has an entry newer than the one this reader last opened. A browser that has never
+ * opened it counts from its first visit: everything is new to a first-time reader, so the dot would only say
+ * "unread" about the site itself; it lights for the updates that come after.
+ */
 export function useChangelogDot(latestVersion: string | null): boolean {
   const seen = useChangelogSeen();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  if (!mounted || !latestVersion) return false;
-  return !seen || seen < latestVersion;
+  useEffect(() => {
+    if (mounted && latestVersion && !seen) setChangelogSeen(latestVersion);
+  }, [mounted, latestVersion, seen]);
+  if (!mounted || !latestVersion || !seen) return false;
+  return seen < latestVersion;
 }
 
 function SideLink({ item, dot, active }: { item: NavItem; dot: boolean; active: boolean }) {

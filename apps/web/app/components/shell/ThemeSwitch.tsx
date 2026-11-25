@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { IconMonitor, IconMoon, IconSun } from "../icons";
 import { applyTheme, resolvedTheme, setThemePreference, useThemePreference, type ThemePreference } from "../../lib/local-state";
 import { reducedMotion } from "../../lib/motion";
+import { isHydrated } from "../../lib/hydration";
 import { L, useT, type Phrase } from "../../lib/i18n";
 
 type Choice = "dark" | "system" | "light";
@@ -16,7 +17,9 @@ const OPTIONS: Array<{ key: Choice; label: Phrase; icon: ReactNode }> = [
 export function ThemeSwitch({ className = "", compact = false }: { className?: string; compact?: boolean }) {
   const pref = useThemePreference();
   const t = useT();
-  const [mounted, setMounted] = useState(false);
+  // Mounted after hydration (the 更多 menu opening, the 我的 page reached in the site), it shows the reader's choice
+  // at once rather than sliding over from 跟随系统.
+  const [mounted, setMounted] = useState(isHydrated);
   useEffect(() => setMounted(true), []);
   const current: Choice = !mounted ? "system" : (pref ?? "system");
   const index = OPTIONS.findIndex((o) => o.key === current);

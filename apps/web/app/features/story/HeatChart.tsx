@@ -146,10 +146,10 @@ export function HeatChart({ points: all }: { points: HeatPoint[] }) {
     <div>
       <div className="flex flex-col-reverse gap-4 sm:flex-row sm:items-start sm:justify-between">
         <dl className="grid grid-cols-3 gap-x-5 sm:flex sm:gap-x-10">
-          <Stat label={t("最新观测", "Latest")}>
+          <Stat label={t("当前热度", "Now")}>
             <span className="mono text-ui-heading-lg-sm font-semibold leading-none tracking-[-0.02em] text-ink">{num(Math.round(last.p!.heat), locale)}</span>
           </Stat>
-          <Stat label={t("区间峰值", "Peak")}>
+          <Stat label={t("最高热度", "Peak")}>
             <span className="mono text-ui-heading-lg-sm font-semibold leading-none tracking-[-0.02em] text-ink">{num(Math.round(peak.p!.heat), locale)}</span>
             <span className="num text-ui-caption text-ink-4">{monthDayTime(new Date(peak.t).toISOString(), locale)}</span>
           </Stat>
@@ -184,7 +184,7 @@ export function HeatChart({ points: all }: { points: HeatPoint[] }) {
         <div
           className="relative size-full touch-pan-y select-none rounded-mark outline-offset-4"
           role="img"
-          aria-label={t(`热度走势：最新观测 ${Math.round(last.p!.heat)}，峰值 ${Math.round(peak.p!.heat)}`, `Heat over time: latest ${num(Math.round(last.p!.heat), locale)}, peak ${num(Math.round(peak.p!.heat), locale)}`)}
+          aria-label={t(`热度走势：当前热度 ${Math.round(last.p!.heat)}，最高热度 ${Math.round(peak.p!.heat)}`, `Heat over time: now ${num(Math.round(last.p!.heat), locale)}, peak ${num(Math.round(peak.p!.heat), locale)}`)}
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === "ArrowRight") setActive((a) => Math.min(seen.length - 1, a === null ? seen.length - 1 : a + 1));
@@ -254,8 +254,8 @@ export function HeatChart({ points: all }: { points: HeatPoint[] }) {
       </div>
       <p className="mt-4 text-ui-caption leading-relaxed text-ink-4">
         {t(
-          "曲线仅统计同一批持续追踪的来源，数值可能与实时总热度不同。悬停或点击图表可看每小时变化，键盘左右键也可切换。",
-          "This chart only tracks a consistent set of sources, so its numbers may differ from the live total heat. Hover or tap to inspect each hour, or use the left and right arrow keys.",
+          "曲线仅统计同一批持续追踪的来源，数值可能与实时总热度不同。",
+          "This chart only tracks a consistent set of sources, so its numbers may differ from the live total heat.",
         )}
       </p>
     </div>

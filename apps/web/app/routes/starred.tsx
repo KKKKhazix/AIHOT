@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router";
 import type { ItemAvailability } from "@aihot/contracts/site";
 import { shortAddresses } from "@aihot/contracts/addresses";
@@ -7,7 +7,7 @@ import type { Route } from "./+types/starred";
 import { Presence } from "../components/ui/Presence";
 import { edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
-import { exportBundle, importBundle, ImportError, removeStar, useStarred, type ImportReport } from "../lib/local-state";
+import { exportBundle, importBundle, ImportError, removeStar, restoreStar, useStarred, type ImportReport, type LocalStarredItem } from "../lib/local-state";
 import { fullDateTime } from "../lib/format";
 import { IconBookmark, IconDownload, IconClose } from "../components/icons";
 import { readSnapshot, restoreAnchor, useSaveOnLeave } from "../lib/restore";
@@ -50,6 +50,23 @@ export default function StarredPage() {
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => setMounted(true), []);
+  // A row taken out here stays where it was, faded, for as long as the reader is on this page: pressing its
+  // bookmark again puts it back as it was. It is gone the next time the page opens.
+  const [removed, setRemoved] = useState<Array<{ item: LocalStarredItem; index: number }>>([]);
+  const rows = useMemo(() => {
+    const list = starred.map((item) => ({ item, on: true }));
+    for (const r of [...removed].sort((a, b) => a.index - b.index)) {
+      if (!starred.some((s) => s.id === r.item.id)) list.splice(Math.min(r.index, list.length), 0, { item: r.item, on: false });
+    }
+    return list;
+  }, [starred, removed]);
+  const unstar = (item: LocalStarredItem, index: number) => {
+    setRemoved((rs) => [...rs.filter((r) => r.item.id !== item.id), { item, index }]);
+    removeStar(item.id);
+  };
+  const restar = (item: LocalStarredItem) => {
+    if (restoreStar(item)) setRemoved((rs) => rs.filter((r) => r.item.id !== item.id));
+  };
 
   const starredIds = starred.map((s) => s.id).join(",");
   useEffect(() => {
@@ -109,7 +126,7 @@ export default function StarredPage() {
   // A module's import named in Chinese only (its site was Chinese only) stays off English pages.
   const imports = webModules().flatMap((m) => m.starredImports ?? []).filter((i) => locale === "zh" || typeof i.label !== "string");
 
-  const action = "text-ui-caption-lg text-ink-3 transition-colors hover:text-accent";
+  const action = "inline-flex min-h-11 items-center text-ui-caption-lg text-ink-3 transition-colors hover:text-accent lg:min-h-0 touch:min-h-11";
   const Account = webModules().find((m) => m.account)?.account;
   const localNote = <p className="rounded-tile border border-line bg-surface px-4 py-2.5 text-ui-caption-lg text-ink-3">{t("不用登录，收藏直接存在这个浏览器里；清除浏览器数据或换设备都不会同步，换设备前可以先导出备份。", "No sign-in needed: saved items are kept in this browser. They don't carry over if you clear browser data or switch devices, so export a backup before you switch.")}</p>;
   return (
@@ -134,7 +151,7 @@ export default function StarredPage() {
               {t(<><IconDownload size={13} /> 导出</>, <><IconDownload size={13} /> Export</>)}
             </button>
           )}
-          <input ref={fileRef} type="file" accept="application/json,.json" className="sr-only" onChange={(e) => doImport(e.target.files?.[0])} />
+          <input ref={fileRef} type="file" accept="application/json,.json" className="sr-only" onChange={(e) => { void doImport(e.target.files?.[0]); e.target.value = ""; }} />
         </div>
       </header>
       {Account ? <Account place="starred" /> : localNote}
@@ -144,22 +161,22 @@ export default function StarredPage() {
           className={`mt-3 flex items-start justify-between gap-3 rounded-tile px-4 py-2.5 text-ui-label ${notice?.kind === "ok" ? "bg-accent-soft text-accent-ink dark:text-accent" : "bg-hot-soft text-hot"}`}
         >
           {notice?.text}
-          <button type="button" aria-label={t("关闭", "Close")} onClick={() => setNotice(null)} className="shrink-0 opacity-70 hover:opacity-100">
+          <button type="button" aria-label={t("关闭", "Close")} onClick={() => setNotice(null)} className="relative shrink-0 opacity-70 before:absolute before:-inset-[15px] before:content-[''] hover:opacity-100">
             <IconClose size={14} />
           </button>
         </div>
       </Presence>
-      {!mounted ? null : starred.length === 0 ? (
+      {!mounted ? null : rows.length === 0 ? (
         <div className="mt-3 flex flex-col items-center rounded-card border border-dashed border-line-strong px-6 py-12 text-center">
           <IconBookmark size={20} className="text-ink-4" />
-          <p className="mt-3 text-ui-label text-ink-3">{t("还没有收藏内容。点开任意一条内容，在详情页点击收藏即可添加。", "Nothing saved yet. Open any story and select Save to add it here.")}</p>
+          <p className="mt-3 text-ui-label text-ink-3">{t("还没有收藏。点卡片或文章里的书签，就能收进来。", "Nothing saved yet. Select the bookmark on any story to save it here.")}</p>
           <Link to="/" className="mt-4 text-ui-caption-lg font-medium text-accent hover:text-accent-ink">
             {t("去看精选 →", "See Top Picks →")}
           </Link>
         </div>
       ) : (
         <ul className="mt-3 lg:space-y-3">
-          {starred.map((s) => {
+          {rows.map(({ item: s, on }, index) => {
             const current = availability[s.id];
             const status = current?.status;
             const unavailable = status === "unavailable";
@@ -167,15 +184,23 @@ export default function StarredPage() {
             const title = current?.title ?? s.title;
             const summary = current?.title !== undefined ? current.summary ?? null : s.summary;
             return (
-              <li key={s.id} data-card-key={s.id} className={`relative border-b border-line-soft py-4 lg:card lg:px-[18px] lg:py-[15px] ${unavailable ? "opacity-70" : "lg:card-hover"}`}>
+              <li key={s.id} data-card-key={s.id} className={`relative border-b border-line-soft py-4 transition-opacity lg:card lg:px-[18px] lg:py-[15px] ${!on ? "opacity-50" : unavailable ? "opacity-70" : "lg:card-hover"}`}>
                 <div className="flex items-center gap-2 text-ui-caption-lg text-ink-4">
                   <span className="min-w-0 truncate text-ink-3">{current?.sourceName ?? s.sourceName}</span>
                   {s.publishedAt && <span className="num shrink-0">· {fullDateTime(s.publishedAt)}</span>}
                   <span className="ml-auto hidden shrink-0 sm:inline">
                     {t(<>收藏于 <span className="num">{fullDateTime(s.savedAt)}</span></>, <>Saved <span className="num">{fullDateTime(s.savedAt)}</span></>)}
                   </span>
-                  <button type="button" aria-label={t("取消收藏", "Remove from Saved")} title={t("取消收藏", "Remove from Saved")} onClick={() => removeStar(s.id)} className="relative z-10 -my-1 ml-auto grid size-7 shrink-0 place-items-center rounded-full text-ink-4 transition-colors hover:bg-bg-sunk hover:text-ink sm:ml-0">
-                    <IconClose size={14} />
+                  {/* The same bookmark as on every card: pressed again, it saves the item back. */}
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    aria-label={on ? t("取消收藏", "Remove from Saved") : t("收藏", "Save")}
+                    title={on ? t("取消收藏", "Remove from Saved") : t("收藏", "Save")}
+                    onClick={() => (on ? unstar(s, index) : restar(s))}
+                    className={`relative z-10 -my-[11px] -mr-3 ml-auto grid size-11 shrink-0 place-items-center rounded-control transition-colors sm:ml-0 lg:-my-1 lg:mr-0 lg:size-[26px] lg:touch:before:absolute lg:touch:before:-inset-[9px] lg:touch:before:content-[''] ${on ? "text-accent" : "text-ink-4 hover:bg-bg-sunk hover:text-ink-2"}`}
+                  >
+                    <IconBookmark size={16} filled={on} />
                   </button>
                 </div>
                 <h2 className="mt-1.5 text-ui-body-lg font-[650] leading-[1.55] text-ink">

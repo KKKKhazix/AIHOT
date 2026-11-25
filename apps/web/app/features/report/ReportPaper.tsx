@@ -7,7 +7,7 @@
 // sit in rows of two whose rules run across the page, each story as tall as its neighbour.
 import { IntentLink } from "../../components/ui/IntentLink";
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { REPORT_NAMES, type ReportCitation, type ReportDetail, type ReportNavigationEntry } from "@aihot/contracts/site";
+import { REPORT_NAMES, reportDateLabel, reportDateLabelEn, type ReportCitation, type ReportDetail, type ReportNavigationEntry } from "@aihot/contracts/site";
 import { REPORTS, SEO_TITLES, SITE, subjectAfter, withSubject } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import { linkMentions, type MentionRun } from "@aihot/contracts/mentions";
@@ -480,7 +480,8 @@ function Neighbours({ report, index }: { report: ReportDetail; index: ReportNavi
 function History({ report, index }: { report: ReportDetail; index: ReportNavigationEntry[] }) {
   const locale = useLocale();
   const t = useT();
-  const others = index.filter((e) => e.key !== report.key).slice(0, 12);
+  // Weeklies and monthlies only (the daily has its archive page): their 更早 leads here, so every issue is listed.
+  const others = index.filter((e) => e.key !== report.key);
   if (others.length === 0) return null;
   const label = REPORT_NAMES[report.kind];
   return (
@@ -490,7 +491,7 @@ function History({ report, index }: { report: ReportDetail; index: ReportNavigat
         {others.map((e) => (
           <li key={e.key}>
             <Link to={reportPath(report.kind, e.key)} className="group flex items-baseline gap-4 border-b border-line py-3">
-              <span className="num w-[76px] shrink-0 text-ui-caption-lg text-ink-4">{e.key}</span>
+              <span className="num w-[108px] shrink-0 text-ui-caption-lg text-ink-4">{t(reportDateLabel(report.kind, e.key), reportDateLabelEn(report.kind, e.key))}</span>
               <span className="min-w-0 flex-1 truncate text-ui-body-sm text-ink-2 transition-colors group-hover:text-accent">{e.title ?? `${SITE.name} ${kindName(report.kind, locale)} · ${e.key}`}</span>
             </Link>
           </li>

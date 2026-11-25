@@ -10,6 +10,11 @@ import { useT } from "../../lib/i18n";
 
 type Starrable = Pick<FeedItemSummary, "id" | "title" | "summary" | "source" | "publishedAt" | "score" | "selected">;
 
+/** WeChat's in-app browser cannot save downloads: there the article's Markdown is copied and the poster long-pressed instead. */
+export function inWeChat(): boolean {
+  return typeof navigator !== "undefined" && /MicroMessenger/i.test(navigator.userAgent);
+}
+
 /** True while the reader is scrolling down through the page (not near its top or end). */
 function useReadingDown(): boolean {
   const [down, setDown] = useState(false);

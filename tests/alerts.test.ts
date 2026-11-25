@@ -141,6 +141,32 @@ test("many sources failing within the hour is announced while the rest still col
   }
 });
 
+test("individual timeouts do not turn a provider outage into an hourly alert about our connection", async () => {
+  process.env.COLLECT_ENABLED = "true";
+  const now = Date.now();
+  const ids = Array.from({ length: 922 }, (_, i) => `${SOURCE}-provider-${i}`);
+  const run = (sourceIds: string[], at: number, error: string | null) => sql`
+    INSERT INTO fetch_runs (source_id, started_at, finished_at, status, error)
+    SELECT id, ${new Date(at)}, ${new Date(at)}, ${error ? "failed" : "ok"}, ${error}
+    FROM unnest(${sourceIds}::text[]) id`;
+  const fetching = async (at: number) => (await collectFindings(at)).find(f => f.key === "content.fetch");
+  try {
+    await sql`INSERT INTO sources (id, name, kind, next_fetch_at) SELECT id, id, 'rss', '2100-01-01' FROM unnest(${ids}::text[]) id`;
+    await run(ids, now - 60_000, null);
+    await run(ids.slice(0, 138), now, 'socialdata HTTP 500: {"status":"error"}');
+    assert.equal(await fetching(now), undefined, "138 of 922 is still below the overall warning threshold");
+    await run(ids.slice(138, 139), now + 1_000, "The operation was aborted due to timeout");
+    const outage = await fetching(now + 1_000);
+    assert.equal(outage?.level, "today");
+    assert.match(outage!.title, /^SocialData 出故障/);
+    await run(ids.slice(139, 188), now + 2_000, "The operation was aborted due to timeout");
+    assert.equal((await fetching(now + 2_000))?.level, "now", "a sizeable set of other failures still needs investigation");
+  } finally {
+    await sql`DELETE FROM sources WHERE id IN ${sql(ids)}`;
+    process.env.COLLECT_ENABLED = "false";
+  }
+});
+
 // A restart, a paused valve, or old failures leaving the initial detection window cannot
 // close an open incident. A partial repair must keep the remaining work visible.
 test("content incidents survive restarts, pauses, aging failures and partial recovery", async () => {

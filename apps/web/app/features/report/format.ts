@@ -1,5 +1,5 @@
 // Names, dates and grouping for daily, weekly and monthly reports.
-import { REPORT_NAMES, REPORT_NAMES_EN, reportDateLabelEn, type ReportNavigationEntry, type ReportKind } from "@aihot/contracts/site";
+import { REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn, type ReportNavigationEntry, type ReportKind } from "@aihot/contracts/site";
 import { beijingDate, isoWeekLabel, isoWeekRange, longDateEn, monthDay as engineMonthDay, monthDayEn } from "@aihot/contracts/time";
 import { EDITION_WHEN, REPORTS, SITE, subjectAfter } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
@@ -104,11 +104,12 @@ export function recentIssues(kind: ReportKind, groups: ArchiveGroup[], today: st
   const t = translator(locale);
   const recent = [];
   for (const group of groups) {
-    for (const [position, issue] of group.entries.entries()) {
+    for (const issue of group.entries) {
       const { key } = issue;
       let label: string;
       if (kind === "daily") label = key === today ? t("今天", "Today") : t(engineMonthDay(key, today), monthDayEn(key, today));
-      else if (kind === "weekly") label = t(`${Number(group.id.slice(5))}月第${group.entries.length - position}周`, reportDateLabelEn("weekly", key));
+      // A week by its dates, as the previous / next links and the past issues name it: few readers know the week's number.
+      else if (kind === "weekly") label = t(reportDateLabel("weekly", key), reportDateLabelEn("weekly", key));
       else label = t(`${Number(key.slice(5, 7))} 月`, monthEn(key));
       recent.push({ key, label });
       if (recent.length === 3) return recent;
@@ -156,14 +157,14 @@ export function metricItems(metrics: Record<string, number>, locale: Locale): Ar
 }
 
 /**
- * "前一日 · 9月25日" / "Previous · Sep 25", "上一期 · 第 37 周" / "Previous · Week 37", "下一期 · 7 月" / "Next · July".
+ * "前一日 · 9月25日" / "Previous · Sep 25", "上一期 · 9月8日—14日" / "Previous · Sep 8–14", "下一期 · 7 月" / "Next · July".
  * A day of another year than `now` (Beijing) carries its year.
  */
 export function neighbourLabel(kind: ReportKind, key: string, direction: "prev" | "next", now: number = Date.now(), locale: Locale = "zh"): string {
   const t = translator(locale);
   if (kind === "daily") return t(`${direction === "prev" ? "前一日" : "后一日"} · ${monthDay(key, now)}`, `${direction === "prev" ? "Previous" : "Next"} · ${monthDay(key, now, "en")}`);
   const which = direction === "prev" ? t("上一期", "Previous") : t("下一期", "Next");
-  return kind === "weekly" ? t(`${which} · 第 ${Number(key.slice(6))} 周`, `${which} · Week ${Number(key.slice(6))}`) : t(`${which} · ${Number(key.slice(5, 7))} 月`, `${which} · ${monthEn(key)}`);
+  return kind === "weekly" ? t(`${which} · ${reportDateLabel("weekly", key)}`, `${which} · ${reportDateLabelEn("weekly", key)}`) : t(`${which} · ${Number(key.slice(5, 7))} 月`, `${which} · ${monthEn(key)}`);
 }
 
 /** Chinese numerals, for numbers a Chinese paper prints in words (Chinese pages only). */

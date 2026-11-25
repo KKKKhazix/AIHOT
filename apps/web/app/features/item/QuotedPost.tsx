@@ -29,14 +29,15 @@ export function QuotedPost({ quoted, original = false }: { quoted: QuotedPostVie
         <Author quoted={quoted} />
       </figcaption>
       <blockquote className="prose prose-quote mt-2" dangerouslySetInnerHTML={{ __html: zh ?? quoted.html }} />
+      {/* Phones and touch screens: the toggle and the link are 44px tall, their spacing taken into that height. */}
       {zh && (
-        <details className="mt-2 text-ui-label text-ink-4">
-          <summary className="cursor-pointer select-none hover:text-ink-3">{t("原文", "Original")}</summary>
-          <div className="prose prose-quote-original mt-1.5" dangerouslySetInnerHTML={{ __html: quoted.html }} />
+        <details className="mt-0 text-ui-label text-ink-4 lg:mt-2 touch:mt-0">
+          <summary className="cursor-pointer select-none py-3 hover:text-ink-3 lg:py-0 touch:py-3">{t("原文", "Original")}</summary>
+          <div className="prose prose-quote-original mt-0 lg:mt-1.5 touch:mt-0" dangerouslySetInnerHTML={{ __html: quoted.html }} />
         </details>
       )}
       {quoted.url && (
-        <a href={quoted.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-0.5 text-ui-label text-accent hover:text-accent-ink">
+        <a href={quoted.url} target="_blank" rel="noopener noreferrer" className="mt-0 inline-flex min-h-11 items-center gap-0.5 text-ui-label text-accent hover:text-accent-ink lg:mt-2 lg:min-h-0 touch:mt-0 touch:min-h-11">
           {t("在 X 查看被引用的帖子 ", "View the quoted post on X ")}<IconArrowUpRight size={13} />
         </a>
       )}

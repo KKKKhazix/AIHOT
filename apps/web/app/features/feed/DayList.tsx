@@ -11,12 +11,14 @@ import { DayHeader, TimelineSlot } from "./Timeline";
 import { FeedItem } from "./FeedItem";
 import { useT } from "../../lib/i18n";
 
-export function DayList({ items, todayCount = null, headerAside, tagTopics, currentTopicSlug }: {
+export function DayList({ items, todayCount = null, headerAside, tagTopics, currentTopicSlug, inPicks = false }: {
   items: FeedItemSummary[];
   todayCount?: number | null;
   headerAside?: React.ReactNode;
   tagTopics?: Record<string, string>;
   currentTopicSlug?: string;
+  /** Every item is a pick (a topic's list): cards leave out the 精选 badge. */
+  inPicks?: boolean;
 }) {
   const readSet = useReadSet();
   const today = beijingDate(Date.now());
@@ -29,7 +31,7 @@ export function DayList({ items, todayCount = null, headerAside, tagTopics, curr
           <ol className="lg:pt-1">
             {list.map((it) => (
               <TimelineSlot key={it.id} at={it.timelineAt}>
-                <FeedItem item={it} read={readSet.has(it.id)} onOpen={markRead} showTags tagTopics={tagTopics} currentTopicSlug={currentTopicSlug} at={it.timelineAt} />
+                <FeedItem item={it} read={readSet.has(it.id)} onOpen={markRead} showTags tagTopics={tagTopics} currentTopicSlug={currentTopicSlug} at={it.timelineAt} inPicks={inPicks} />
               </TimelineSlot>
             ))}
           </ol>
@@ -47,7 +49,7 @@ export function Pagination({ page, pageCount, href }: { page: number; pageCount:
   const t = useT();
   if (pageCount <= 1) return null;
   const pages = [...new Set([1, pageCount, page - 2, page - 1, page, page + 1, page + 2].filter((p) => p >= 1 && p <= pageCount))].sort((a, b) => a - b);
-  const btn = "inline-flex h-9 min-w-9 items-center justify-center rounded-full px-2.5 transition-colors";
+  const btn = "inline-flex h-9 min-w-9 items-center justify-center rounded-full px-2.5 transition-colors touch:h-11 touch:min-w-11";
   return (
     <nav aria-label={t("分页", "Pages")} className="mt-6 flex flex-wrap items-center justify-center gap-3 lg:gap-1">
       {page > 1 && (

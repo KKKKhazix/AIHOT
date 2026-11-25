@@ -28,11 +28,13 @@ test("article actions support keyboard navigation and return focus on Escape", a
   t.after(() => page.close());
   await visit(page, web.origin + path);
   const trigger = page.getByRole("button", { name: "更多操作", exact: true }).filter({ visible: true });
-  const first = page.getByRole("menuitem", { name: "分享链接", exact: true });
-  const second = page.getByRole("menuitem", { name: "生成分享海报", exact: true });
+  // With a mouse there is no 分享链接: sharing would only copy the link, which 复制链接 does.
+  const first = page.getByRole("menuitem", { name: "生成分享海报", exact: true });
+  const second = page.getByRole("menuitem", { name: "复制链接", exact: true });
   const last = page.getByRole("menuitem", { name: "导出 Markdown", exact: true });
   await trigger.press("Enter");
   await expect(first).toBeFocused();
+  await expect(page.getByRole("menuitem", { name: "分享链接", exact: true })).toHaveCount(0);
   await first.press("ArrowDown");
   await expect(second).toBeFocused();
   await second.press("End");
@@ -69,8 +71,7 @@ test("article actions support keyboard navigation and return focus on Escape", a
   assert.equal(await readFile((await (await download).path())!, "utf8"), markdown);
   await expect(trigger).toBeFocused();
   await trigger.press("Enter");
-  await first.press("ArrowDown");
-  await second.press("Enter");
+  await first.press("Enter");
   const poster = page.getByRole("dialog", { name: "分享海报", exact: true });
   await expect(poster).toBeVisible();
   await poster.getByRole("button", { name: "关闭", exact: true }).click();
@@ -86,7 +87,7 @@ test("in Safari, pressing the trigger of an open menu closes it", async (t) => {
   await visit(page, web.origin + path);
   const trigger = page.getByRole("button", { name: "更多操作", exact: true }).filter({ visible: true });
   await trigger.click();
-  await expect(page.getByRole("menuitem", { name: "分享链接", exact: true })).toBeFocused();
+  await expect(page.getByRole("menuitem", { name: "生成分享海报", exact: true })).toBeFocused();
   await trigger.click();
   await expect(page.getByRole("menu")).toHaveCount(0);
 });

@@ -5,12 +5,12 @@ import type { TimelineResponse } from "@aihot/contracts/site";
 import { displayTagIn } from "@aihot/contracts/taxonomy";
 import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { filterParams, hasFeedFilters, itemListLd, listPath, pageMeta, readFilters, siteLd } from "../lib/seo";
+import { filterKeep, filterParams, hasFeedFilters, itemListLd, listPath, pageMeta, readFilters, siteLd } from "../lib/seo";
 import { hotInNav } from "../components/shell/nav";
 import type { Screen } from "../components/shell/screens";
 import { Timeline } from "../features/feed/Timeline";
 import { HotTopics } from "../features/feed/HotTopics";
-import { ActiveFilters, CategoryTabs, FeedBar, SearchField } from "../features/feed/Filters";
+import { ActiveFilters, CategoryTabs, FeedBar, SearchField, TagClear } from "../features/feed/Filters";
 import { apiIn, L, localeOf, localizePath, translator, useLocale, useT } from "../lib/i18n";
 
 export const handle: Screen = { tab: "featured", name: L("精选", "Top Picks") };
@@ -52,12 +52,15 @@ export default function Home() {
       {/* Phones: the bar (精选 | 全部, filter, search), the filter in use, today's hot topics, the feed. */}
       <FeedBar base="/" category={filters.category} channel={filters.channel} />
       <ActiveFilters base="/" category={filters.category} channel={filters.channel} tag={filters.tag} />
-      <h1 className="sr-only lg:not-sr-only lg:text-ui-heading-lg lg:font-semibold lg:leading-[1.3] lg:text-ink">
-        {shownTag ? `#${shownTag}` : t("精选", "Top Picks")}
-      </h1>
+      <div className="lg:flex lg:items-center lg:gap-1.5">
+        <h1 className="sr-only lg:not-sr-only lg:text-ui-heading-lg lg:font-semibold lg:leading-[1.3] lg:text-ink">
+          {shownTag ? `#${shownTag}` : t("精选", "Top Picks")}
+        </h1>
+        {filters.tag && <TagClear base="/" tag={filters.tag} />}
+      </div>
       <div className="mb-5 mt-4 hidden items-center justify-between gap-4 lg:flex">
         <CategoryTabs base="/" category={filters.category} channel={filters.channel} layoutId="home-cat-desk" className="min-w-0" />
-        <SearchField keep={{ category: filters.category }} />
+        <SearchField keep={filterKeep(filters)} />
       </div>
 
       {data.hot && hotInNav && <HotTopics entries={data.hot} />}

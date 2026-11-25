@@ -4,11 +4,14 @@ import { scrollBehavior } from "../../lib/motion";
 import { useT } from "../../lib/i18n";
 
 /** A thin accent line while a navigation is in flight (shown only if it takes a moment). */
-export function NavigationProgress({ active }: { active: boolean }) {
+export function NavigationProgress({ active, immediate = false }: { active: boolean; immediate?: boolean }) {
   const [visible, setVisible] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (active) timer.current = setTimeout(() => setVisible(true), 150);
+    // A refresh the reader asked for (the tab tapped again at the top) shows at once, however quick: the bar
+    // filling and fading is the only sign the tap was taken. Page changes wait a moment, so quick ones don't flash.
+    if (active && immediate) setVisible(true);
+    else if (active) timer.current = setTimeout(() => setVisible(true), 150);
     else {
       if (timer.current) clearTimeout(timer.current);
       setVisible(false);
@@ -16,7 +19,7 @@ export function NavigationProgress({ active }: { active: boolean }) {
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [active]);
+  }, [active, immediate]);
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] h-[2px] overflow-hidden" aria-hidden="true">
       <div

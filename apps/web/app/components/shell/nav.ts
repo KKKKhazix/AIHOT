@@ -5,7 +5,7 @@ import { NAV, SITE, subjectAfter, withSubject } from "@aihot/site";
 import { webModules } from "../../site-modules";
 import { L, hasEnglish, type Locale, type Phrase, type Text } from "../../lib/i18n";
 import {
-  IconBolt, IconBookmark, IconDoc, IconFlame, IconGrid, IconHeart, IconHistory, IconList, IconMessage, IconPlug, IconUser,
+  IconBolt, IconBookmark, IconDoc, IconFlame, IconGrid, IconHeart, IconList, IconMessage, IconPlug, IconSparkles, IconUser,
 } from "../icons";
 
 export interface NavItem {
@@ -39,7 +39,7 @@ const SECTIONS: Array<{ key: string; title: Text; items: NavItem[] }> = [
     items: [
       { to: "/agent", label: L("Agent 接入", "For Agents"), icon: IconPlug },
       { to: "/about", label: L("关于", "About"), icon: IconHeart },
-      { to: "/changelog", label: L("更新日志", "Changelog"), icon: IconHistory, changelog: true },
+      { to: "/changelog", label: L("更新日志", "Changelog"), icon: IconSparkles, changelog: true },
       { to: "/feedback", label: L("反馈", "Feedback"), icon: IconMessage },
     ],
   },

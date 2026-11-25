@@ -3,7 +3,7 @@
 // Storage failures degrade silently.
 import { useEffect, useSyncExternalStore } from "react";
 import { beijingDate } from "@aihot/contracts/time";
-import { L, type Phrase } from "./i18n.ts";
+import { L, pagePath, type Phrase } from "./i18n.ts";
 
 export const KEYS = {
   starred: "aihot-starred-items",
@@ -212,6 +212,19 @@ export function removeStar(id: string) {
   invalidate(KEYS.starred);
 }
 
+/** Puts back a star just removed (收藏 page), as it was: its own savedAt, at its place among the newer and older ones. */
+export function restoreStar(item: LocalStarredItem): boolean {
+  if (starredUnreadable()) return false;
+  cache.delete(KEYS.starred);
+  const list = getStarred();
+  if (list.some((s) => s.id === item.id)) return true;
+  const at = list.findIndex((s) => s.savedAt < item.savedAt);
+  const next = at < 0 ? [...list, item] : [...list.slice(0, at), item, ...list.slice(at)];
+  const saved = writeRaw(KEYS.starred, JSON.stringify(next));
+  invalidate(KEYS.starred);
+  return saved;
+}
+
 // read items (LRU, newest first)
 export function getReadIds(): string[] {
   return cached(KEYS.read, () => {
@@ -378,11 +391,11 @@ export function clearRecentSearches() {
 
 // the page the reader was on (feedback records where a problem was seen)
 const LAST_PAGE_KEY = "aihot:last-page";
-const NOT_A_PLACE = /^\/(feedback|more)(\/|$)|^\/admin(\/|$)/;
+const NOT_A_PLACE = /^\/(feedback|more|admin)([/?#]|$)/;
 
-/** Called on every in-site navigation: remembers the latest real page, never feedback, "更多" or the admin. */
+/** Called on every in-site navigation: remembers the latest real page, never feedback, "更多" or the admin, in either language. */
 export function rememberPage(path: string) {
-  if (!NOT_A_PLACE.test(path)) writeRaw(LAST_PAGE_KEY, path, "session");
+  if (!NOT_A_PLACE.test(pagePath(path))) writeRaw(LAST_PAGE_KEY, path, "session");
 }
 
 export function lastPage(): string | null {
@@ -426,15 +439,15 @@ export class ImportError extends Error {
 
 /** Merge: existing stars are not overwritten, read ids are unioned, appearance only if unset. */
 export function importBundle(text: string): ImportReport {
-  if (text.length > IMPORT_MAX_CHARS) throw new ImportError(L("文件过大（上限 2,000,000 字符）", "The file is too large (max 2,000,000 characters)."));
+  if (text.length > IMPORT_MAX_CHARS) throw new ImportError(L("文件太大，导入不了。", "This file is too large to import."));
   let data: unknown;
   try {
     data = JSON.parse(text);
   } catch {
-    throw new ImportError(L("不是有效的 JSON 文件", "This isn't a valid JSON file."));
+    throw new ImportError(L("打不开这个文件。请选之前从收藏页导出的备份文件。", "Couldn't open this file. Choose a backup you exported from Saved."));
   }
   const d = data as Partial<ExportBundle>;
-  if (!d || typeof d !== "object" || d.version !== 1) throw new ImportError(L("文件格式不对（需要 version: 1）", "Wrong file format (it needs version: 1)."));
+  if (!d || typeof d !== "object" || d.version !== 1) throw new ImportError(L("这不是收藏备份文件。请选之前从收藏页导出的那个文件。", "This isn't a Saved backup. Choose the file you exported from Saved."));
   return mergeLocalData({
     starred: Array.isArray(d.starred) ? d.starred : [],
     read: Array.isArray(d.read) ? d.read : [],

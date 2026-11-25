@@ -14,7 +14,7 @@ import { Nameplate } from "../features/report/Nameplate";
 import type { Screen } from "../components/shell/screens";
 import { apiIn, L, localeOf, translator, useLocale, useT } from "../lib/i18n";
 
-export const handle: Screen = { tab: "daily", name: L("往期", "Past issues") };
+export const handle: Screen = { tab: "daily", name: L("合订本", "Archive") };
 export { pageHeaders as headers } from "../lib/api.server";
 export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 

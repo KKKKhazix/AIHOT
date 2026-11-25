@@ -79,6 +79,11 @@ export function filterParams(f: TimelineFilters) {
   return { channel: f.channel === "all" ? null : f.channel, category: f.category, tag: f.tag };
 }
 
+/** What a search started from a feed keeps of it: its 一手 / category filter (精选, 全部动态 and the phone search alike). */
+export function filterKeep(f: Pick<TimelineFilters, "channel" | "category">): Record<string, string | null> {
+  return { channel: f.channel === "all" ? null : f.channel, category: f.category };
+}
+
 /** Links in shared feed HTML carry only the destination's filters. Pagination starts over unless requested. */
 export function feedListPath(base: string, params: URLSearchParams, changes: Partial<Record<"q" | "tab" | "page" | "tag" | "category" | "channel", string | number | null>>) {
   const q = base === "/all" ? params.get("q")?.trim().slice(0, 200) : null;

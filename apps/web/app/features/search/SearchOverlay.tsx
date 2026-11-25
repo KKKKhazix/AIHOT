@@ -9,7 +9,8 @@ import { topicsInNav } from "../../components/shell/nav";
 import { addRecentSearch, clearRecentSearches, useRecentSearches } from "../../lib/local-state";
 import { useModal } from "../../components/ui/modal";
 import { Link } from "../../lib/link";
-import { apiIn, localizePath, useLocale, useT, type Locale } from "../../lib/i18n";
+import { apiIn, localizePath, pagePath, useLocale, useT, type Locale } from "../../lib/i18n";
+import { filterKeep, listPath, readFilters } from "../../lib/seo";
 import { topicName } from "@aihot/contracts/taxonomy";
 
 // One overlay for the whole site, opened from any bar.
@@ -66,7 +67,14 @@ export function SearchOverlay() {
   const [hasText, setHasText] = useState(false);
   const recent = useRecentSearches();
   const navigation = useNavigation();
-  const { key } = useLocation();
+  const { key, pathname, search } = useLocation();
+  // Searching from 精选 or 全部动态 keeps that list's filter, and from a search its chosen order, as the desktop
+  // field does (filterKeep).
+  const here = new URLSearchParams(search);
+  const list = pagePath(pathname);
+  const keep: Record<string, string | null> = list === "/" || list === "/all"
+    ? { ...filterKeep(readFilters(here)), tab: list === "/all" && here.get("q") && here.get("tab") === "relevance" ? "relevance" : null }
+    : {};
   const [more, setMore] = useState<Awaited<ReturnType<typeof loadSuggestions>> | null>(null);
 
   useModal({ open: shown, panel, initialFocus: input, returnFocus: opener, onClose: close });
@@ -137,6 +145,7 @@ export function SearchOverlay() {
         }}
         className="flex h-14 shrink-0 items-center gap-1 pl-4 pr-1 pt-[env(safe-area-inset-top)]"
       >
+        {Object.entries(keep).map(([k, v]) => (v ? <input key={k} type="hidden" name={k} value={v} /> : null))}
         <label className="relative flex-1">
           <span className="sr-only">{t("搜索标题和摘要", "Search titles and summaries")}</span>
           <IconSearch size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-4" />
@@ -185,7 +194,7 @@ export function SearchOverlay() {
               </div>
               <div className="mt-1.5 flex flex-wrap gap-2">
                 {recent.map((q) => (
-                  <Link key={q} to={`/all?q=${encodeURIComponent(q)}`} onClick={() => addRecentSearch(q)} className={`${chip} bg-surface text-ink-2 ring-1 ring-inset ring-line active:bg-bg-sunk`}>
+                  <Link key={q} to={listPath("/all", { q, ...keep })} onClick={() => addRecentSearch(q)} className={`${chip} bg-surface text-ink-2 ring-1 ring-inset ring-line active:bg-bg-sunk`}>
                     <span className="truncate">{q}</span>
                   </Link>
                 ))}
@@ -213,7 +222,7 @@ export function SearchOverlay() {
 
           {(more?.hot.length ?? 0) > 0 && (
             <section className="pt-6">
-              <h2 className="text-ui-label font-semibold text-ink-3">{t("正在热议", "Trending now")}</h2>
+              <h2 className="text-ui-label font-semibold text-ink-3">{t("当前热点", "Trending now")}</h2>
               <ol className="mt-1 divide-y divide-line-soft">
                 {more!.hot.map((h, i) => (
                   <li key={h.to}>

@@ -12,7 +12,8 @@ import { KIND_PATH, archiveGroups, feedLink, kindFromPath } from "../features/re
 import type { Screen } from "../components/shell/screens";
 import { apiIn, L, localeOf, translator, useLocale } from "../lib/i18n";
 
-export const handle: Screen = { tab: "daily", name: L("日报", "Daily") };
+// One module serves 日报, 周报 and 月报: a back button names the one it leads to.
+export const handle: Screen = { tab: "daily", name: (path) => L(REPORT_NAMES[kindFromPath(path)], REPORT_NAMES_EN[kindFromPath(path)]) };
 export { pageHeaders as headers } from "../lib/api.server";
 export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 

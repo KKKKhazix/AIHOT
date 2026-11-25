@@ -12,9 +12,12 @@ import { counterpart, useLocale } from "../../lib/i18n";
 /** Whether any of the browser's languages is Chinese, in any script or region. */
 const readsChinese = () => (navigator.languages?.length ? navigator.languages : [navigator.language]).some((l) => /^zh(?:-|$)/i.test(l));
 
-/** This browser has said no to the hint. */
+const DISMISSED = "aihot:english-hint-dismissed";
+
+/** This browser has said no to the hint (it closes at once if it is showing). */
 export function dismissEnglishHint() {
   writeRaw(KEYS.englishHint, "1");
+  window.dispatchEvent(new Event(DISMISSED));
 }
 
 export function EnglishHint() {
@@ -23,6 +26,11 @@ export function EnglishHint() {
   const english = ENGLISH && locale === "zh" ? counterpart(pathname, "en") : null;
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(!!english && !readsChinese() && readRaw(KEYS.englishHint) !== "1"), [english]);
+  useEffect(() => {
+    const close = () => setOpen(false);
+    window.addEventListener(DISMISSED, close);
+    return () => window.removeEventListener(DISMISSED, close);
+  }, []);
   if (!open || !english) return null;
   const close = () => {
     dismissEnglishHint();
@@ -33,11 +41,11 @@ export function EnglishHint() {
     <div lang="en" className="pointer-events-none fixed inset-x-0 bottom-[calc(62px+env(safe-area-inset-bottom))] z-30 flex justify-center px-4 lg:bottom-[max(24px,env(safe-area-inset-bottom))]">
       <div role="region" aria-label="English edition" className="anim-fade-in pointer-events-auto flex h-11 items-center rounded-full border border-line bg-raised pl-4 pr-1 text-ui-label text-ink-2 shadow-[var(--shadow-pop)]">
         <span>Prefer English?</span>
-        <a href={`${english}${search}${hash}`} hrefLang="en" className="ml-1 flex h-9 items-center gap-1 rounded-full px-2.5 font-semibold text-accent-ink transition-colors hover:bg-bg-sunk dark:text-accent">
+        <a href={`${english}${search}${hash}`} hrefLang="en" className="relative ml-1 flex h-9 items-center gap-1 rounded-full px-2.5 font-semibold text-accent-ink transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-bg-sunk dark:text-accent">
           Read in English
           <IconArrowRight size={14} />
         </a>
-        <button type="button" aria-label="Dismiss" onClick={close} className="flex size-9 items-center justify-center rounded-full text-ink-3 transition-colors hover:bg-bg-sunk hover:text-ink">
+        <button type="button" aria-label="Dismiss" onClick={close} className="relative ml-1 flex size-9 items-center justify-center rounded-full text-ink-3 transition-colors before:absolute before:-inset-1 before:content-[''] hover:bg-bg-sunk hover:text-ink">
           <IconClose size={14} />
         </button>
       </div>

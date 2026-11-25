@@ -11,7 +11,7 @@ import { Wordmark } from "@aihot/site/brand/Logo.tsx";
 import { BarButton, PhoneBar } from "../../components/shell/PhoneBar";
 import { openSearch } from "../search/SearchOverlay";
 import { feedListPath } from "../../lib/seo";
-import { Link } from "../../lib/link";
+import { Link, useNavigate } from "../../lib/link";
 import { localizePath, pagePath, useLocale, useT, type Locale } from "../../lib/i18n";
 
 /**
@@ -51,12 +51,10 @@ export function CategoryTabs({ base, category, channel = "all", layoutId, classN
 export function FeedBar({ base, category, channel }: { base: "/" | "/all"; category: CategoryKey | null; channel: ChannelKey }) {
   const [params] = useSearchParams();
   const t = useT();
-  const [sheet, setSheet] = useState(false);
   const scope = (to: string) => {
     const href = feedListPath(to, params, { q: null, tab: null });
     return { to: href, rel: href.includes("?") ? "nofollow" : undefined };
   };
-  const filtered = filterKey(category, channel) !== "all";
   return (
     <>
       <PhoneBar
@@ -79,14 +77,26 @@ export function FeedBar({ base, category, channel }: { base: "/" | "/all"; categ
         }
         actions={
           <>
-            <BarButton label={filtered ? t("筛选（已选）", "Filter (on)") : t("筛选", "Filter")} on={filtered} onClick={() => setSheet(true)}>
-              <IconFilter size={21} />
-              {filtered && <span aria-hidden="true" className="absolute right-[9px] top-[9px] size-[7px] rounded-full bg-accent ring-2 ring-bg" />}
-            </BarButton>
+            <FilterButton base={base} category={category} channel={channel} />
             <SearchButton />
           </>
         }
       />
+    </>
+  );
+}
+
+/** Phones: the bar's filter button and its sheet (the feed bars, and a search's results bar). */
+export function FilterButton({ base, category, channel }: { base: string; category: CategoryKey | null; channel: ChannelKey }) {
+  const t = useT();
+  const [sheet, setSheet] = useState(false);
+  const filtered = filterKey(category, channel) !== "all";
+  return (
+    <>
+      <BarButton label={filtered ? t("筛选（已选）", "Filter (on)") : t("筛选", "Filter")} on={filtered} onClick={() => setSheet(true)}>
+        <IconFilter size={21} />
+        {filtered && <span aria-hidden="true" className="absolute right-[9px] top-[9px] size-[7px] rounded-full bg-accent ring-2 ring-bg" />}
+      </BarButton>
       <FilterSheet open={sheet} onClose={() => setSheet(false)} base={base} active={filterKey(category, channel)} />
     </>
   );
@@ -107,7 +117,11 @@ function FilterSheet({ open, onClose, base, active }: { open: boolean; onClose: 
               <Link
                 to={o.to}
                 rel={o.rel}
-                onClick={onClose}
+                // The choice in use only closes the sheet: following it again would reload the list and lose the place.
+                onClick={(e) => {
+                  if (on) e.preventDefault();
+                  onClose();
+                }}
                 aria-current={on ? "true" : undefined}
                 className={`-mx-2 rounded-tile px-2 ${sheetChoice(on)}`}
               >
@@ -151,6 +165,19 @@ export function ActiveFilters({ base, category, channel, tag }: { base: string; 
   );
 }
 
+/** Desktop: beside a tag list's title (#标签), the way back to the list without it (phones have the chip above). */
+export function TagClear({ base, tag }: { base: string; tag: string }) {
+  const [params] = useSearchParams();
+  const t = useT();
+  const shown = displayTagIn(tag, useLocale());
+  const to = feedListPath(base, params, { tag: null });
+  return (
+    <Link to={to} rel={to.includes("?") ? "nofollow" : undefined} aria-label={shown ? t(`取消标签：${shown}`, `Clear tag: ${shown}`) : t("取消标签筛选", "Clear tag filter")} title={t("取消标签", "Clear tag")} className="hidden size-8 place-items-center rounded-full text-ink-4 transition-colors hover:bg-bg-sunk hover:text-ink lg:grid touch:size-11">
+      <IconClose size={16} />
+    </Link>
+  );
+}
+
 /** Phones: the magnifier in a bar; the search opens over the page with the keyboard up. */
 function SearchButton() {
   const t = useT();
@@ -178,6 +205,8 @@ function useSlashFocus(ref: React.RefObject<HTMLInputElement | null>) {
 export function SearchField({ defaultValue = "", keep = {} }: { defaultValue?: string; keep?: Record<string, string | null> }) {
   const [value, setValue] = useState(defaultValue);
   const navigation = useNavigation();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
   const t = useT();
   const locale = useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -187,7 +216,19 @@ export function SearchField({ defaultValue = "", keep = {} }: { defaultValue?: s
   const hidden = Object.entries(keep).map(([k, v]) => (v ? <input key={k} type="hidden" name={k} value={v} /> : null));
 
   return (
-    <Form method="get" action={localizePath("/all", locale)} role="search" className="group relative w-full shrink-0 lg:w-60">
+    <Form
+      method="get"
+      action={localizePath("/all", locale)}
+      role="search"
+      // An empty field searches nothing: from a list it stays put; on a search's results it leaves the search,
+      // keeping the list's filter.
+      onSubmit={(e) => {
+        if (value.trim()) return;
+        e.preventDefault();
+        if (defaultValue) navigate(feedListPath("/all", params, { q: null, tab: null }));
+      }}
+      className="group relative w-full shrink-0 lg:w-60"
+    >
       {hidden}
       <label htmlFor="site-search" className="sr-only">
         {t("搜索标题和摘要", "Search titles and summaries")}
@@ -212,7 +253,7 @@ export function SearchField({ defaultValue = "", keep = {} }: { defaultValue?: s
             setValue("");
             inputRef.current?.focus();
           }}
-          className="absolute right-3 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-full text-ink-4 transition-colors hover:bg-bg-sunk hover:text-ink"
+          className="absolute right-3 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-full text-ink-4 transition-colors before:absolute before:-inset-[10px] before:content-[''] hover:bg-bg-sunk hover:text-ink"
         >
           <IconClose size={13} />
         </button>

@@ -27,13 +27,13 @@ import { MediaGallery } from "../features/item/MediaGallery";
 import { QuotedPost } from "../features/item/QuotedPost";
 import { ArticleBody } from "../features/item/ArticleBody";
 import { MentionText } from "../components/ui/MentionText";
-import { ActionsSheet, ReaderToolbar, type ActionRow } from "../features/item/ReaderTools";
+import { ActionsSheet, inWeChat, ReaderToolbar, type ActionRow } from "../features/item/ReaderTools";
 import { OutlineSheet } from "../components/ui/OutlineSheet";
 import { scrollToAnchor } from "../lib/motion";
 import { takePreview } from "../features/item/preview";
-import { IconArrowLeft, IconCopy, IconDownload, IconExternal, IconImage, IconList, IconMenu, IconMore, IconShare } from "../components/icons";
+import { IconArrowLeft, IconCopy, IconDownload, IconExternal, IconImage, IconList, IconMore, IconShare } from "../components/icons";
 import { BarButton, PhoneBar } from "../components/shell/PhoneBar";
-import { isPhone, type Screen } from "../components/shell/screens";
+import { historyIndex, isPhone, type Screen } from "../components/shell/screens";
 import { Link, useNavigate } from "../lib/link";
 import { apiIn, localeOf, localizePath, translator, useLocale, useT, type Locale } from "../lib/i18n";
 
@@ -127,7 +127,8 @@ function jumpTo(e: React.MouseEvent, id: string) {
 
 /**
  * The outline takes what is left of its rail and scrolls within it; with room for fewer than six entries it
- * keeps six (an entry is its 12.5px line at leading-snug plus 8px of padding), and the rail scrolls instead.
+ * keeps six (an entry is its 12.5px line at leading-snug plus 8px of padding, 44px on touch screens), and the
+ * rail scrolls instead.
  */
 function ArticleOutline({ outline }: { outline: SiteItemDetail["outline"] }) {
   const t = useT();
@@ -142,11 +143,11 @@ function ArticleOutline({ outline }: { outline: SiteItemDetail["outline"] }) {
   };
   return (
     <RailSection title={t("本文目录", "Contents")} shrink>
-      <nav ref={nav} aria-label={t("本文目录", "Contents")} tabIndex={overscroll ? 0 : undefined} onKeyDown={containKeys} className={`scrollbar-thin min-h-[calc(6*(12.5px*1.375+8px))] overflow-y-auto ${overscroll}`}>
+      <nav ref={nav} aria-label={t("本文目录", "Contents")} tabIndex={overscroll ? 0 : undefined} onKeyDown={containKeys} className={`scrollbar-thin min-h-[calc(6*(12.5px*1.375+8px))] overflow-y-auto touch:min-h-[calc(6*2.75rem)] ${overscroll}`}>
         <ol className="space-y-0.5 border-l border-line">
           {outline.map((o) => (
             <li key={o.id}>
-              <a href={`#${o.id}`} onClick={(e) => jumpTo(e, o.id)} className={`-ml-px block border-l border-transparent py-1 text-ui-caption-lg leading-snug text-ink-3 transition-colors hover:border-accent hover:text-ink focus-visible:outline-offset-[-2px] ${o.level > 2 ? "pl-5" : "pl-3"}`}>
+              <a href={`#${o.id}`} onClick={(e) => jumpTo(e, o.id)} className={`-ml-px block border-l border-transparent py-1 text-ui-caption-lg leading-snug text-ink-3 transition-colors hover:border-accent hover:text-ink focus-visible:outline-offset-[-2px] touch:flex touch:min-h-11 touch:items-center ${o.level > 2 ? "pl-5" : "pl-3"}`}>
                 {o.text}
               </a>
             </li>
@@ -155,11 +156,6 @@ function ArticleOutline({ outline }: { outline: SiteItemDetail["outline"] }) {
       </nav>
     </RailSection>
   );
-}
-
-/** WeChat's in-app browser cannot save downloads: there the Markdown is copied instead. */
-function inWeChat(): boolean {
-  return typeof navigator !== "undefined" && /MicroMessenger/i.test(navigator.userAgent);
 }
 
 function hostOf(url: string): string {
@@ -203,17 +199,28 @@ function tagChips(item: SiteItemDetail, locale: Locale): Array<{ tag: string; la
   });
 }
 
-async function shareOrCopy(item: Pick<SiteItemDetail, "id" | "title">, locale: Locale): Promise<"shared" | "copied" | null> {
+/** Touch screens with a system share sheet share through it; elsewhere sharing is copying the link. */
+function sharesBySheet(): boolean {
+  return typeof navigator !== "undefined" && !!navigator.share && matchMedia("(pointer: coarse)").matches;
+}
+
+/** 分享: the system share sheet where there is one; otherwise, or when it fails other than by the reader cancelling, the link is copied. */
+async function shareOrCopy(item: Pick<SiteItemDetail, "id" | "title">, locale: Locale, notify: (text: string) => void): Promise<void> {
+  const t = translator(locale);
   const url = `${siteUrl()}${localizePath(`/items/${item.id}`, locale)}`;
-  try {
-    if (navigator.share && matchMedia("(pointer: coarse)").matches) {
+  if (sharesBySheet()) {
+    try {
       await navigator.share({ title: item.title, url });
-      return "shared";
+      return;
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
     }
+  }
+  try {
     await copyText(`${item.title}\n${url}`);
-    return "copied";
+    notify(t("链接已复制", "Link copied"));
   } catch {
-    return null;
+    notify(t("复制失败", "Couldn't copy"));
   }
 }
 
@@ -261,13 +268,22 @@ function ItemPreview({ preview }: { preview: FeedItemSummary }) {
   const shownAt = preview.publishedAt ?? preview.timelineAt;
   return (
     <div className="mx-auto max-w-[var(--page-max-reading)] pb-8">
-      <PhoneBar back={{ to: preview.selected ? "/" : "/all", label: preview.selected ? t("精选", "Top Picks") : t("全部", "All") }} title={isPost ? preview.x!.authorName : preview.title} />
+      {/* 更多 is there while loading too, so the bar does not change when the article arrives. */}
+      <PhoneBar
+        back={{ to: preview.selected ? "/" : "/all", label: preview.selected ? t("精选", "Top Picks") : t("全部", "All") }}
+        title={isPost ? preview.x!.authorName : preview.title}
+        actions={
+          <BarButton label={t("更多操作", "More actions")} disabled className="disabled:opacity-40">
+            <IconMore size={22} />
+          </BarButton>
+        }
+      />
       <article className="pb-6 pt-3" aria-busy="true">
         <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ui-label text-ink-3 ${isPost ? "" : "mb-3"}`}>
           <span className="font-semibold text-ink-2">{isX ? preview.x!.authorName : preview.source.name}</span>
           {isX && <span>· @{preview.x!.handle} · X</span>}
           <span>·</span>
-          {!preview.publishedAt && <span>{t("收录于", "Added")}</span>}
+          {!preview.publishedAt && <span>{t("收录时间", "Added")}</span>}
           <time dateTime={shownAt} className="mono">{fullDateTime(shownAt)}</time>
           {preview.selected && <span className="ml-1">{preview.sameEvent ? <SameEventBadge /> : <SelectedBadge />}</span>}
           {shownScore(preview.score) !== null && (
@@ -298,9 +314,7 @@ function ItemPreview({ preview }: { preview: FeedItemSummary }) {
       <ReaderToolbar
         item={preview}
         originalLabel={isX ? t("原推", "View on X") : t("原文", "Original")}
-        onShare={async () => {
-          if ((await shareOrCopy(preview, locale)) === "copied") setToast(t("链接已复制", "Link copied"));
-        }}
+        onShare={() => void shareOrCopy(preview, locale, setToast)}
       />
       <Toast text={toast} />
     </div>
@@ -346,16 +360,13 @@ function ItemView({ item, followups }: Loaded) {
     setPosterRequested(true);
     setPosterOpen(true);
   };
-  const share = async () => {
-    const r = await shareOrCopy(item, locale);
-    if (r === "copied") setToast(t("链接已复制", "Link copied"));
-  };
+  const share = () => void shareOrCopy(item, locale, setToast);
   const copyLink = async () => {
     try {
       await copyText(`${siteUrl()}${localizePath(`/items/${item.id}`, locale)}`);
       setToast(t("链接已复制", "Link copied"));
     } catch {
-      // clipboard unavailable
+      setToast(t("复制失败", "Couldn't copy"));
     }
   };
   const copyMarkdown = async () => {
@@ -389,7 +400,7 @@ function ItemView({ item, followups }: Loaded) {
   const reasonLabel = t(ITEM_COPY.reasonLabel, ENGLISH?.reasonLabel ?? ITEM_COPY.reasonLabel);
 
   const back = () => {
-    if (window.history.state?.idx > 0) navigate(-1);
+    if (historyIndex() > 0) navigate(-1);
     else navigate(item.selected ? "/" : "/all");
   };
   // In the left rail (a flex column) it keeps its own height and width.
@@ -399,10 +410,11 @@ function ItemView({ item, followups }: Loaded) {
     </button>
   );
   const moreMenu = (
-    <Menu label={t("更多操作", "More actions")} trigger={<IconMenu size={17} />}>
+    <Menu label={t("更多操作", "More actions")} trigger={<IconMore size={18} />}>
       {(close) => (
         <>
-          <MenuItem icon={<IconShare size={15} />} onSelect={() => { close(); void share(); }}>{t("分享链接", "Share link")}</MenuItem>
+          {/* With a mouse sharing is copying the link, which 复制链接 already does. */}
+          {sharesBySheet() && <MenuItem icon={<IconShare size={15} />} onSelect={() => { close(); share(); }}>{t("分享链接", "Share link")}</MenuItem>}
           <MenuItem icon={<IconImage size={15} />} onSelect={() => { close(); openPoster(); }}>{t("生成分享海报", "Share as image")}</MenuItem>
           <MenuItem icon={<IconCopy size={15} />} onSelect={() => { close(); void copyLink(); }}>{t("复制链接", "Copy link")}</MenuItem>
           {item.markdownAvailable &&
@@ -491,7 +503,7 @@ function ItemView({ item, followups }: Loaded) {
       )}
       {item.topics.length > 0 && (
         <RailSection title={t("主题", "Topics")}>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5 touch:gap-y-4.5">
             {item.topics.map((topic) => (
               <Link viewTransition key={topic.slug} to={`/topics/${topic.slug}`} className="chip">
                 {topicName(topic.slug, topic.name, locale)}
@@ -502,7 +514,7 @@ function ItemView({ item, followups }: Loaded) {
       )}
       {tags.length > 0 && (
         <RailSection title={t("标签", "Tags")}>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5 touch:gap-y-4.5">
             {tags.slice(0, 8).map(({ tag, label, to }) => (
               <Link key={tag} to={to} rel={to.startsWith("/all?") ? "nofollow" : undefined} className="chip">
                 #{label}
@@ -567,7 +579,7 @@ function ItemView({ item, followups }: Loaded) {
             {isX && <span>· @{item.x!.handle} · X</span>}
             {byline && <span>· {byline}</span>}
             <span>·</span>
-            {!item.publishedAt && <span>{t("收录于", "Added")}</span>}
+            {!item.publishedAt && <span>{t("收录时间", "Added")}</span>}
             <time dateTime={shownAt} className="mono">{fullDateTime(shownAt)}</time>
             <span className="empty:hidden" suppressHydrationWarning>{timeAgo(shownAt, undefined, locale) && `· ${timeAgo(shownAt, undefined, locale)}`}</span>
             {item.selected && (
@@ -652,7 +664,7 @@ function ItemView({ item, followups }: Loaded) {
           </p>
 
           {(daily || item.topics.length > 0 || tags.length > 0) && (
-            <div className="mt-4 flex flex-wrap gap-1.5 side:hidden">
+            <div className="mt-4 flex flex-wrap gap-1.5 side:hidden touch:gap-y-4.5">
               {daily && (
                 <Link viewTransition to={daily.to} className="chip">
                   {t(<>收录于 {daily.name}</>, <>Featured in {daily.name}</>)}
@@ -695,7 +707,7 @@ function ItemView({ item, followups }: Loaded) {
         originalUrl={item.links.original}
         originalLabel={isX ? t("原推", "View on X") : t("原文", "Original")}
         onOutline={showOutline ? () => setOutlineOpen(true) : undefined}
-        onShare={() => void share()}
+        onShare={share}
       />
       {showOutline && <OutlineSheet open={outlineOpen} onClose={() => setOutlineOpen(false)} outline={item.outline} />}
       <ActionsSheet open={actionsOpen} onClose={() => setActionsOpen(false)} rows={phoneActions} />

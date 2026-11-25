@@ -35,7 +35,7 @@ export default function SearchBusy() {
   const base = pagePath(pathname).startsWith("/all") ? "/all" : "/";
   const retry = kept.toString() ? `${base}?${kept}` : base;
   const hasSearch = kept.has("q");
-  const button = "inline-flex h-9 items-center rounded-full px-4 text-ui-label-lg";
+  const button = "inline-flex h-11 items-center rounded-full px-4 text-ui-label-lg lg:h-9 touch:h-11";
   return (
     <>
     <PhoneBar back={{ to: base, label: base === "/all" ? t("全部", "All") : t("精选", "Top Picks") }} />
@@ -44,8 +44,8 @@ export default function SearchBusy() {
       <h1 className="text-ui-heading font-bold text-ink">{t("搜索有点忙", "Search is busy")}</h1>
       <p className="mt-2 text-ui-body-sm leading-relaxed text-ink-3">
         {t(
-          `现在搜索的人比较多，请 ${RETRY_AFTER_SECONDS} 秒以后重试。列表浏览不受影响。`,
-          `A lot of people are searching right now. Try again in ${RETRY_AFTER_SECONDS} seconds—you can still browse the news as usual.`,
+          "现在搜索的人比较多，稍等几秒再试。列表浏览不受影响。",
+          "A lot of people are searching right now. Try again in a few seconds—you can still browse the news as usual.",
         )}
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-2.5">

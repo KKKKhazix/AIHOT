@@ -9,7 +9,7 @@ import { beijingTime } from "@aihot/contracts/time";
 import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { feedListPath, filterParams, hasFeedFilters, itemListLd, listPath, pageMeta, readFilters } from "../lib/seo";
-import { ActiveFilters, CategoryTabs, FeedBar, SearchField } from "../features/feed/Filters";
+import { ActiveFilters, CategoryTabs, FeedBar, FilterButton, SearchField, TagClear } from "../features/feed/Filters";
 import { PillTabs } from "../components/ui/Tabs";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { EmptyState } from "../components/ui/Page";
@@ -84,9 +84,12 @@ export default function AllPage() {
   const f = data.filters;
   const busy = navigation.state === "loading" && !!navigation.location && pagePath(navigation.location.pathname) === "/all";
   const { channel, category } = filterParams(f);
-  const keep = { channel, category };
+  // A new search from here keeps the list's filter and, for a search, the chosen order (as the phone search does).
+  const keep = { channel, category, tab: f.q && params.get("tab") === "relevance" ? "relevance" : null };
   const searchTabHref = (tab: "time" | "relevance") => feedListPath("/all", params, { tab: tab === "relevance" ? tab : null });
   const shownTag = f.tag ? displayTagIn(f.tag, locale) : null;
+  const filtered = f.channel !== "all" || !!f.category || !!f.tag;
+  const clearFilters = feedListPath("/all", params, { category: null, channel: null, tag: null });
   const title = f.q ? t(`搜索“${f.q}”`, `Search: “${f.q}”`) : f.tag ? (shownTag ? `#${shownTag}` : t("标签筛选", "Tag filter")) : null;
   const updated = beijingTime(data.freshness);
   const found = data.total >= 2000 ? t("2000+", "2,000+") : t(String(data.total), data.total.toLocaleString("en-US"));
@@ -111,6 +114,7 @@ export default function AllPage() {
               <span className="truncate">{f.q}</span>
             </button>
           }
+          actions={<FilterButton base="/all" category={f.category} channel={f.channel} />}
         />
       ) : (
         <FeedBar base="/all" category={f.category} channel={f.channel} />
@@ -118,7 +122,10 @@ export default function AllPage() {
       <ActiveFilters base="/all" category={f.category} channel={f.channel} tag={f.tag} />
 
       {/* Desktop, as on 精选: the title, then one filter row with the search field aligned on the right. */}
-      <h1 className="sr-only lg:not-sr-only lg:text-ui-heading-lg lg:font-semibold lg:leading-[1.3] lg:text-ink">{title ?? t(ALL_TITLE)}</h1>
+      <div className="lg:flex lg:items-center lg:gap-1.5">
+        <h1 className="sr-only lg:not-sr-only lg:text-ui-heading-lg lg:font-semibold lg:leading-[1.3] lg:text-ink">{title ?? t(ALL_TITLE)}</h1>
+        {f.tag && !f.q && <TagClear base="/all" tag={f.tag} />}
+      </div>
       <div className="mb-5 mt-4 hidden items-center justify-between gap-4 lg:flex">
         <CategoryTabs base="/all" category={f.category} channel={f.channel} layoutId="all-cat-desk" className="min-w-0" />
         <SearchField defaultValue={f.q ?? ""} keep={keep} />
@@ -152,10 +159,20 @@ export default function AllPage() {
             <EmptyState
               title={t("没有找到相关内容", "Nothing found")}
               action={
-                f.q && f.tab === "time" ? (
-                  <Link to={searchTabHref("relevance")} className="text-ui-label font-medium text-accent hover:underline">
-                    {t("试试“按相关度”，连正文一起搜", "Try “Most relevant” to search the full text too")}
-                  </Link>
+                (f.q && f.tab === "time") || filtered ? (
+                  <span className="flex flex-wrap justify-center gap-x-5 gap-y-1">
+                    {f.q && f.tab === "time" && (
+                      <Link to={searchTabHref("relevance")} className="inline-flex min-h-11 items-center text-ui-label font-medium text-accent hover:underline lg:min-h-0">
+                        {t("试试“按相关度”，连正文一起搜", "Try “Most relevant” to search the full text too")}
+                      </Link>
+                    )}
+                    {/* The way out the text suggests, one press away. */}
+                    {filtered && (
+                      <Link to={clearFilters} rel={clearFilters.includes("?") ? "nofollow" : undefined} className="inline-flex min-h-11 items-center text-ui-label font-medium text-accent hover:underline lg:min-h-0">
+                        {t("去掉筛选", "Clear filters")}
+                      </Link>
+                    )}
+                  </span>
                 ) : undefined
               }
             >

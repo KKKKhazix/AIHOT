@@ -5,6 +5,7 @@ import { SITE } from "@aihot/site";
 import { Sheet } from "../../components/ui/Sheet";
 import { IconDownload, IconShare } from "../../components/icons";
 import { ogPath, useLocale, useT } from "../../lib/i18n";
+import { inWeChat } from "./ReaderTools";
 
 export default function PosterSheet({ id, title, open, onClose }: { id: string; title: string; open: boolean; onClose: () => void }) {
   const t = useT();
@@ -12,6 +13,16 @@ export default function PosterSheet({ id, title, open, onClose }: { id: string; 
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [canShareFile, setCanShareFile] = useState(false);
+  // A poster that failed is tried again each time the sheet opens (the image element is mounted anew).
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open && failed) setFailed(false);
+  }
+  // Saving and sharing wait for the poster: before it shows they would hand over a broken file.
+  const ready = loaded && !failed;
+  // WeChat cannot save downloads; there the image is long-pressed.
+  const wechat = inWeChat();
 
   useEffect(() => {
     if (!open) return;
@@ -48,21 +59,28 @@ export default function PosterSheet({ id, title, open, onClose }: { id: string; 
             />
           )}
         </div>
-        <p className="mt-3 text-ui-caption-lg text-ink-3">{t("可点下方按钮保存，或在图片上长按／右键复制", "Save it below, or long-press or right-click the image to copy it.")}</p>
-        <div className="mt-3 flex w-full max-w-[360px] gap-2">
-          <a
-            href={src}
-            download={`${SITE.mcpPrefix}-${id}.png`}
-            className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-accent text-ui-body-sm font-medium text-accent-contrast transition-colors hover:bg-accent-ink lg:h-10 sm:text-ui-label-lg"
-          >
-            <IconDownload size={15} />{t(" 保存图片", " Save image")}
-          </a>
-          {canShareFile && (
-            <button type="button" onClick={share} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-line-strong bg-surface text-ui-body-sm font-medium text-ink transition-colors hover:border-ink-4 lg:h-10 sm:text-ui-label-lg">
-              <IconShare size={15} />{t(" 分享", " Share")}
-            </button>
-          )}
-        </div>
+        <p className="mt-3 text-ui-caption-lg text-ink-3">
+          {wechat ? t("长按图片保存或分享", "Long-press the image to save or share it.") : t("长按或右键图片可复制", "Long-press or right-click the image to copy it.")}
+        </p>
+        {(!wechat || canShareFile) && (
+          <div className="mt-3 flex w-full max-w-[360px] gap-2">
+            {!wechat && (
+              <a
+                href={ready ? src : undefined}
+                download={`${SITE.mcpPrefix}-${id}.png`}
+                aria-disabled={ready ? undefined : true}
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-accent text-ui-body-sm font-medium text-accent-contrast transition-colors hover:bg-accent-ink aria-disabled:pointer-events-none aria-disabled:opacity-40 lg:h-10 sm:text-ui-label-lg"
+              >
+                <IconDownload size={15} />{t(" 保存图片", " Save image")}
+              </a>
+            )}
+            {canShareFile && (
+              <button type="button" onClick={share} disabled={!ready} className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-line-strong bg-surface text-ui-body-sm font-medium text-ink transition-colors hover:border-ink-4 disabled:pointer-events-none disabled:opacity-40 lg:h-10 sm:text-ui-label-lg">
+                <IconShare size={15} />{t(" 分享", " Share")}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </Sheet>
   );

@@ -225,7 +225,7 @@ export function ApiPanel(props: AgentPanelProps) {
             [<Mono>/api/v1/items</Mono>, t("精选或最近 7 天全部动态，可按分类、时间窗、关键词筛", "Top picks, or all news from the last 7 days; filter by category, time window or keyword"), t("最快 1 分钟一次", "At most once a minute")],
             { group: t("热点与事件", "Trending and stories") },
             [<Mono>/api/v1/hot-topics</Mono>, t("当前热点榜 Top 10", "The top 10 trending stories right now"), t("最快 1 分钟一次", "At most once a minute")],
-            [<Mono>{"/api/v1/stories/{publicId}"}</Mono>, t("一个事件的报道时间线、AI 综述和关联事件", "A story's coverage timeline, AI summary and related stories"), t("需要时", "When needed")],
+            [<Mono>{"/api/v1/stories/{publicId}"}</Mono>, t("一个事件的报道时间线、AI 综述和相关事件", "A story's coverage timeline, AI summary and related stories"), t("需要时", "When needed")],
             { group: t("日报", "Daily") },
             [<Mono>/api/v1/dailies/latest</Mono>, t("最新一期日报", "The latest Daily"), t(`${EDITION_WHEN.daily} 后一次`, `Once a day, after ${EDITION_TIMES.daily} (GMT+8)`)],
             [<Mono>{"/api/v1/dailies/{date}"}</Mono>, t("指定日期日报；撤稿会移除引用", "The Daily for a given date; retracted stories are removed from it"), t("缓存过期后须带 ETag 验证更新", "Once the cache expires, check for updates with the ETag")],

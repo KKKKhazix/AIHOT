@@ -186,8 +186,17 @@ export default function FeedbackPage() {
     }, 400);
     return () => clearTimeout(t);
   }, [draft]);
-  useEffect(() => () => {
-    if (unsaved.current) writeDraft(unsaved.current.draft);
+  useEffect(() => {
+    const flush = () => {
+      if (unsaved.current) writeDraft(unsaved.current.draft);
+      unsaved.current = null;
+    };
+    // Leaving for another page of the site, or the browser closing, going back or reloading the page.
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
   }, []);
   // 反馈 pressed again after sending opens an empty form for the next one.
   const sentOn = useRef<string | null>(null);

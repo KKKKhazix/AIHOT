@@ -24,7 +24,7 @@ export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 export async function loader({ request }: { request: Request }) {
   const [contact, stats] = await Promise.all([
     apiGet<SiteContact>("/api/site/contact", { signal: request.signal }).catch(() => null),
-    apiGet<SiteStats>(apiIn("/api/site/stats", localeOf(pagePathname(request))), { signal: request.signal }).catch(() => null),
+    apiGet<SiteStats>(apiIn("/stats", localeOf(pagePathname(request))), { signal: request.signal }).catch(() => null),
   ]);
   return cachedPage(300, { contact, stats });
 }

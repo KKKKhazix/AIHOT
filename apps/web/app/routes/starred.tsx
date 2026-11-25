@@ -61,7 +61,7 @@ export default function StarredPage() {
     for (let i = 0; i < ids.length; i += 100) batches.push(ids.slice(i, i + 100));
     Promise.all(
       batches.map((batch) =>
-        fetch(apiIn(`/api/site/items/availability?ids=${encodeURIComponent(batch.join(","))}`, locale), { signal: controller.signal })
+        fetch(apiIn(`/items/availability?ids=${encodeURIComponent(batch.join(","))}`, locale), { signal: controller.signal })
           .then((r) => (r.ok ? (r.json() as Promise<Record<string, ItemAvailability>>) : {}))
           .catch(() => ({})),
       ),

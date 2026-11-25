@@ -1,11 +1,14 @@
 // Server-side HTTP client for route loaders, and the cache lifetimes routes give their pages. The web
 // process never touches the database; SSR reads the api over loopback with keep-alive, one or two
 // requests per page.
-import { data, redirect, type HeadersArgs } from "react-router";
+import { createContext, data, redirect, type HeadersArgs } from "react-router";
 import { logError } from "./errors.server.ts";
 
 /** Where the api listens (API_BASE_URL, set by the deployment); development uses the default. */
 export const API_BASE_URL = process.env.API_BASE_URL || "http://127.0.0.1:3001";
+
+/** Set only by the root loader for a page a module counts. Static files, unmatched routes and proxy answers never set it. */
+export const documentRead = createContext<Record<string, string> | null>(null);
 
 /** Document requests and React Router's data requests identify the same page. */
 export function pagePathname(request: Request): string {

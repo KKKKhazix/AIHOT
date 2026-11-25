@@ -1,9 +1,9 @@
-import { pollFor } from "../../../tests/poll.ts";
 // Run after `npm run build -w @aihot/web`. Real production server/router, synthetic HTTP API only.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { ADMIN } from "@aihot/site";
 import { SIGN_IN_HOME } from "@aihot/contracts/admin";
+import { ENGLISH } from "@aihot/contracts/english";
 import { isPrivatePage } from "@aihot/contracts/http-policy";
 import { CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { UNSAFE_decodeViaTurboStream } from "react-router";
@@ -12,19 +12,11 @@ import { fakeApi, startWebServer, type WebServer } from "./web-server.ts";
 let web: WebServer;
 let origin: string;
 let deadline: number;
-/** Root metadata answers only after the selected deadline has passed: a slow sibling loader. */
-let metaAfterDeadline = false;
 const apiCookies: Array<string | undefined> = [];
 const api = fakeApi(async (url, res, req) => {
   apiCookies.push(req.headers.cookie);
   // The English edition's answers (/api/site/en/…) as the Chinese ones here.
   if (url.pathname.startsWith("/api/site/en/")) url.pathname = url.pathname.replace("/api/site/en/", "/api/site/");
-  if (url.pathname === "/api/site/meta") {
-    // Past the deadline on the wall clock the server reads: timers run on another clock, and a CI VM
-    // stepping its wall clock back mid-wait would otherwise answer before the deadline.
-    if (metaAfterDeadline) await pollFor(() => Date.now() >= deadline * 1000 + 50, "upstream cache expiry");
-    return { changelogVersion: "2026-09-28T12:00" };
-  }
   if (url.pathname === "/api/site/timeline") {
     const filters = { channel: "all", category: url.searchParams.get("category"), tag: null };
     res.setHeader("X-Accel-Expires", `@${deadline}`);
@@ -154,7 +146,7 @@ test("gray pages are private like the admin's, whatever their route asks for", a
   }
 });
 
-test("browser freshness shares the selected deadline, including slow sibling loaders", async () => {
+test("browser freshness shares the selected deadline and never renews an expired upstream result", async () => {
   const savedDeadline = deadline;
   try {
     deadline = Math.floor(Date.now() / 1000) + 20;
@@ -170,10 +162,7 @@ test("browser freshness shares the selected deadline, including slow sibling loa
       assert.doesNotMatch(cc, /stale/);
       await res.text();
     }
-    // The selected loader initially grants a positive TTL (at least a whole second), but root metadata
-    // finishes after it.
-    deadline = Math.floor(Date.now() / 1000) + 2;
-    metaAfterDeadline = true;
+    deadline = Math.floor(Date.now() / 1000) - 1;
     await Promise.all(["/", "/_.data?_routes=routes%2Fhome"].map(async (pathname) => {
       const res = await fetch(origin + pathname);
       assert.equal(res.status, 200);
@@ -183,17 +172,18 @@ test("browser freshness shares the selected deadline, including slow sibling loa
     }));
   } finally {
     deadline = savedDeadline;
-    metaAfterDeadline = false;
   }
 });
 
 // A withdrawal purges the list pages at their bare addresses (modules/ops/backend/purge.ts): a filtered or later page
-// is an entry of its own at the edge, gone only when it expires. So these stay there a minute at most, in both languages.
+// is an entry of its own at the edge, gone only when it expires. Check every language the site serves.
 test("filtered and later list pages stay in shared caches a minute at most", async () => {
+  const pathnames = ["/?tag=x", "/?category=ai-models", "/_.data?tag=x", "/all?page=2", "/all.data?page=2"];
+  if (ENGLISH) pathnames.push("/en?tag=x", "/en.data?tag=x", "/en/all?page=2", "/en/all.data?page=2");
   const savedDeadline = deadline;
   try {
     deadline = Math.floor(Date.now() / 1000) + 3600;
-    for (const pathname of ["/?tag=x", "/?category=ai-models", "/_.data?tag=x", "/all?page=2", "/all.data?page=2", "/en?tag=x", "/en.data?tag=x", "/en/all?page=2", "/en/all.data?page=2"]) {
+    for (const pathname of pathnames) {
       const res = await fetch(origin + pathname);
       const cc = res.headers.get("Cache-Control") ?? "";
       assert.equal(res.status, 200, pathname);

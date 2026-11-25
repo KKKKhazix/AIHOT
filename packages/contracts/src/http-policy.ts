@@ -3,7 +3,19 @@
 // read this module.
 import { ABOUT, POLICY, SITE } from "@aihot/site";
 import { MODULES } from "@aihot/site/modules";
+import { hasEnglish, localizePath } from "./reader-pages.ts";
+import { inLanguage, localeOf, pagePath } from "./i18n.ts";
 import { ENGLISH } from "./english.ts";
+
+/** Publish each crawler's page rules for both editions, in their original group. */
+export function robotsForReaders(text: string): string {
+  if (!ENGLISH) return text;
+  return text.replace(/^(Allow|Disallow):[ \t]*(\/[^\s#]*)/gim, (line, directive: string, rule: string) => {
+    if (rule === "/") return line;
+    const english = localizePath(rule, "en");
+    return english === rule ? line : `${line}\n${directive}: ${english}`;
+  });
+}
 
 /** CORS for /api/v1/* and /openapi-v1.json. */
 export const PUBLIC_API_CORS: Record<string, string> = {
@@ -35,6 +47,8 @@ export interface RedirectRule {
   status: 301 | 302 | 307 | 308 | 404 | 410;
   /** Relative Location. `$1`… refer to regex groups; `*` appends the remainder for prefix rules. */
   location?: string;
+  /** Reader-page aliases follow their destination's editions. */
+  readerPage?: boolean;
   keepQuery?: boolean;
   /** Appended after the query, as `#fragment`. */
   fragment?: string;
@@ -46,6 +60,7 @@ export interface RedirectRule {
 const ENGINE_REDIRECTS: RedirectRule[] = [
   {
     match: "regex",
+    readerPage: true,
     path: "^/(all|about|agent|changelog|feedback|starred|more|privacy|terms)/+$",
     status: 301,
     location: "/$1",
@@ -85,23 +100,29 @@ function normalizedPublicPath(pathname: string): string {
 export function resolveRedirect(pathname: string, search: string): RedirectDecision | null {
   let normalized: string | undefined;
   for (const rule of tables().redirects) {
+    const english = ENGLISH && rule.readerPage && localeOf(pathname) === "en";
+    const path = english ? pagePath(pathname) : pathname;
     let location: string | null = null;
     if (rule.match === "canonical") {
-      if (pathname === rule.path || (normalized ??= normalizedPublicPath(pathname)) !== rule.path) continue;
+      if (path === rule.path || (english ? normalizedPublicPath(path) : (normalized ??= normalizedPublicPath(path))) !== rule.path) continue;
       location = rule.path;
     } else if (rule.match === "exact") {
-      if (pathname !== rule.path) continue;
+      if (path !== rule.path) continue;
       location = rule.location ?? null;
     } else if (rule.match === "prefix") {
       const inTree = rule.path.endsWith("/")
-        ? pathname.startsWith(rule.path)
-        : pathname === rule.path || pathname.startsWith(`${rule.path}/`);
+        ? path.startsWith(rule.path)
+        : path === rule.path || path.startsWith(`${rule.path}/`);
       if (!inTree) continue;
-      location = rule.location ? rule.location.replace("*", pathname.slice(rule.path.length)) : null;
+      location = rule.location ? rule.location.replace("*", path.slice(rule.path.length)) : null;
     } else {
-      const m = new RegExp(rule.path).exec(pathname);
+      const m = new RegExp(rule.path).exec(path);
       if (!m) continue;
       location = rule.location ? rule.location.replace(/\$(\d)/g, (_s, i: string) => m[Number(i)] ?? "") : null;
+    }
+    if (english && location) {
+      if (!hasEnglish(location)) continue;
+      location = inLanguage(location, "en");
     }
     if (location && rule.keepQuery && search) location += search;
     if (location && rule.fragment) location += `#${rule.fragment}`;
@@ -213,7 +234,7 @@ const ENGINE_API_PATHS: RegExp[] = [
 let built: { redirects: RedirectRule[]; apiPaths: RegExp[] } | null = null;
 function tables() {
   built ??= {
-    redirects: [...ENGINE_REDIRECTS, ...MODULES.flatMap((m) => m.redirects ?? [])],
+    redirects: [...ENGINE_REDIRECTS, ...MODULES.flatMap((m) => (m.redirects ?? []).map((r) => ({ readerPage: m.en, ...r })))],
     apiPaths: [...ENGINE_API_PATHS, ...MODULES.flatMap((m) => m.apiPaths ?? [])],
   };
   return built;

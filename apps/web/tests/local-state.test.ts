@@ -54,7 +54,8 @@ test("stored bookmarks with damaged dates remain readable, exportable and remova
   assert.equal(starred[0]!.title, "Keep me");
   assert.equal(starred[0]!.publishedAt, null);
   assert.doesNotThrow(() => displayDate(starred[0]!.savedAt));
-  assert.strictEqual(state.getStarred(), starred, "React snapshots must stay stable between changes");
+  state.markRead("another-article");
+  assert.strictEqual(state.getStarred(), starred, "marking an item read keeps the saved-list snapshot");
   assert.deepEqual(state.exportBundle().starred, starred);
   state.removeStar("stored");
   assert.deepEqual(state.getStarred(), []);

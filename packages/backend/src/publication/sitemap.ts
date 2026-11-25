@@ -8,7 +8,8 @@ import { mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { REPORT_NAMES, reportDateLabel, STORY_INDEX_MIN_SOURCES, type ReportKind } from "@aihot/contracts/site";
 import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
-import { localeOf, pagePath } from "@aihot/contracts/i18n";
+import { hasEnglish } from "@aihot/contracts/reader-pages";
+import { inLanguage, localeOf, pagePath } from "@aihot/contracts/i18n";
 import { ABOUT, ACCESS, AGENT, POLICY, SITE, withSubject } from "@aihot/site";
 import { config, REPO_ROOT } from "../config.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
@@ -62,8 +63,8 @@ const readsInEnglish = (title: string, english: string | null) => !needsEnglish(
 /** The English addresses of the pages that have one: the same page and identity, in sections of their own. */
 function inEnglish(entries: Entry[], revisions: boolean): Entry[] {
   if (!ENGLISH) return [];
-  return entries.filter((e) => e.english).map((e) => ({
-    loc: e.loc === "/" ? "/en" : `/en${e.loc}`,
+  return entries.filter((e) => e.english !== false && hasEnglish(e.loc)).map((e) => ({
+    loc: inLanguage(e.loc, "en"),
     revision: !revisions || e.revision === undefined ? undefined : sha256(stableJson([e.revision, e.englishTitle ?? null])),
     lastmod: e.lastmod,
     changefreq: e.changefreq,
@@ -103,16 +104,16 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
   const topics = await topicPageCounts(at, !limits);
   // The terms, the privacy notice and the changelog are in Chinese only.
   entries.push(
-    { loc: "/", revision: activity?.selected ?? "", changefreq: "hourly", priority: 1, english: true },
-    { loc: "/all", revision: activity?.listed ?? "", changefreq: "hourly", priority: 0.9, english: true },
-    { loc: "/daily", revision: reportRevision("daily"), changefreq: "daily", priority: 0.9, english: true },
-    { loc: "/hot", revision: limits ? undefined : sha256(stableJson((await latestHotRanking())?.entries ?? [])), changefreq: "hourly", priority: 0.9, english: true },
-    { loc: "/daily/archive", revision: reportRevision("daily"), changefreq: "daily", priority: 0.7, english: true },
-    { loc: "/weekly", revision: reportRevision("weekly"), changefreq: "weekly", priority: 0.7, english: true },
-    { loc: "/monthly", revision: reportRevision("monthly"), changefreq: "monthly", priority: 0.6, english: true },
-    { loc: "/topics", revision: limits ? undefined : sha256(stableJson(topics)), changefreq: "daily", priority: 0.7, english: true },
-    { loc: "/agent", revision: limits ? undefined : sha256(stableJson([SITE, ACCESS, AGENT])), changefreq: "weekly", priority: 0.7, english: true },
-    { loc: "/about", revision: limits ? undefined : sha256(stableJson(ABOUT)), changefreq: "monthly", priority: 0.5, english: true },
+    { loc: "/", revision: activity?.selected ?? "", changefreq: "hourly", priority: 1 },
+    { loc: "/all", revision: activity?.listed ?? "", changefreq: "hourly", priority: 0.9 },
+    { loc: "/daily", revision: reportRevision("daily"), changefreq: "daily", priority: 0.9 },
+    { loc: "/hot", revision: limits ? undefined : sha256(stableJson((await latestHotRanking())?.entries ?? [])), changefreq: "hourly", priority: 0.9 },
+    { loc: "/daily/archive", revision: reportRevision("daily"), changefreq: "daily", priority: 0.7 },
+    { loc: "/weekly", revision: reportRevision("weekly"), changefreq: "weekly", priority: 0.7 },
+    { loc: "/monthly", revision: reportRevision("monthly"), changefreq: "monthly", priority: 0.6 },
+    { loc: "/topics", revision: limits ? undefined : sha256(stableJson(topics)), changefreq: "daily", priority: 0.7 },
+    { loc: "/agent", revision: limits ? undefined : sha256(stableJson([SITE, ACCESS, AGENT])), changefreq: "weekly", priority: 0.7 },
+    { loc: "/about", revision: limits ? undefined : sha256(stableJson(ABOUT)), changefreq: "monthly", priority: 0.5 },
     { loc: "/terms", revision: limits ? undefined : sha256(stableJson([POLICY.terms, await readFile(path.join(REPO_ROOT, "site/pages/terms.md"), "utf8")])), changefreq: "monthly", priority: 0.4 },
     { loc: "/privacy", revision: limits ? undefined : sha256(stableJson([POLICY.privacy, await readFile(path.join(REPO_ROOT, "site/pages/privacy.md"), "utf8")])), changefreq: "monthly", priority: 0.4 },
     { loc: "/changelog", revision: limits ? undefined : sha256(stableJson(loadChangelog())), changefreq: "weekly", priority: 0.5 },
@@ -138,13 +139,13 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
     }
   }
   for (const r of reports) {
-    entries.push({ loc: `/${r.kind}/${r.key}`, lastmod: r.t, newsAt: r.changed, newsTitle: recentReportHeads.get(`${r.kind}/${r.key}`), revision: r.revision, changefreq: "monthly", priority: 0.6, english: true });
+    entries.push({ loc: `/${r.kind}/${r.key}`, lastmod: r.t, newsAt: r.changed, newsTitle: recentReportHeads.get(`${r.kind}/${r.key}`), revision: r.revision, changefreq: "monthly", priority: 0.6 });
   }
   for (const t of topics) {
     if (!t.indexable) continue;
     // A topic's archive pages (/page/2+) are noindex, follow and reached from the topic page: neither the
     // sitemap nor change notifications list them.
-    entries.push({ loc: `/topics/${t.slug}`, revision: t.revision, changefreq: "daily", priority: 0.6, english: true });
+    entries.push({ loc: `/topics/${t.slug}`, revision: t.revision, changefreq: "daily", priority: 0.6 });
   }
   // A story needs listed evidence of its own and at least STORY_INDEX_MIN_SOURCES distinct public sources:
   // single-source clusters are noindex everywhere, so neither the sitemap nor notifications list them. Its

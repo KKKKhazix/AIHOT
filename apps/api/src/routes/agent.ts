@@ -5,7 +5,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { PUBLIC_API_CATEGORY_KEYS, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { isValidDate } from "@aihot/contracts/time";
-import { agentGuide, dailyAnswer, hotAnswer, latestAnswer, periodAnswer, searchAnswer, searchItems, storyAnswer } from "@aihot/backend/publication/agent";
+import { AGENT_ITEM_LIMIT, agentGuide, dailyAnswer, hotAnswer, latestAnswer, periodAnswer, searchAnswer, searchItems, storyAnswer } from "@aihot/backend/publication/agent";
 import { v1Items } from "@aihot/backend/publication/v1";
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
 import { dailyWithNotes, isPeriodKey, v1Period } from "@aihot/backend/publication/reports";
@@ -30,7 +30,7 @@ function listParams(q: Record<string, string>) {
   return {
     window: enumParam(q.window, "window", ["24h", "7d"] as const, "24h"),
     category: q.category === undefined ? null : enumParam<PublicApiCategoryKey>(q.category, "category", PUBLIC_API_CATEGORY_KEYS, PUBLIC_API_CATEGORY_KEYS[0]),
-    limit: intParam(q.limit, "limit", 1, 30, 10),
+    limit: intParam(q.limit, "limit", 1, AGENT_ITEM_LIMIT.max, AGENT_ITEM_LIMIT.default),
   };
 }
 

@@ -15,7 +15,7 @@ import { Link } from "../../lib/link";
 import { apiIn, useLocale, useT, type Locale, type Translate } from "../../lib/i18n";
 
 const reportsUrl = (factId: string, filters: TimelineFilters | undefined, locale: Locale) =>
-  listPath(apiIn(`/api/site/groups/${encodeURIComponent(factId)}/reports`, locale), filters ? filterParams(filters) : {});
+  listPath(apiIn(`/groups/${encodeURIComponent(factId)}/reports`, locale), filters ? filterParams(filters) : {});
 
 const labelOf = (group: GroupInfo, t: Translate) => {
   const others = group.additionalSourceCount;

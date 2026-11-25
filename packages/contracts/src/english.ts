@@ -2,8 +2,18 @@
 // `export const ENGLISH = null` in its site.ts; read through here, the engine sees one type on every site.
 import { ENGLISH as SITE_ENGLISH } from "@aihot/site";
 import type { EnglishEdition } from "./site-config.ts";
+import type { Locale } from "./i18n.ts";
 
 export const ENGLISH: EnglishEdition | null = SITE_ENGLISH;
+export const READER_LANGUAGES: readonly Locale[] = ENGLISH ? ["zh", "en"] : ["zh"];
+
+/** Shared cache lifetime while a public page or image waits for its English copy. */
+export const WAITING_ENGLISH_SECONDS = 60;
+
+/** Reader data is registered and requested under the same language prefix. */
+export function readingApi(path: `/${string}` | "", lang: Locale): string {
+  return (lang === "en" ? "/api/site/en" : "/api/site") + path;
+}
 
 /**
  * Han characters, as a regular expression both JavaScript and PostgreSQL read the same way (the worker finds what

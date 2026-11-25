@@ -18,7 +18,7 @@ import { isValidDate } from "@aihot/contracts/time";
 import { config } from "@aihot/backend/config";
 import { cachedByKey } from "@aihot/backend/lib/cache";
 import { logError } from "@aihot/backend/lib/log-error";
-import { dailyAnswer, hotAnswer, latestAnswer, periodAnswer, searchAnswer, searchItems, storyAnswer } from "@aihot/backend/publication/agent";
+import { AGENT_ITEM_LIMIT, dailyAnswer, hotAnswer, latestAnswer, periodAnswer, searchAnswer, searchItems, storyAnswer } from "@aihot/backend/publication/agent";
 import { SELECTION } from "@aihot/industry/selection";
 import { v1Items } from "@aihot/backend/publication/v1";
 import { SearchBusyError } from "@aihot/backend/publication/pool";
@@ -102,13 +102,13 @@ const LATEST_INPUT = input({
   window: z.enum(["24h", "7d"]).default("24h").describe("Time window. Use 24h for a current briefing and 7d for a weekly view."),
   mode: z.enum(["selected", "all"]).default("selected").describe(`selected returns editorial picks; all returns every public item scoring ${SELECTION.browseFloor} or more.`),
   category,
-  limit: z.number().int().min(1).max(30).default(10).describe("Maximum number of results, from 1 to 30."),
+  limit: z.number().int().min(1).max(AGENT_ITEM_LIMIT.max).default(AGENT_ITEM_LIMIT.default).describe(`Maximum number of results, from 1 to ${AGENT_ITEM_LIMIT.max}.`),
 });
 const SEARCH_INPUT = input({
   q: z.string().min(2).max(200).describe("Search query, 2 to 200 characters."),
   window: z.enum(["24h", "7d"]).default("7d").describe("Search window. Defaults to the latest 7 days."),
   category,
-  limit: z.number().int().min(1).max(30).default(10).describe("Maximum number of results, from 1 to 30."),
+  limit: z.number().int().min(1).max(AGENT_ITEM_LIMIT.max).default(AGENT_ITEM_LIMIT.default).describe(`Maximum number of results, from 1 to ${AGENT_ITEM_LIMIT.max}.`),
 });
 const HOT_INPUT = input({
   limit: z.number().int().min(1).max(10).default(10).describe("Maximum number of current topics, from 1 to 10."),

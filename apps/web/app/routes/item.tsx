@@ -11,7 +11,7 @@ import { addressRuns } from "@aihot/contracts/addresses";
 import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { loadFollowups } from "../features/item/followups.server";
 import { pageReuse } from "../lib/page-reuse";
-import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
+import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled, titleCacheSeconds } from "../lib/seo";
 import { fullDateTime, timeAgo } from "../lib/format";
 import { markRead } from "../lib/local-state";
 import { copyText } from "../lib/clipboard";
@@ -44,8 +44,8 @@ const PosterSheet = lazy(() => import("../features/item/PosterSheet"));
 
 export async function loader({ params, request }: Route.LoaderArgs) {
   const locale = localeOf(pagePathname(request));
-  const item = await loadOr404<SiteItemDetail>(apiIn(`/api/site/items/${encodeURIComponent(params.id)}`, locale), { signal: request.signal });
-  return cachedPage(600, { item, followups: await loadFollowups(item, locale, request.signal) });
+  const item = await loadOr404<SiteItemDetail>(apiIn(`/items/${encodeURIComponent(params.id)}`, locale), { signal: request.signal });
+  return cachedPage(titleCacheSeconds(600, locale, item.indexable ? item.title : null), { item, followups: await loadFollowups(item, locale, request.signal) });
 }
 
 type Loaded = { item: SiteItemDetail; followups: StoryFollowupsResponse | null };

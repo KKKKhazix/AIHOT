@@ -14,8 +14,8 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
     SELECT a.id, a.revision, a.title, s.participation_mode
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId}`;
   if (!article) return;
-  const [analysis] = await tx<{ input_revision: number; relevance: string | null; title_zh: string | null; output: Record<string, any> | null }[]>`
-    SELECT input_revision, relevance, title_zh, output FROM analyses WHERE article_id = ${articleId} ORDER BY input_revision DESC, id DESC LIMIT 1`;
+  const [analysis] = await tx<{ input_revision: number; relevance: string | null; title_zh: string | null; summary_zh: string | null; output: Record<string, any> | null }[]>`
+    SELECT input_revision, relevance, title_zh, summary_zh, output FROM analyses WHERE article_id = ${articleId} ORDER BY input_revision DESC, id DESC LIMIT 1`;
   const [pub] = await tx<{ visibility: string; suppress_original: boolean; title: string }[]>`
     SELECT visibility, suppress_original, title FROM publications WHERE article_id = ${articleId}`;
   const [override] = await tx<{ fields: Record<string, unknown>; visibility: string | null }[]>`
@@ -58,6 +58,7 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
   const frameTitle = typeof frame?.title === "string" ? collapseWhitespace(frame.title) : "";
   const ownFactCandidate = !withdrawn ? (overrideTitle || frameTitle || ownCleanTitle || "") : "";
 
+  const reportContext = [article.title, ownCleanTitle, !awaitingReview && analysis?.summary_zh].filter(Boolean).join("\n");
   const seenFacts = new Set<number>();
   for (const m of memberships) {
     const factId = Number(m.fact_id);
@@ -81,6 +82,7 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
         : m.conditions;
     const cleaned = sanitizer({
       title: targetFactTitle,
+      reportContext,
       fallbackTitle: fallbackFactTitle,
       conditions: rawConditions,
       subject: soleActive && frame ? (frame.subject ?? null) : m.subject,
@@ -125,6 +127,7 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
       : m.story_title;
     const cleanedStory = sanitizer({
       title: desiredStoryTitle,
+      reportContext,
       fallbackTitle: fallbackStoryTitle,
     });
     if (cleanedStory.title !== m.story_title) {

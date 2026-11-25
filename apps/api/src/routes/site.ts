@@ -2,7 +2,7 @@
 // Reads through the same public read layer as v1; no cookies are read or set. A site with an English edition
 // also answers what readers read in English, under /api/site/en/* (publication/english.ts).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { ENGLISH } from "@aihot/contracts/english";
+import { readingApi, READER_LANGUAGES } from "@aihot/contracts/english";
 import type { Locale } from "@aihot/contracts/i18n";
 import { isCategoryKey, isChannelKey, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
 import type { ReportIndexResponse, ReportLatestPage, ReportNavigationResponse, SearchSuggestions, SiteContact } from "@aihot/contracts/site";
@@ -61,11 +61,6 @@ export function parseFilters(q: Record<string, string>): FilterParams {
   return { channel, category: category as CategoryKey | null, tag };
 }
 
-/**
- * Where each language's answers live: the Chinese under /api/site, the English under /api/site/en (only on a site
- * with an English edition). The path decides the language, so a cache keyed by URL never mixes the two.
- */
-const LANGUAGES: Array<{ lang: Locale; base: string }> = [{ lang: "zh", base: "/api/site" }, ...(ENGLISH ? [{ lang: "en" as const, base: "/api/site/en" }] : [])];
 
 export function registerSite(app: FastifyInstance) {
   app.get("/api/site/meta", siteHandler(async (req, reply) => {
@@ -84,7 +79,7 @@ export function registerSite(app: FastifyInstance) {
 
   registerFeedback(app);
 
-  for (const { lang, base } of LANGUAGES) registerReading(app, lang, base);
+  for (const lang of READER_LANGUAGES) registerReading(app, lang, readingApi("", lang));
 
   // Markdown export: attachment, 404 when there is nothing to export (same predicate as the button).
   app.get("/items/:id/markdown", siteHandler(async (req, reply) => {

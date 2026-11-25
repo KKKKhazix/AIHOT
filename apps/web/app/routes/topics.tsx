@@ -1,3 +1,4 @@
+import { namesEn } from "@aihot/contracts/i18n";
 import { useLoaderData } from "react-router";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
@@ -22,7 +23,7 @@ export { pageHeaders as headers } from "../lib/api.server";
 export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
-  return cachedPage(300, await apiGet<TopicsResponse>(apiIn("/api/site/topics", localeOf(pagePathname(request))), { signal: request.signal }));
+  return cachedPage(300, await apiGet<TopicsResponse>(apiIn("/topics", localeOf(pagePathname(request))), { signal: request.signal }));
 }
 
 /** A topic group's name and line in the page's language (the industry pack's English). */
@@ -31,16 +32,13 @@ function groupIn(g: TopicGroup, locale: Locale): TopicGroup {
   return en ? { ...g, name: en.name, blurb: en.blurb } : g;
 }
 
-/** "A, B and C". */
-const listEn = (words: string[]) => (words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : (words[0] ?? ""));
-
 export function meta({ loaderData, location }: Route.MetaArgs) {
   const locale = localeOf(location.pathname);
   const t = translator(locale);
   const title = t(SITE.topicsTitle, ENGLISH?.topicsTitle ?? SITE.topicsTitle);
   if (!loaderData) return pageMeta({ locale, title, path: "/topics", image: "/og/pages/topics.png" });
   const { groups, topics } = loaderData;
-  const by = t(groups.map((g) => g.name).join("、"), listEn(groups.map((g) => groupIn(g, locale).name)));
+  const by = t(groups.map((g) => g.name).join("、"), namesEn(groups.map((g) => groupIn(g, locale).name)));
   const indexed = topics.filter((topic) => topic.indexable);
   const named = indexed.slice(0, 6).map((topic) => topicName(topic.slug, topic.name, locale).split(" / ")[0]).join(t("、", ", "));
   const base = siteUrl();
@@ -143,7 +141,7 @@ export default function TopicsPage() {
               <span className="num">{topics.length}</span> 个主题，挑关心的方向看最新动态。
             </>,
             <>
-              <span className="num">{topics.length}</span> topics across {listEn(groups.map((g) => groupIn(g, locale).name))}. Pick the ones you care about to see the latest.
+              <span className="num">{topics.length}</span> topics across {namesEn(groups.map((g) => groupIn(g, locale).name))}. Pick the ones you care about to see the latest.
             </>,
           )}
         </p>

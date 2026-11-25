@@ -39,6 +39,7 @@ const MCP_CLIENTS = [
 export function McpPanel(props: AgentPanelProps) {
   const t = useT();
   const locale = useLocale();
+  const tools = shownIn(locale, AGENT_PARTS.flatMap((p) => p.tools ?? []), (tool) => tool.does);
   const url = addressOf(props, "/api/mcp");
   const name = SITE.mcpPrefix;
   const [client, setClient] = useState<string>("claude");
@@ -65,7 +66,7 @@ export function McpPanel(props: AgentPanelProps) {
         </Step>
       </Steps>
 
-      <Block title={t(`${mcpToolCount()} 个工具`, `${mcpToolCount()} tools`)}>
+      <Block title={t(`${mcpToolCount()} 个工具`, `${MCP_TOOLS.length + tools.length} tools available in English`)}>
         <Table
           head={[t("工具", "Tool"), t("能做什么", "What it does"), t("可以这样问", "Try asking")]}
           minWidth={600}
@@ -77,7 +78,7 @@ export function McpPanel(props: AgentPanelProps) {
             [<Mono>{T.daily}</Mono>, t(subjectAfter("最新或指定日期的", "日报"), `The latest ${SITE.subject} Daily, or the one for a given date`), t("给我今天的日报。", `Give me today's ${SITE.subject} Daily.`)],
             [<Mono>{T.weekly}</Mono>, t(subjectAfter("最新或指定一周的", "周报"), `The latest ${SITE.subject} Weekly, or the one for a given week`), t(`${subjectAfter("这周", "圈")}有哪些大事？`, `What were the big ${SITE.subject} stories this week?`)],
             [<Mono>{T.monthly}</Mono>, t(subjectAfter("最新或指定月份的", "月报"), `The latest ${SITE.subject} Monthly, or the one for a given month`), t(`${subjectAfter("上个月", "圈")}发生了什么？`, `What happened in ${SITE.subject} last month?`)],
-            ...shownIn(locale, AGENT_PARTS.flatMap((a) => a.tools ?? []), (x) => x.does).map((x) => [<Mono>{x.name}</Mono>, t(x.does), t(x.ask)]),
+            ...tools.map((x) => [<Mono>{x.name}</Mono>, t(x.does), t(x.ask)]),
           ]}
         />
       </Block>

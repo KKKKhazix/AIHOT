@@ -10,23 +10,23 @@ import { editorialPolicy } from "../modules.ts";
 export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise<void> {
   const sanitizer = editorialPolicy().sanitizeEventCopy;
   if (!sanitizer) return;
-  const [article] = await tx<{ id: string; revision: number; title: string; participation_mode: string }[]>`
-    SELECT a.id, a.revision, a.title, s.participation_mode
+  const [article] = await tx<{ revision: number; title: string; participation_mode: string }[]>`
+    SELECT a.revision, a.title, s.participation_mode
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId}`;
   if (!article) return;
-  const [analysis] = await tx<{ input_revision: number; relevance: string | null; title_zh: string | null; summary_zh: string | null; output: Record<string, any> | null }[]>`
-    SELECT input_revision, relevance, title_zh, summary_zh, output FROM analyses WHERE article_id = ${articleId} ORDER BY input_revision DESC, id DESC LIMIT 1`;
+  const [analysis] = await tx<{ input_revision: number; title_zh: string | null; summary_zh: string | null; output: Record<string, any> | null }[]>`
+    SELECT input_revision, title_zh, summary_zh, output FROM analyses WHERE article_id = ${articleId} ORDER BY input_revision DESC, id DESC LIMIT 1`;
   const [pub] = await tx<{ visibility: string; suppress_original: boolean; title: string }[]>`
     SELECT visibility, suppress_original, title FROM publications WHERE article_id = ${articleId}`;
   const [override] = await tx<{ fields: Record<string, unknown>; visibility: string | null }[]>`
     SELECT fields, visibility FROM editorial_overrides WHERE article_id = ${articleId}`;
 
   const memberships = await tx<{
-    fact_id: number; role: string; evidence: string | null;
+    fact_id: number; role: string;
     fact_title: string; subject: string | null; action: string | null; object: string | null; conditions: string | null;
     story_id: number | null; story_title: string | null; story_origin: string | null;
   }[]>`
-    SELECT fa.fact_id, fa.role, fa.evidence,
+    SELECT fa.fact_id, fa.role,
            f.title AS fact_title, f.subject, f.action, f.object, f.conditions,
            st.id AS story_id, st.title AS story_title, st.origin AS story_origin
     FROM fact_articles fa JOIN facts f ON f.id = fa.fact_id
@@ -46,8 +46,8 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
 
   const dirtyStories = new Set<number>();
   if (suppressOriginal || withdrawn) {
-    const cleared = await tx`UPDATE fact_articles SET evidence = NULL WHERE article_id = ${articleId} AND evidence IS NOT NULL RETURNING fact_id`;
-    if (cleared.length) {
+    const cleared = await tx`UPDATE fact_articles SET evidence = NULL WHERE article_id = ${articleId} AND evidence IS NOT NULL`;
+    if (cleared.count) {
       for (const m of memberships) if (m.story_id !== null) dirtyStories.add(Number(m.story_id));
     }
   }
@@ -59,12 +59,9 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
   const ownFactCandidate = !withdrawn ? (overrideTitle || frameTitle || ownCleanTitle || "") : "";
 
   const reportContext = [article.title, ownCleanTitle, !awaitingReview && analysis?.summary_zh].filter(Boolean).join("\n");
-  const seenFacts = new Set<number>();
   for (const m of memberships) {
     const factId = Number(m.fact_id);
     if (m.role !== "primary" && m.role !== "report") continue;
-    if (seenFacts.has(factId)) continue;
-    seenFacts.add(factId);
 
     const peers = await tx<{ title: string; suppress_original: boolean }[]>`
       SELECT p.title, p.suppress_original

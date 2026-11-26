@@ -5,14 +5,19 @@
 import type { FastifyInstance } from "fastify";
 import { createHash } from "node:crypto";
 import { enqueue, QUEUES } from "@aihot/backend/jobs/queue";
-import { failureSeconds, ImageBudgetExceeded, produceAvif, produceImage } from "@aihot/backend/media/images";
+import { type PreparedImage, cachedGifVideo, failureSeconds, ImageBudgetExceeded, produceAvif, produceImage } from "@aihot/backend/media/images";
 import { AVIF_MODE_SUFFIX } from "@aihot/contracts/site";
-import { LONGEST_CACHE_SECONDS, X_VIDEO_MODE, verifyProxyRequest } from "@aihot/backend/media/imgproxy";
+import { GIF_VIDEO_MODE, LONGEST_CACHE_SECONDS, X_VIDEO_MODE, verifyProxyRequest } from "@aihot/backend/media/imgproxy";
 import { etagMatches, looseQuery } from "../http/respond.ts";
 
 function imageCacheControl(exp: string, limit: number): string {
   const remaining = Math.min(limit, Number(exp) - Math.floor(Date.now() / 1000));
   return remaining > 0 ? `public, max-age=${remaining}, s-maxage=${remaining}` : "no-store";
+}
+
+function queueRendition(url: string, mode: string, format?: "mp4" | "avif") {
+  const key = createHash("sha256").update(`${mode}${format === "avif" ? AVIF_MODE_SUFFIX : ""}|${url}`).digest("hex");
+  return enqueue(QUEUES.prepareMedia, { url, mode, ...(format ? { format } : {}) }, { singletonKey: `rendition:${key}` });
 }
 
 export function registerMedia(app: FastifyInstance) {
@@ -28,15 +33,21 @@ export function registerMedia(app: FastifyInstance) {
     }
     reply.header("X-Img-Proxy-Sig", "valid");
     try {
-      const { body, type, pendingAnimation, pendingAvif } = await (verdict.avif ? produceAvif : produceImage)(verdict.url, verdict.mode);
-      const pending = pendingAnimation || pendingAvif;
+      const video = verdict.mode === GIF_VIDEO_MODE;
+      const prepared = video ? await cachedGifVideo(verdict.url) : null;
+      if (video && !prepared) {
+        await queueRendition(verdict.url, GIF_VIDEO_MODE, "mp4");
+        return reply.code(202).header("Cache-Control", "no-store").send();
+      }
+      const image: PreparedImage = prepared ? { body: prepared, type: "video/mp4" }
+        : await (verdict.avif ? produceAvif : produceImage)(verdict.url, verdict.mode);
+      const { body, type } = image;
+      const pending = image.pendingAnimation || image.pendingAvif;
       let queued = false;
-      if (pending) {
+      if (pending || image.pendingVideo) {
         try {
-          // Readers can arrive before selection, so article preparation alone is insufficient.
-          // A null id means a job with this singleton key is already queued.
-          const key = createHash("sha256").update(`${verdict.mode}${pendingAvif ? AVIF_MODE_SUFFIX : ""}|${verdict.url}`).digest("hex");
-          await enqueue(QUEUES.prepareMedia, { url: verdict.url, mode: verdict.mode, ...(pendingAvif ? { format: "avif" as const } : {}) }, { singletonKey: `rendition:${key}` });
+          if (image.pendingVideo) await queueRendition(verdict.url, GIF_VIDEO_MODE, "mp4");
+          else await queueRendition(verdict.url, verdict.mode, image.pendingAvif ? "avif" : undefined);
           queued = true;
         } catch (error) {
           req.log.warn({ err: error }, "img-proxy preparation enqueue failed");
@@ -52,7 +63,7 @@ export function registerMedia(app: FastifyInstance) {
         .header("X-Content-Type-Options", "nosniff")
         .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
       if (etagMatches(req.headers["if-none-match"], etag)) return reply.code(304).send();
-      if (verdict.mode === X_VIDEO_MODE) {
+      if (verdict.mode === X_VIDEO_MODE || video) {
         reply.header("Accept-Ranges", "bytes");
         // Safari probes the first two bytes before requesting the media. Serve single ranges from
         // the same cached representation, so seeks don't fetch the upstream MP4 again.

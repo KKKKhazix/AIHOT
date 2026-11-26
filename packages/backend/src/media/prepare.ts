@@ -2,7 +2,8 @@
 // page ask the image proxy for is fetched and resized once (a first reader otherwise waits seconds
 // for the source site), animations are re-encoded, AVIF variants are made while the original is at
 // hand, and the share image is rendered before the content push makes chat apps fetch it.
-import { convertAnimated, convertAvif, produceImage } from "./images.ts";
+import { convertAnimated, convertAvif, prepareGifVideo, produceImage } from "./images.ts";
+import { GIF_VIDEO_MODE } from "./imgproxy.ts";
 import { AVIF_MODES } from "./renditions.ts";
 import { AVIF_MODE_SUFFIX } from "@aihot/contracts/site";
 import { loadItemDetail } from "../publication/detail.ts";
@@ -32,6 +33,10 @@ export async function prepareArticleMedia(articleId: string): Promise<{ renditio
   const renditions = proxiedRenditions([toFeedItemSummary(zh.row), zh.item, original.item]);
   for (const { url, mode } of renditions) {
     try {
+      if (mode === GIF_VIDEO_MODE) {
+        await prepareGifVideo(url);
+        continue;
+      }
       const image = await produceImage(url, mode);
       if (image.type === "image/gif") animatedSaved += await convertAnimated(url, mode);
       if ((AVIF_MODES as readonly string[]).includes(mode)) avifSaved += await convertAvif(url, mode);

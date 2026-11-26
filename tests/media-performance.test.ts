@@ -42,6 +42,11 @@ for (let at = overBudgetGif.indexOf(descriptor); at !== -1; at = overBudgetGif.i
 }
 const server = createServer(async (req, res) => {
   if (req.url === "/separator.png") { res.writeHead(200, { "content-type": "image/png" }); return res.end(separator); }
+  if (req.url === "/large-source.gif") {
+    res.writeHead(200, { "content-type": "image/gif" });
+    res.write(animatedGif);
+    return res.end(Buffer.alloc(16 * 1024 * 1024));
+  }
   if (req.url === "/anim.gif") { animationHits++; res.writeHead(200, { "content-type": "image/gif" }); return res.end(animatedGif); }
   if (req.url === "/tiny.gif") { res.writeHead(200, { "content-type": "image/gif" }); return res.end(tinyGif); }
   if (req.url === "/photo.jpg") { res.writeHead(200, { "content-type": "image/jpeg" }); return res.end(photo); }
@@ -181,11 +186,7 @@ test("site media exposes responsive previews and full lightboxes while RSS retai
   assert.ok(xView(row, true)!.media[1]!.poster!.includes("mode=card"));
   assert.ok(xView(row)!.media.every((m) => m.url.includes("mode=thumb") && m.fullUrl === undefined));
   const detail = xView(row, false, true)!.media;
-  assert.ok(detail.every((m) => m.url.includes("mode=full") && m.srcSet?.includes("mode=thumb")));
-  for (const media of detail.filter((m) => !m.poster)) {
-    // Opening a picture already displayed at full resolution must reuse its browser cache entry.
-    assert.equal(media.srcSet!.split(", ").at(-1), `${media.poster ?? media.url} 1600w`);
-  }
+  assert.ok(detail.every((m) => m.url.includes("mode=reading") && m.fullUrl?.includes("mode=full") && !m.srcSet));
   row.x_post.media[1]!.url = "javascript:invalid";
   const single = xView(row, true)!.media;
   assert.equal(single.length, 1);
@@ -301,10 +302,10 @@ test("responsive URLs and web body candidates retain exact signatures and stable
   assert.ok(!proxyBodyImages('<img src="https://example.org/small.png" width="160" height="80">').includes('srcset='));
   assert.ok(!proxyBodyImages('<img src="https://example.org/unknown.png">').includes('srcset='));
   const web = proxyBodyImages(html);
-  assert.match(web, /srcset="[^"]+mode=thumb/);
-  const tag = web.match(/<img\b[^>]+>/)![0];
-  const bodySource = tag.match(/\bsrc="([^"]+)"/)![1];
-  assert.equal(tag.match(/\bsrcset="([^"]+)"/)![1]!.split(", ").at(-1), `${bodySource} 1600w`);
+  assert.doesNotMatch(web, /srcset=/);
+  assert.match(web, / src="[^"]+mode=reading/);
+  assert.match(web, / data-full-sig="[0-9a-f]{16}"/);
+  assert.doesNotMatch(web, /mode=full/);
   assert.match(web, /loading="lazy"/);
   assert.match(web, /width="800" height="400"/);
   assert.doesNotMatch(web, /sizes="auto\b/, "body images must use their loaded ratio even if publisher dimensions are wrong");
@@ -564,12 +565,12 @@ test("video pages mislabeled as images are excluded across ingestion and public 
   assert.equal((bodyToMarkdown(stored).match(/!\[/g) ?? []).length, pictures.length);
   for (const url of pages) {
     assert.equal(proxiedImage(url, "full"), null);
-    assert.equal(proxiedImageSet(url, "body"), null);
+    assert.equal(proxiedImageSet(url, "hero"), null);
     assert.equal(xView({ zh_text: null, x_post: { media: [{ url }] } }, true)!.media.length, 0);
   }
   for (const url of pictures) {
     assert.ok(proxiedImage(url, "full"));
-    assert.ok(proxiedImageSet(url, "body"));
+    assert.ok(proxiedImageSet(url, "hero"));
   }
   const video = `<a href="${pages[0]!.replaceAll("&", "&amp;")}">Watch video</a><video src="https://example.org/video.mp4" poster="${pictures[1]}"></video>`;
   for (const html of [sanitizeBody(video), proxyBodyImages(video), proxyBodyImages(video, true)]) {
@@ -638,29 +639,68 @@ test("an AVIF variant is signed as its rendition and serves that rendition until
   await app.close();
 });
 
-test("web body images offer their responsive set as AVIF variants first; RSS and images without a set are unchanged", async () => {
+test("body GIFs load only their poster until playback; full feeds and publisher links keep their target", async () => {
   const { proxyBodyImages, verifyProxyRequest } = await import("@aihot/backend/media/imgproxy");
-  const { proxiedRenditions } = await import("@aihot/backend/media/prepare");
-  const { avifCandidates } = await import("@aihot/contracts/site");
-  const html = '<p><img src="https://example.org/wide.png" width="1200" height="600" alt="图"></p>';
-  const web = proxyBodyImages(html);
-  const picture = web.match(/<picture\b[^>]*><source type="image\/avif" ([^>]+)>(<img\b[^>]+>)<\/picture>/);
-  assert.ok(picture, web);
-  const attr = (tag: string, name: string) => tag.match(new RegExp(`\\b${name}="([^"]+)"`))?.[1]?.replaceAll("&amp;", "&");
-  const imgSet = attr(picture[2]!, "srcset")!;
-  assert.equal(attr(picture[1]!, "srcset"), avifCandidates(imgSet));
-  assert.equal(attr(picture[1]!, "sizes"), attr(picture[2]!, "sizes"));
-  for (const candidate of avifCandidates(imgSet).split(", ")) {
-    const query = Object.fromEntries(new URL(candidate.split(" ")[0]!, "http://localhost").searchParams);
-    assert.match(query.mode!, /-avif$/);
+  const { load } = await import("cheerio");
+  const html = '<figure><picture><img src="https://example.org/demo.gif" alt="Demo" width="800"></picture><figcaption>Caption</figcaption></figure>';
+  const page = load(proxyBodyImages(html));
+  const player = page("video");
+  assert.equal(player.attr("preload"), "none");
+  assert.equal(player.attr("aria-label"), "Demo");
+  assert.equal(page("figcaption").text(), "Caption");
+  for (const [attr, mode] of [["poster", "reading"], ["src", "gif-video"]] as const) {
+    const query = Object.fromEntries(new URL(player.attr(attr)!, "https://example.test").searchParams);
+    assert.equal(query.mode, mode);
     assert.equal(verifyProxyRequest(query).ok, true);
   }
-  // Preparing a new item's images reads these bodies: the variants are made from their renditions, never
-  // encoded as renditions of their own (that wrote 1600 px JPEGs where the AVIF belongs).
-  assert.deepEqual(proxiedRenditions([{ html: web }]).map((r) => r.mode).sort(), ["full", "image-1200", "thumb"]);
-  assert.doesNotMatch(proxyBodyImages(html, true), /<picture|<source/);
-  assert.doesNotMatch(proxyBodyImages('<img src="https://example.org/small.png" width="160" height="80">'), /<picture|<source/);
-  // A publisher's own picture (cleaning keeps it and drops its sources) takes the source; pictures do not nest.
-  const publisher = proxyBodyImages('<picture><img src="https://example.org/wide.png" width="1200" height="600"></picture>');
-  assert.match(publisher, /^<picture><source type="image\/avif" [^>]+><img\b[^>]+><\/picture>$/);
+  const full = new URL(player.attr("poster")!, "https://example.test");
+  full.searchParams.set("mode", "full");
+  full.searchParams.set("sig", player.attr("data-full-sig")!);
+  assert.equal(verifyProxyRequest(Object.fromEntries(full.searchParams)).ok, true);
+  assert.match(proxyBodyImages(html, true), /<img[^>]+mode=full/);
+  assert.doesNotMatch(proxyBodyImages(html, true), /<video|data-full-sig|mode=reading/);
+  const link = proxyBodyImages('<a href="https://example.org/visit"><img src="https://example.org/demo.gif"></a>');
+  assert.match(link, /<a href="https:\/\/example.org\/visit"><img/);
+  assert.doesNotMatch(link, /<video/);
+});
+
+test("the reading image is a still, and a prepared GIF movie supports the player's byte range", async () => {
+  const { registerMedia } = await import("../apps/api/src/routes/media.ts");
+  const { signature, GIF_VIDEO_MODE } = await import("@aihot/backend/media/imgproxy");
+  const { default: Fastify } = await import("fastify");
+  const url = base + "/anim.gif";
+  const preview = await produceImage(url, "reading");
+  const meta = await sharp(preview.body).metadata();
+  assert.equal(meta.format, "webp");
+  assert.equal(meta.pages ?? 1, 1);
+  const exp = String(Math.ceil(Date.now() / 1000) + 3600);
+  const address = "/api/img-proxy?" + new URLSearchParams({ u: url, exp, mode: GIF_VIDEO_MODE, sig: signature(url, GIF_VIDEO_MODE, exp) });
+  const app = Fastify();
+  registerMedia(app);
+  try {
+    const pending = await app.inject({ url: address });
+    assert.equal(pending.statusCode, 202);
+    assert.equal(pending.headers["cache-control"], "no-store");
+    const file = createHash("sha256").update(GIF_VIDEO_MODE + "|" + url).digest("hex");
+    const folder = path.join(dir, "imgcache", file.slice(0, 2));
+    await mkdir(folder, { recursive: true });
+    await writeFile(path.join(folder, file), Buffer.from("prepared video bytes"));
+    const range = await app.inject({ url: address, headers: { range: "bytes=0-1" } });
+    assert.equal(range.statusCode, 206);
+    assert.equal(range.headers["content-type"], "video/mp4");
+    assert.equal(range.body, "pr");
+  } finally {
+    await app.close();
+  }
+});
+
+
+test("a large GIF can become a reading preview while its raw bytes remain over the public image limit", async () => {
+  const url = base + "/large-source.gif";
+  await assert.rejects(produceImage(url, "full"), /Response too large/);
+  const preview = await produceImage(url, "reading");
+  assert.equal(preview.type, "image/webp");
+  assert.ok(preview.body.length < 30_000);
+  assert.equal(preview.pendingVideo, true);
+  await assert.rejects(produceImage(url, "full"), /Response too large/);
 });

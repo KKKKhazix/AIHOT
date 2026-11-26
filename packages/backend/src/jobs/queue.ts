@@ -25,7 +25,7 @@ export interface JobData {
   "sources.mp": { sourceId: string; reason?: "schedule" | "manual" };
   "notify.selected": { articleId: string; attempt?: number };
   "publication.republish-source": { sourceId: string };
-  "media.prepare": { articleId: string } | { url: string; mode: string; format?: "avif" };
+  "media.prepare": { articleId: string } | { url: string; mode: string; format?: "avif" | "mp4" };
 }
 export type QueueName = keyof JobData;
 

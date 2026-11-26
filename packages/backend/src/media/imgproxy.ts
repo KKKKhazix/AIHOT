@@ -10,7 +10,7 @@ import { config, credential } from "../config.ts";
 import { normalizeVideos } from "../content/video.ts";
 import { isNonArticleImage } from "../lib/image-url.ts";
 import { isXVideoUrl } from "../lib/video-url.ts";
-import { AVIF_MODE_SUFFIX, avifCandidates } from "@aihot/contracts/site";
+import { AVIF_MODE_SUFFIX } from "@aihot/contracts/site";
 import { AVIF_MODES, IMAGE_WIDTHS, RESPONSIVE_MODES, type ProxyMode, type ResponsiveImageKind } from "./renditions.ts";
 export type { ProxyMode } from "./renditions.ts";
 
@@ -22,6 +22,7 @@ const WINDOW_SECONDS = 24 * 3600;
 const AVATAR_WINDOW_SECONDS = 30 * 24 * 3600;
 const LIFETIME_SECONDS = 48 * 3600;
 const SIG_HEX = 16;
+export const GIF_VIDEO_MODE = "gif-video";
 export const X_VIDEO_MODE = "x-video";
 /** How long browsers and the edge may keep a proxied image: as long as an avatar keeps its address. */
 export const LONGEST_CACHE_SECONDS = AVATAR_WINDOW_SECONDS;
@@ -84,45 +85,57 @@ export function verifyProxyRequest(params: { u?: string; mode?: string; exp?: st
  * items for days, so full RSS asks for a longer signature than a page.
  */
 export function proxyBodyImages(html: string, absolute = false, lifetimeSeconds = LIFETIME_SECONDS): string {
+  if (!/<(?:img|video)\b/i.test(html)) return html;
   const now = Date.now();
-  const rewritten = html
-    .replace(/<img\b([^>]*)>/gi, (tag: string, attrs: string, at: number, whole: string) => {
-      const src = attrs.match(/\ssrc="([^"]+)"/i);
-      if (!src) return tag;
-      if (isNonArticleImage(src[1]!, attrs.match(/\bwidth="([^"]+)"/i)?.[1], attrs.match(/\bheight="([^"]+)"/i)?.[1])) return "";
-      const decoded = src[1]!.replace(/&amp;/g, "&");
-      const proxied = proxiedImage(decoded, "full", absolute, now, lifetimeSeconds);
-      // Width descriptors change an image's natural CSS size. Only use them for a body image with
-      // an explicit display width: unknown and small pictures must retain their intrinsic size.
-      // RSS keeps its existing single signed full image.
-      const width = Number(attrs.match(/\bwidth="(\d+)"/i)?.[1] ?? 0);
-      const candidates = !absolute && width >= IMAGE_WIDTHS.thumb ? proxiedImageSet(decoded, "body", false, now, lifetimeSeconds) : null;
-      // `sizes=auto` adds size containment in Chrome: stale publisher width/height metadata then
-      // overrides the loaded image's real ratio. Let intrinsic dimensions win after loading.
-      const sizes = ' sizes="(min-width: 1536px) 760px, (min-width: 1024px) calc(100vw - 524px), (min-width: 640px) 608px, calc(100vw - 32px)"';
-      const responsive = candidates ? ` srcset="${candidates.replace(/&/g, "&amp;")}"${sizes}` : "";
-      const source = proxied ? ` src="${proxied.replace(/&/g, "&amp;")}"${responsive} loading="lazy" decoding="async"` : "";
-      const img = `<img${attrs.replace(src[0], source)}>`;
-      if (!candidates || !proxied) return img;
-      // Browsers without AVIF skip the source and load the img's own candidates. A publisher's own
-      // picture (cleaning keeps it and drops its sources) takes the source: pictures do not nest.
-      const avif = `<source type="image/avif" srcset="${avifCandidates(candidates).replace(/&/g, "&amp;")}"${sizes}>`;
-      return /<picture\b[^>]*>\s*$/i.test(whole.slice(Math.max(0, at - 200), at)) ? `${avif}${img}` : `<picture class="contents">${avif}${img}</picture>`;
-    })
-    .replace(/<video\b([^>]*?)\sposter="([^"]+)"/gi, (_m, pre: string, src: string) => {
-      const proxied = proxiedImage(src.replace(/&amp;/g, "&"), "thumb", absolute, now, lifetimeSeconds);
-      return proxied ? `<video${pre} poster="${proxied.replace(/&/g, "&amp;")}"` : `<video${pre}`;
-    });
-  if (!/<video\b/i.test(rewritten)) return rewritten;
-  const $ = cheerio.load(rewritten, null, false);
+  const $ = cheerio.load(html, null, false);
   const exp = proxyExpiry(now, lifetimeSeconds, WINDOW_SECONDS);
-  // video.twimg.com is not directly reachable from mainland reader networks; the origin already
-  // uses its guarded egress route to fetch X media.
+  $("video[poster]").each((_, el) => {
+    const video = $(el);
+    const poster = proxiedImage(video.attr("poster"), "thumb", absolute, now, lifetimeSeconds);
+    if (poster) video.attr("poster", poster);
+    else video.removeAttr("poster");
+  });
   $("video[src], video > source[src]").each((_, el) => {
     const source = $(el);
     const url = source.attr("src")!;
     if (isXVideoUrl(url)) source.attr("src", signedMediaUrl(url, X_VIDEO_MODE, exp, absolute));
   });
   normalizeVideos($);
+  $("img[src]").each((_, el) => {
+    const img = $(el);
+    const url = img.attr("src")!;
+    if (isNonArticleImage(url, img.attr("width"), img.attr("height"))) {
+      img.remove();
+      return;
+    }
+    const preview = proxiedImage(url, absolute ? "full" : "reading", absolute, now, lifetimeSeconds);
+    if (!preview) {
+      img.removeAttr("src");
+      return;
+    }
+    img.removeAttr("srcset sizes").attr({ src: preview, loading: "lazy", decoding: "async" });
+    if (absolute || url.startsWith("data:")) return;
+    if (img.parents("a").length) return;
+    if (isGifUrl(url)) {
+      const player = $("<video></video>").attr({
+        poster: preview, src: signedMediaUrl(url, GIF_VIDEO_MODE, exp, false),
+        controls: "", playsinline: "", preload: "none", "data-full-sig": signature(url, "full", exp),
+      });
+      for (const name of ["width", "height", "aria-label"] as const) {
+        const value = img.attr(name === "aria-label" ? "alt" : name);
+        if (value) player.attr(name, value);
+      }
+      (img.parent().is("picture") ? img.parent() : img).replaceWith(player);
+    } else {
+      // The viewer builds the full URL only on activation; bulk image fetchers see one src.
+      img.attr("data-full-sig", signature(url, "full", exp));
+    }
+  });
   return $.html();
+}
+
+export function isGifUrl(url: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const source = new URL(url);
+  return /\.gif$/i.test(source.pathname) || source.searchParams.get("format") === "gif";
 }

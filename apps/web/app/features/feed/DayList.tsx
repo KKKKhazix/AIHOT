@@ -11,14 +11,12 @@ import { DayHeader, TimelineSlot } from "./Timeline";
 import { FeedItem } from "./FeedItem";
 import { useT } from "../../lib/i18n";
 
-export function DayList({ items, todayCount = null, headerAside, tagTopics, currentTopicSlug, inPicks = false }: {
+export function DayList({ items, todayCount = null, headerAside, tagTopics, currentTopicSlug }: {
   items: FeedItemSummary[];
   todayCount?: number | null;
   headerAside?: React.ReactNode;
   tagTopics?: Record<string, string>;
   currentTopicSlug?: string;
-  /** Every item is a pick (a topic's list): cards leave out the 精选 badge. */
-  inPicks?: boolean;
 }) {
   const readSet = useReadSet();
   const today = beijingDate(Date.now());
@@ -31,7 +29,7 @@ export function DayList({ items, todayCount = null, headerAside, tagTopics, curr
           <ol className="lg:pt-1">
             {list.map((it) => (
               <TimelineSlot key={it.id} at={it.timelineAt}>
-                <FeedItem item={it} read={readSet.has(it.id)} onOpen={markRead} showTags tagTopics={tagTopics} currentTopicSlug={currentTopicSlug} at={it.timelineAt} inPicks={inPicks} />
+                <FeedItem item={it} read={readSet.has(it.id)} onOpen={markRead} showTags tagTopics={tagTopics} currentTopicSlug={currentTopicSlug} at={it.timelineAt} />
               </TimelineSlot>
             ))}
           </ol>

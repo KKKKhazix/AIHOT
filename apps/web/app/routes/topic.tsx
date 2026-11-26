@@ -186,7 +186,7 @@ export default function TopicRoute() {
           <EmptyState title={t("这个主题暂时还没有精选内容", "No top picks on this topic yet")} />
         </div>
       ) : (
-        <DayList items={items} tagTopics={data.tagTopics} currentTopicSlug={topic.slug} inPicks headerAside={<span className="num whitespace-nowrap">{t(
+        <DayList items={items} tagTopics={data.tagTopics} currentTopicSlug={topic.slug} headerAside={<span className="num whitespace-nowrap">{t(
           <>第 {first}–{last} 条<span className="hidden sm:inline"> · 共 {topic.total.toLocaleString("zh-CN")} 条</span></>,
           <>Items {first.toLocaleString("en-US")}–{last.toLocaleString("en-US")}<span className="hidden sm:inline"> of {topic.total.toLocaleString("en-US")}</span></>,
         )}</span>} />

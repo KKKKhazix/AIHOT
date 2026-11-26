@@ -20,7 +20,10 @@ export interface NavItem {
   changelog?: boolean;
 }
 
-const SECTIONS: Array<{ key: string; title: Text; items: NavItem[] }> = [
+/** A sidebar section; one without a title sits apart by a line (the last one: "更多" there would name the 更多 menu below it). */
+interface Section { key: string; title?: Text; items: NavItem[] }
+
+const SECTIONS: Section[] = [
   {
     key: "content",
     title: L("内容", "News"),
@@ -35,7 +38,6 @@ const SECTIONS: Array<{ key: string; title: Text; items: NavItem[] }> = [
   },
   {
     key: "more",
-    title: L("更多", "More"),
     items: [
       { to: "/agent", label: L("Agent 接入", "For Agents"), icon: IconPlug },
       { to: "/about", label: L("关于", "About"), icon: IconHeart },
@@ -72,10 +74,10 @@ export function navUp(entry: keyof typeof UP): { to: string; name: Phrase; back:
 }
 
 /**
- * The sidebar: the engine's sections with the modules' between 内容 and 更多; a module naming a section
+ * The sidebar: the engine's sections with the modules' between 内容 and the last one; a module naming a section
  * that is already there adds to it. A section takes its title from the first module with an entry in it here.
  */
-export function sidebar(locale: Locale): Array<{ key: string; title: Text; items: NavItem[] }> {
+export function sidebar(locale: Locale): Section[] {
   const shown = (items: readonly NavItem[]) => items.filter((i) => inNav(i.to) && inLanguage(i.to, locale));
   const [content, ...rest] = SECTIONS;
   const more = rest.pop()!;
@@ -86,7 +88,7 @@ export function sidebar(locale: Locale): Array<{ key: string; title: Text; items
     if (!items.length) continue;
     const title = chinese(m.sidebar.section);
     const sectionKey = m.sidebar.sectionKey ?? title;
-    const section = sections.find((s) => s.key === sectionKey || chinese(s.title) === title);
+    const section = sections.find((s) => s.key === sectionKey || (s.title && chinese(s.title) === title));
     if (section) section.items.push(...items);
     else sections.push({ key: sectionKey, title: m.sidebar.section, items });
   }

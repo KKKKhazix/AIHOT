@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { init } from "@paralleldrive/cuid2";
 
-// 25 lowercase alphanumerics starting with a letter (cuid2): matches ^[a-zA-Z0-9_-]{1,80}$.
+// 25 lowercase alphanumerics starting with a letter (cuid2); accepted by ARTICLE_ID_PATTERN.
 const cuid25 = init({ length: 25 });
 
 export function newArticleId(): string {

@@ -4,7 +4,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { readingApi, READER_LANGUAGES } from "@aihot/contracts/english";
 import type { Locale } from "@aihot/contracts/i18n";
-import { isCategoryKey, isChannelKey, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
+import { ARTICLE_ID_PATTERN, isCategoryKey, isChannelKey, type CategoryKey, type ChannelKey } from "@aihot/contracts/taxonomy";
 import type { ReportIndexResponse, ReportLatestPage, ReportNavigationResponse, SearchSuggestions, SiteContact } from "@aihot/contracts/site";
 import { InvalidCursorError } from "@aihot/backend/lib/cursor";
 import { exportMarkdown, loadItemDetail } from "@aihot/backend/publication/detail";
@@ -80,7 +80,7 @@ export function registerSite(app: FastifyInstance) {
   // Markdown export: attachment, 404 when there is nothing to export (same predicate as the button).
   app.get("/items/:id/markdown", siteHandler(async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return reply.code(404).type("text/plain; charset=utf-8").send("Not found");
+    if (!ARTICLE_ID_PATTERN.test(id)) return reply.code(404).type("text/plain; charset=utf-8").send("Not found");
     const md = await exportMarkdown(id);
     if (!md) return reply.code(404).header("Cache-Control", "public, max-age=60").type("text/plain; charset=utf-8").send("Not found");
     return reply
@@ -129,7 +129,7 @@ function registerReading(app: FastifyInstance, lang: Locale, base: string) {
   // An English page reads an article's original: no body is translated into English.
   app.get(`${base}/items/:id`, siteHandler(async (req, reply) => {
     const id = (req.params as { id: string }).id;
-    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found" });
+    if (!ARTICLE_ID_PATTERN.test(id)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found" });
     const result = await loadItemDetail(id, en ? "original" : "zh");
     if (result.kind === "not_found") return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found", cacheControl: "public, max-age=60" });
     return send(req, reply, result.item, english.itemDetail, { etagPrefix: "item", cacheControl: "public, max-age=60, s-maxage=60" });
@@ -138,7 +138,7 @@ function registerReading(app: FastifyInstance, lang: Locale, base: string) {
   if (!en) {
     app.get(`${base}/items/:id/original`, siteHandler(async (req, reply) => {
       const id = (req.params as { id: string }).id;
-      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found" });
+      if (!ARTICLE_ID_PATTERN.test(id)) return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found" });
       const result = await loadItemDetail(id, "original");
       if (result.kind === "not_found") return sendProblem(req, reply, { status: 404, code: "not_found", detail: "item not found", cacheControl: "public, max-age=60" });
       return sendJsonWithEtag(req, reply, result.item, { etagPrefix: "item-original", cacheControl: "public, max-age=60, s-maxage=60" });

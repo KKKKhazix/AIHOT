@@ -1,6 +1,7 @@
 // Reader state kept only in this browser, and the site's one guarded way to browser storage. Keep the
 // keys and formats once readers have data under them: existing readers' data must stay readable as-is.
 // Storage failures degrade silently.
+import { ARTICLE_ID_PATTERN } from "@aihot/contracts/taxonomy";
 import { useEffect, useSyncExternalStore } from "react";
 import { beijingDate } from "@aihot/contracts/time";
 import { L, pagePath, type Phrase } from "./i18n.ts";
@@ -22,7 +23,6 @@ const READ_LIMIT = 5000;
 const RECENT_SEARCH_LIMIT = 10;
 const RECENT_SEARCH_MAX_CHARS = 200;
 const IMPORT_MAX_CHARS = 2_000_000;
-const ID_PATTERN = /^[a-zA-Z0-9_-]{1,80}$/;
 
 export interface LocalStarredItem {
   id: string;
@@ -138,7 +138,7 @@ function invalidate(key: string) {
 function isStarredItem(v: unknown): v is LocalStarredItem {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
-  return typeof o.id === "string" && ID_PATTERN.test(o.id) && typeof o.title === "string";
+  return typeof o.id === "string" && ARTICLE_ID_PATTERN.test(o.id) && typeof o.title === "string";
 }
 
 // A parseable instant can still overflow when shifted into the page's display timezone.
@@ -231,7 +231,7 @@ export function restoreStar(item: LocalStarredItem): boolean {
 export function getReadIds(): string[] {
   return cached(KEYS.read, () => {
     const parsed = readJson(KEYS.read);
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string" && ID_PATTERN.test(v)).slice(0, READ_LIMIT) : [];
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string" && ARTICLE_ID_PATTERN.test(v)).slice(0, READ_LIMIT) : [];
   });
 }
 
@@ -246,7 +246,7 @@ function getReadSet(): Set<string> {
 }
 
 export function markRead(id: string) {
-  if (!ID_PATTERN.test(id)) return;
+  if (!ARTICLE_ID_PATTERN.test(id)) return;
   cache.delete(KEYS.read);
   const ids = getReadIds();
   if (ids[0] === id) return;
@@ -495,7 +495,7 @@ function mergeLocalData(incoming: { starred: unknown[]; read: unknown[]; theme: 
   const readAdditions: string[] = [];
   let readSkipped = 0;
   for (const id of incoming.read) {
-    if (typeof id !== "string" || !ID_PATTERN.test(id)) { readSkipped++; continue; }
+    if (typeof id !== "string" || !ARTICLE_ID_PATTERN.test(id)) { readSkipped++; continue; }
     if (readHave.has(id)) continue;
     readHave.add(id);
     readAdditions.push(id);

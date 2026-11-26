@@ -33,11 +33,9 @@ export interface FeedItemProps {
   currentTopicSlug?: string;
   /** The time the item sits at in its list; phones show it in the source line (desktop: on the rail). */
   at?: string;
-  /** In the 精选 list itself, where every card is a pick: the 精选 badge would say nothing (同事件 still shows). */
-  inPicks?: boolean;
 }
 
-export const FeedItem = memo(function FeedItem({ item, group, filters, read = false, onOpen, showTags = false, tagTopics, currentTopicSlug, at, inPicks = false }: FeedItemProps) {
+export const FeedItem = memo(function FeedItem({ item, group, filters, read = false, onOpen, showTags = false, tagTopics, currentTopicSlug, at }: FeedItemProps) {
   const t = useT();
   const locale = useLocale();
   const isX = item.channel === "x" && !!item.x;
@@ -67,7 +65,8 @@ export const FeedItem = memo(function FeedItem({ item, group, filters, read = fa
             · {beijingTime(at)}
           </time>
         )}
-        {item.selected && (item.sameEvent || !inPicks) && (
+        {/* Every pick wears its badge, also in lists made only of picks (精选, a topic): the card looks the same wherever it appears. */}
+        {item.selected && (
           <span className="hidden lg:inline-flex">
             {item.sameEvent ? <SameEventBadge /> : <SelectedBadge />}
           </span>

@@ -398,7 +398,7 @@ export function Timeline({ initial, filters }: { initial: TimelineResponse; filt
                     const delay = fresh ? Math.min(order++, STAGGER_MAX) * STAGGER_MS : 0;
                     return (
                       <TimelineSlot key={c.key} dataKey={c.key} at={c.anchorAt} fresh={fresh} delay={delay}>
-                        <FeedItem item={c.item} group={c.group} filters={filters} read={readSet.has(c.item.id) && !(unreadOnly && unreadMember(c))} onOpen={markRead} at={c.anchorAt} inPicks />
+                        <FeedItem item={c.item} group={c.group} filters={filters} read={readSet.has(c.item.id) && !(unreadOnly && unreadMember(c))} onOpen={markRead} at={c.anchorAt} />
                       </TimelineSlot>
                     );
                   })}

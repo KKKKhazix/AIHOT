@@ -116,7 +116,11 @@ export function Sidebar({ changelogVersion }: { changelogVersion: string | null 
             const lit = activeSidebarItem(section.items, pathname);
             return (
               <div key={section.key}>
-                <div className="px-2.5 pb-1 pt-3.5 text-ui-caption-sm text-ink-4">{t(section.title)}</div>
+                {section.title ? (
+                  <div className="px-2.5 pb-1 pt-3.5 text-ui-caption-sm text-ink-4">{t(section.title)}</div>
+                ) : (
+                  <div className="mx-2.5 mb-2 mt-3.5 border-t border-line" />
+                )}
                 <div className="flex flex-col gap-1">
                   {section.items.map((item) => (
                     <SideLink key={item.to} item={item} dot={dot} active={item.to === lit?.to} />

@@ -72,7 +72,7 @@ export function searchTerms(q: string): string[] {
 
 // Join only translations of current public-facing titles and summaries. A withdrawn original
 // invalidates its translation for search on the same read as it does on the article page.
-export function translatedSearch(terms: string[]) {
+function translatedSearch(terms: string[]) {
   if (!ENGLISH || !terms.length) return null;
   return sql`matching_copy AS MATERIALIZED (
     SELECT c.zh, lower(c.en) AS en FROM english_copy c
@@ -113,16 +113,19 @@ function bodyMatch(t: string) {
   return /^[a-z0-9]+$/.test(t) ? sql`${like} AND ps.body ~ ${"(^|[^a-z0-9])" + t}` : like;
 }
 
-/** Public search also matches translated titles and summaries, and the start of a publicly readable body. */
-export function publicMatchCondition(terms: string[], copies: Copies) {
-  if (terms.length === 0) return sql``;
-  // Keep the body lookup correlated to the time-ordered candidates. Without OFFSET 0, PostgreSQL
-  // may hash every matching body in pool_search before serving even the first 40 recent items.
-  return terms.reduce(
-    (acc, t) => sql`${acc} AND (${textMatch(sql`p.search_text`, sql`p.article_id`, t, copies)} OR EXISTS (
-      SELECT 1 FROM pool_search ps WHERE ps.article_id = p.article_id AND ${bodyMatch(t)} OFFSET 0))`,
-    sql``,
-  );
+/** Match each term against a recent public item, its readable body and the translations it uses. */
+export function publicMatchCondition(terms: string[]) {
+  // Keep the lookups on each time-ordered candidate's keys. Materializing global matches
+  // before paging makes a broad term scan the archive even for one page of recent items.
+  return terms.reduce((acc, term) => {
+    const translation = ENGLISH ? sql`OR EXISTS (
+      SELECT 1 FROM english_copy c
+      WHERE c.zh_hash IN (encode(sha256(convert_to(p.title, 'UTF8')), 'hex'), encode(sha256(convert_to(p.summary, 'UTF8')), 'hex'))
+        AND c.zh IN (p.title, p.summary) AND ${like(sql`lower(c.en)`, term)} AND ${usableCopy} OFFSET 0)` : sql``;
+    return sql`${acc} AND (${like(sql`p.search_text`, term)} OR EXISTS (
+      SELECT 1 FROM pool_search ps WHERE ps.article_id = p.article_id AND ${bodyMatch(term)} OFFSET 0)
+      ${translation})`;
+  }, sql``);
 }
 
 /** The listed items under the filters, up to the pages the pool offers. */

@@ -5,7 +5,7 @@ import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "..
 import { newShortId } from "../lib/ids.ts";
 import { publicCategoryCondition, API_ITEM_COLUMNS, API_ITEM_FROM, rowToV1, type V1ItemPayload, type ApiItemRow } from "./items.ts";
 import { browsedCondition, listedCondition, seatedCondition } from "./scope.ts";
-import { publicMatchCondition, searchTerms, translatedSearch, withSearchCapacity } from "./pool.ts";
+import { publicMatchCondition, searchTerms, withSearchCapacity } from "./pool.ts";
 import { sharedSearch } from "../lib/cache.ts";
 
 export interface V1ItemsQuery {
@@ -49,11 +49,9 @@ async function queryItems(query: V1ItemsQuery, now: Date): Promise<V1ItemsResult
   const scope = query.mode === "selected" ? seatedCondition(now) : query.q ? listedCondition(now) : browsedCondition(now);
   const terms = query.q ? searchTerms(query.q) : [];
 
-  const copies = translatedSearch(terms);
   const run = (db: Db) => db<(ApiItemRow & { sort_at: Date })[]>`
-    ${copies ? sql`WITH ${copies}` : sql``}
     SELECT ${API_ITEM_COLUMNS}, ${sortCol} AS sort_at ${API_ITEM_FROM}
-    WHERE ${scope} ${publicCategoryCondition(query.category)} ${publicMatchCondition(terms, copies)}
+    WHERE ${scope} ${publicCategoryCondition(query.category)} ${publicMatchCondition(terms)}
       AND ${sortCol} >= ${windowStart} AND ${sortCol} <= ${now}
       ${after ? sql`AND (${sortCol}, p.article_id) < (${new Date(after.a)}, ${after.i})` : sql``}
     ORDER BY ${sortCol} DESC, p.article_id DESC

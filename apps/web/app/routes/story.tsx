@@ -1,9 +1,9 @@
+import { TopicLinks } from "../components/ui/TopicLinks";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IntentLink } from "../components/ui/IntentLink";
 import { useLoaderData, useLocation } from "react-router";
 import type { Route } from "./+types/story";
 import { STORY_INDEX_MIN_SOURCES, type StoryDetail, type StoryReportView } from "@aihot/contracts/site";
-import { topicName } from "@aihot/contracts/taxonomy";
 import { SITE } from "@aihot/site";
 import { linkMentions } from "@aihot/contracts/mentions";
 import { addressRuns } from "@aihot/contracts/addresses";
@@ -480,11 +480,7 @@ export default function StoryPage() {
           {story.topics.length > 0 && (
             <RailCard title={t("主题", "Topics")}>
               <div className="flex flex-wrap gap-1.5 touch:gap-y-4.5">
-                {story.topics.map((topic) => (
-                  <Link viewTransition key={topic.slug} to={`/topics/${topic.slug}`} className="chip">
-                    {topicName(topic.slug, topic.name, locale)}
-                  </Link>
-                ))}
+                <TopicLinks topics={story.topics} />
               </div>
             </RailCard>
           )}

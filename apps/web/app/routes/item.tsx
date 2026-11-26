@@ -1,3 +1,4 @@
+import { TopicLinks } from "../components/ui/TopicLinks";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Await, isRouteErrorResponse, useAsyncError, useLoaderData, useRevalidator, type ClientLoaderFunctionArgs } from "react-router";
 import type { Route } from "./+types/item";
@@ -402,6 +403,11 @@ function ItemView({ item, followups, arrived = false }: Loaded & { arrived?: boo
   const [summaryRuns] = useMemo(() => linkMentions([item.summary], item.mentions), [item.summary, item.mentions]);
   const daily = item.daily && { to: `/daily/${item.daily.key}`, name: dailyName(item.daily, locale) };
   const tags = tagChips(item, locale);
+  const tagLinks = tags.slice(0, 8).map(({ tag, label, to }) => (
+    <Link key={tag} to={to} rel={to.startsWith("/all?") ? "nofollow" : undefined} className="chip">
+      #{label}
+    </Link>
+  ));
   const reasonLabel = t(ITEM_COPY.reasonLabel, ENGLISH?.reasonLabel ?? ITEM_COPY.reasonLabel);
 
   const back = () => {
@@ -509,22 +515,14 @@ function ItemView({ item, followups, arrived = false }: Loaded & { arrived?: boo
       {item.topics.length > 0 && (
         <RailSection title={t("主题", "Topics")}>
           <div className="flex flex-wrap gap-1.5 touch:gap-y-4.5">
-            {item.topics.map((topic) => (
-              <Link viewTransition key={topic.slug} to={`/topics/${topic.slug}`} className="chip">
-                {topicName(topic.slug, topic.name, locale)}
-              </Link>
-            ))}
+            <TopicLinks topics={item.topics} />
           </div>
         </RailSection>
       )}
       {tags.length > 0 && (
         <RailSection title={t("标签", "Tags")}>
           <div className="flex flex-wrap gap-1.5 touch:gap-y-4.5">
-            {tags.slice(0, 8).map(({ tag, label, to }) => (
-              <Link key={tag} to={to} rel={to.startsWith("/all?") ? "nofollow" : undefined} className="chip">
-                #{label}
-              </Link>
-            ))}
+            {tagLinks}
           </div>
         </RailSection>
       )}
@@ -677,16 +675,8 @@ function ItemView({ item, followups, arrived = false }: Loaded & { arrived?: boo
                   {t(<>收录于 {daily.name}</>, <>Featured in {daily.name}</>)}
                 </Link>
               )}
-              {item.topics.map((topic) => (
-                <Link viewTransition key={topic.slug} to={`/topics/${topic.slug}`} className="chip">
-                  {topicName(topic.slug, topic.name, locale)}
-                </Link>
-              ))}
-              {tags.slice(0, 6).map(({ tag, label, to }) => (
-                <Link key={tag} to={to} rel={to.startsWith("/all?") ? "nofollow" : undefined} className="chip">
-                  #{label}
-                </Link>
-              ))}
+              <TopicLinks topics={item.topics} />
+              {tagLinks.slice(0, 6)}
             </div>
           )}
 

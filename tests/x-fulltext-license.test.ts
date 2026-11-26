@@ -208,7 +208,8 @@ for (const kind of ["x_search", "rss"] as const) {
           assert.ok(normal.x.quoted.translationHtml.includes(f.quotedZh));
           assert.equal(normal.x.media.length, 2);
           assert.ok(normal.x.media[0].url.includes(f.media));
-          assert.ok(normal.x.media[0].srcSet.includes(f.media));
+          assert.ok(normal.x.media[0].fullUrl.includes(f.media));
+          assert.equal(normal.x.media[0].srcSet, undefined);
           assert.ok(normal.x.media[1].poster.includes(f.media));
           assert.equal(normal.x.media[1].kind, "video");
         }

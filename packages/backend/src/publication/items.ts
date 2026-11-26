@@ -143,13 +143,14 @@ export function tagCondition(tag: string | null | undefined) {
 }
 
 function mediaView(m: Record<string, any>, mode: "card" | "thumb" | "full" = "thumb", responsive = false): MediaView | null {
-  const url = proxiedImage(m.url, mode);
+  const detail = mode === "full" && responsive;
+  const url = proxiedImage(m.url, detail ? "reading" : mode);
   if (!url) return null;
-  const srcSet = responsive ? proxiedImageSet(m.poster ?? m.url, mode === "full" ? "body" : "card") : null;
+  const srcSet = responsive && !detail ? proxiedImageSet(m.poster ?? m.url, "card") : null;
   return {
     kind: m.kind === "video" ? "video" : "image",
     url,
-    ...(responsive && mode !== "full" ? { fullUrl: proxiedImage(m.url, "full")! } : {}),
+    ...(responsive ? { fullUrl: proxiedImage(m.url, "full")! } : {}),
     ...(srcSet ? { srcSet } : {}),
     width: typeof m.width === "number" ? m.width : null,
     height: typeof m.height === "number" ? m.height : null,
@@ -183,7 +184,7 @@ export function xView(row: Pick<ItemRow, "x_post" | "zh_text"> & Partial<Pick<It
     quoted,
     article: !!row.x_article?.text,
     // A multi-image list grid is 112 CSS px wide; one image can be 240 px. Keep 3x pixels for both.
-    // Detail retains full media for the lightbox; srcSet bounds the displayed image.
+    // The detail preview and its on-demand full image have separate addresses.
     media: media.map(({ raw, view }) => compact && media.length > 1 ? mediaView(raw, "card", responsive)! : view),
   };
 }

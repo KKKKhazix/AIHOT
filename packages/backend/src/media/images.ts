@@ -1,21 +1,24 @@
 // Image fetch, resize and cache, shared by the signed image proxy and the vision analysis: a (mode, url)
 // is fetched once through the egress route and both get the same file.
 import { createHash, randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp, { type Sharp } from "sharp";
 import { config } from "../config.ts";
 import { guardedFetch, type GuardedResponse } from "../lib/http-fetch.ts";
 import { AVIF_MODE_SUFFIX } from "@aihot/contracts/site";
 import { IMAGE_WIDTHS } from "./renditions.ts";
-import { X_VIDEO_MODE } from "./imgproxy.ts";
+import { GIF_VIDEO_MODE, isGifUrl, X_VIDEO_MODE } from "./imgproxy.ts";
 import { isXVideoUrl } from "../lib/video-url.ts";
 import { luma, ssim } from "./similarity.ts";
 import { recordUpstream, upstreamAllowed } from "./upstream.ts";
 
 const CACHE_DIR = path.join(config.dataDir, "imgcache");
 const ORIGINAL_TTL_MS = 60_000;
+const PROXY_MAX_BYTES = 15 * 1024 * 1024;
 const ORIGINAL_MAX_BYTES = 32 * 1024 * 1024;
 const ORIGINAL_MAX_ENTRIES = 32;
 export const SVG_PASSTHROUGH_MAX_BYTES = 128 * 1024;
@@ -28,6 +31,7 @@ export interface PreparedImage {
   pendingAnimation?: boolean;
   /** The rendition standing in for an AVIF variant not prepared yet, under the same rule. */
   pendingAvif?: boolean;
+  pendingVideo?: boolean;
 }
 const inflight = new Map<string, Promise<PreparedImage>>();
 const originals = new Map<string, Promise<GuardedResponse>>();
@@ -61,7 +65,7 @@ function pruneOriginals(now: number): void {
   }
 }
 
-function rememberOriginal(url: string, value: GuardedResponse): void {
+function rememberOriginal(key: string, value: GuardedResponse): void {
   const now = Date.now();
   pruneOriginals(now);
   if (value.body.length > ORIGINAL_MAX_BYTES) return;
@@ -70,49 +74,52 @@ function rememberOriginal(url: string, value: GuardedResponse): void {
     originalBytes -= recentOriginals.get(first)!.value.body.length;
     recentOriginals.delete(first);
   }
-  recentOriginals.set(url, { value, until: now + ORIGINAL_TTL_MS });
+  recentOriginals.set(key, { value, until: now + ORIGINAL_TTL_MS });
   originalBytes += value.body.length;
 }
-function original(url: string): Promise<GuardedResponse> {
+function original(url: string, maxBytes = PROXY_MAX_BYTES): Promise<GuardedResponse> {
+  // A raw-image refusal must not prevent the same GIF from becoming a small poster and movie.
+  const key = `${maxBytes}|${url}`;
   pruneOriginals(Date.now());
-  const recent = recentOriginals.get(url);
+  const recent = recentOriginals.get(key);
   if (recent) {
-    recentOriginals.delete(url);
-    recentOriginals.set(url, recent);
+    recentOriginals.delete(key);
+    recentOriginals.set(key, recent);
     return Promise.resolve(recent.value);
   }
-  const failed = failures.get(url);
+  const failed = failures.get(key);
   if (failed && failed.until > Date.now()) return Promise.reject(failed.error);
-  failures.delete(url);
-  let job = originals.get(url);
+  failures.delete(key);
+  let job = originals.get(key);
   if (!job) {
-    job = fetchOriginal(url).then((res) => {
-      rememberOriginal(url, res);
+    job = fetchOriginal(url, maxBytes).then((res) => {
+      rememberOriginal(key, res);
       return res;
     }).catch((error: unknown) => {
       // A failed original is not refetched while its failure is kept; this also coalesces failures across signed
       // modes. Budget failures must be rechecked against the current minute instead of being cached.
       if (error instanceof ImageBudgetExceeded) throw error;
-      failures.set(url, { until: Date.now() + failureSeconds(error) * 1000, error });
+      failures.set(key, { until: Date.now() + failureSeconds(error) * 1000, error });
       if (failures.size > 512) failures.delete(failures.keys().next().value!);
       throw error;
-    }).finally(() => originals.delete(url));
-    originals.set(url, job);
+    }).finally(() => originals.delete(key));
+    originals.set(key, job);
   }
   return job;
 }
 
-async function fetchOriginal(url: string): Promise<GuardedResponse> {
+async function fetchOriginal(url: string, maxBytes: number): Promise<GuardedResponse> {
   const allowed = upstreamAllowed();
   if (!allowed.ok) throw new ImageBudgetExceeded(allowed.reason);
   const video = isXVideoUrl(url);
   const res = await guardedFetch(url, {
-    timeoutMs: 20_000, maxBytes: 15 * 1024 * 1024,
+    timeoutMs: 20_000, maxBytes,
     headers: { accept: video ? "video/mp4" : "image/avif,image/webp,image/*,*/*;q=0.8" },
     ...(video ? { redirectPolicy: "same-origin" as const } : {}),
   });
   recordUpstream(res.body.length);
   if (res.status !== 200) throw new UpstreamStatus(res.status);
+  if (res.body.length > PROXY_MAX_BYTES && res.body.toString("ascii", 0, 3) !== "GIF") throw new Error("large preview source is not GIF");
   return res;
 }
 
@@ -204,6 +211,16 @@ async function cachedImage(file: string, body: Buffer, type: string, mode: strin
   return { body, type, ...(pixels > 0 && pixels <= ANIMATION_MAX_PIXELS ? { pendingAnimation: true } : {}) };
 }
 
+// Previously published images can still have a full rendition after their upstream URL goes away.
+async function readingSource(url: string): Promise<Buffer> {
+  try {
+    return await readFile(cacheFile(url, "full"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return (await original(url, isGifUrl(url) ? ORIGINAL_MAX_BYTES : PROXY_MAX_BYTES)).body;
+  }
+}
+
 async function produce(url: string, mode: string): Promise<PreparedImage> {
   const file = cacheFile(url, mode);
   try {
@@ -211,6 +228,13 @@ async function produce(url: string, mode: string): Promise<PreparedImage> {
     return cachedImage(file, body, meta, mode);
   } catch {
     // not cached
+  }
+  if (mode === "reading") {
+    const body = await readingSource(url);
+    const preview = await resizeImage(body, "", mode);
+    await mkdir(path.dirname(file), { recursive: true });
+    await saveImage(file, preview);
+    return { ...preview, pendingVideo: isGifUrl(url) };
   }
   const res = await original(url);
   const suppliedType = res.headers.get("content-type") ?? "";
@@ -222,6 +246,40 @@ async function produce(url: string, mode: string): Promise<PreparedImage> {
   await saveImage(file, image);
   if (image.type === "image/svg+xml" && image.body.length > SVG_PASSTHROUGH_MAX_BYTES) await writeFile(`${file}.prepared`, "original");
   return cachedImage(file, image.body, image.type, mode);
+}
+
+/** Only the serial media worker runs the encoder. A cold player can still use the original GIF. */
+export async function cachedGifVideo(url: string): Promise<Buffer | null> {
+  try {
+    return await readFile(cacheFile(url, GIF_VIDEO_MODE));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+export async function prepareGifVideo(url: string): Promise<void> {
+  const file = cacheFile(url, GIF_VIDEO_MODE);
+  if (await stat(file, { throwIfNoEntry: false })) return;
+  const cached = await readingSource(url);
+  // A previously prepared full image can already be animated WebP. FFmpeg needs the GIF for timing.
+  const gif = cached.subarray(0, 3).toString() === "GIF" ? cached : (await original(url, ORIGINAL_MAX_BYTES)).body;
+  const meta = await sharp(gif).metadata();
+  if (meta.format !== "gif") throw new Error("animation source is not GIF");
+  await mkdir(path.dirname(file), { recursive: true });
+  const tmp = file + "." + randomUUID();
+  try {
+    await writeFile(tmp, gif);
+    await promisify(execFile)("ffmpeg", [
+      "-nostdin", "-v", "error", "-protocol_whitelist", "file", "-ignore_loop", "1", "-f", "gif", "-i", tmp,
+      "-an", "-vf", "scale='max(2,trunc(min(iw,1200)/2)*2)':-2",
+      "-threads", "1", "-c:v", "libx264", "-crf", "23", "-pix_fmt", "yuv420p",
+      "-fps_mode", "vfr", "-movflags", "+faststart", "-f", "mp4", tmp + ".mp4",
+    ], { timeout: 120_000, killSignal: "SIGKILL" });
+    await rename(tmp + ".mp4", file);
+  } finally {
+    await Promise.all([rm(tmp, { force: true }), rm(tmp + ".mp4", { force: true })]);
+  }
 }
 
 /** Most frames × pixels an animation may have to be re-encoded (all frames are decoded at once). */
@@ -349,7 +407,7 @@ async function stillRendition(body: Buffer, upstreamType: string, mode: string, 
   }
   // A large animation can be hundreds of frames: do not silently replace it with a still or decode
   // all its frames on an HTTP request. Keep frame timing, loop count and transparency unchanged.
-  if ((meta.pages ?? 1) > 1 || type === "image/gif") return { kept: { body, type } };
+  if (mode !== "reading" && ((meta.pages ?? 1) > 1 || type === "image/gif")) return { kept: { body, type } };
   // Small vectors are already compact and remain sharp at every zoom level. Rasterize oversized
   // SVGs (often screenshots embedded as base64) and avatars at their actual display rendition.
   if (vectors && type === "image/svg+xml" && !avatar && (body.length <= SVG_PASSTHROUGH_MAX_BYTES || (meta.width !== undefined && meta.width < width))) return { kept: { body, type } };
@@ -363,6 +421,10 @@ async function encodeImage(body: Buffer, upstreamType: string, mode: string, vec
   const still = await stillRendition(body, upstreamType, mode, vectors);
   if ("kept" in still) return still.kept;
   const { image, type, ico, avatar } = still;
+  if (mode === "reading") {
+    const webp = await image.webp({ quality: 76, alphaQuality: 100, smartSubsample: true, effort: 4 }).toBuffer();
+    return { body: webp, type: "image/webp" };
+  }
   // Screenshots and transparent PNGs benefit most from modern encoding. Already lossy JPEGs
   // measured larger at WebP 88, so retain their established encoder/quality instead of growing them.
   if (ico || type === "image/png" || type === "image/svg+xml") {

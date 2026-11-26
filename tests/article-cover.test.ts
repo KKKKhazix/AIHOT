@@ -6,6 +6,7 @@
 // pages, METR, Ollama, often with a version in its address; arXiv's logo on every paper, while its home page
 // declares none), or the picture of a whole changelog page shared by its entries. An image service's address
 // (/_next/image?url=…) names its picture in the query: IBM Research's and Sierra's covers are not their home's.
+import { load } from "cheerio";
 import { tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -197,7 +198,15 @@ test("the page, Markdown and full RSS show the cover above a body without pictur
   const page = await loadItemDetail(plain, "original", now);
   assert.equal(page.kind, "found");
   const html = page.kind === "found" ? page.item.body?.original ?? "" : "";
-  assert.match(html, /^<figure>.*?<img src="\/api\/img-proxy\?u=https%3A%2F%2Fcdn\.publisher\.example%2Fcover\.jpg&amp;[^"]*"[^>]*alt="A lab bench"[^>]*><\/picture><\/figure><p>The model/, "the page shows the cover first");
+  const fragment = load(html, null, false);
+  const first = fragment.root().children().first();
+  assert.ok(first.is("figure") && first.next().is("p"), "the page shows the cover before the text");
+  const image = first.find("img");
+  assert.equal(image.attr("alt"), cover.alt);
+  const source = new URL(image.attr("src")!, "https://reader.example");
+  assert.equal(source.pathname, "/api/img-proxy");
+  assert.equal(source.searchParams.get("u"), cover.url);
+  assert.equal(source.searchParams.get("mode"), "reading");
   assert.match((await exportMarkdown(plain))!.body, /!\[A lab bench\]\(https:\/\/cdn\.publisher\.example\/cover\.jpg\)/);
   const feed = await itemFeed("selected-full", null, { now });
   const item = (id: string) => feed.split("<item>").find((x) => x.includes(`<guid isPermaLink="false">${id}</guid>`)) ?? "";

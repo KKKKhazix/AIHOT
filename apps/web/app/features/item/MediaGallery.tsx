@@ -60,7 +60,7 @@ export function MediaGallery({ media, postUrl }: { media: MediaView[]; postUrl: 
           );
         })}
       </div>
-      <Lightbox images={images.map((m) => ({ src: m.url, alt: m.alt }))} index={open} onIndex={setOpen} onClose={() => setOpen(null)} origin={(i) => grid.current?.querySelectorAll("button")[i]} />
+      <Lightbox images={images.map((m) => ({ src: m.fullUrl ?? m.url, alt: m.alt }))} index={open} onIndex={setOpen} onClose={() => setOpen(null)} origin={(i) => grid.current?.querySelectorAll("button")[i]} />
     </>
   );
 }

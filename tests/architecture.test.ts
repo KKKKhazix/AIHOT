@@ -11,6 +11,7 @@ import { after, test } from "node:test";
 import { fontSizeViolations } from "./font-size.ts";
 import { cssMotionTokens, motionViolations } from "./motion.ts";
 import { routerLinkViolations, webTextViolations } from "./web-text.ts";
+import { ARTICLE_ID_PATTERN } from "@aihot/contracts/taxonomy";
 import { closeDb, sql } from "@aihot/backend/db";
 
 after(closeDb);
@@ -177,6 +178,12 @@ const modules = (kind?: RegExp) => (existsSync(path.join(ROOT, "modules")) ? sou
 const moduleWeb = (kind?: RegExp) => modules(kind).filter(({ file }) => /^modules\/[^/]+\/web(?:\.|\/)/.test(file));
 const production = () => [...PRODUCTION.flatMap((dir) => sources(dir)), { file: "apps/web/server.ts", text: readFileSync(path.join(ROOT, "apps/web/server.ts"), "utf8") }, ...modules()];
 const words = (text: string) => new Set(text.match(/[A-Za-z_][A-Za-z0-9_]*/g));
+
+test("article identifiers use the same format at every entry point", () => {
+  const copies = production().filter(({ file, text }) =>
+    file !== "packages/contracts/src/taxonomy.ts" && text.includes(ARTICLE_ID_PATTERN.toString()));
+  assert.deepEqual(copies.map(({ file }) => file), [], "请引用 @aihot/contracts/taxonomy 的 ARTICLE_ID_PATTERN 校验文章编号");
+});
 
 test("every table and column is used by the code that reads and writes the database", async () => {
   const files = [...["packages/backend/src", "apps/api/src", "apps/worker/src"].flatMap((dir) => sources(dir)), ...modules()].map(({ text }) => words(text));

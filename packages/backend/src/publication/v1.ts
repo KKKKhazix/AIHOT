@@ -1,5 +1,5 @@
 // v1 items and the selected sync (snapshot + changes), read from the same public read layer.
-import type { PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
+import { ARTICLE_ID_PATTERN, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { sql, type Db } from "../db.ts";
 import { decodeCursor, encodeCursor, InvalidCursorError, queryBinding } from "../lib/cursor.ts";
 import { newShortId } from "../lib/ids.ts";
@@ -41,7 +41,7 @@ async function queryItems(query: V1ItemsQuery, now: Date): Promise<V1ItemsResult
   if (query.cursor) {
     const c = decodeCursor<{ a: number; i: string; c: string }>("it3", query.cursor);
     if (c.c !== binding || !Number.isSafeInteger(c.a) || !Number.isFinite(new Date(c.a).getTime())
-      || typeof c.i !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(c.i)) throw new InvalidCursorError("cursor does not belong to this query");
+      || typeof c.i !== "string" || !ARTICLE_ID_PATTERN.test(c.i)) throw new InvalidCursorError("cursor does not belong to this query");
     // The rolling window slid past the anchor: tell the client instead of returning an empty page.
     if (c.a < windowStart.getTime()) throw new InvalidCursorError("the rolling window moved past this cursor");
     after = { a: c.a, i: c.i };
@@ -138,7 +138,7 @@ export async function selectedSnapshot(q: SnapshotQuery, now = new Date()) {
       throw new SnapshotRequiredError("unreadable snapshot page token");
     }
     if (p.k !== "page" || p.e !== epoch || (p.f !== "default" && p.f !== "minimal") || !isWatermark(p.w)
-      || typeof p.a !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(p.a)
+      || typeof p.a !== "string" || !ARTICLE_ID_PATTERN.test(p.a)
       || typeof p.t !== "string" || !Number.isFinite(Date.parse(p.t))) {
       throw new SnapshotRequiredError("page token does not match this snapshot");
     }

@@ -1,3 +1,4 @@
+import { longDateEn } from "@aihot/contracts/time";
 import { useEffect, useState, type ComponentType } from "react";
 import { IntentLink } from "../components/ui/IntentLink";
 import type { ChangelogRelease, ChangelogResponse } from "@aihot/contracts/site";
@@ -181,7 +182,7 @@ export default function ChangelogPage() {
             const [y, mo] = month.split("-").map(Number) as [number, number];
             return (
               <a key={month} href={`#d-${m.first}`} onClick={(e) => jumpTo(e, `d-${m.first}`)} className="flex items-center justify-between rounded-control px-2 py-2 text-ui-label-lg text-ink-2 transition-colors hover:bg-bg-sunk hover:text-ink">
-                {t(`${y} 年 ${mo} 月`, new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(month + "-01")))}<span className="num text-ui-caption text-ink-4">{t(`${m.count} 条`, String(m.count))}</span>
+                {t(`${y} 年 ${mo} 月`, longDateEn(month))}<span className="num text-ui-caption text-ink-4">{t(`${m.count} 条`, String(m.count))}</span>
               </a>
             );
           })}

@@ -1,19 +1,11 @@
-// Feishu delivery uses the message app for internal feedback, operations alerts and image uploads.
-// Content groups use custom bot webhooks, and so do
-// alerts when FEISHU_ALERT_WEBHOOK_URL is set (they are plain text; feedback screenshots need the app).
-// Alerts and feedback never go to content groups, and content never goes to internal chats. What the owner is
-// told (sendAlert) goes first to Agent 自动化中台, which passes it on.
+// Feishu HTTP transport: message app (tenant token, image upload/download, chat messages),
+// operations alert delivery (Agent hub /tell, alert webhook, fallback ops chat) and content webhooks.
+// Alert domain types/formatters live in lib/alerts.ts; feedback forwarding lives in operations/feedback.ts.
 // Everything outward is off unless explicitly enabled (development and tests stay silent).
 import { createHash } from "node:crypto";
-import { readFile, unlink } from "node:fs/promises";
-import path from "node:path";
-import { beijingStamp } from "@aihot/contracts/time";
-import { config, credential } from "../config.ts";
-import { sql } from "../db.ts";
+import { config, credential, feishuInternalEnabled } from "../config.ts";
 
 const API = "https://open.feishu.cn/open-apis";
-
-export const feishuInternalEnabled = () => process.env.FEISHU_INTERNAL_ENABLED === "true";
 
 let tokenCache: { token: string; expires: number } | null = null;
 
@@ -37,9 +29,9 @@ async function tenantToken(): Promise<string> {
 /** Feishu's answers that the picture itself is unacceptable (bad image, too large, empty): trying again cannot help. */
 const IMAGE_REFUSED = new Set([234001, 234006, 234010, 234011]);
 
-class ImageRefusedError extends Error {}
+export class ImageRefusedError extends Error {}
 
-async function uploadImage(data: Buffer, filename: string): Promise<string> {
+export async function uploadImage(data: Buffer, filename: string): Promise<string> {
   const form = new FormData();
   form.set("image_type", "message");
   form.set("image", new Blob([new Uint8Array(data)]), filename);
@@ -57,7 +49,7 @@ export async function downloadImage(imageKey: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function sendToChat(chatId: string, msgType: "text" | "post" | "interactive", content: unknown): Promise<string> {
+export async function sendToChat(chatId: string, msgType: "text" | "post" | "interactive", content: unknown): Promise<string> {
   const res = await fetch(`${API}/im/v1/messages?receive_id_type=chat_id`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${await tenantToken()}` },
@@ -67,93 +59,6 @@ async function sendToChat(chatId: string, msgType: "text" | "post" | "interactiv
   const json = (await res.json()) as { code: number; data?: { message_id: string }; msg?: string };
   if (json.code !== 0) throw new Error(`feishu send: ${json.msg}`);
   return json.data?.message_id ?? "";
-}
-
-// Operations alerts
-// Read by the site owner, not an engineer (operations/alerts.ts): what readers see, whether it heals,
-// and what the owner must do.
-
-/** How urgent: readers affected now, money or the owner's hands today, or a follow-up that can wait. */
-export type Level = "now" | "today" | "later";
-
-interface FindingFields {
-  key: string;
-  level: Level;
-  /** Plain words: no queue, unit or table names. */
-  title: string;
-  /** What readers see, or what it costs. */
-  impact?: string;
-  /** Whether it heals by itself. */
-  heals?: string;
-  /** What has to be done. */
-  action?: string;
-  /** Facts for whoever looks into it: the 09:00 digest lists them, an alert to the owner never carries them. */
-  detail?: string;
-  /** When the problem began, when known; otherwise when it was first seen. */
-  since?: Date;
-  /** New evidence after a dated closure reopens a source follow-up under the same key. */
-  observedAt?: Date;
-  /**
-   * The owner hears of it at once even while an agent takes the alerts (operations/alerts.ts): only the owner
-   * can act (paying, renewing, a device beside them), or what would act has stopped (the whole site, the
-   * machine the agent runs on, the channel to the agent). "only": nothing in it is the agent's to do (a
-   * top-up), so the agent is not woken for it. "private" also limits delivery to the owner's private chat.
-   */
-  owner?: true | "only" | "private";
-  /**
-   * The agent is the one to act: whenever the owner is messaged about it, the agent is woken first and the
-   * message says so instead of asking him to pass it on (operations/alerts.ts).
-   */
-  agentFirst?: true;
-  /**
-   * Do not message the owner, including when it clears or when a follow-up is derived from the handoff.
-   * On the incident itself it is now or today and is woken: a later finding is not. One such key is one
-   * occurrence, so the wake's event id is the key, not a time. The derived follow-up keeps the flag and
-   * stays on the ops list only.
-   */
-  agentOnly?: true;
-  /**
-   * How long it must stay gone before its recovery is told; back within that time it is the same incident and
-   * nothing is sent (operations/alerts.ts). For problems that come and go, such as a provider's outage.
-   */
-  settles?: number;
-}
-
-/**
- * An agent-only finding names what kind of work it is (`alert.<kind>`); which rule of the hub takes that kind, and when,
- * is the hub's to say. No default: a new kind must not fall silently to another kind's handling.
- */
-export type Finding = FindingFields & ({ agentOnly?: undefined; agentType?: undefined } | { agentOnly: true; agentType: `alert.${string}` });
-
-export type FollowUp = Finding & { level: "later" };
-
-const MARK: Record<Exclude<Level, "later">, string> = { now: "🔴", today: "🟠" };
-
-
-export function duration(ms: number): string {
-  const min = Math.max(1, Math.round(ms / 60_000));
-  if (min < 60) return `${min} 分钟`;
-  if (min < 48 * 60) return `${Math.floor(min / 60)} 小时${min % 60 ? ` ${min % 60} 分钟` : ""}`;
-  return `${Math.floor(min / 1440)} 天`;
-}
-
-/** The message for an open problem: first notice or a repeat. */
-export function formatAlert(f: Finding, since: Date, now: number, repeat = false): { title: string; lines: string[] } {
-  const level = f.level === "later" ? "today" : f.level;
-  const lasting = now - since.getTime() >= 60_000 ? `（已持续 ${duration(now - since.getTime())}）` : "";
-  const lines = [f.impact && `影响：${f.impact}`, f.heals && `会自己好吗：${f.heals}`, f.action && `你需要：${f.action}`];
-  return { title: `${MARK[level]} ${repeat ? "仍未恢复：" : ""}${f.title}${lasting}`, lines: lines.filter((l): l is string => !!l) };
-}
-
-/** A problem handed to the agent that keeps coming back: told once, with no recovery to follow. */
-export function formatReturn(f: Finding, count: number): { title: string; lines: string[] } {
-  const level = f.level === "later" ? "today" : f.level;
-  const lines = [f.impact && `影响：${f.impact}`, "会自己好吗：每次都交给 AI 处理好了，但又出现，说明还没修到根上", "你需要：让 AI 查清它为什么反复出现，不只处理这一次"];
-  return { title: `${MARK[level]} 反复出现：${f.title}（一天内第 ${count} 次）`, lines: lines.filter((l): l is string => !!l) };
-}
-
-export function formatRecovery(title: string, since: Date, now: number): { title: string; lines: string[] } {
-  return { title: `✅ 已恢复：${title}`, lines: [`持续 ${duration(now - since.getTime())}（${beijingStamp(since)} 起）`] };
 }
 
 /**
@@ -256,75 +161,6 @@ function webhookPieces(text: string): string[] {
   }
   pieces.push(rest);
   return pieces;
-}
-
-/** A screenshot that still cannot be uploaded this long after the feedback is given up: the text goes without it. */
-const SCREENSHOT_GIVE_UP_MS = 24 * 3600_000;
-
-/**
- * The screenshot to attach, uploaded now or on an earlier try. Only the Feishu image key is kept (privacy
- * notice): the local file is removed once uploaded, or once the upload is given up.
- */
-async function screenshotFor(fb: { id: number; screenshot_key: string | null; created_at: Date }): Promise<{ imageKey: string | null; note: string | null }> {
-  const key = fb.screenshot_key;
-  if (key?.startsWith("feishu:")) return { imageKey: key.slice("feishu:".length), note: null };
-  if (key === "gone:upload") return { imageKey: null, note: "（截图未能上传，已删除）" };
-  if (key === "gone:missing") return { imageKey: null, note: "（截图文件已不存在）" };
-  if (!key?.startsWith("local:")) return { imageKey: null, note: null };
-  const file = path.join(config.dataDir, "feedback-screenshots", key.slice("local:".length));
-  const data = await readFile(file).catch(() => null);
-  if (!data) {
-    await sql`UPDATE feedback SET screenshot_key = 'gone:missing' WHERE id = ${fb.id}`;
-    return { imageKey: null, note: "（截图文件已不存在）" };
-  }
-  try {
-    const imageKey = await uploadImage(data, path.basename(file));
-    await sql`UPDATE feedback SET screenshot_key = ${`feishu:${imageKey}`} WHERE id = ${fb.id}`;
-    await unlink(file).catch(() => {});
-    return { imageKey, note: null };
-  } catch (error) {
-    // The forwarding sweep tries again; after a day, or at once when Feishu refuses the picture itself,
-    // the text goes without it.
-    if (!(error instanceof ImageRefusedError) && Date.now() - fb.created_at.getTime() < SCREENSHOT_GIVE_UP_MS) throw error;
-    await sql`UPDATE feedback SET screenshot_key = 'gone:upload' WHERE id = ${fb.id}`;
-    await unlink(file).catch(() => {});
-    return { imageKey: null, note: "（截图未能上传，已删除）" };
-  }
-}
-
-/**
- * Forwards one feedback to the internal chat, with its screenshot. Until that succeeds the feedback keeps
- * the reason in forward_error, and the forwarding sweep (operations/feedback.ts) tries it again.
- * `tell` false: the chat is not told, and only the screenshot goes to Feishu ("kept").
- */
-export async function forwardFeedbackToFeishu(id: number, tell = true): Promise<"sent" | "kept" | "disabled"> {
-  if (!feishuInternalEnabled()) return "disabled";
-  const chat = credential("integrations", "FEISHU_INTERNAL_CHAT_ID");
-  if (!chat) return "disabled";
-  const [fb] = await sql<{ id: number; content: string; email: string | null; note: string | null; page_url: string | null; screenshot_key: string | null; created_at: Date }[]>`
-    SELECT id, content, email, note, page_url, screenshot_key, created_at FROM feedback WHERE id = ${id} AND forwarded_at IS NULL`;
-  if (!fb) return "disabled";
-  try {
-    const shot = await screenshotFor(fb);
-    if (!tell) {
-      await sql`UPDATE feedback SET forward_error = NULL WHERE id = ${id}`;
-      return "kept";
-    }
-    const paragraphs: unknown[][] = [
-      [{ tag: "text", text: fb.content }],
-      [{ tag: "text", text: `页面：${fb.page_url ?? "—"}` }],
-      [{ tag: "text", text: `邮箱：${fb.email ?? "（未留）"}` }],
-    ];
-    if (fb.note) paragraphs.push([{ tag: "text", text: fb.note }]);
-    if (shot.imageKey) paragraphs.push([{ tag: "img", image_key: shot.imageKey }]);
-    else if (shot.note) paragraphs.push([{ tag: "text", text: shot.note }]);
-    await sendToChat(chat, "post", { zh_cn: { title: `反馈 #${fb.id}`, content: paragraphs } });
-    await sql`UPDATE feedback SET forwarded_at = now(), forward_error = NULL WHERE id = ${id}`;
-    return "sent";
-  } catch (error) {
-    await sql`UPDATE feedback SET forward_error = ${String(error instanceof Error ? error.message : error).slice(0, 300)} WHERE id = ${id}`;
-    throw error;
-  }
 }
 
 /** Custom-bot webhook for content groups (selected cards and other pushes). */

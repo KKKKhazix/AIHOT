@@ -22,7 +22,7 @@ export async function submitIndexNow(now = new Date()) {
   const changes = [...new Set([...Object.keys(acknowledged), ...Object.keys(current)])]
     .filter((loc) => acknowledged[loc] !== current[loc]).sort();
   const sent = changes.slice(0, MAX_URLS);
-  const urls = sent.map(siteUrl);
+  const urls = sent.map((loc) => siteUrl(loc));
   let status: "sent" | "disabled" | "empty" | "failed" = urls.length ? "disabled" : "empty";
   let httpStatus: number | null = null;
   const key = config.indexNowKey;

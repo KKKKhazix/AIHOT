@@ -8,7 +8,7 @@ import { after, before, beforeEach, test } from "node:test";
 import { sql, closeDb } from "@aihot/backend/db";
 import { getBoss, stopBoss } from "@aihot/backend/jobs/queue";
 import { installModules, type ServerModule } from "@aihot/backend/modules";
-import type { Finding } from "@aihot/backend/notify/feishu";
+import type { Finding } from "@aihot/backend/lib/alerts";
 import { wakeAgent, wakeDigest, flushAgentEvents } from "@aihot/backend/notify/agent";
 import { checkAlerts, collectFindings, holdAlert, sendDigest } from "@aihot/backend/operations/alerts";
 import { checkWorkerHeartbeat } from "@aihot/backend/operations/watch";

@@ -5,7 +5,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { EDITION_TIMES, SITE } from "@aihot/site";
-import { CONTACT_ALIASES, PUBLIC_INTERFACE_VERSION, robotsForReaders } from "@aihot/contracts/http-policy";
+import { CONTACT_ALIASES, PUBLIC_INTERFACE_VERSION, robotsForReaders, STANDARD_ROOT_ICONS } from "@aihot/contracts/http-policy";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
 import { REPO_ROOT, config } from "@aihot/backend/config";
 import { applyPublicHeaders, etagMatches, sendTextWithEtag } from "../http/respond.ts";
@@ -91,6 +91,7 @@ function sendEntry(req: FastifyRequest, reply: FastifyReply, entry: Entry, opts:
   if (opts.publicApi) applyPublicHeaders(reply);
   reply.header("Content-Type", opts.type);
   reply.header("Cache-Control", opts.cacheControl);
+  if (/^text\/|json|xml|svg|javascript|yaml|x-sh/i.test(opts.type)) reply.header("Vary", "Accept-Encoding");
   reply.header("ETag", entry.etag);
   if (etagMatches(req.headers["if-none-match"], entry.etag)) return reply.code(304).send();
   return reply.send(entry.body);
@@ -144,7 +145,7 @@ export function registerStatic(app: FastifyInstance) {
   }
 
   // The site's icons (site/brand/): the standard ones, then any others it keeps at the root.
-  for (const icon of ["favicon.ico", "icon.png", "icon-192.png", "apple-icon.png", "logo.svg", ...SITE.rootIcons]) {
+  for (const icon of [...STANDARD_ROOT_ICONS, ...SITE.rootIcons]) {
     app.get(`/${icon}`, (req, reply) => sendFile(req, reply, path.join(BRAND, icon), { cacheControl: ICON_CACHE }));
   }
 

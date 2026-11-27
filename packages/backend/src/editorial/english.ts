@@ -12,8 +12,8 @@ import { z } from "zod";
 import { ENGLISH } from "@aihot/contracts/english";
 import { sql, type Db } from "../db.ts";
 import { chatJson } from "../providers/llm.ts";
-import { completeReceipt, failedReceiptId, failureKind, ProviderRejectedError } from "../providers/receipts.ts";
-import { shutdownSignal } from "../jobs/queue.ts";
+import { completeReceipt, failedReceiptId, failureKind, stopsBatchRun } from "../providers/receipts.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
 import * as english from "../publication/english.ts";
 import { copyKey, HAN, needsEnglish, originalShown, usableCopy, wantedIn, type Wanted, type WantedText } from "../publication/english.ts";
 import { loadChangelog } from "../site/meta.ts";
@@ -52,10 +52,6 @@ const Output = z.object({ t: z.array(z.object({ id: z.number().int(), en: z.stri
 interface Text extends WantedText {
   attempts?: number;
 }
-
-/** What ends a run without counting against its texts, as in editorial/translate.ts. */
-const endsRun = (error: unknown) => ["off", "budget", "busy", "outage"].includes(failureKind(error))
-  || (error instanceof ProviderRejectedError && error.accessRefused);
 
 /**
  * A text's row (`c`) asks for no request now: its English is usable, it was tried three times, or the request it went
@@ -318,7 +314,7 @@ async function translateBatch(texts: Text[], totals: Totals): Promise<void> {
       ...(retry ? { attemptTag: `retry${retry}` } : {}),
     });
   } catch (error) {
-    if (shutdownSignal.signal.aborted || endsRun(error)) throw error;
+    if (shutdownSignal.signal.aborted || stopsBatchRun(error)) throw error;
     // An attempt, also one that may have been billed: its texts wait for that request's release (NOT_DUE).
     const held = failureKind(error) === "unknown" ? failedReceiptId(error) : null;
     await sql.begin(async (tx) => {
@@ -431,7 +427,7 @@ export async function translateEnglish(opts: { budgetMs?: number } = {}): Promis
       }
     }
   } catch (error) {
-    if (shutdownSignal.signal.aborted || endsRun(error)) return totals;
+    if (shutdownSignal.signal.aborted || stopsBatchRun(error)) return totals;
     throw error;
   }
   return totals;

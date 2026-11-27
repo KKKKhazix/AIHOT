@@ -1,8 +1,11 @@
 // The worker watchdog, run from the api process (the worker cannot report its own death). It keeps its
 // state in settings and sends its own alerts.
 import { sql } from "../db.ts";
+import { formatAlert, formatRecovery, type Finding } from "../lib/alerts.ts";
+import { logError } from "../lib/log-error.ts";
 import { wakeAgent, flushAgentEvents } from "../notify/agent.ts";
-import { formatAlert, formatRecovery, sendAlert, type Finding } from "../notify/feishu.ts";
+import { sendAlert } from "../notify/feishu.ts";
+import { readHeartbeat } from "./heartbeat.ts";
 
 // The process manager restarts a crashed worker within seconds and a deploy restarts it on purpose;
 // half an hour without a heartbeat means those did not help.
@@ -25,7 +28,7 @@ const WORKER_DOWN: Finding = {
 export async function checkWorkerHeartbeat(): Promise<void> {
   const wentDown = await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('watchdog.worker'))`;
-    const [hb] = await tx<{ updated_at: Date }[]>`SELECT updated_at FROM settings WHERE key = 'heartbeat.worker'`;
+    const hb = await readHeartbeat("worker", tx);
     if (!hb) return null;
     const [prior] = await tx<{ value: { state: "up" | "down"; since: string } }[]>`SELECT value FROM settings WHERE key = 'watchdog.worker'`;
     const now = Date.now();
@@ -56,7 +59,9 @@ export async function checkWorkerHeartbeat(): Promise<void> {
 }
 
 export function startWorkerWatchdog(): NodeJS.Timeout {
-  const timer = setInterval(() => void checkWorkerHeartbeat().catch(() => {}), 5 * 60_000);
+  const timer = setInterval(() => void checkWorkerHeartbeat().catch((error) => {
+    console.warn(JSON.stringify({ level: "warn", msg: "worker watchdog check failed", err: logError(error) }));
+  }), 5 * 60_000);
   timer.unref();
   return timer;
 }

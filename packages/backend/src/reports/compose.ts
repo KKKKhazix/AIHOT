@@ -9,12 +9,13 @@ import { PLAIN_TERMS, RELEASE } from "@aihot/industry/taxonomy";
 import { promptText, promptVersion } from "../editorial/prompts.ts";
 import { modelFor } from "../editorial/models.ts";
 import { ENTITIES, entityNames, isRelease } from "../editorial/vocabulary.ts";
+import type { ReportKind } from "@aihot/contracts/reports";
 import { addDays, beijingAt, beijingDate, beijingTime, isoWeekLabel, isoWeekRange, monthRange } from "@aihot/contracts/time";
 import { sql } from "../db.ts";
 import { logError } from "../lib/log-error.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt } from "../providers/receipts.ts";
-import { shutdownSignal } from "../jobs/queue.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
 import { emit } from "../modules.ts";
 import { arrangeDaily, candidates, dailyEdition, dailyPicks, periodEntries, sectionKeyOf, SECTIONS, type Candidate, type EditionEntry } from "./edition.ts";
 
@@ -34,8 +35,6 @@ export function dailyMetrics(main: EditionEntry[]) {
     firstPartyEvents: main.filter((e) => e.entry.firstParty).length,
   };
 }
-
-type ReportKind = "daily" | "weekly" | "monthly";
 
 /** How many events an issue already published carries; nothing when it does not exist yet. */
 async function savedReport(kind: ReportKind, key: string) {

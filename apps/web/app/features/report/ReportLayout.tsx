@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import type { ReportKind } from "@aihot/contracts/site";
+import type { ReportKind } from "@aihot/contracts/reports";
 import { BarButton, PhoneBar, type BackTarget } from "../../components/shell/PhoneBar";
 import { OutlineSheet, type OutlineEntry } from "../../components/ui/OutlineSheet";
 import { IconList } from "../../components/icons";

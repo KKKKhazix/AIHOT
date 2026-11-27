@@ -14,12 +14,12 @@ import { sql } from "../db.ts";
 import { sanitizeBody, textToHtml } from "../content/sanitize.ts";
 import { htmlAltText, rebaseTranslation } from "../content/presentation.ts";
 import { chatJson } from "../providers/llm.ts";
-import { completeReceipt, failureKind, providerContentRefused, ProviderRejectedError, rejectReceivedResponse } from "../providers/receipts.ts";
+import { completeReceipt, failureKind, providerContentRefused, rejectReceivedResponse, stopsBatchRun } from "../providers/receipts.ts";
 import { collapseWhitespace, htmlBlockText, isChineseText, mergeDistinctText } from "../lib/text.ts";
-import { isEmptyOrLinkOnly, xArticleBody } from "../content/posts.ts";
+import { isEmptyOrLinkOnly, quotedTweetIdSql, xArticleBody } from "../content/posts.ts";
 import { sha256 } from "../lib/ids.ts";
 import { modelFor } from "./models.ts";
-import { shutdownSignal } from "../jobs/queue.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
 import { promptText, promptVersion } from "./prompts.ts";
 import { editorialPolicy, emit } from "../modules.ts";
 import { republishTx } from "../publication/publish.ts";
@@ -35,14 +35,6 @@ const BLOCK = new Set(["p", "h2", "h3", "h4", "h5", "li", "blockquote", "figcapt
 const CONTAINER = /^(p|h[2-5]|li|blockquote|figcaption|td|th|dt|dd|caption|ul|ol|table|pre|figure|div)$/;
 
 const Output = z.object({ t: z.array(z.string()) });
-
-/**
- * A failure that ends the run without counting against the item: model calls switched off, a full
- * budget, an account refusal, the same request in flight, or the provider down for now.
- * The next scheduled run can try again without consuming an item attempt.
- */
-const endsRun = (error: unknown) => ["off", "budget", "busy", "outage"].includes(failureKind(error))
-  || (error instanceof ProviderRejectedError && error.accessRefused);
 
 const SYSTEM_BODY = promptText("translate-body");
 
@@ -399,7 +391,7 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
          -- A post with a saved long article is translated as that article: its translation is not the post's words.
          AND coalesce(o.x_article->>'text', '') = '') AS own_zh
     FROM publications p JOIN articles a ON a.id = p.article_id
-    CROSS JOIN LATERAL (SELECT coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')) AS tweet_id) q
+    CROSS JOIN LATERAL (SELECT ${quotedTweetIdSql()} AS tweet_id) q
     LEFT JOIN quote_translations qt ON qt.tweet_id = q.tweet_id
     WHERE p.channel = 'x' AND p.selected AND p.visibility = 'public' AND p.body_mode = 'full'
       AND p.discovered_at > now() - make_interval(days => ${opts.days ?? 3})
@@ -409,7 +401,7 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
   const suppressCiting = async (tweetId: string, receiptIds: number[], reason: string) => {
     const cited = await sql<{ id: string; revision: number }[]>`
       SELECT a.id, a.revision FROM articles a JOIN publications p ON p.article_id = a.id
-      WHERE coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')) = ${tweetId} AND NOT p.suppress_original`;
+      WHERE ${quotedTweetIdSql()} = ${tweetId} AND NOT p.suppress_original`;
     for (const { id, revision } of cited) await suppressFromTranslation(id, revision, [], reason);
     if (receiptIds.length) {
       await sql.begin(async (tx) => {
@@ -445,7 +437,7 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
         }
         // What ends the run ends it; any other failure skips its post (an answer received is reused
         // next time, so a retry costs nothing).
-        if (endsRun(error)) throw error;
+        if (stopsBatchRun(error)) throw error;
         continue;
       }
     }
@@ -469,7 +461,7 @@ export async function translateQuotes(opts: { days?: number; limit?: number; bud
       if (saved.length) {
         const cited = await tx<{ id: string }[]>`
           SELECT a.id FROM articles a JOIN publications p ON p.article_id = a.id
-          WHERE coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')) = ${r.tweet_id}`;
+          WHERE ${quotedTweetIdSql()} = ${r.tweet_id}`;
         for (const { id } of cited) await emit("articleChanged", { id, kind: "body", reason: "quoted post translation" }, tx);
       }
       for (const id of new Set(allReceipts)) await completeReceipt(tx, id);
@@ -523,7 +515,7 @@ export async function translatePending(opts: { limit?: number; budgetMs?: number
       // A deploy stops between paid fragments, never aborts a sent request. Received answers stay
       // in receipts and are reused next run; do not mark an interrupted article terminal/partial.
       // Any error once the stop began is that interruption, also a sent batch the provider then refused.
-      if (shutdownSignal.signal.aborted || endsRun(error)) return { done, quotes: 0 };
+      if (shutdownSignal.signal.aborted || stopsBatchRun(error)) return { done, quotes: 0 };
       // A request that may have been billed waits for its release (operations/recover.ts), which lets
       // the item's next attempt call again; meanwhile the other items go on.
       if (failureKind(error) === "unknown") continue;
@@ -547,7 +539,7 @@ export async function translatePending(opts: { limit?: number; budgetMs?: number
     try {
       quotes = await translateQuotes({ budgetMs: left });
     } catch (error) {
-      if (endsRun(error)) return { done, quotes };
+      if (stopsBatchRun(error)) return { done, quotes };
       throw error;
     }
   }

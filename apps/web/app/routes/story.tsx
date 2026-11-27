@@ -12,7 +12,7 @@ import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { breadcrumbLd, pageMeta, storyArticleLd, storyLd, titled, titleCacheSeconds } from "../lib/seo";
 import { beijingDate, beijingTime } from "@aihot/contracts/time";
-import { byBeijingDay, monthDay, monthDayTime, relativeTime } from "../lib/format";
+import { byBeijingDay, formatCount, monthDay, monthDayTime, relativeTime } from "../lib/format";
 import { useCurrentSection, useHeightTween, useSwapped } from "../lib/motion";
 import { HeatChart } from "../features/story/HeatChart";
 import { sessionCache } from "../lib/session-cache";
@@ -20,10 +20,11 @@ import { isReload } from "../lib/restore";
 import { Badge, SelectedBadge } from "../components/ui/Badge";
 import { PillTabs } from "../components/ui/Tabs";
 import { Select } from "../components/ui/Controls";
-import { IconArrowLeft, IconCalendar, IconChevronRight, IconClock, IconDoc, IconUsers } from "../components/icons";
+import { IconCalendar, IconChevronRight, IconClock, IconDoc, IconUsers } from "../components/icons";
+import { BackLink } from "../components/shell/BackLink";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import { hotInNav, navUp } from "../components/shell/nav";
-import { useHistoryBack, type Screen } from "../components/shell/screens";
+import type { Screen } from "../components/shell/screens";
 import { Link } from "../lib/link";
 import { apiIn, L, localeOf, localizePath, translator, useLocale, useT } from "../lib/i18n";
 
@@ -221,16 +222,17 @@ export default function StoryPage() {
     setFilter("official");
     goSection(SECTIONS.reports);
   };
-  // Desktop back, as on the article page and the phone bar; opened directly, up to the hot board.
-  const { behind, onClick: goBack } = useHistoryBack();
-
   return (
     <div className="mx-auto max-w-[var(--page-max-reading)] pb-10">
       <PhoneBar back={{ to: UP.to, label: UP.back }} title={story.title} />
       <nav aria-label={t("位置", "Breadcrumb")} className="hidden items-center gap-2.5 pb-5 pt-4 text-ui-caption text-ink-4 lg:flex">
-        <Link to={UP.to} onClick={goBack} className="relative inline-flex items-center gap-1.5 transition-colors hover:text-ink touch:before:absolute touch:before:inset-x-0 touch:before:top-1/2 touch:before:h-11 touch:before:-translate-y-1/2 touch:before:content-['']">
-          <IconArrowLeft size={15} /> {behind ? t("返回", "Back") : t(UP.name)}
-        </Link>
+        <BackLink
+          to={UP.to}
+          label={UP.name}
+          showPrevious={false}
+          iconSize={15}
+          className="relative inline-flex items-center gap-1.5 transition-colors hover:text-ink touch:before:absolute touch:before:inset-x-0 touch:before:top-1/2 touch:before:h-11 touch:before:-translate-y-1/2 touch:before:content-['']"
+        />
         <span className="h-3 w-px bg-line-strong" aria-hidden="true" />
         <span>{t("事件详情", "Story details")}</span>
       </nav>
@@ -434,9 +436,9 @@ export default function StoryPage() {
                     <b className="num font-semibold text-ink">{story.whyHot.newParticipants6h}</b> 个。
                   </>,
                   <>
-                    In the last 48 hours, <b className="num font-semibold text-ink">{story.whyHot.participants48h.toLocaleString("en-US")}</b>{" "}
+                    In the last 48 hours, <b className="num font-semibold text-ink">{formatCount(story.whyHot.participants48h, "en")}</b>{" "}
                     {story.whyHot.participants48h === 1 ? "account or organization" : "accounts or organizations"} covered or discussed this story,{" "}
-                    <b className="num font-semibold text-ink">{story.whyHot.newParticipants6h.toLocaleString("en-US")}</b> of them new in the last 6 hours.
+                    <b className="num font-semibold text-ink">{formatCount(story.whyHot.newParticipants6h, "en")}</b> of them new in the last 6 hours.
                   </>,
                 )}
               </p>

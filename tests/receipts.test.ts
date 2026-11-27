@@ -6,11 +6,11 @@ import { gate, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { z } from "zod";
-import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
 import { chatJson } from "@aihot/backend/providers/llm";
 import { embeddingsAvailable } from "@aihot/backend/providers/embeddings";
-import { assertAccepted, failureKind, ProviderRejectedError, BudgetExceededError, logicalKeyFor, markStalePendingReceipts, ModelOutputError, paidRequest, providerStopKey, ReceiptUnknownError } from "@aihot/backend/providers/receipts";
+import { estimatedCharge, freshTokens } from "@aihot/backend/providers/prices";
+import { assertAccepted, failureKind, ModelUnavailableError, ProviderRejectedError, BudgetExceededError, logicalKeyFor, markStalePendingReceipts, ModelOutputError, paidRequest, providerStopKey, ReceiptUnknownError, stopsBatchRun } from "@aihot/backend/providers/receipts";
 import { autoReleaseUnknownReceipts } from "@aihot/backend/operations/recover";
 
 const usage = { prompt_tokens: 80, completion_tokens: 20, total_tokens: 100 };
@@ -274,7 +274,8 @@ for (const window of [
 });
 
 test("with the valve off nothing is sent", async () => {
-  config.modelCallsEnabled = false;
+  const previousModelCalls = process.env.MODEL_CALLS_ENABLED;
+  process.env.MODEL_CALLS_ENABLED = "false";
   try {
     const before = provider.hits();
     await assert.rejects(ask(`valve-${tag()}`), /disabled/);
@@ -282,7 +283,8 @@ test("with the valve off nothing is sent", async () => {
     process.env.DASHSCOPE_API_KEY = "test-key";
     assert.equal(embeddingsAvailable(), false);
   } finally {
-    config.modelCallsEnabled = true;
+    if (previousModelCalls === undefined) delete process.env.MODEL_CALLS_ENABLED;
+    else process.env.MODEL_CALLS_ENABLED = previousModelCalls;
     delete process.env.DASHSCOPE_API_KEY;
   }
 });
@@ -438,4 +440,21 @@ test("an answer to a call sent before the refusal does not release the stop", as
     await sql`DELETE FROM receipts WHERE service = ${service}`;
     await sql`DELETE FROM settings WHERE key = ${providerStopKey(service)}`;
   }
+});
+
+test("freshTokens clamps cached > prompt to zero and stopsBatchRun classifies run-ending failures", () => {
+  assert.equal(freshTokens(1000, 300), 700);
+  assert.equal(freshTokens(100, 150), 0);
+  const price = { service: "deepseek", model: "deepseek-chat", currency: "CNY", input_per_mtok: 2, cached_per_mtok: 0.5, output_per_mtok: 8 };
+  const charge = estimatedCharge(price, { fresh: freshTokens(100, 150), cached: 150, output: 0 });
+  assert.ok(charge >= 0);
+  assert.equal(charge, (150 / 1e6) * 0.5);
+
+  assert.equal(stopsBatchRun(new ModelUnavailableError("off")), true);
+  assert.equal(stopsBatchRun(new BudgetExceededError("s", "minute", 60)), true);
+  assert.equal(stopsBatchRun(new ProviderRejectedError("503", 503, true)), true);
+  assert.equal(stopsBatchRun(new ProviderRejectedError("402", 402, false, true)), true);
+  assert.equal(stopsBatchRun(new ProviderRejectedError("400", 400, false, false)), false);
+  assert.equal(stopsBatchRun(new ModelOutputError("bad json")), false);
+  assert.equal(stopsBatchRun(new ReceiptUnknownError(1, "lost")), false);
 });

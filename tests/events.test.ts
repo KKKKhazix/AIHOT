@@ -95,7 +95,7 @@ before(async () => {
   const first = await report("first");
   await sql`INSERT INTO fact_articles (fact_id, article_id, role) VALUES (${factId}, ${first}, 'report')`;
   await sql`INSERT INTO story_signals (story_id, article_id, participant_key, source_id, kind, observed_at)
-            VALUES (${storyId}, ${first}, ${`source:${SOURCE}`}, ${SOURCE}, 'editorial', now())`;
+            VALUES (${storyId}, ${first}, ${`source:${SOURCE}`}, ${SOURCE}, 'editorial', now() - interval '1 minute')`;
 });
 after(async () => {
   await provider.close();
@@ -115,7 +115,7 @@ const member = async (fact: number, role = "report", manual = false) => {
   return id;
 };
 const signalIn = (story: number, id: string) =>
-  sql`INSERT INTO story_signals (story_id, article_id, participant_key, source_id, kind, observed_at) VALUES (${story}, ${id}, ${`source:${SOURCE}`}, ${SOURCE}, 'editorial', now())`;
+  sql`INSERT INTO story_signals (story_id, article_id, participant_key, source_id, kind, observed_at) VALUES (${story}, ${id}, ${`source:${SOURCE}`}, ${SOURCE}, 'editorial', now() - interval '1 minute')`;
 
 test("merging facts moves reports, roles, heat and attached posts, and an emptied story's address follows", async () => {
   const into = await newFact();

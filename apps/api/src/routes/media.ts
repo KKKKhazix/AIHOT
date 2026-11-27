@@ -8,7 +8,7 @@ import { enqueue, QUEUES } from "@aihot/backend/jobs/queue";
 import { type PreparedImage, cachedGifVideo, failureSeconds, ImageBudgetExceeded, produceAvif, produceImage } from "@aihot/backend/media/images";
 import { AVIF_MODE_SUFFIX } from "@aihot/contracts/site";
 import { GIF_VIDEO_MODE, LONGEST_CACHE_SECONDS, X_VIDEO_MODE, verifyProxyRequest } from "@aihot/backend/media/imgproxy";
-import { etagMatches, looseQuery } from "../http/respond.ts";
+import { etagMatches, looseQuery, QueryError } from "../http/respond.ts";
 
 function imageCacheControl(exp: string, limit: number): string {
   const remaining = Math.min(limit, Number(exp) - Math.floor(Date.now() / 1000));
@@ -22,7 +22,15 @@ function queueRendition(url: string, mode: string, format?: "mp4" | "avif") {
 
 export function registerMedia(app: FastifyInstance) {
   app.get("/api/img-proxy", async (req, reply) => {
-    const q = looseQuery(req);
+    let q: Record<string, string>;
+    try {
+      q = looseQuery(req);
+    } catch (error) {
+      if (error instanceof QueryError) {
+        return reply.code(400).header("Cache-Control", "no-store").header("X-Img-Proxy-Sig", "invalid").type("text/plain; charset=utf-8").send("invalid query\n");
+      }
+      throw error;
+    }
     const verdict = verifyProxyRequest({ u: q.u, mode: q.mode, exp: q.exp, sig: q.sig });
     if (!verdict.ok) {
       const malformed = verdict.reason === "missing" || verdict.reason === "bad-url";

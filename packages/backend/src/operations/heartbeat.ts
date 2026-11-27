@@ -1,6 +1,7 @@
 // Process heartbeats for the runs view and the watchdog: one settings row per process role.
 import { hostname } from "node:os";
-import { sql } from "../db.ts";
+import { sql, type Db } from "../db.ts";
+import { logError } from "../lib/log-error.ts";
 
 const startedAt = new Date().toISOString();
 
@@ -21,8 +22,21 @@ async function beat(role: string) {
 
 /** Beats now and every minute until the process exits. */
 export function startHeartbeat(role: string): NodeJS.Timeout {
-  void beat(role).catch(() => {});
-  const timer = setInterval(() => void beat(role).catch(() => {}), 60_000);
+  const warn = (error: unknown) => console.warn(JSON.stringify({ level: "warn", msg: "heartbeat write failed", role, err: logError(error) }));
+  void beat(role).catch(warn);
+  const timer = setInterval(() => void beat(role).catch(warn), 60_000);
   timer.unref();
   return timer;
+}
+
+/** Reads one process role's latest heartbeat record. */
+export async function readHeartbeat(role: string, db: Db = sql): Promise<{ value: Heartbeat; updated_at: Date } | null> {
+  const [row] = await db<{ value: Heartbeat; updated_at: Date }[]>`SELECT value, updated_at FROM settings WHERE key = ${`heartbeat.${role}`}`;
+  return row ?? null;
+}
+
+/** Lists all recorded process heartbeats ordered by role name. */
+export async function listHeartbeats(): Promise<Array<{ role: string; value: Heartbeat; updated_at: Date }>> {
+  const rows = await sql<{ key: string; value: Heartbeat; updated_at: Date }[]>`SELECT key, value, updated_at FROM settings WHERE key LIKE 'heartbeat.%' ORDER BY key`;
+  return rows.map((h) => ({ role: h.key.slice("heartbeat.".length), value: h.value, updated_at: h.updated_at }));
 }

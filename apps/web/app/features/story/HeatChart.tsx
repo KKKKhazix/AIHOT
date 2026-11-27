@@ -1,7 +1,7 @@
 import { useId, useMemo, useState, type ReactNode } from "react";
 import type { HeatPoint } from "@aihot/contracts/site";
-import { beijingDate, beijingTime } from "@aihot/contracts/time";
-import { monthDay, monthDayTime } from "../../lib/format";
+import { BEIJING_OFFSET_MS, beijingDate, beijingTime } from "@aihot/contracts/time";
+import { formatCount, monthDay, monthDayTime } from "../../lib/format";
 import { useEntrance } from "../../lib/hydration";
 import { L, useLocale, useT, type Locale } from "../../lib/i18n";
 import { PillTabs } from "../../components/ui/Tabs";
@@ -9,7 +9,7 @@ import { areaPath, curvePath, type Pt } from "../hot/curve";
 import { useSwapped } from "../../lib/motion";
 
 const HOUR = 3600 * 1000;
-const BEIJING = 8 * HOUR;
+const BEIJING = BEIJING_OFFSET_MS;
 
 function niceStep(max: number): number {
   const raw = max / 4;
@@ -28,8 +28,7 @@ const RANGES = [
   { hours: 168, label: L("7 天", "7 days") },
 ] as const;
 
-/** A number as the page's language writes it: 1240 in Chinese, 1,240 in English. */
-const num = (n: number, locale: Locale) => (locale === "en" ? n.toLocaleString("en-US") : String(n));
+const num = formatCount;
 
 /** The points of the last `hours` before the latest one. */
 function inRange(points: HeatPoint[], hours: number): HeatPoint[] {

@@ -1,6 +1,7 @@
 // Beijing (Asia/Shanghai, fixed UTC+8, no DST) calendar helpers shared by web and backend.
 
-const OFFSET_MS = 8 * 3600 * 1000;
+export const BEIJING_OFFSET_MS = 8 * 3600 * 1000;
+const OFFSET_MS = BEIJING_OFFSET_MS;
 
 /** YYYY-MM-DD of the instant in Beijing time. */
 export function beijingDate(instant: Date | string | number): string {
@@ -113,8 +114,9 @@ export function isoWeekRange(label: string): { start: string; end: string } | nu
 export function monthRange(label: string): { start: string; end: string } | null {
   const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(label);
   if (!m) return null;
-  const next = Number(m[2]) === 12 ? `${Number(m[1]) + 1}-01-01` : `${m[1]}-${String(Number(m[2]) + 1).padStart(2, "0")}-01`;
-  return { start: `${label}-01`, end: addDays(next, -1) };
+  const d = new Date(0);
+  d.setUTCFullYear(Number(m[1]), Number(m[2]), 0);
+  return { start: `${label}-01`, end: `${label}-${String(d.getUTCDate()).padStart(2, "0")}` };
 }
 
 export function isValidDate(date: string): boolean {

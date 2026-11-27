@@ -46,9 +46,13 @@ export function useHistoryBack(): { behind: boolean; onClick: (event: MouseEvent
   return { behind, onClick };
 }
 
+/** Shell breakpoint media queries shared across phone/desktop checks (matches lg: 700px). */
+export const PHONE_MEDIA = "(max-width: 699px)";
+export const DESKTOP_MEDIA = "(min-width: 700px)";
+
 /** Below the lg breakpoint (700px): the phone shell. */
 export function isPhone(): boolean {
-  return typeof window !== "undefined" && window.matchMedia("(max-width: 699px)").matches;
+  return typeof window !== "undefined" && window.matchMedia(PHONE_MEDIA).matches;
 }
 
 /** Position of this page in the tab's history (React Router keeps it in history.state). */

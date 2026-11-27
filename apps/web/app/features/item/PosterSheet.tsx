@@ -71,13 +71,13 @@ export default function PosterSheet({ id, title, open, onClose }: { id: string; 
                 href={ready ? src : undefined}
                 download={`${SITE.mcpPrefix}-${id}.png`}
                 aria-disabled={ready ? undefined : true}
-                className="press inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-accent text-ui-body-sm font-medium text-accent-contrast hover:bg-accent-ink aria-disabled:pointer-events-none aria-disabled:opacity-40 lg:h-10 sm:text-ui-label-lg"
+                className="press inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-accent text-ui-body-sm font-medium text-accent-contrast hover:bg-accent-ink aria-disabled:pointer-events-none aria-disabled:opacity-40 lg:h-10 touch:h-11 sm:text-ui-label-lg"
               >
                 <IconDownload size={15} />{t(" 保存图片", " Save image")}
               </a>
             )}
             {canShareFile && (
-              <button type="button" onClick={share} disabled={!ready} className="press inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-line-strong bg-surface text-ui-body-sm font-medium text-ink hover:border-ink-4 disabled:pointer-events-none disabled:opacity-40 lg:h-10 sm:text-ui-label-lg">
+              <button type="button" onClick={share} disabled={!ready} className="press inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-line-strong bg-surface text-ui-body-sm font-medium text-ink hover:border-ink-4 disabled:pointer-events-none disabled:opacity-40 lg:h-10 touch:h-11 sm:text-ui-label-lg">
                 <IconShare size={15} />{t(" 分享", " Share")}
               </button>
             )}

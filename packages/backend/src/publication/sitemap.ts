@@ -6,7 +6,8 @@
 // of that original lifetime.
 import { mkdir, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { REPORT_NAMES, reportDateLabel, STORY_INDEX_MIN_SOURCES, type ReportKind } from "@aihot/contracts/site";
+import { STORY_INDEX_MIN_SOURCES } from "@aihot/contracts/site";
+import { REPORT_NAMES, reportDateLabel, type ReportKind } from "@aihot/contracts/reports";
 import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
 import { hasEnglish } from "@aihot/contracts/reader-pages";
 import { inLanguage, localeOf, pagePath } from "@aihot/contracts/i18n";
@@ -20,6 +21,7 @@ import { sql } from "../db.ts";
 import { shared } from "../lib/cache.ts";
 import { escapeXml } from "../lib/text.ts";
 import { siteUrl } from "./links.ts";
+import { publicSourceNameSql } from "./rules.ts";
 import { evidenceCondition, listedCondition, selectedCondition, storyReportCondition } from "./scope.ts";
 import { usableCopy } from "./english.ts";
 import { issueLead, unavailableHeadlineIds } from "./reports.ts";
@@ -156,7 +158,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
       ${revisionColumn(sql`md5(concat_ws('|', st.title, st.summary, st.digest, st.digest_updated_at::text, st.version::text, members.revision))`)}
     FROM stories st JOIN LATERAL (
       SELECT count(DISTINCT p.source_id) AS sources
-        ${revisionColumn(sql`md5(string_agg(concat_ws(':', p.article_id, p.revision::text, fa.role, f.updated_at::text, p.source_id, regexp_replace(s.name, '（[^（）]*）', '', 'g')),
+        ${revisionColumn(sql`md5(string_agg(concat_ws(':', p.article_id, p.revision::text, fa.role, f.updated_at::text, p.source_id, ${publicSourceNameSql(sql`s.name`)}),
           ',' ORDER BY p.article_id, f.id))`)}
       FROM facts f JOIN fact_articles fa ON fa.fact_id = f.id JOIN publications p ON p.article_id = fa.article_id
       JOIN sources s ON s.id = p.source_id
@@ -187,7 +189,7 @@ export async function loadDiscoveryEntries(at = new Date(), limits?: { urls: num
     SELECT p.article_id AS id, p.title, ${englishTitle(sql`p.title`)} AS en_title,
       CASE WHEN p.selected THEN p.visible_after END AS released
       ${revisionColumn(sql`md5(concat_ws('|', p.revision::text, a.content_hash, a.cover::text, tr.title, tr.body_html, tr.body_text, tr.complete::text, qt.text_zh,
-        p.source_id, regexp_replace(s.name, '（[^（）]*）', '', 'g'), s.icon_url, st.public_id::text, st.title))`)}
+        p.source_id, ${publicSourceNameSql(sql`s.name`)}, s.icon_url, st.public_id::text, st.title))`)}
     ${ITEM_FROM}
     WHERE ${storyReportCondition(at)} AND p.indexable ${limits ? sql`AND NOT ${thinPageCondition()} AND NOT ${eventPageCondition(at)}` : sql``}
     ORDER BY p.timeline_at DESC, p.article_id DESC ${limits ? sql`LIMIT ${Math.max(0, limits.urls - entries.length)}` : sql``}`;

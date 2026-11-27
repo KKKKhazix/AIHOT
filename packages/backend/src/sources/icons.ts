@@ -4,6 +4,7 @@
 import { sql } from "../db.ts";
 import { guardedFetch, DEFAULT_UA } from "../lib/http-fetch.ts";
 import { produceImage } from "../media/images.ts";
+import { stripJinaPrefix } from "../providers/jina.ts";
 import { sourceOwnsPost } from "./account.ts";
 
 const BATCH = 200;
@@ -84,7 +85,7 @@ function homeOf(articleUrls: string[], config: Record<string, unknown>): string 
   for (const o of origins) counts.set(o, (counts.get(o) ?? 0) + 1);
   const [top, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
   if (top && n >= Math.max(1, origins.length * 0.7)) return top;
-  const configured = String(config.url ?? config.feedUrl ?? "").replace(/^https?:\/\/r\.jina\.ai\//, "");
+  const configured = stripJinaPrefix(String(config.url ?? config.feedUrl ?? ""));
   try {
     return new URL(configured).origin;
   } catch {

@@ -10,7 +10,6 @@ import { failureKind } from "../providers/receipts.ts";
 import { logError } from "../lib/log-error.ts";
 import { serverModules, type ModuleQueue } from "../modules.ts";
 import { runOwner } from "./runs.ts";
-export { shutdownSignal } from "../lib/shutdown.ts";
 
 let boss: PgBoss | null = null;
 let starting: Promise<PgBoss> | null = null;

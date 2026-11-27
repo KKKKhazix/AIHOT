@@ -4,9 +4,9 @@
 // new work only.
 import type { AdminModels, BeforeJson } from "@aihot/contracts/admin";
 import { sql } from "../db.ts";
-import { capabilities, capabilityAcceptsModel, fallbackModelFor, invalidateModelCache, modelSources } from "../editorial/models.ts";
+import { capabilities, capabilityAcceptsModel, fallbackModelFor, modelSources, setModelOverride } from "../editorial/models.ts";
 import { MODELS } from "../providers/llm.ts";
-import { estimatedCharge, priceFor } from "../providers/prices.ts";
+import { cachedTokensSql, estimatedCharge, freshTokens, priceFor } from "../providers/prices.ts";
 import { modelCircuits } from "../providers/circuit.ts";
 import { audit } from "../audit.ts";
 
@@ -47,7 +47,7 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
              sum((a.usage->>'prompt_tokens')::bigint) AS tokens_in, sum((a.usage->>'completion_tokens')::bigint) AS tokens_out,
              sum((a.usage->>'prompt_tokens')::bigint) FILTER (WHERE a.cost IS NULL) AS tokens_in_uncosted,
              sum((a.usage->>'completion_tokens')::bigint) FILTER (WHERE a.cost IS NULL) AS tokens_out_uncosted,
-             sum(coalesce((a.usage->'prompt_tokens_details'->>'cached_tokens')::bigint, (a.usage->>'prompt_cache_hit_tokens')::bigint, 0)) FILTER (WHERE a.cost IS NULL) AS tokens_cached,
+             sum(${cachedTokensSql(sql`a.usage`)}) FILTER (WHERE a.cost IS NULL) AS tokens_cached,
              sum(a.cost) FILTER (WHERE a.cost_basis = 'actual') AS actual_cost, max(a.currency) AS currency
       FROM receipt_attempts a JOIN receipts r ON r.id = a.receipt_id
       WHERE a.started_at >= ${since} AND a.origin = 'live' AND a.model IS NOT NULL
@@ -67,7 +67,7 @@ export async function modelsOverview(days = 7): Promise<BeforeJson<AdminModels>>
     const p = priceFor(prices, u.service, u.model);
     if (!p || (!p.input_per_mtok && !p.output_per_mtok)) return null;
     const cached = Number(u.tokens_cached ?? 0);
-    const fresh = Number(u.tokens_in_uncosted ?? 0) - cached;
+    const fresh = freshTokens(Number(u.tokens_in_uncosted ?? 0), cached);
     const amount = estimatedCharge(p, { fresh, cached, output: Number(u.tokens_out_uncosted ?? 0) });
     return { amount, currency: p.currency };
   };
@@ -120,12 +120,7 @@ export async function switchModel(capability: string, model: string | null, reas
     if (!capabilityAcceptsModel(c, spec)) throw Object.assign(new Error("this capability needs a vision model"), { statusCode: 400 });
   }
   const before = (await modelSources())[capability];
-  if (model === null) await sql`DELETE FROM settings WHERE key = ${`models.${capability}`}`;
-  else {
-    await sql`INSERT INTO settings (key, value, updated_by) VALUES (${`models.${capability}`}, ${sql.json({ model })}, ${actor})
-              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`;
-  }
-  invalidateModelCache();
+  await setModelOverride(capability, model, actor);
   const after = (await modelSources())[capability];
   await audit(actor, "models.switch", `capability:${capability}`, reason, before ?? null, after ?? null);
   return { capability, before, after };

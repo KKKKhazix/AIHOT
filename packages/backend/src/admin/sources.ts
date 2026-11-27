@@ -12,6 +12,7 @@ import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { republishKey, requestRepublish } from "../jobs/publication.ts";
 import { normalizeUrl } from "../lib/url.ts";
 import { serverModules } from "../modules.ts";
+import { stripJinaPrefix } from "../providers/jina.ts";
 import { fetchJsonList } from "../sources/json-list.ts";
 import { fetchRss } from "../sources/rss.ts";
 import { assertSupportedConfig, UnsupportedConfig } from "../sources/config-keys.ts";
@@ -257,7 +258,7 @@ export function sourceIdentity(kind: string, config: Record<string, unknown>): s
     return id ? `mp:${id}` : null;
   }
   if (!raw) return null;
-  return normalizeUrl(String(raw).replace(/^https:\/\/r\.jina\.ai\//, "")) ?? String(raw);
+  return normalizeUrl(stripJinaPrefix(String(raw))) ?? String(raw);
 }
 
 export async function findDuplicateSource(kind: string, config: Record<string, unknown>, exceptId?: string, db: Db = sql) {

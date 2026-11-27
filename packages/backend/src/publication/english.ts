@@ -9,11 +9,12 @@ import { localizePath } from "@aihot/contracts/reader-pages";
 // gathers through the same overlays, so what it translates is what the pages show.
 import type {
   ChangelogResponse, FeedItemSummary, GroupReportsResponse, HotEntryView, HotParticipant, HotResponse, HotStripEntry, ItemAvailability,
-  PoolResponse, ReportCitation, ReportDetail, ReportIndexResponse, ReportLatestPage, ReportNavigationResponse,
-  SearchSuggestions, SiteItemDetail, SiteStats, SourceRef, StoryDetail, StoryFollowupsResponse, StoryReportView, TimelineResponse,
+  PoolResponse, SearchSuggestions, SiteItemDetail, SiteStats, SourceRef, StoryDetail, StoryFollowupsResponse, StoryReportView, TimelineResponse,
   TopicGroup, TopicLink, TopicPage, TopicSummary, TopicsResponse,
 } from "@aihot/contracts/site";
-import { REPORT_NAMES_EN } from "@aihot/contracts/site";
+import {
+  REPORT_NAMES_EN, type ReportCitation, type ReportDetail, type ReportIndexResponse, type ReportKind, type ReportLatestPage, type ReportNavigationResponse,
+} from "@aihot/contracts/reports";
 import { ENGLISH, HAN, needsEnglish } from "@aihot/contracts/english";
 
 export { HAN, needsEnglish };
@@ -25,7 +26,7 @@ import { sha256 } from "../lib/ids.ts";
 import { mentionsIn } from "./mentions.ts";
 import type { V1ItemPayload } from "./items.ts";
 import { siteUrl } from "./links.ts";
-import { COMPOSED_OVERVIEW, type ComposedOverview, type dailyWithNotes, type FeedIssue, type ReportKind, type v1Dailies, type v1Daily, type v1Period, type v1Periods } from "./reports.ts";
+import { COMPOSED_OVERVIEW, SECTION_KEY, type ComposedOverview, type dailyWithNotes, type FeedIssue, type V1DailyResponse, type V1PeriodResponse, type v1Dailies, type v1Periods } from "./reports.ts";
 import { publicSourceName } from "./rules.ts";
 import { cardText, type v1HotTopics, type v1Story } from "./stories.ts";
 import { monogramOf } from "./topics.ts";
@@ -345,7 +346,8 @@ export const feedIssues = (kind: ReportKind): Overlay<FeedIssue[]> => (issues, c
     headline: headline ?? null,
     leadParagraph: leadParagraph ?? null,
     sections: r.sections.map((s) => ({
-      label: kind === "daily" ? sectionLabelIn(s.label, "en") : c.one("headline", s.label),
+      ...(s.key ? { key: s.key } : {}),
+      label: kind === "daily" ? sectionLabelIn(s.label, "en", s.key) : c.one("headline", s.label),
       items: s.items.map((i) => ({ ...i, title: c.one("headline", i.title, i.id) })),
     })),
   };
@@ -455,17 +457,20 @@ export const v1StoryAnswer = (by: V1Reader): Overlay<V1Story> => (r, c) => {
   };
 };
 
-type V1Daily = NonNullable<Awaited<ReturnType<typeof v1Daily>>>;
-export const v1DailyAnswer = (by: V1Reader): Overlay<V1Daily> => (r, c) => {
+export const v1DailyAnswer = (by: V1Reader): Overlay<V1DailyResponse> => (r, c) => {
   const d = r.report;
   return {
     ...r,
     report: {
       ...d,
       lead: d.lead && { title: c.one("headline", d.lead.title), leadParagraph: c.one("text", d.lead.leadParagraph) },
-      sections: d.sections.map((s: (typeof d.sections)[number]) => ({ ...s, label: sectionLabelIn(s.label, "en"), items: s.items.map((i: (typeof s.items)[number]) => v1Entry(i, c, by)) })),
-      flashes: d.flashes.map((i: (typeof d.flashes)[number]) => v1Entry(i, c, by)),
-      highlights: d.highlights.map((i: (typeof d.highlights)[number]) => v1Entry(i, c, by)),
+      sections: d.sections.map((s) => {
+        const next = { ...s, label: sectionLabelIn(s.label, "en", s[SECTION_KEY]), items: s.items.map((i) => v1Entry(i, c, by)) };
+        if (s[SECTION_KEY]) next[SECTION_KEY] = s[SECTION_KEY];
+        return next;
+      }),
+      flashes: d.flashes.map((i) => v1Entry(i, c, by)),
+      highlights: d.highlights.map((i) => v1Entry(i, c, by)),
     },
   };
 };
@@ -480,11 +485,10 @@ export const v1DailyWithNotes = (by: V1Reader): Overlay<DailyWithNotes> => async
   ])),
 });
 
-type V1Period = NonNullable<Awaited<ReturnType<typeof v1Period>>>;
 /** A weekly or monthly; an overview composed by rule is said in English from the titles it names, as on its page. */
-export const v1PeriodAnswer = (kind: "weekly" | "monthly", by: V1Reader): Overlay<V1Period> => (r, c) => {
+export const v1PeriodAnswer = (kind: "weekly" | "monthly", by: V1Reader): Overlay<V1PeriodResponse> => (r, c) => {
   const p = r.report;
-  const composed = (p as typeof p & { [COMPOSED_OVERVIEW]?: ComposedOverview })[COMPOSED_OVERVIEW];
+  const composed = p[COMPOSED_OVERVIEW];
   let overview = c.one("text", p.overview);
   if (composed) {
     const titles = composed.named.map((n) => c.one("headline", n.title));
@@ -494,7 +498,7 @@ export const v1PeriodAnswer = (kind: "weekly" | "monthly", by: V1Reader): Overla
     ...r,
     report: {
       ...p, headline: c.one("headline", p.headline), overview,
-      sections: p.sections.map((s: (typeof p.sections)[number]) => ({ ...s, label: c.one("headline", s.label), summary: c.one("text", s.summary), items: s.items.map((i: (typeof s.items)[number]) => v1Entry(i, c, by)) })),
+      sections: p.sections.map((s) => ({ ...s, label: c.one("headline", s.label), summary: c.one("text", s.summary), items: s.items.map((i) => v1Entry(i, c, by)) })),
     },
   };
 };

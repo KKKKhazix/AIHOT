@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { assertNoViolations, sourceFiles } from "./source-checks.ts";
+import { assertNoViolations, sourceFiles, stripComments, topLevelCalls } from "./source-checks.ts";
 import { presentationAssertions, rawLoaderPaths } from "./lesson-checks.ts";
 import { clockViolationsByFile } from "./test-clock.ts";
 import { after, test } from "node:test";
@@ -13,6 +13,7 @@ import { fontSizeViolations } from "./font-size.ts";
 import { cssMotionTokens, motionViolations } from "./motion.ts";
 import { routerLinkViolations, webTextViolations } from "./web-text.ts";
 import { ARTICLE_ID_PATTERN } from "@aihot/contracts/taxonomy";
+import { SITE } from "@aihot/site";
 import { closeDb, sql } from "@aihot/backend/db";
 
 after(closeDb);
@@ -76,20 +77,39 @@ test("the web reaches the backend only over HTTP", () => {
   assert.deepEqual(found, [], "网页通过 HTTP 读取服务端数据；共享的类型和数据定义放在契约中");
 });
 
-test("packages never import the apps, and nothing below the admin imports it", () => {
+test("packages never import the apps, contracts stay pure, and nothing below the admin imports it", () => {
   assert.deepEqual(violations(sources("packages"), (file, spec) => workspaceImportPath(file, spec)?.startsWith("apps/") === true),
     [], "共享包依赖应用代码，请将共用定义放回业务包或契约");
+  assert.deepEqual(violations(sources("packages/contracts/src"), (file, spec) => {
+    const target = workspaceImportPath(file, spec);
+    return !!target && !target.startsWith("packages/contracts/") && !target.startsWith("site/") && !target.startsWith("industry/");
+  }), [], "contracts 只承载纯数据结构与规则，不得依赖 backend、apps 或 modules");
   const found = violations([...sources("packages/backend/src"), ...sources("apps/worker")], (file, spec) =>
     !file.startsWith("packages/backend/src/admin/") && (backendPath(file, spec)?.startsWith("admin/") ?? false));
   assert.deepEqual(found, [], "admin/ is the top layer: move what others need to the folder that owns it");
 });
 
-test("editorial and event code can enqueue work without loading worker implementations", () => {
-  const found = violations([...sources(BACKEND + "/editorial"), ...sources(BACKEND + "/events")], (file, spec) => {
+test("backend directories keep decoupled boundaries and shutdownSignal has one source", () => {
+  const editorialAndEvents = violations([...sources(BACKEND + "/editorial"), ...sources(BACKEND + "/events")], (file, spec) => {
     const target = backendPath(file, spec);
     return !!target?.startsWith("jobs/") && target !== "jobs/queue.ts";
   });
-  assert.deepEqual(found, [], "submit work through jobs/queue.ts; worker implementations depend on editorial and events");
+  assert.deepEqual(editorialAndEvents, [], "submit work through jobs/queue.ts; worker implementations depend on editorial and events");
+  const reportsToJobs = violations(sources(BACKEND + "/reports"), (file, spec) => backendPath(file, spec)?.startsWith("jobs/") ?? false);
+  assert.deepEqual(reportsToJobs, [], "reports/ must not import jobs/");
+  const mediaOut = violations(sources(BACKEND + "/media"), (file, spec) => {
+    const target = backendPath(file, spec);
+    return !!target && (target.startsWith("publication/") || target.startsWith("notify/"));
+  });
+  assert.deepEqual(mediaOut, [], "media/ must not depend on publication/ or notify/");
+  const modulesOut = violations(sources(BACKEND).filter(({ file }) => file === `${BACKEND}/modules.ts`), (file, spec) =>
+    backendPath(file, spec)?.startsWith("notify/") ?? false);
+  assert.deepEqual(modulesOut, [], "modules.ts must not depend on notify/");
+  const shutdownImports = [...sources(BACKEND), ...sources("apps"), ...modules()].flatMap(({ file, text }) =>
+    [...stripComments(text).matchAll(/\bimport\s+\{[^}]*\bshutdownSignal\b[^}]*\}\s+from\s+["']([^"']+)["']/g)]
+      .filter(([, spec]) => backendPath(file, spec!) !== "lib/shutdown.ts")
+      .map(([, spec]) => `${file} → ${spec}`));
+  assert.deepEqual(shutdownImports, [], "import shutdownSignal only from backend/lib/shutdown.ts");
 });
 
 // Public routes read through the public read faces; the rest are the reader's own writes (feedback) and
@@ -108,22 +128,31 @@ test("public routes read content only through the public read layer", () => {
   assert.deepEqual(found, [], "a public route imports backend internals; add or reuse a function in publication/");
 });
 
-// Tables whose rules must not be rewritten elsewhere: the public projection and its sync ledger, paid
-// receipts, content pushes, grouping, and the audit trail. Other code reads them freely.
+// Engine tables whose rules must not be rewritten elsewhere: the public projection and its sync ledger,
+// paid receipts, content pushes, grouping, and the audit trail. Other code reads them freely.
 const OWNERS: Record<string, string> = {
   publications: "publication/", selected_ledger: "publication/", selected_state: "publication/", pool_search: "publication/",
-  receipts: "providers/receipts.ts", receipt_attempts: "providers/receipts.ts",
+  receipts: "providers/receipts.ts", receipt_attempts: "providers/receipts.ts", embeddings: "providers/embeddings.ts",
   deliveries: "notify/",
   facts: "events/", fact_articles: "events/", stories: "events/", story_signals: "events/", story_aliases: "events/", story_links: "events/",
-  story_digests: "events/", grouping_decisions: "events/", grouping_overrides: "events/",
+  story_digests: "events/", grouping_decisions: "events/", grouping_overrides: "events/", hot_rankings: "events/hot.ts", story_heat_hourly: "events/hot.ts",
+  reports: "reports/", report_revisions: "reports/",
+  article_discoveries: "content/materials.ts", article_revisions: "content/materials.ts",
+  english_copy: "editorial/english.ts", quote_translations: "editorial/translate.ts", translation_attempts: "editorial/translate.ts",
+  admin_sessions: "admin/auth.ts", admin_users: "admin/auth.ts", editorial_overrides: "admin/content.ts",
+  selectbench_runs: "admin/selectbench.ts", selectbench_results: "admin/selectbench.ts",
   audit_log: "audit.ts",
   feedback_submission_state: "operations/feedback.ts",
-  reader_previewers: "../../../modules/accounts/backend/",
-  reader_sync_usage: "../../../modules/accounts/backend/",
-  reader_accounts: "../../../modules/accounts/backend/", reader_logins: "../../../modules/accounts/backend/",
-  reader_sessions: "../../../modules/accounts/backend/", reader_codes: "../../../modules/accounts/backend/",
-  reader_code_sends: "../../../modules/accounts/backend/", reader_data: "../../../modules/accounts/backend/",
 };
+
+// Engine settings keys that belong to one owner; callers read and write them through that owner's functions.
+const SETTINGS_OWNERS: ReadonlyArray<{ pattern: RegExp; key: string; owner: string }> = [
+  { pattern: /["'`]webhook\.event\./, key: "webhook.event.*", owner: "notify/agent.ts" },
+  { pattern: /["'`]models\./, key: "models.*", owner: "editorial/models.ts" },
+  { pattern: /["'`]heartbeat\./, key: "heartbeat.*", owner: "operations/heartbeat.ts" },
+  { pattern: /["'`]backup\.last["'`]/, key: "backup.last", owner: "operations/backup.ts" },
+  { pattern: /["'`]contact_qr["'`]/, key: "contact_qr", owner: "site/contact.ts" },
+];
 
 test("the tables that carry a rule are written only by the code that owns it", () => {
   const found: string[] = [];
@@ -132,6 +161,21 @@ test("the tables that carry a rule are written only by the code that owns it", (
     for (const [, table] of text.matchAll(/\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE)\s+([a-z_]+)\b/gi)) {
       const owner = OWNERS[table!.toLowerCase()];
       if (owner && !own.startsWith(owner)) found.push(`${file} writes ${table} (owner ${owner})`);
+    }
+  }
+  assert.deepEqual(found, []);
+});
+
+test("encapsulated settings keys are queried only by their owners", () => {
+  const found: string[] = [];
+  for (const { file, text } of [...sources(BACKEND), ...sources("apps/api/src"), ...sources("apps/worker/src"), ...modules()]) {
+    const clean = stripComments(text);
+    if (!/\b(?:FROM|INTO|UPDATE)\s+settings\b/i.test(clean)) continue;
+    const own = path.posix.relative(BACKEND, file);
+    for (const rule of SETTINGS_OWNERS) {
+      if (rule.pattern.test(clean) && !own.startsWith(rule.owner)) {
+        found.push(`${file} queries settings key ${rule.key} directly (owner ${rule.owner})`);
+      }
     }
   }
   assert.deepEqual(found, []);
@@ -197,8 +241,8 @@ test("every table and column is used by the code that reads and writes the datab
   for (const { table_name: table, column_name: column } of columns) {
     const users = files.filter((names) => names.has(table));
     if (users.length === 0) unused.add(`table ${table}`);
-    // created_at is the row's own timestamp, kept on every table for operations.
-    else if (column !== "created_at" && !users.some((names) => names.has(column))) unused.add(`${table}.${column}`);
+    // created_at is the row's own timestamp, kept on every table for operations (service_prices uses updated_at instead).
+    else if (column !== "created_at" && !(table === "service_prices" && column === "updated_at") && !users.some((names) => names.has(column))) unused.add(`${table}.${column}`);
   }
   assert.deepEqual([...unused], [], "drop it with a migration in the same change");
 });
@@ -221,10 +265,49 @@ const COMPOSE = "docker-compose.yml";
 const DEPLOYMENT = [COMPOSE, "deploy/Caddyfile"].filter((file) => existsSync(path.join(ROOT, file)));
 const tracked = (pattern: string) => execFileSync("git", ["ls-files", "--", pattern], { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
 
-test("collection is enabled only through backend/config.ts", () => {
-  const copies = production().filter(({ file, text }) =>
-    file !== `${BACKEND}/config.ts` && envReads([{ text }]).has("COLLECT_ENABLED"));
-  assert.deepEqual(copies.map(({ file }) => file), [], "请使用 backend/config.ts 的 collectionEnabled()");
+test("dynamic feature valves are read only through backend/config.ts, and schedules evaluate collectionEnabled lazily", () => {
+  const valves = ["COLLECT_ENABLED", "MODEL_CALLS_ENABLED", "FEISHU_INTERNAL_ENABLED"] as const;
+  const copies = production().flatMap(({ file, text }) => {
+    if (file === `${BACKEND}/config.ts`) return [];
+    const reads = envReads([{ text }]);
+    return valves.filter((v) => reads.has(v)).map((v) => `${file} reads ${v}`);
+  });
+  assert.deepEqual(copies, [], "请使用 backend/config.ts 的 collectionEnabled() / modelCallsEnabled() / feishuInternalEnabled()");
+  const schedules = readFileSync(path.join(ROOT, "apps/worker/src/schedules.ts"), "utf8");
+  assert.deepEqual(
+    topLevelCalls(schedules, "collectionEnabled"),
+    [],
+    "apps/worker/src/schedules.ts must evaluate collectionEnabled() inside when: callbacks, not at module load",
+  );
+});
+
+test("single-source server primitives are not duplicated across backend and API", () => {
+  const apiFiles = [...sources("apps/api/src"), ...modules().filter(({ file }) => /^modules\/[^/]+\/api\//.test(file))];
+  const rawEtag = apiFiles.flatMap(({ file, text }) =>
+    stripComments(text).split("\n").flatMap((line, i) =>
+      /headers\[\s*["']if-none-match["']\s*\]/i.test(line) && !/\betagMatches\s*\(/.test(line) ? [`${file}:${i + 1}`] : []));
+  assert.deepEqual(rawEtag, [], "compare If-None-Match with etagMatches() from apps/api/src/http/respond.ts");
+
+  const rawIp = apiFiles.filter(({ file, text }) =>
+    file !== "apps/api/src/http/respond.ts" && /\b(?:req|request)\.ip\b/.test(stripComments(text))).map(({ file }) => file);
+  assert.deepEqual(rawIp, [], "read client IP through clientIp() from apps/api/src/http/respond.ts");
+
+  const serverCode = [...sources(BACKEND), ...sources("apps/api/src"), ...sources("apps/worker/src"), ...modules()];
+  const quotedSql = serverCode.filter(({ file, text }) =>
+    file !== `${BACKEND}/content/posts.ts` && /->'quoted'->>'tweetId'|substring\([^)]*->'quoted'->>'url'/i.test(stripComments(text))).map(({ file }) => file);
+  assert.deepEqual(quotedSql, [], "use quotedTweetIdSql() from content/posts.ts");
+
+  const sourceNameRegex = serverCode.filter(({ file, text }) =>
+    file !== `${BACKEND}/publication/rules.ts` && /（\[\^（）\]\*）|\^X\[:：\]/.test(stripComments(text))).map(({ file }) => file);
+  assert.deepEqual(sourceNameRegex, [], "use publicSourceName / publicSourceNameSql from publication/rules.ts");
+
+  const jinaUrl = serverCode.filter(({ file, text }) =>
+    file !== `${BACKEND}/providers/jina.ts` && /r\.jina\.ai/i.test(stripComments(text))).map(({ file }) => file);
+  assert.deepEqual(jinaUrl, [], "reference Jina Reader through providers/jina.ts (JINA_PREFIX / fetchViaJina)");
+
+  const screenshotDir = serverCode.filter(({ file, text }) =>
+    file !== `${BACKEND}/operations/feedback.ts` && /["'`]feedback-screenshots["'`]/.test(stripComments(text))).map(({ file }) => file);
+  assert.deepEqual(screenshotDir, [], "use FEEDBACK_SCREENSHOTS_DIR from operations/feedback.ts");
 });
 
 test("every environment variable the code reads is listed in a template, and every listed one is read", () => {
@@ -246,9 +329,9 @@ test("every environment variable the code reads is listed in a template, and eve
 // Caught: offset arithmetic, a zone glued onto an interpolated date or time, Intl or SQL given the zone's
 // name. A fixed instant written with its zone, or a parser's default zone, converts nothing.
 const convertsBeijingTime = (line: string) =>
-  /(?<![\d.])8 ?\* ?(?:3_?600|60 ?\* ?60)/.test(line)
+  /(?<![\d.])8 ?\* ?(?:3_?600|60 ?\* ?60|HOUR\b)|(?<![\d.])28_?800\b/.test(line)
   || (line.includes("+08:00") && line.includes("${"))
-  || /(?:timeZone:|AT TIME ZONE) ?["']Asia\/Shanghai/.test(line);
+  || /(?:timeZone:|tz:|AT TIME ZONE) ?["']Asia\/Shanghai/.test(line);
 const CONVERTS_BEIJING_TIME: Record<string, string> = {
   "packages/contracts/src/time.ts": "the conversions themselves",
   "packages/backend/src/editorial/analyze.ts": "the score input keeps the form its prompt was tuned on (whole seconds without .000)",
@@ -402,4 +485,50 @@ test("reader-facing web text has its English beside it", () => {
 
 test("site links keep the page's language", () => {
   assertNoViolations(routerLinkViolations());
+});
+
+test("web browser storage goes through lib/browser-storage.ts and filters cross-tab storage events", () => {
+  const directStorageAllowed = new Set([
+    "apps/web/app/lib/browser-storage.ts",
+    "apps/web/app/lib/local-state.ts", // inline APPEARANCE_BOOT_SCRIPT executed before module boot
+    "apps/web/app/lib/render-recovery.ts", // early crash-recovery boot path
+  ]);
+  const direct = webSources(/\.tsx?$/)
+    .filter(({ file, text }) => !directStorageAllowed.has(file) && /\b(?:localStorage|sessionStorage)\b/.test(stripComments(text)))
+    .map(({ file }) => file);
+  assert.deepEqual(direct, [], "read and write browser storage through apps/web/app/lib/browser-storage.ts");
+
+  const unfiltered = webSources(/\.tsx?$/)
+    .filter(({ text }) => {
+      const clean = stripComments(text);
+      return /addEventListener\(\s*["']storage["']/.test(clean) && !/\bisLocalStorageEvent\b/.test(clean);
+    })
+    .map(({ file }) => file);
+  assert.deepEqual(unfiltered, [], "guard window storage listeners with isLocalStorageEvent() from lib/browser-storage.ts");
+});
+
+test("public web loaders use loadOr404, meta titles use titled/pageMeta, and touch targets keep 44px on coarse pointers", () => {
+  const apiGetAllowed = new Set([
+    "apps/web/app/entry.server.tsx", // fire-and-forget SSR status report
+    "apps/web/app/lib/api.server.ts", // definition itself
+    "apps/web/app/features/item/page.server.ts", // optional followups probe (.catch(() => null))
+    "apps/web/app/routes/about.tsx", // optional contact/stats probes
+    "apps/web/app/routes/admin-login.tsx", // login options probe
+    "apps/web/app/routes/agent.tsx", // optional health badge probe
+  ]);
+  const bareApiGet = [...sources("apps/web/app", /\.tsx?$/), ...moduleWeb(/\.tsx?$/)]
+    .filter(({ file, text }) => !apiGetAllowed.has(file) && /\bapiGet\s*(?:<[^>]+>)?\s*\(/.test(stripComments(text)))
+    .map(({ file }) => file);
+  assert.deepEqual(bareApiGet, [], "use loadOr404 / grayGet / adminPageGet in page loaders so 404/503 responses keep proper status");
+
+  const siteSuffix = new RegExp(`·\\s*${SITE.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+  const hardcodedTitle = [...sources("apps/web/app", /\.tsx?$/), ...moduleWeb(/\.tsx?$/)]
+    .filter(({ text }) => siteSuffix.test(stripComments(text)))
+    .map(({ file }) => file);
+  assert.deepEqual(hardcodedTitle, [], "use pageMeta() or titled() from lib/seo.ts instead of hardcoding the site title suffix");
+
+  const controls = readFileSync(path.join(ROOT, "apps/web/app/components/ui/Controls.tsx"), "utf8");
+  const filterSearch = readFileSync(path.join(ROOT, "apps/web/app/components/ui/FilterSearch.tsx"), "utf8");
+  assert.ok(controls.includes("touch:h-11"), "Controls.tsx must keep 44px touch targets on coarse pointers");
+  assert.ok(filterSearch.includes("touch:h-11"), "FilterSearch.tsx must keep 44px touch targets on coarse pointers");
 });

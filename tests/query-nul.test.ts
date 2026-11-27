@@ -53,3 +53,22 @@ test('ordinary Unicode and literal escape text remain searchable', async () => {
     assert.notEqual(body.result.isError, true);
   }
 });
+
+test('NUL in actor/image query strings never turns RSS, MCP or image proxy into a 503', async () => {
+  const feed = await app.inject('/feed.xml?aihot_actor=bot%00');
+  assert.equal(feed.statusCode, 200, feed.body);
+  assert.ok(feed.body.includes('<rss') || feed.body.includes('<feed'), 'RSS must return XML');
+  const mcp = await app.inject({
+    method: 'POST', url: '/api/mcp?aihot_actor=bot%00',
+    headers: { host: 'localhost', 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+  });
+  assert.equal(mcp.statusCode, 200, mcp.body);
+  const mcpBody = mcp.headers['content-type']?.startsWith('text/event-stream')
+    ? JSON.parse(mcp.body.split('\n').find(line => line.startsWith('data: '))!.slice(6))
+    : mcp.json();
+  assert.ok(Array.isArray(mcpBody?.result?.tools) && mcpBody.result.tools.length > 0, 'MCP tools/list must return registered tools');
+  const proxy = await app.inject('/api/img-proxy?u=https://example.com/a%00.png');
+  assert.equal(proxy.statusCode, 400, proxy.body);
+  assert.equal(proxy.headers['x-img-proxy-sig'], 'invalid');
+});

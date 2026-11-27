@@ -2,7 +2,8 @@
 // article bodies; every enabled account is checked once per source interval.
 import { sql } from "../db.ts";
 import { materialIdentityForUrl, upsertMaterial } from "../content/materials.ts";
-import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
+import { enqueue, QUEUES } from "../jobs/queue.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
 import { runOwner } from "../jobs/runs.ts";
 import { queueProcessing } from "../jobs/content.ts";
 import { stripTags } from "../lib/text.ts";

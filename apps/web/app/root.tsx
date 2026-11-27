@@ -16,9 +16,9 @@ import { SearchOverlay } from "./features/search/SearchOverlay";
 import { BackToTop, NavigationProgress, refreshAsked } from "./components/shell/Chrome";
 import { EnglishHint } from "./components/shell/EnglishHint";
 import { buttonClass } from "./components/ui/Controls";
-import { rememberPage, APPEARANCE_BOOT_SCRIPT, useAppearanceSync } from "./lib/local-state";
+import { rememberPage, APPEARANCE_BOOT_SCRIPT, THEME_COLOR, useAppearanceSync } from "./lib/local-state";
 import { documentRead } from "./lib/api.server";
-import { useHydratedFlag } from "./lib/hydration";
+import { useHydrated, useHydratedFlag } from "./lib/hydration";
 import { titled } from "./lib/seo";
 import { webModules } from "./site-modules";
 import { Link } from "./lib/link";
@@ -53,8 +53,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta charSet="utf-8" />
         {documentRelease && <meta name="aihot-release" content={documentRelease} />}
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
-        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#13191c" />
+        <meta name="theme-color" media="(prefers-color-scheme: light)" content={THEME_COLOR.light} />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content={THEME_COLOR.dark} />
         <meta name="apple-mobile-web-app-title" content={SITE.name} />
         <script dangerouslySetInnerHTML={{ __html: APPEARANCE_BOOT_SCRIPT }} />
         {webModules().map((m) => m.root?.bootScript && <script key={m.name} dangerouslySetInnerHTML={{ __html: m.root.bootScript }} />)}
@@ -86,8 +86,7 @@ function SiteShell({ changelogVersion, children }: { changelogVersion: string | 
   const asked = revalidator.state === "loading" && refreshAsked.current;
   const t = useT();
   // The phone search and pull-to-refresh are client-side, mounted once the page is interactive.
-  const [interactive, setInteractive] = useState(false);
-  useEffect(() => setInteractive(true), []);
+  const interactive = useHydrated();
   return (
     // The desktop shell also opens on large phones held sideways, where the notch takes a side: the whole
     // shell keeps clear of it (the phone shell does so through its gutters).

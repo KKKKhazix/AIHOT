@@ -1,5 +1,6 @@
 // Publication rules. Each rule is defined once here and used by every exit.
-import { serverModules } from '../modules.ts';
+import { sql } from '../db.ts';
+import { editorialPolicy, serverModules } from '../modules.ts';
 
 /** Presentation exceptions never alter scoring, selection eligibility or fact membership. */
 export function independentSelectedSources(): string[] {
@@ -80,6 +81,27 @@ export function isIndexable(p: { visibility: string; sourceMode: string; hasSumm
   return p.visibility === "public" && hasItemPage(p) && p.hasSummary && p.seoExcludedAt === null && (p.selected || p.seoIndexedAt !== null);
 }
 
+/** Whether an unanalysed revision of an editorial article must withhold raw text and media until reviewed. */
+export function isAwaitingReview(input: { participationMode: string; revision: number; analysisRevision?: number | null }): boolean {
+  return Boolean(editorialPolicy().reviewAnalysis)
+    && input.participationMode === "editorial"
+    && (input.analysisRevision == null || input.analysisRevision < input.revision);
+}
+
+/** Whether an article's original text and media are withheld by pending review, override, analysis verdict, or prior publication state. */
+export function isOriginalSuppressed(input: {
+  awaitingReview: boolean;
+  override?: { fields?: Record<string, unknown> } | null;
+  analysis?: { output?: Record<string, any> | null } | null;
+  publishedSuppressOriginal?: boolean;
+}): boolean {
+  if (input.awaitingReview) return true;
+  const ov = input.override?.fields?.suppressOriginal;
+  if (typeof ov === "boolean") return ov;
+  if (input.analysis) return input.analysis.output?.suppressOriginal === true;
+  return input.publishedSuppressOriginal === true;
+}
+
 /** Display tags exclude internal entity markers. */
 export function displayTags(tags: string[]): string[] {
   return tags.filter((t) => !t.startsWith("entity:"));
@@ -99,3 +121,10 @@ export function publicSourceName(name: string): string {
   const x = /^X[:：]\s*(.*?)\s*(?:\(@[^)]*\))?\s*$/.exec(bare);
   return (x ? x[1]! : bare).replace(/\s+/g, " ").trim() || /@\w+/.exec(name)?.[0] || name.trim();
 }
+
+/** SQL counterpart of publicSourceName for revision hashing (strips editor notes and X handle suffixes). */
+export const publicSourceNameSql = (col: ReturnType<typeof sql> = sql`s.name`) => sql`coalesce(
+  nullif(btrim(regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(${col}, '（[^（）]*）', ' ', 'g'), '（[^（）]*）', ' ', 'g'), '（[^（）]*）', ' ', 'g'), '（[^（）]*）', ' ', 'g'), '^X[:：]\\s*(.*?)\\s*(?:\\(@[^)]*\\))?\\s*$', '\\1'), '\\s+', ' ', 'g')), ''),
+  substring(${col} from '@\\w+'),
+  btrim(${col})
+)`;

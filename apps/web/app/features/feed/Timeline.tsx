@@ -13,7 +13,7 @@ import { SITE } from "@aihot/site";
 import { RingMark } from "@aihot/site/brand/Logo.tsx";
 import { EmptyState } from "../../components/ui/Page";
 import { beijingDate, beijingTime, monthDay, monthDayEn } from "@aihot/contracts/time";
-import { byBeijingDay, weekdayLong, weekdayShort } from "../../lib/format";
+import { byBeijingDay, formatCount, weekdayLong, weekdayShort } from "../../lib/format";
 import { apiIn, useLocale, useT } from "../../lib/i18n";
 import { isHydrated } from "../../lib/hydration";
 import { MOTION } from "../../lib/motion";
@@ -53,7 +53,7 @@ export function DayHeader({ day, today, count, collapsed, onToggle, aside, aside
   const date = t(monthDay(day, today), monthDayEn(day, today));
   const weekday = weekdayLong(day, locale);
   const short = weekdayShort(day, locale);
-  const items = (n: number) => t(<><span className="num">{n}</span> 条</>, <><span className="num">{n.toLocaleString("en-US")}</span> {n === 1 ? "item" : "items"}</>);
+  const items = (n: number) => t(<><span className="num">{n}</span> 条</>, <><span className="num">{formatCount(n, "en")}</span> {n === 1 ? "item" : "items"}</>);
   const fold = collapsed ? t(`展开${date}`, `Expand ${date}`) : t(`收起${date}`, `Collapse ${date}`);
   const phoneRow = (
     <>

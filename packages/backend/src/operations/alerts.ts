@@ -15,16 +15,17 @@
 // woken for what is the owner's alone (owner "only" or "private"). While the channel to the agent fails, the owner hears everything again.
 // The shared hub owns serial execution and retry; accepted events are never dispatched again here.
 // Delivery goes through sendAlert (alert webhook or ops chat, internal-chat fallback; off unless FEISHU_INTERNAL_ENABLED).
-import { collectionEnabled } from "../config.ts";
+import { collectionEnabled, modelCallsEnabled } from "../config.ts";
 import { randomUUID } from "node:crypto";
 import { addDays, beijingAt, beijingDate, beijingDay, beijingStamp, isValidDate } from "@aihot/contracts/time";
 import { ALERTS, EDITION_TIMES } from "@aihot/site";
 import { audit } from "../audit.ts";
 import { sql } from "../db.ts";
 import { agentConfigured, agentTransportFindings, flushAgentEvents, handoffs, wakeAgent, wakeDigest } from "../notify/agent.ts";
-import { duration, formatAlert, formatRecovery, formatReturn, sendAlert, type Finding, type FollowUp, type Level } from "../notify/feishu.ts";
+import { duration, formatAlert, formatRecovery, formatReturn, type Finding, type FollowUp, type Level } from "../lib/alerts.ts";
+import { sendAlert } from "../notify/feishu.ts";
 import { stepsOnService } from "../editorial/models.ts";
-import { backupConfigured } from "./backup.ts";
+import { backupConfigured, lastBackupStatus } from "./backup.ts";
 import { GROUPING_WARN_AFTER_MS, waitingSelectedNews } from "./grouping.ts";
 import { upstreamFindings } from "../media/upstream.ts";
 import { serverModules } from "../modules.ts";
@@ -45,7 +46,7 @@ const LEVEL_RANK: Record<Level, number> = { later: 0, today: 1, now: 2 };
 const escalated = (open: AlertEntry, f: Finding) => !!open.level && LEVEL_RANK[f.level] > LEVEL_RANK[open.level];
 
 // Read at call time: only an explicit "true" enables model alerts.
-const modelsOn = () => process.env.MODEL_CALLS_ENABLED === "true";
+const modelsOn = modelCallsEnabled;
 /**
  * How long the site may go without a new article before it counts as stalled (ALERT_QUIET_MINUTES, else
  * the site's own setting; small source lists are quieter), and how long while editorial fetches keep
@@ -290,16 +291,16 @@ async function refusedDeliveries(now: number, open: AlertState): Promise<Finding
 
 async function backupAge(now: number): Promise<Finding[]> {
   if (!backupConfigured()) return [];
-  const [b] = await sql<{ value: { at: string; uploaded: boolean; filesError?: string } }[]>`SELECT value FROM settings WHERE key = 'backup.last'`;
+  const last = await lastBackupStatus();
   // A failed archive updates backup.last too. Reuse the run history so repeated failures cannot
   // reset the age; before the first success, count from the first attempt rather than from now.
   const [runs] = await sql<{ last_ok: Date | null; first_attempt: Date | null }[]>`
     SELECT max(finished_at) FILTER (WHERE status = 'ok') AS last_ok, min(started_at) AS first_attempt
     FROM job_runs WHERE job = 'ops.backup'`;
-  const lastOk = Math.max(runs?.last_ok?.getTime() ?? 0, b?.value.uploaded ? Date.parse(b.value.at) : 0);
+  const lastOk = Math.max(runs?.last_ok?.getTime() ?? 0, last?.uploaded ? Date.parse(last.at) : 0);
   const since = lastOk || runs?.first_attempt?.getTime() || now;
   const age = now - since;
-  const state = b?.value.filesError ? `数据库已上传，附件打包失败：${b.value.filesError}` : b?.value.uploaded === false ? "未上传" : "";
+  const state = last?.filesError ? `数据库已上传，附件打包失败：${last.filesError}` : last?.uploaded === false ? "未上传" : "";
   if (age > 50 * 3600_000) {
     return [{
       key: "backup.failed",
@@ -312,8 +313,8 @@ async function backupAge(now: number): Promise<Finding[]> {
       since: new Date(since),
     }];
   }
-  if (!b || !b.value.uploaded || age > 30 * 3600_000) {
-    return [{ key: "backup.stale", level: "later", title: "数据库备份超过一天没成功", detail: b ? `最近一次 ${beijingStamp(b.value.at)}${state ? `（${state}）` : ""}；看 ops.backup` : "还没有成功的备份记录" }];
+  if (!last || !last.uploaded || age > 30 * 3600_000) {
+    return [{ key: "backup.stale", level: "later", title: "数据库备份超过一天没成功", detail: last ? `最近一次 ${beijingStamp(last.at)}${state ? `（${state}）` : ""}；看 ops.backup` : "还没有成功的备份记录" }];
   }
   return [];
 }

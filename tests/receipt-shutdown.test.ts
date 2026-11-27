@@ -5,7 +5,7 @@ import { gate, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
-import { shutdownSignal } from "@aihot/backend/jobs/queue";
+import { shutdownSignal } from "@aihot/backend/lib/shutdown";
 import { completeReceipt, paidRequest, ProviderRejectedError } from "@aihot/backend/providers/receipts";
 
 after(closeDb);

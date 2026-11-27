@@ -24,9 +24,8 @@ import { listFeedback, readFeedbackScreenshot, updateFeedback, banFeedbackEmail,
 import { Conflict } from "@aihot/backend/audit";
 import { config } from "@aihot/backend/config";
 import { closeDb, sql } from "@aihot/backend/db";
-import { forwardFeedbackToFeishu } from "@aihot/backend/notify/feishu";
 import { defineServerModule, installModules } from "@aihot/backend/modules";
-import { forwardPendingFeedback, moduleHandlesFeedback, sitePath, sniffImageType, submitFeedback, FeedbackRejected, feedbackSourceHash, feedbackEmailKey } from "@aihot/backend/operations/feedback";
+import { forwardFeedbackToFeishu, forwardPendingFeedback, moduleHandlesFeedback, sitePath, sniffImageType, submitFeedback, FeedbackRejected, feedbackSourceHash, feedbackEmailKey } from "@aihot/backend/operations/feedback";
 import { dailyRetention } from "@aihot/backend/operations/retention";
 import { buildApp } from "../apps/api/src/app.ts";
 import { registerAdmin } from "../apps/api/src/routes/admin.ts";
@@ -193,7 +192,8 @@ test("a browser retry creates one feedback and forwards one notification", async
 
 test("a report the model reads as empty is marked spam and not pushed; a real one, or a model that cannot answer, still goes out", async () => {
   pointModels(MODEL_URL, ["qwen3.7-flash"]);
-  config.modelCallsEnabled = true;
+  const previousModelCalls = process.env.MODEL_CALLS_ENABLED;
+  process.env.MODEL_CALLS_ENABLED = "true";
   try {
     const pending = async (content: string, screenshot = false) => {
       delete process.env.FEISHU_INTERNAL_ENABLED;
@@ -252,7 +252,8 @@ test("a report the model reads as empty is marked spam and not pushed; a real on
     assert.ok(sentFor(shot));
     assert.ok(asked.some((text) => text.includes("这里不对") && text.includes('"has_screenshot":true')), "the model knows a picture came with the words");
   } finally {
-    config.modelCallsEnabled = false;
+    if (previousModelCalls === undefined) delete process.env.MODEL_CALLS_ENABLED;
+    else process.env.MODEL_CALLS_ENABLED = previousModelCalls;
   }
 });
 

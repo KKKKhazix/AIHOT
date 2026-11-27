@@ -1,10 +1,13 @@
 // What the judging steps read about an article: loaded once per analysis and rendered per step.
 import sharp from "sharp";
 import { describePublicationTime } from "../sources/dates.ts";
+import { sourceFetchesBody } from "../sources/uses.ts";
 import { sql } from "../db.ts";
+import { HttpStatusError } from "../lib/http-fetch.ts";
 import { collapseWhitespace, htmlBlockText, mergeDistinctText, truncate } from "../lib/text.ts";
 import { produceImage, rasterImage, SVG_PASSTHROUGH_MAX_BYTES } from "../media/images.ts";
-import { editorialPolicy, type EditorialLoadedImages } from "../modules.ts";
+import { editorialPolicy } from "../modules.ts";
+import type { EditorialLoadedImages } from "./policy.ts";
 import type { ContentPart } from "../providers/llm.ts";
 import { MAX_BODY_CHARS } from "./writing.ts";
 import { withXArticle } from "../content/posts.ts";
@@ -77,7 +80,7 @@ export async function loadAnalyzeInput(articleId: string): Promise<AnalyzeInputA
     media: row.media,
     source: {
       name: row.source_name, kind: row.source_kind, tier: row.tier, selectionClass: row.selection_class, firstParty: row.tier === "T1", tags: row.source_tags, ownerEntityId: row.owner_entity_id,
-      fetchesBody: row.config?.fetchPublicContent === true || !!row.config?.detail || row.source_kind === "web_list",
+      fetchesBody: sourceFetchesBody(row.source_kind, row.config),
     },
     translationZh: row.translation_zh,
   };
@@ -186,7 +189,7 @@ export async function loadArticleImageParts(urls: readonly string[]): Promise<Ed
         unverifiedCount += 1;
       }
     } catch (error) {
-      if (/^upstream (?:404|410)$/.test((error as Error)?.message ?? "")) continue;
+      if (error instanceof HttpStatusError && (error.status === 404 || error.status === 410)) continue;
       unverifiedCount += 1;
     }
   }

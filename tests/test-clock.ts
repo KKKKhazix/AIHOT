@@ -20,6 +20,36 @@ function positions(text: string, pattern: RegExp, fix: string, add: (offset: num
   for (const m of text.matchAll(pattern)) add(m.index, fix);
 }
 
+/** Advances past a JS `${...}` interpolation body, ignoring parens/braces inside strings and nested templates. */
+function skipJsInterpolation(text: string, from: number): number {
+  let i = from;
+  let braces = 1;
+  while (i < text.length && braces > 0) {
+    const ch = text[i]!;
+    if (ch === "'" || ch === '"') {
+      i++;
+      while (i < text.length && text[i] !== ch) {
+        if (text[i] === "\\") i++;
+        i++;
+      }
+      i++;
+    } else if (ch === "`") {
+      i++;
+      while (i < text.length && text[i] !== "`") {
+        if (text[i] === "\\") { i += 2; continue; }
+        if (text[i] === "$" && text[i + 1] === "{") { i = skipJsInterpolation(text, i + 2); continue; }
+        i++;
+      }
+      i++;
+    } else {
+      if (ch === "{") braces++;
+      else if (ch === "}") braces--;
+      i++;
+    }
+  }
+  return i;
+}
+
 export function clockViolations(source: string): Violation[] {
   const text = source.replace(/^\s*(?:\/\/|\/\*|\*|#)[^\n]*/gm, comment => comment.replace(/[^\n]/g, " "));
   const hits: Violation[] = [];
@@ -50,27 +80,47 @@ export function clockViolations(source: string): Violation[] {
       if (used.test(remaining) || shorthand) add(start + m.index, boundary);
     }
   }
-  // Split SQL rows only at top-level commas. now(), SQL functions and interpolations can themselves contain commas.
+  // Split SQL rows only at top-level commas. now(), SQL functions and interpolations can themselves contain commas or quotes.
   for (const m of text.matchAll(/\bINSERT\s+INTO\s+[\w.]+\s*\(([^()]+)\)\s*VALUES\s*\(/gi)) {
     const columns = m[1]!.split(",").map(s => s.trim());
-    let start = m.index + m[0].length, column = 0, depth = 0;
-    const tokens = /'(?:''|[^'])*'|[(){},`]/g;
-    tokens.lastIndex = start;
-    for (let token; (token = tokens.exec(text));) {
-      const char = token[0];
-      if (char === "`") break;
-      if (!depth && (char === "," || char === ")")) {
-        const v = text.slice(start, token.index).trim();
-        if (new RegExp(`^(?:${sqlFields})$`, "i").test(columns[column] ?? "") && new RegExp(`^${sqlClock}$`, "i").test(v)) add(start + text.slice(start, token.index).indexOf(v), boundary);
-        if (char === ")") {
-          const next = /^\s*,\s*\(/.exec(text.slice(tokens.lastIndex));
+    let start = m.index + m[0].length, i = start, column = 0, depth = 0;
+    while (i < text.length) {
+      const ch = text[i]!;
+      if (ch === "'") {
+        i++;
+        while (i < text.length) {
+          if (text[i] === "'") {
+            if (text[i + 1] === "'") { i += 2; continue; }
+            i++;
+            break;
+          }
+          i++;
+        }
+        continue;
+      }
+      if (ch === "$" && text[i + 1] === "{") {
+        i = skipJsInterpolation(text, i + 2);
+        continue;
+      }
+      if (!depth && ch === "`") break;
+      if (!depth && (ch === "," || ch === ")")) {
+        const v = text.slice(start, i).trim();
+        if (new RegExp(`^(?:${sqlFields})$`, "i").test(columns[column] ?? "") && new RegExp(`^${sqlClock}$`, "i").test(v)) {
+          add(start + text.slice(start, i).indexOf(v), boundary);
+        }
+        i++;
+        if (ch === ")") {
+          const next = /^\s*,\s*\(/.exec(text.slice(i));
           if (!next) break;
-          tokens.lastIndex += next[0].length;
+          i += next[0].length;
           column = 0;
         } else column++;
-        start = tokens.lastIndex;
-      } else if (char === "(" || char === "{") depth++;
-      else if (char === ")" || char === "}") depth--;
+        start = i;
+        continue;
+      }
+      if (ch === "(") depth++;
+      else if (ch === ")" && depth > 0) depth--;
+      i++;
     }
   }
   return hits;

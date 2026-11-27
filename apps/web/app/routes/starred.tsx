@@ -6,6 +6,7 @@ import { SITE } from "@aihot/site";
 import type { Route } from "./+types/starred";
 import { Collapse } from "../components/ui/Presence";
 import { edgeTtl } from "../lib/api.server";
+import { useHydrated } from "../lib/hydration";
 import { pageMeta } from "../lib/seo";
 import type { StarredItem } from "@aihot/contracts/sync";
 import { exportBundle, importBundle, ImportError, removeStar, restoreStar, useStarred, type ImportReport } from "../lib/local-state";
@@ -46,11 +47,10 @@ export default function StarredPage() {
   const t = useT();
   const locale = useLocale();
   const starred = useStarred();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
   const [availability, setAvailability] = useState<Record<string, ItemAvailability>>({});
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => setMounted(true), []);
   // A row taken out here stays where it was, faded, for as long as the reader is on this page: pressing its
   // bookmark again puts it back as it was. It is gone the next time the page opens.
   const [removed, setRemoved] = useState<Array<{ item: StarredItem; index: number }>>([]);

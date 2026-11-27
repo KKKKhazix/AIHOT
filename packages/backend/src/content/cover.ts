@@ -69,10 +69,21 @@ async function readSharePicture(url: string): Promise<string | null> {
 
 /** A site's articles share its home, section and other pages: each is read once an hour, not once per article. */
 const SITE_PAGE_MS = 3600_000;
+const SITE_PICTURES_MAX = 500;
 const sitePictures = new Map<string, { at: number; page: string; picture: Promise<string | null> }>();
 function remember(key: string, page: string): Promise<string | null> {
+  const now = Date.now();
+  if (sitePictures.size >= SITE_PICTURES_MAX) {
+    for (const [k, v] of sitePictures) if (now - v.at >= SITE_PAGE_MS) sitePictures.delete(k);
+    while (sitePictures.size >= SITE_PICTURES_MAX) {
+      const oldest = sitePictures.keys().next().value;
+      if (oldest === undefined) break;
+      sitePictures.delete(oldest);
+    }
+  }
   const picture = readSharePicture(page);
-  sitePictures.set(key, { at: Date.now(), page, picture });
+  sitePictures.delete(key);
+  sitePictures.set(key, { at: now, page, picture });
   return picture;
 }
 function sitePagePicture(url: string): Promise<string | null> {

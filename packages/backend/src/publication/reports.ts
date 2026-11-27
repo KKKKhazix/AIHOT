@@ -1,6 +1,6 @@
 // Reports through the public read layer: website DTOs and the v1 shapes. Only real reports are
 // listed; a missing date is a 404, never another day. Withdrawn citations are marked, not shown.
-import type { ReportCitation, ReportDetail, ReportIndexEntry, ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
+import type { PeriodKind, ReportCitation, ReportDetail, ReportIndexEntry, ReportKind, ReportNavigationEntry } from "@aihot/contracts/reports";
 import { REPORTS, SITE, withSubject } from "@aihot/site";
 import { survivingStory } from "../events/identity.ts";
 import { sql } from "../db.ts";
@@ -12,7 +12,84 @@ import { publicSourceName } from "./rules.ts";
 import { listedCondition } from "./scope.ts";
 import { mentionsIn } from "./mentions.ts";
 
-export type { ReportKind };
+export type { PeriodKind, ReportKind };
+
+/** Stable daily section key carried on v1 sections without entering JSON wire output (for English section labels). */
+export const SECTION_KEY = Symbol("section key");
+
+export interface V1ReportLinks { aihot: string | null; original: string }
+export interface V1ReportSource { id?: string; name: string }
+export interface V1ReportAttribution { name: string; url: string }
+export interface V1DailyItem {
+  id: string | null;
+  title: string;
+  summary: string;
+  source: V1ReportSource;
+  links: V1ReportLinks;
+  attribution: V1ReportAttribution;
+}
+export interface V1DailyFlash {
+  id: string | null;
+  title: string;
+  source: V1ReportSource;
+  links: V1ReportLinks;
+  publishedAt: string;
+  attribution: V1ReportAttribution;
+}
+export interface V1DailySection {
+  label: string;
+  items: V1DailyItem[];
+  [SECTION_KEY]?: string;
+}
+export interface V1DailyReport {
+  date: string;
+  generatedAt: string;
+  windowStart: string;
+  windowEnd: string;
+  links: { aihot: string };
+  attribution: V1ReportAttribution;
+  lead: { title: string; leadParagraph: string } | null;
+  sections: V1DailySection[];
+  flashes: V1DailyFlash[];
+  highlights: V1DailyItem[];
+}
+export interface V1DailyResponse {
+  schemaVersion: 1;
+  report: V1DailyReport;
+}
+export interface V1PeriodItem {
+  id: string | null;
+  title: string;
+  summary: string;
+  source: V1ReportSource;
+  links: V1ReportLinks;
+  publishedAt: string | null;
+  attribution: V1ReportAttribution;
+}
+export interface V1PeriodSection {
+  label: string;
+  summary: string | null;
+  items: V1PeriodItem[];
+}
+export interface V1PeriodReport {
+  week?: string;
+  month?: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  generatedAt: string;
+  windowStart: string;
+  windowEnd: string;
+  links: { aihot: string };
+  attribution: V1ReportAttribution;
+  headline: string | null;
+  overview: string | null;
+  sections: V1PeriodSection[];
+  [COMPOSED_OVERVIEW]?: ComposedOverview;
+}
+export interface V1PeriodResponse {
+  schemaVersion: 1;
+  report: V1PeriodReport;
+}
 
 interface ReportRow {
   kind: ReportKind;
@@ -556,7 +633,22 @@ export async function dailyWithNotes(date: string | "latest") {
     const otherSources = Number(i.sources) > 1 ? Number(i.sources) - 1 : 0;
     if (otherSources || related.length || i.followUp) notes.set(i.itemId ? String(i.itemId) : (links(i).aihot ?? links(i).original), { otherSources, related, followUp: i.followUp ?? null });
   }
-  const body = {
+  const sections: V1DailySection[] = (c.sections ?? []).map((s: any) => {
+    const section: V1DailySection = {
+      label: String(s.label),
+      items: (s.items ?? []).filter(ok).map((i: any): V1DailyItem => ({
+        id: i.itemId ? String(i.itemId) : null,
+        title: String(i.title),
+        summary: String(metadata(i).summary ?? ""),
+        source: sourceOf(i),
+        links: links(i),
+        attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),
+      })),
+    };
+    if (typeof s.key === "string") section[SECTION_KEY] = s.key;
+    return section;
+  });
+  const body: V1DailyResponse = {
     schemaVersion: 1 as const,
     report: {
       date: r.key,
@@ -566,18 +658,8 @@ export async function dailyWithNotes(date: string | "latest") {
       links: { aihot: url },
       attribution: attribution(url),
       lead: lead ? { title: lead.title, leadParagraph: lead.leadParagraph ?? "" } : null,
-      sections: (c.sections ?? []).map((s: any) => ({
-        label: String(s.label),
-        items: (s.items ?? []).filter(ok).map((i: any) => ({
-          id: i.itemId ? String(i.itemId) : null,
-          title: String(i.title),
-          summary: String(metadata(i).summary ?? ""),
-          source: sourceOf(i),
-          links: links(i),
-          attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),
-        })),
-      })),
-      flashes: (c.flashes ?? []).filter(ok).map((i: any) => ({
+      sections,
+      flashes: (c.flashes ?? []).filter(ok).map((i: any): V1DailyFlash => ({
         id: i.itemId ? String(i.itemId) : null,
         title: String(i.title),
         source: sourceOf(i),
@@ -585,7 +667,7 @@ export async function dailyWithNotes(date: string | "latest") {
         publishedAt: metadata(i).publishedAt ?? r.generated_at.toISOString(),
         attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),
       })),
-      highlights: highlights.map((i: any) => ({
+      highlights: highlights.map((i: any): V1DailyItem => ({
         id: i.itemId ? String(i.itemId) : null,
         title: String(i.title),
         summary: String(metadata(i).summary ?? ""),
@@ -598,7 +680,7 @@ export async function dailyWithNotes(date: string | "latest") {
   return { body, notes, leadItemId: lead?.itemId ?? null };
 }
 
-export async function v1Daily(date: string | "latest") {
+export async function v1Daily(date: string | "latest"): Promise<V1DailyResponse | null> {
   return (await dailyWithNotes(date))?.body ?? null;
 }
 
@@ -610,7 +692,7 @@ export interface FeedIssue {
   leadParagraph: string | null;
   /** The article the headline and lead are about. */
   leadItemId: string | null;
-  sections: Array<{ label: string; items: Array<{ id: string; title: string }> }>;
+  sections: Array<{ key?: string; label: string; items: Array<{ id: string; title: string }> }>;
 }
 
 /**
@@ -622,7 +704,7 @@ export async function feedIssues(kind: ReportKind, limit: number): Promise<FeedI
     ? await sql<{ key: string; generated_at: Date; content: Record<string, any> }[]>`
       SELECT key, generated_at, jsonb_build_object(
         'lead', content->'lead', 'leadItemId', content->'leadItemId', 'highlights', content->'highlights',
-        'sections', (SELECT coalesce(jsonb_agg(jsonb_build_object('label', s->'label', 'items',
+        'sections', (SELECT coalesce(jsonb_agg(jsonb_build_object('key', s->'key', 'label', s->'label', 'items',
           (SELECT coalesce(jsonb_agg(jsonb_build_object('itemId', i->'itemId', 'title', i->'title') ORDER BY ord), '[]'::jsonb)
            FROM jsonb_array_elements(coalesce(s->'items', '[]'::jsonb)) WITH ORDINALITY AS e(i, ord))) ORDER BY sord), '[]'::jsonb)
           FROM jsonb_array_elements(coalesce(content->'sections', '[]'::jsonb)) WITH ORDINALITY AS x(s, sord))) AS content
@@ -641,8 +723,8 @@ export async function feedIssues(kind: ReportKind, limit: number): Promise<FeedI
   const leads = kind === "daily" ? await dailyLeads(rows, gone) : null;
   return rows.map((r) => {
     const lead = leads ? leads.get(r.key) : issueLead(r.content, shape, gone);
-    const groups: Array<{ label: unknown; items?: Array<Record<string, any>> }> = kind === "daily"
-      ? (r.content.sections ?? []).map((s: any) => ({ label: s.label, items: s.items }))
+    const groups: Array<{ key?: string; label: unknown; items?: Array<Record<string, any>> }> = kind === "daily"
+      ? (r.content.sections ?? []).map((s: any) => ({ ...(typeof s.key === "string" ? { key: s.key } : {}), label: s.label, items: s.items }))
       : (r.content.themes ?? []).map((t: any) => ({ label: t.heading, items: t.storyRefs }));
     const period = kind === "daily" ? null : periodOverview(r.content, kind, gone);
     const issue: FeedIssue = {
@@ -652,6 +734,7 @@ export async function feedIssues(kind: ReportKind, limit: number): Promise<FeedI
       leadParagraph: period ? period.text : lead?.leadParagraph ?? null,
       leadItemId: typeof r.content.leadItemId === "string" && !gone.has(r.content.leadItemId) ? r.content.leadItemId : null,
       sections: groups.map((g) => ({
+        ...(g.key ? { key: g.key } : {}),
         label: String(g.label),
         items: (g.items ?? []).filter((i) => i.itemId && !gone.has(i.itemId)).map((i) => ({ id: String(i.itemId), title: String(i.title) })),
       })).filter((s) => s.items.length > 0),
@@ -662,17 +745,10 @@ export async function feedIssues(kind: ReportKind, limit: number): Promise<FeedI
 
 // v1 weeklies and monthlies
 
-export type PeriodKind = "weekly" | "monthly";
-
 /** A weekly's or monthly's own key and calendar days: { week, periodStart, periodEnd } or { month, … }. */
 function periodOf(kind: PeriodKind, key: string) {
   const range = kind === "weekly" ? isoWeekRange(key) : monthRange(key);
   return { ...(kind === "weekly" ? { week: key } : { month: key }), periodStart: range?.start ?? null, periodEnd: range?.end ?? null };
-}
-
-/** Whether a weekly or monthly key is a real ISO week (2026-W39) or calendar month (2026-09). */
-export function isPeriodKey(kind: PeriodKind, key: string): boolean {
-  return (kind === "weekly" ? isoWeekRange(key) : monthRange(key)) !== null;
 }
 
 /** The v1 index of weeklies or monthlies, newest first: key, days, headline and link. */
@@ -695,7 +771,7 @@ export async function v1Periods(kind: PeriodKind, limit: number) {
  * A weekly or monthly in v1: its headline, overview and sections, each with its introduction and the
  * items it carries in order. Withdrawn items are left out; source names are as stored, like the daily's.
  */
-export async function v1Period(kind: PeriodKind, key: string | "latest") {
+export async function v1Period(kind: PeriodKind, key: string | "latest"): Promise<V1PeriodResponse | null> {
   const [r] = key === "latest"
     ? await sql<ReportRow[]>`SELECT kind, key, window_start, window_end, content, generated_at FROM reports WHERE kind = ${kind} ORDER BY key DESC LIMIT 1`
     : await sql<ReportRow[]>`SELECT kind, key, window_start, window_end, content, generated_at FROM reports WHERE kind = ${kind} AND key = ${key}`;
@@ -707,7 +783,25 @@ export async function v1Period(kind: PeriodKind, key: string | "latest") {
   const gone = goneIn(avail);
   const url = periodUrl(kind, r.key);
   const period = periodOverview(c, kind, gone);
-  const report = {
+  const sections: V1PeriodSection[] = (c.themes ?? []).map((t: any): V1PeriodSection => ({
+    label: String(t.heading),
+    summary: sectionSummary(t, avail),
+    items: (t.storyRefs ?? []).filter(ok).map((i: any): V1PeriodItem => {
+      const a = i.itemId ? avail.get(i.itemId) : undefined;
+      const metadata = citationMetadata(i, a);
+      const sourceId = a?.sourceId ?? (typeof i.sourceId === "string" ? i.sourceId : null);
+      return {
+        id: i.itemId ? String(i.itemId) : null,
+        title: String(i.title),
+        summary: String(metadata.summary ?? ""),
+        source: { ...(sourceId ? { id: sourceId } : {}), name: metadata.sourceName },
+        links: { aihot: i.itemId ? itemUrl(i.itemId) : null, original: metadata.sourceUrl },
+        publishedAt: metadata.publishedAt,
+        attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),
+      };
+    }),
+  })).filter((s: V1PeriodSection) => s.items.length > 0);
+  const report: V1PeriodReport = {
     ...periodOf(kind, r.key),
     generatedAt: r.generated_at.toISOString(),
     windowStart: r.window_start.toISOString(),
@@ -716,24 +810,7 @@ export async function v1Period(kind: PeriodKind, key: string | "latest") {
     attribution: attribution(url),
     headline: issueLead(c, "periodic", gone)?.title ?? null,
     overview: period.text,
-    sections: (c.themes ?? []).map((t: any) => ({
-      label: String(t.heading),
-      summary: sectionSummary(t, avail),
-      items: (t.storyRefs ?? []).filter(ok).map((i: any) => {
-        const a = i.itemId ? avail.get(i.itemId) : undefined;
-        const metadata = citationMetadata(i, a);
-        const sourceId = a?.sourceId ?? (typeof i.sourceId === "string" ? i.sourceId : null);
-        return {
-          id: i.itemId ? String(i.itemId) : null,
-          title: String(i.title),
-          summary: String(metadata.summary ?? ""),
-          source: { ...(sourceId ? { id: sourceId } : {}), name: metadata.sourceName },
-          links: { aihot: i.itemId ? itemUrl(i.itemId) : null, original: metadata.sourceUrl },
-          publishedAt: metadata.publishedAt,
-          attribution: attribution(i.itemId ? itemUrl(i.itemId) : url),
-        };
-      }),
-    })).filter((s: { items: unknown[] }) => s.items.length > 0),
+    sections,
   };
   // An overview composed by rule is said in English from the titles it names (publication/english.ts).
   return { schemaVersion: 1 as const, report: period.composed ? Object.assign(report, { [COMPOSED_OVERVIEW]: period.composed }) : report };

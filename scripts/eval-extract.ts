@@ -5,14 +5,15 @@
 //   node scripts/eval-extract.ts run --pages <same samples> --out after.json
 //   node scripts/eval-extract.ts diff before.json after.json
 // URL lines may append a tab and PageRules JSON. No database, model calls or rendered-page fallback.
-import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { load } from "cheerio";
 import { stableJson } from "@aihot/contracts/sync";
-import { readable, type PageRules } from "@aihot/backend/content/extract";
+import { readable, type PageRules } from "@aihot/backend/content/readable";
 import { guardedFetch, languageHeaders } from "@aihot/backend/lib/http-fetch";
+import { sha256 } from "@aihot/backend/lib/ids";
+import { collapseWhitespace } from "@aihot/backend/lib/text";
 
 interface SavedPage {
   id: string;
@@ -44,7 +45,7 @@ interface Result {
   error?: string;
 }
 
-const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
+const normalize = collapseWhitespace;
 const readJson = <T>(file: string): T => JSON.parse(readFileSync(file, "utf8"));
 const writeJson = (file: string, value: unknown) => {
   mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
@@ -58,7 +59,7 @@ async function save(urls: string, out: string) {
     const [address, settings] = line.split("\t");
     const url = new URL(address.trim()).href;
     const rules: PageRules = settings ? JSON.parse(settings) : {};
-    const id = createHash("sha256").update(url + "\n" + stableJson(rules)).digest("hex");
+    const id = sha256(url + "\n" + stableJson(rules));
     if (pages.some(page => page.id === id)) continue;
     const page: SavedPage = { id, url, rules, fetchedAt: new Date().toISOString(), status: null };
     const target = new URL(url);

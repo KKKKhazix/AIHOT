@@ -8,6 +8,12 @@ import { assertAccepted, paidRequest } from "./receipts.ts";
 
 /** A source address read through Jina: this prefix, then the page's own address. */
 export const JINA_PREFIX = "https://r.jina.ai/";
+/** SQL LIKE pattern matching listings configured to read through Jina. */
+export const JINA_URL_PATTERN = `${JINA_PREFIX}%`;
+/** Strips a Jina Reader prefix (http or https) to recover the underlying target URL. */
+export function stripJinaPrefix(url: string): string {
+  return url.replace(/^https?:\/\/r\.jina\.ai\//, "");
+}
 
 /** Jina's answer starts with header lines (Title, URL Source, Published Time); the page follows this line. */
 const CONTENT = "\nMarkdown Content:\n";

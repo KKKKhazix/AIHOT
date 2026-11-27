@@ -51,7 +51,7 @@ export function Pagination({ page, pageCount, href }: { page: number; pageCount:
   return (
     <nav aria-label={t("分页", "Pages")} className="mt-6 flex flex-wrap items-center justify-center gap-3 lg:gap-1">
       {page > 1 && (
-        <IntentLink to={href(page - 1)} className={`${btn} h-11 border border-line-strong bg-surface px-5 text-ui-body-sm text-ink-2 active:bg-bg-sunk lg:h-9 lg:px-3 lg:text-ui-label lg:text-ink-3 lg:hover:border-ink-4 lg:hover:text-ink`}>
+        <IntentLink to={href(page - 1)} className={`${btn} h-11 border border-line-strong bg-surface px-5 text-ui-body-sm text-ink-2 active:bg-bg-sunk lg:h-9 touch:h-11 lg:px-3 lg:text-ui-label lg:text-ink-3 lg:hover:border-ink-4 lg:hover:text-ink`}>
           {t("上一页", "Previous")}
         </IntentLink>
       )}
@@ -71,7 +71,7 @@ export function Pagination({ page, pageCount, href }: { page: number; pageCount:
         </span>
       ))}
       {page < pageCount && (
-        <IntentLink to={href(page + 1)} className={`${btn} h-11 gap-0.5 border border-line-strong bg-surface px-5 text-ui-body-sm text-ink-2 active:bg-bg-sunk lg:h-9 lg:px-3 lg:text-ui-label lg:text-ink-3 lg:hover:border-ink-4 lg:hover:text-ink`}>
+        <IntentLink to={href(page + 1)} className={`${btn} h-11 gap-0.5 border border-line-strong bg-surface px-5 text-ui-body-sm text-ink-2 active:bg-bg-sunk lg:h-9 touch:h-11 lg:px-3 lg:text-ui-label lg:text-ink-3 lg:hover:border-ink-4 lg:hover:text-ink`}>
           {t("下一页", "Next")} <IconChevronRight size={14} />
         </IntentLink>
       )}

@@ -39,6 +39,10 @@ export const CAPABILITIES = {
 
 export type CapabilityKey = keyof typeof CAPABILITIES;
 
+/** Article analysis steps whose unknown paid receipt stops an article until released (jobs/content.ts). */
+const ANALYSIS_CAPABILITIES = ["prefilter", "score", "understand", "summarize", "wording", "structure"] as const satisfies readonly CapabilityKey[];
+export const ANALYSIS_PURPOSES: ReadonlySet<string> = new Set(ANALYSIS_CAPABILITIES.flatMap((key) => CAPABILITIES[key].purposes));
+
 /** Every step: the engine's, then the installed modules' (their defaults also from site/models.ts). */
 export function capabilities(): Record<string, Capability> {
   const all: Record<string, Capability> = { ...CAPABILITIES };
@@ -76,6 +80,20 @@ async function switches(): Promise<Record<string, string>> {
 
 export function invalidateModelCache() {
   cache = null;
+}
+
+/**
+ * Persists or clears the admin model override for one capability in settings (`models.<capability>`).
+ * Cache invalidation is process-local; other processes refresh on their 1-minute cache TTL.
+ */
+export async function setModelOverride(capability: string, model: string | null, actor: string): Promise<void> {
+  const key = `models.${capability}`;
+  if (model === null) await sql`DELETE FROM settings WHERE key = ${key}`;
+  else {
+    await sql`INSERT INTO settings (key, value, updated_by) VALUES (${key}, ${sql.json({ model })}, ${actor})
+              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`;
+  }
+  invalidateModelCache();
 }
 
 /** Whether a registered model explicitly declares image input support. Unspecified means text-only. */

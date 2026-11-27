@@ -2,7 +2,7 @@
 // (ReportLayout) and recent-issue chips under it, which narrower desktops show above the paper.
 import { IntentLink } from "../../components/ui/IntentLink";
 import { useEffect, useRef, useState } from "react";
-import { REPORT_NAMES, type ReportNavigationEntry, type ReportNavigationResponse, type ReportKind } from "@aihot/contracts/site";
+import { REPORT_NAMES, type ReportNavigationEntry, type ReportNavigationResponse, type ReportKind } from "@aihot/contracts/reports";
 import { PillTabs } from "../../components/ui/Tabs";
 import { IconChevronRight } from "../../components/icons";
 import { KINDS, KIND_PATH, archiveMark, kindName, recentIssues, reportPath, type ArchiveGroup } from "./format";

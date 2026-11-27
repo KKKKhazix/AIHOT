@@ -6,7 +6,7 @@ import { contentDocument, UnavailablePageError } from "../lib/page-content.ts";
 import { fetchListing } from "./listing-fetch.ts";
 import { identityKeyForUrl, normalizeUrl } from "../lib/url.ts";
 import { collapseWhitespace, stripTags } from "../lib/text.ts";
-import { isSignInRedirect, isSignInUrl, pagePublicationDate, pageRules, readableDocument, type ExtractedBody } from "../content/extract.ts";
+import { isSignInRedirect, isSignInUrl, pagePublicationDate, pageRules, readableDocument, type ExtractedBody } from "../content/readable.ts";
 import { sanitizeBody } from "../content/sanitize.ts";
 import { articleCover } from "../content/cover.ts";
 import { JINA_PREFIX, jinaRead } from "../providers/jina.ts";

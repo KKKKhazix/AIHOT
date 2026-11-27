@@ -1,8 +1,9 @@
 import type { HotStripEntry } from "@aihot/contracts/site";
 import { IconArrowRight, IconMinus, IconTrendDown, IconTrendUp } from "../../components/icons";
 import { Faces } from "../hot/Faces";
+import { formatCount } from "../../lib/format";
 import { Link } from "../../lib/link";
-import { useT } from "../../lib/i18n";
+import { useLocale, useT } from "../../lib/i18n";
 
 // As on the original list: the top three in the ranking colours at the heaviest weight.
 const RANK_COLOR = ["text-ui-body font-black text-rank-1", "text-ui-body font-black text-rank-2", "text-ui-body font-black text-rank-3"];
@@ -29,6 +30,7 @@ function TrendMark({ trend }: { trend: HotStripEntry["trend"] }) {
  */
 export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
   const t = useT();
+  const locale = useLocale();
   if (entries.length === 0) return null;
   return (
     <section
@@ -40,7 +42,7 @@ export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
           <span className="live-dot text-hot" aria-hidden="true" />
           {t("当前热点", "Trending now")}
         </h2>
-        <Link to="/hot" className="group -my-2.5 -mr-1.5 inline-flex h-11 items-center gap-1 px-1.5 text-ui-caption-lg text-ink-3 transition-colors hover:text-accent lg:my-0 lg:mr-0 lg:h-auto lg:px-0">
+        <Link to="/hot" className="group -my-2.5 -mr-1.5 inline-flex h-11 items-center gap-1 px-1.5 text-ui-caption-lg text-ink-3 transition-colors hover:text-accent lg:my-0 lg:mr-0 lg:h-auto lg:px-0 touch:h-11">
           {t("完整榜单", "Full list")} <IconArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
         </Link>
       </div>
@@ -49,7 +51,7 @@ export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
           <li key={e.storyPublicId ?? e.itemId ?? e.rank} className={i >= 3 ? "max-sm:hidden" : undefined}>
             <Link viewTransition
               to={hrefOf(e)}
-              className="group -mx-2 grid min-h-11 sm:min-h-0 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-3 rounded-tile px-2 py-1.5 transition-colors hover:bg-bg-sunk/70 active:bg-bg-sunk sm:grid-cols-[20px_minmax(0,1fr)_120px_64px_20px] sm:gap-x-4 sm:py-2 dark:hover:bg-bg-muted/40"
+              className="group -mx-2 grid min-h-11 sm:min-h-0 touch:min-h-11 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-x-3 rounded-tile px-2 py-1.5 transition-colors hover:bg-bg-sunk/70 active:bg-bg-sunk sm:grid-cols-[20px_minmax(0,1fr)_120px_64px_20px] sm:gap-x-4 sm:py-2 dark:hover:bg-bg-muted/40"
             >
               <span className={`num text-center leading-none ${RANK_COLOR[i] ?? "text-ui-body-sm font-bold text-rank-rest"}`}>{e.rank}</span>
               <span className="line-clamp-1 min-w-0 text-ui-body-sm-plus font-semibold leading-[1.5] text-ink transition-colors group-hover:text-accent lg:text-ui-body-sm">{e.title}</span>
@@ -58,7 +60,7 @@ export function HotTopics({ entries }: { entries: HotStripEntry[] }) {
               </span>
               <span className="flex items-center justify-end gap-2.5 sm:contents">
                 <span className="whitespace-nowrap text-right text-ui-caption-lg text-ink-4" title={t("热度指数", "Heat index")}>
-                  <span className="num text-ui-label-lg font-semibold text-ink-2">{t(String(Math.round(e.heat)), Math.round(e.heat).toLocaleString("en-US"))}</span> {t("热度", "heat")}
+                  <span className="num text-ui-label-lg font-semibold text-ink-2">{formatCount(Math.round(e.heat), locale)}</span> {t("热度", "heat")}
                 </span>
                 <span className="flex w-5 justify-center">
                   <TrendMark trend={e.trend} />

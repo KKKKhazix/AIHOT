@@ -1,8 +1,8 @@
 import { data, useLoaderData } from "react-router";
 import type { Route } from "./+types/report-detail";
-import { REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn, type ReportDetail, type ReportNavigationResponse, type ReportKind } from "@aihot/contracts/site";
+import { isReportKey, REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn, type ReportDetail, type ReportNavigationResponse } from "@aihot/contracts/reports";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
-import { apiGet, cachedPage, loadOr404, pagePathname } from "../lib/api.server";
+import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { breadcrumbLd, pageMeta, reportDescription, reportLd, reportTitle, titled, titleCacheSeconds } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
@@ -17,20 +17,14 @@ export const handle: Screen = { tab: "daily", name: (path) => L(REPORT_NAMES[kin
 export { pageHeaders as headers } from "../lib/api.server";
 export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
-const PATTERN: Record<ReportKind, RegExp> = {
-  daily: /^\d{4}-\d{2}-\d{2}$/,
-  weekly: /^\d{4}-W\d{2}$/,
-  monthly: /^\d{4}-\d{2}$/,
-};
-
 export async function loader({ request, params }: Route.LoaderArgs) {
   const kind = kindFromPath(pagePathname(request));
   const locale = localeOf(pagePathname(request));
   const key = params.key ?? "";
-  if (!PATTERN[kind].test(key)) throw data({ message: "not_found" }, { status: 404 });
+  if (!isReportKey(kind, key)) throw data({ message: "not_found" }, { status: 404 });
   const [report, { items: index }] = await Promise.all([
     loadOr404<ReportDetail>(apiIn(`/reports/${kind}/${key}`, locale), { signal: request.signal }),
-    apiGet<ReportNavigationResponse>(apiIn(`/reports/${kind}/navigation/${key}`, locale), { signal: request.signal }),
+    loadOr404<ReportNavigationResponse>(apiIn(`/reports/${kind}/navigation/${key}`, locale), { signal: request.signal }),
   ]);
   const title = reportTitle(report, locale);
   return cachedPage(titleCacheSeconds(3600, locale, title), { report, title, index, today: beijingDate(Date.now()) });

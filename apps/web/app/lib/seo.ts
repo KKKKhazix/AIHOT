@@ -2,9 +2,8 @@
 // with the feed filters they carry. The site's name and wording come from site/site.ts;
 //; its address from SITE_URL.
 import type { MetaDescriptor } from "react-router";
-import {
-  REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn, STORY_INDEX_MIN_SOURCES, type ReportDetail, type StoryDetail, type TimelineFilters,
-} from "@aihot/contracts/site";
+import { STORY_INDEX_MIN_SOURCES, type StoryDetail, type TimelineFilters } from "@aihot/contracts/site";
+import { REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn, type ReportDetail } from "@aihot/contracts/reports";
 import { isCategoryKey, isChannelKey, sectionLabelIn, topicName } from "@aihot/contracts/taxonomy";
 import { SITE, subjectAfter, withSubject } from "@aihot/site";
 import { ENGLISH, WAITING_ENGLISH_SECONDS, needsEnglish } from "@aihot/contracts/english";
@@ -190,6 +189,34 @@ export function breadcrumbLd(items: Array<{ name: Text; path: string }>, locale:
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: items.map((it, i) => ({ "@type": "ListItem", position: i + 1, name: t(it.name), item: address(it.path, locale) })),
+  };
+}
+
+/** A public structured Dataset node (leaderboard prices, model or benchmark pages). */
+export function datasetLd(input: {
+  locale: Locale;
+  path: string;
+  name: string;
+  description: string;
+  dateModified?: string | null;
+  creator?: { name: string; url?: string };
+  variableMeasured?: string[];
+  sameAs?: string | null;
+}) {
+  const creator = input.creator
+    ? { "@type": "Organization", name: input.creator.name, ...(input.creator.url ? { url: input.creator.url } : {}) }
+    : { "@type": "Organization", name: SITE.name, url: siteUrl() };
+  return {
+    "@context": "https://schema.org",
+    "@type": "Dataset",
+    name: input.name,
+    description: input.description,
+    url: address(input.path, input.locale),
+    creator,
+    ...(input.dateModified ? { dateModified: input.dateModified } : {}),
+    ...(input.variableMeasured?.length ? { variableMeasured: input.variableMeasured } : {}),
+    isAccessibleForFree: true,
+    ...(input.sameAs ? { sameAs: input.sameAs } : {}),
   };
 }
 

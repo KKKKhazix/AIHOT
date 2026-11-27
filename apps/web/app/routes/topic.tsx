@@ -2,7 +2,7 @@ import { REPORTS, SEO_TITLES, SITE } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import { TOPIC_GROUP_EN } from "@aihot/industry/english";
 import { topicDefinition, topicName } from "@aihot/contracts/taxonomy";
-import { redirect, useLoaderData, useNavigation } from "react-router";
+import { data, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/topic";
 import type { TopicPage } from "@aihot/contracts/site";
 import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
@@ -11,15 +11,14 @@ import { breadcrumbLd, pageMeta, titled, topicLd } from "../lib/seo";
 import { DayList, Pagination } from "../features/feed/DayList";
 import { BrandMark } from "../components/BrandMark";
 import { EmptyState } from "../components/ui/Page";
-import { IconArrowLeft } from "../components/icons";
 import { beijingDate } from "@aihot/contracts/time";
 import { monthDay, monthDayTime } from "../lib/format";
+import { BackLink } from "../components/shell/BackLink";
 import { PhoneBar } from "../components/shell/PhoneBar";
 import { navUp } from "../components/shell/nav";
-import { useHistoryBack, type Screen } from "../components/shell/screens";
+import type { Screen } from "../components/shell/screens";
 import type { TopicPagePart } from "../modules";
 import { loadParts } from "../site-modules";
-import { Link } from "../lib/link";
 import { apiIn, localeOf, localizePath, pagePath, translator, useLocale, useT, type Locale } from "../lib/i18n";
 
 // Topics are reached from the topics page, as long as the site shows it.
@@ -30,13 +29,13 @@ export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 /** Selected items of a topic: shared caches keep the page as long as its api answer (one minute). */
 export async function loader({ params, request }: Route.LoaderArgs) {
-  if (/[\u0000-\u001f\u007f]/.test(params.slug)) throw new Response("Not found", { status: 404 });
+  if (/[\u0000-\u001f\u007f]/.test(params.slug)) throw data({ message: "not_found" }, { status: 404 });
   const page = params.page ? Number(params.page) : 1;
-  if (params.page !== undefined && (!/^\d+$/.test(params.page) || page < 1)) throw new Response("Not found", { status: 404 });
+  if (params.page !== undefined && (!/^\d+$/.test(params.page) || page < 1)) throw data({ message: "not_found" }, { status: 404 });
   // Page 1 lives at the topic's own address (308), in the reader's language.
   if (params.page === "1") throw redirect(localizePath(`/topics/${encodeURIComponent(params.slug)}`, localeOf(pagePathname(request))), 308);
-  const data = await loadOr404<TopicPage>(apiIn(`/topics/${encodeURIComponent(params.slug)}?page=${page}`, localeOf(pagePathname(request))), { signal: request.signal });
-  return cachedPage(60, { data });
+  const pageData = await loadOr404<TopicPage>(apiIn(`/topics/${encodeURIComponent(params.slug)}?page=${page}`, localeOf(pagePathname(request))), { signal: request.signal });
+  return cachedPage(60, { data: pageData });
 }
 
 const PARTS = await loadParts((m) => m.topicPage);
@@ -118,14 +117,10 @@ export default function TopicRoute() {
   // Another page of this topic on its way: the list it replaces dims, if the wait is long enough to notice.
   const navigation = useNavigation();
   const paging = navigation.state === "loading" && !!navigation.location && pagePath(navigation.location.pathname).startsWith(`/topics/${topic.slug}`);
-  // Desktop back, as on the article page and the phone bar; opened directly, up to all topics.
-  const { behind, onClick: goBack } = useHistoryBack();
   return (
     <div className="pb-6">
       <PhoneBar back={{ to: UP.to, label: UP.back }} title={name} />
-      <Link to={UP.to} onClick={goBack} className="hidden items-center gap-1.5 py-2 text-ui-label text-ink-3 transition-colors hover:text-accent lg:inline-flex touch:min-h-11">
-        <IconArrowLeft size={14} />{behind ? t(" 返回", " Back") : t(<> 返回{t(UP.back)}</>, <> Back to {t(UP.name)}</>)}
-      </Link>
+      <BackLink to={UP.to} label={t(`返回${t(UP.back)}`, `Back to ${t(UP.name)}`)} showPrevious={false} />
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 pb-5 pt-3 lg:pt-1">
         <div className="min-w-0 max-w-[760px]">
           <p className="text-ui-caption font-semibold tracking-[0.08em] text-accent">{t(topic.groupName, TOPIC_GROUP_EN[topic.group]?.name ?? topic.groupName)}</p>

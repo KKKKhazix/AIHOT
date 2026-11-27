@@ -68,6 +68,12 @@ test("multiple preview providers fail installation without replacing the install
   const first = { name: "first", preview: async () => null };
   installModules([first]);
   assert.throws(() => installModules([first, { name: "second", preview: async () => null }]), /preview/i);
+  assert.throws(() => installModules([{ name: "a", admin: async () => null }, { name: "b", admin: async () => null }]), /admin/i);
+  assert.throws(() => installModules([{ name: "a", editorial: {} }, { name: "b", editorial: {} }]), /editorial/i);
+  assert.throws(() => installModules([{ name: "dup" }, { name: "dup" }]), /Duplicate module name/i);
+  assert.throws(() => installModules([{ name: "a", models: { m: { label: "M", env: "M", purposes: [] } } }, { name: "b", models: { m: { label: "M2", env: "M2", purposes: [] } } }]), /Duplicate module model step/i);
+  assert.throws(() => installModules([{ name: "a", sourceUses: { u: { label: "U" } } }, { name: "b", sourceUses: { u: { label: "U2" } } }]), /Duplicate module source use/i);
+  assert.throws(() => installModules([{ name: "a", schedules: [{ name: "s", cron: "* * * * *", run: async () => {} }] }, { name: "b", schedules: [{ name: "s", cron: "* * * * *", run: async () => {} }] }]), /Duplicate module schedule/i);
   assert.deepEqual(serverModules(), [first]);
 });
 

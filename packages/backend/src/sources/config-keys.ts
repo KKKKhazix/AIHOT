@@ -1,6 +1,7 @@
 // The config keys each kind of source implements. Anything else is refused: a key a collector does not
 // know would otherwise fall back silently to the generic parse (menus and sentence fragments as
 // articles, dates never found).
+import { isValidPublisherPrefix } from "../content/provenance.ts";
 import type { SourceRow } from "./types.ts";
 
 // Rules applied in collect.ts to every kind read through collectSource.
@@ -37,7 +38,7 @@ const NESTED: Record<string, string[]> = {
   ],
 };
 
-/** Article widgets to preserve (PreserveRule in content/extract.ts): { selector, as: "pre" | "table" }, a code block's `code` and `caption` parts. */
+/** Article widgets to preserve (PreserveRule in content/readable.ts): { selector, as: "pre" | "table" }, a code block's `code` and `caption` parts. */
 const preserveRules = (value: unknown) => Array.isArray(value) && value.every((rule) => {
   if (!rule || typeof rule !== "object") return false;
   const selector = (key: string) => typeof rule[key] === "string" && rule[key].trim() !== "";
@@ -74,10 +75,7 @@ export function unsupportedConfig(kind: SourceRow["kind"], config: Record<string
     else if (key === "publishedAtForFallbackUrl" && (typeof value !== "boolean"
       || value && (!config.urlTemplate || !config.urlTemplateFallback || !config.publishedAtPath))) out.push(key);
     else if (key === "acceptLanguage" && (typeof value !== "string" || !ACCEPT_LANGUAGE.test(value))) out.push(key);
-    else if (key === "publisherUrlPrefixes" && (!Array.isArray(value) || !value.every((v) => {
-      if (typeof v !== "string") return false;
-      try { const u = new URL(v); return /^https?:$/.test(u.protocol) && !u.username && !u.password && !u.search && !u.hash; } catch { return false; }
-    }))) out.push(key);
+    else if (key === "publisherUrlPrefixes" && (!Array.isArray(value) || !value.every(isValidPublisherPrefix))) out.push(key);
     else if (VALUES[key] && !VALUES[key]!.includes(String(value))) out.push(`${key}=${String(value)}`);
     else if (NESTED[key] && value && typeof value === "object") {
       for (const sub of Object.keys(value)) if (!NESTED[key]!.includes(sub)) out.push(`${key}.${sub}`);

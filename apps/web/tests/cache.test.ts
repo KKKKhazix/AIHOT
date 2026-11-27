@@ -322,3 +322,34 @@ test("a web server assigned port zero serves its own canonical address", async (
     assert.ok((await response.text()).includes(`rel="canonical" href="${ephemeral.origin}/about"`));
   } finally { await ephemeral.stop(); }
 });
+
+test("public routes turn upstream 503 into 503 instead of 500", async () => {
+  const routeApi = fakeApi((url, res) => {
+    if (url.pathname === "/api/site/reports/daily/2026-10-15") {
+      return {
+        kind: "daily", key: "2026-10-15", title: "日报", generatedAt: new Date().toISOString(),
+        lead: null, leadItemId: null, overview: null, sections: [], flashes: [], metrics: {},
+      };
+    }
+    if ([
+      "/api/site/changelog",
+      "/api/site/reports/daily",
+      "/api/site/topics",
+      "/api/site/reports/daily/navigation/2026-10-15",
+    ].includes(url.pathname)) {
+      res.statusCode = 503;
+      return { code: "unavailable" };
+    }
+  });
+  const srv = await startWebServer(routeApi);
+  try {
+    for (const pathname of ["/changelog", "/daily/archive", "/topics", "/daily/2026-10-15"]) {
+      const res = await fetch(srv.origin + pathname);
+      assert.equal(res.status, 503, pathname);
+      assert.equal(res.headers.get("Cache-Control"), "private, no-store", pathname);
+      await res.text();
+    }
+  } finally {
+    await srv.stop();
+  }
+});

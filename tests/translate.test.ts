@@ -581,7 +581,7 @@ const shutdownProvider = await stub(async (_hit, req) => {
 function runTranslation() {
   const script = `
     import { translatePending } from '@aihot/backend/editorial/translate';
-    import { shutdownSignal } from '@aihot/backend/jobs/queue';
+    import { shutdownSignal } from '@aihot/backend/lib/shutdown';
     import { closeDb } from '@aihot/backend/db';
     process.on('SIGTERM', () => { shutdownSignal.abort(); process.send({ stopped: true }); });
     try { process.send({ result: await translatePending({ limit: 1 }) }); }

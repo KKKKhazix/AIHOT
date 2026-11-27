@@ -26,7 +26,9 @@ import { chatJson } from "../providers/llm.ts";
 import { completeReceipt, failedReceiptId, failureKind } from "../providers/receipts.ts";
 import { embeddingsAvailable } from "../providers/embeddings.ts";
 import { isHistorical, newsCondition } from "../content/materials.ts";
-import { articlePriority, enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
+import { quotedTweetIdSql } from "../content/posts.ts";
+import { articlePriority, enqueue, QUEUES } from "../jobs/queue.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
 import { syncArticleEventCopyTx } from "./copy.ts";
 import { editorialPolicy } from "../modules.ts";
 import { publishArticle, publishArticleTx, republishTx } from "../publication/publish.ts";
@@ -621,7 +623,7 @@ async function reclaimWaiting(tweetId: string): Promise<number> {
   const posts = await sql<{ id: string }[]>`
     SELECT a.id FROM articles a JOIN sources s ON s.id = a.source_id
     WHERE a.discovered_at > now() - make_interval(hours => ${WAIT_HOURS}) AND ${unattachedSignal}
-      AND (a.x_post->>'replyTo' = ${tweetId} OR coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)')) = ${tweetId})`;
+      AND (a.x_post->>'replyTo' = ${tweetId} OR ${quotedTweetIdSql()} = ${tweetId})`;
   for (const p of posts) await enqueue(QUEUES.group, { articleId: p.id, signalOnly: true }, { singletonKey: p.id, priority: articlePriority({ signal: true, historical: false }) });
   return posts.length;
 }

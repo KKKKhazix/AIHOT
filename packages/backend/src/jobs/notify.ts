@@ -1,7 +1,7 @@
 // Content pushes: newly selected items, and the images they need prepared first.
 import type { PgBoss } from "pg-boss";
 import { pushSelected } from "../notify/selected.ts";
-import { prepareArticleMedia, warmShareImage } from "../media/prepare.ts";
+import { prepareArticleMedia, warmShareImage } from "./media.ts";
 import { convertAnimated, convertAvif, prepareGifVideo } from "../media/images.ts";
 import { enqueue, QUEUES, work } from "./queue.ts";
 

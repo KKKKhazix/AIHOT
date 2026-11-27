@@ -8,7 +8,7 @@ import sharp from "sharp";
 import { config } from "../config.ts";
 import { sql } from "../db.ts";
 import { sha256 } from "../lib/ids.ts";
-import { loadContact, type ContactSettings } from "../site/contact.ts";
+import { loadContact, saveContact, type ContactSettings } from "../site/contact.ts";
 import { audit } from "../audit.ts";
 import { pushEnabled } from "../notify/deliver.ts";
 
@@ -27,8 +27,7 @@ export async function replaceContactQr(input: { slot: keyof ContactSettings; dat
   await writeFile(path.join(dir, name), input.data);
   const before = await loadContact();
   const next = { ...before, [input.slot]: `/contact/${name}` };
-  await sql`INSERT INTO settings (key, value, updated_by) VALUES ('contact_qr', ${sql.json(next)}, ${actor})
-            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`;
+  await saveContact(next, actor);
   await audit(actor, "settings.contact_qr", "settings:contact_qr", null, { [input.slot]: before[input.slot] }, { [input.slot]: next[input.slot] });
   return next;
 }

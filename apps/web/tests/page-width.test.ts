@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { chromium, webkit, expect, type Browser, type Page } from "@playwright/test";
-import type { ReportDetail, ReportKind } from "@aihot/contracts/site";
+import type { ReportDetail, ReportKind } from "@aihot/contracts/reports";
 import { FIXTURE_AT as at, fakeApi, feedItem, itemDetail, startWebServer, visit, type WebServer } from "./web-server.ts";
 
 const longText = "查看完整说明 https://example.org/announcements/" + "a".repeat(100) + "。";

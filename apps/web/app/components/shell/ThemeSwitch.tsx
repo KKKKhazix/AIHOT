@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { IconMonitor, IconMoon, IconSun } from "../icons";
 import { applyTheme, resolvedTheme, setThemePreference, useThemePreference, type ThemePreference } from "../../lib/local-state";
 import { reducedMotion } from "../../lib/motion";
-import { isHydrated } from "../../lib/hydration";
+import { isHydrated, useHydrated } from "../../lib/hydration";
 import { L, useT, type Phrase } from "../../lib/i18n";
 
 type Choice = "dark" | "system" | "light";
@@ -19,10 +19,9 @@ export function ThemeSwitch({ className = "", compact = false }: { className?: s
   const t = useT();
   // Opened after hydration (the 更多 menu), it is drawn at this browser's choice from its first frame. The thumb
   // glides only once it has taken that choice: arriving there after hydration is not a change.
-  const [mounted, setMounted] = useState(isHydrated);
+  const mounted = useHydrated();
   const [glides, setGlides] = useState(isHydrated);
   useEffect(() => {
-    setMounted(true);
     const frame = requestAnimationFrame(() => setGlides(true));
     return () => cancelAnimationFrame(frame);
   }, []);

@@ -2,9 +2,9 @@
 // uncertain HTTP results safe to retry with the same ID. Execution/claim/retry state belongs to the hub.
 import { createHash } from "node:crypto";
 import { ADMIN } from "@aihot/site";
-import { credential, config } from "../config.ts";
+import { config, credential, feishuInternalEnabled } from "../config.ts";
 import { sql } from "../db.ts";
-import { feishuInternalEnabled, type Finding } from "./feishu.ts";
+import type { Finding } from "../lib/alerts.ts";
 
 interface Event { id: string; type: string; subject: string; summary: string; detail: string; link: string }
 interface Receipt { event: Event; accepted: boolean; queuedAt: string; lastError?: string }
@@ -84,4 +84,20 @@ export async function wakeAgent(f: Finding, now = Date.now()): Promise<boolean> 
 /** Whether the hub took the day's list. */
 export async function wakeDigest(date: string, count: number): Promise<boolean> {
   return publish({id:`digest:${date}`,type:"alert.digest",subject:`digest:${date}`,summary:`系统日报 ${date}`,detail:`${count} 项待跟进`,link:runsLink()});
+}
+
+/** Deletes hub-accepted agent event receipts queued before `before` (daily retention). */
+export async function pruneAcceptedAgentEvents(before: Date): Promise<number> {
+  const deleted = await sql`DELETE FROM settings WHERE key LIKE 'webhook.event.%' AND value->>'accepted' = 'true'
+    AND (value->>'queuedAt')::timestamptz < ${before}`;
+  return deleted.count;
+}
+
+/** Lists hub-accepted agent event receipts matching a subject prefix within [since, until). */
+export async function listAcceptedAgentEvents(subjectPrefix: string, since: Date, until: Date): Promise<Array<{ event: { detail?: string }; queuedAt: string }>> {
+  const rows = await sql<Array<{ value: { event: { detail?: string }; queuedAt: string } }>>`SELECT value FROM settings
+    WHERE key LIKE 'webhook.event.%' AND value->>'accepted' = 'true'
+      AND value->'event'->>'subject' LIKE ${`${subjectPrefix}%`}
+      AND (value->>'queuedAt')::timestamptz >= ${since} AND (value->>'queuedAt')::timestamptz < ${until}`;
+  return rows.map((r) => r.value);
 }

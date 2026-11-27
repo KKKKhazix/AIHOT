@@ -9,7 +9,7 @@ import { ENGLISH } from "@aihot/contracts/english";
 import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { archiveLd, breadcrumbLd, pageMeta } from "../lib/seo";
-import { monthDay, monthDayTime } from "../lib/format";
+import { formatCount, monthDay, monthDayTime } from "../lib/format";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/Page";
 import { IconChevronDown, IconInfo } from "../components/icons";
@@ -22,7 +22,7 @@ import { navUp } from "../components/shell/nav";
 import { scrollBehavior } from "../lib/motion";
 import { foldTo } from "../lib/disclosure";
 import type { Screen } from "../components/shell/screens";
-import { apiIn, L, localeOf, translator, useLocale, useT, type Locale, type Phrase } from "../lib/i18n";
+import { apiIn, L, localeOf, translator, useLocale, useT, type Phrase } from "../lib/i18n";
 
 export const handle: Screen = { tab: navUp("/hot").tab, name: L("热点", "Trending") };
 export { pageHeaders as headers } from "../lib/api.server";
@@ -70,8 +70,7 @@ const BADGES: Record<HotEntryView["badges"][number], { label: Phrase; tone: "hot
 const RANK_COLOR = ["text-rank-1", "text-rank-2", "text-rank-3"];
 const rankColor = (rank: number) => RANK_COLOR[rank - 1] ?? "text-rank-rest";
 const pad = (rank: number) => String(rank).padStart(2, "0");
-/** A number as the page's language writes it: 1240 in Chinese, 1,240 in English. */
-const num = (n: number, locale: Locale) => (locale === "en" ? n.toLocaleString("en-US") : String(n));
+const num = formatCount;
 
 /** "某媒体、某账号 等 4 个来源 · 7 位参与者". */
 function Voices({ e }: { e: HotEntryView }) {

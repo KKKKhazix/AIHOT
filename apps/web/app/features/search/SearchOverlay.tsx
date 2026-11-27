@@ -6,6 +6,7 @@ import { Form, useLocation, useNavigation } from "react-router";
 import type { SearchSuggestions } from "@aihot/contracts/site";
 import { IconClose, IconSearch } from "../../components/icons";
 import { topicsInNav } from "../../components/shell/nav";
+import { DESKTOP_MEDIA } from "../../components/shell/screens";
 import { addRecentSearch, clearRecentSearches, useRecentSearches } from "../../lib/local-state";
 import { useModal } from "../../components/ui/modal";
 import { Collapse, Presence } from "../../components/ui/Presence";
@@ -101,7 +102,7 @@ export function SearchOverlay() {
     // that fails takes them down rather than leave old ones standing.
     void loadSuggestions(locale).then(value => { if (active) setMore(value); }).catch(() => { if (active) setMore(null); });
     // At the desktop breakpoint this layer is hidden by CSS; it must stop holding the page still too.
-    const desktop = window.matchMedia("(min-width: 700px)");
+    const desktop = window.matchMedia(DESKTOP_MEDIA);
     const onResize = () => { if (desktop.matches) close(); };
     onResize();
     desktop.addEventListener("change", onResize);

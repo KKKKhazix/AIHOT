@@ -3,7 +3,7 @@
 import "./setup.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ReportCitation } from "@aihot/contracts/site";
+import type { ReportCitation } from "@aihot/contracts/reports";
 import { leadItemOf } from "@aihot/backend/publication/reports";
 
 const cite = (itemId: string, title: string, available = true) => ({ itemId, title, available }) as ReportCitation;

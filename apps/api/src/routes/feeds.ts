@@ -3,6 +3,7 @@ import { inLanguage } from "@aihot/contracts/i18n";
 // feed is also at /en/feed…, in English (publication/feeds.ts).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { READER_LANGUAGES } from "@aihot/contracts/english";
+import { REPORT_KINDS } from "@aihot/contracts/reports";
 import { isFeedCategory, itemFeed, reportFeed, type FeedLanguage, type ItemFeedKind } from "@aihot/backend/publication/feeds";
 import { serverModules } from "@aihot/backend/modules";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
@@ -38,7 +39,7 @@ function registerIn(app: FastifyInstance, lang: FeedLanguage) {
   app.get(at("/feed.xml"), item("selected"));
   app.get(at("/feed/full.xml"), item("selected-full"));
   app.get(at("/feed/all.xml"), item("all"));
-  for (const kind of ["daily", "weekly", "monthly"] as const) {
+  for (const kind of REPORT_KINDS) {
     app.get(at(`/feed/${kind}.xml`), async (req, reply) => {
       try {
         return await sendFeed(req, reply, await reportFeed(kind, lang), lang);

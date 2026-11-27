@@ -7,8 +7,12 @@ const VARIANTS: Record<Variant, string> = {
   secondary: "border border-line-strong bg-surface text-ink-2 hover:border-ink-4 hover:text-ink disabled:opacity-50",
 };
 
-type Size = "md" | "lg";
-const SIZES: Record<Size, string> = { md: "h-11 px-4 text-ui-label-lg lg:h-9", lg: "h-11 px-5 text-ui-body-sm-plus" };
+type Size = "sm" | "md" | "lg";
+const SIZES: Record<Size, string> = {
+  sm: "h-11 px-3.5 text-ui-caption-lg lg:h-8 touch:h-11",
+  md: "h-11 px-4 text-ui-label-lg lg:h-9 touch:h-11",
+  lg: "h-11 px-5 text-ui-body-sm-plus",
+};
 
 /** The pill button's classes, for links that look like buttons. */
 export function buttonClass(variant: Variant = "secondary", size: Size = "md"): string {

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { MediaView } from "@aihot/contracts/site";
+import { IconPlay } from "../../components/icons";
 import { Lightbox } from "../../components/ui/Lightbox";
 import { Picture } from "../../components/ui/Picture";
 import { useT } from "../../lib/i18n";
@@ -9,9 +10,7 @@ function PlayMark() {
   return (
     <span className="absolute inset-0 grid place-items-center" aria-hidden="true">
       <span className="grid size-11 place-items-center rounded-full bg-black/55 text-white ring-1 ring-white/30 backdrop-blur-sm transition-transform group-hover:scale-105">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="ml-0.5">
-          <path d="M7 4.5v15a1 1 0 001.5.87l13-7.5a1 1 0 000-1.74l-13-7.5A1 1 0 007 4.5z" />
-        </svg>
+        <IconPlay size={16} className="ml-0.5" />
       </span>
     </span>
   );

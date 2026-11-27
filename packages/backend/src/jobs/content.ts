@@ -8,12 +8,14 @@ import type { PgBoss } from "pg-boss";
 import { sql, type Db } from "../db.ts";
 import { extractArticleBody, pageFetchable } from "../content/extract.ts";
 import { analyzeArticle } from "../editorial/analyze.ts";
+import { ANALYSIS_PURPOSES } from "../editorial/models.ts";
 import { isHistorical } from "../content/materials.ts";
 import { publishArticle } from "../publication/publish.ts";
 import { BudgetExceededError, failedReceiptId, failureKind } from "../providers/receipts.ts";
 import { editorialPolicy } from "../modules.ts";
-import { readsWhole } from "../sources/uses.ts";
-import { articlePriority, enqueue, QUEUES, shutdownSignal, work } from "./queue.ts";
+import { readsWhole, sourceFetchesBody } from "../sources/uses.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
+import { articlePriority, enqueue, QUEUES, work } from "./queue.ts";
 
 /** Minutes to wait after the n-th failed attempt; one more failure after the last ends in "failed". */
 const RETRY_MINUTES = [5, 10, 20, 40, 60, 120, 240, 360];
@@ -50,7 +52,7 @@ async function route(articleId: string, db: Db): Promise<Route | null> {
   const signal = row.participation_mode !== "editorial";
   const whole = readsWhole(row) && (!signal || !historical);
   const pending = row.body_status === "pending";
-  const wantsBody = row.config.fetchPublicContent === true || !!row.config.detail || row.kind === "web_list";
+  const wantsBody = sourceFetchesBody(row.kind, row.config);
   const needsPage = whole && pageFetchable(row.url, row.kind) && (wantsBody || row.bare);
   const needsXArticle = row.kind === "x_search" && (whole || (row.participation_mode === "hot_signal" && !historical));
   return { step: pending && (needsPage || needsXArticle) ? "extract" : "analyze", signal, historical };
@@ -247,17 +249,11 @@ export async function sweepUnprocessed(): Promise<{ enqueued: number }> {
 }
 
 /**
- * The receipts of an article's analysis: an unknown outcome on any of them stops the article
- * ("failed"). Extraction never does: it retries, then judges the article on what it has.
- */
-const ARTICLE_STEPS = new Set(["prefilter_article", "score_article", "structure_article", "understand_article", "summarize_article", "mend_wording"]);
-
-/**
  * After a receipt is released (operations/recover.ts), the article that stopped on it goes straight
  * back to processing: one action, not two. Returns whether it was queued.
  */
 export async function resumeAfterRelease(receipt: { purpose: string; subject: string | null }, db: Db): Promise<boolean> {
-  const isAnalysisStep = ARTICLE_STEPS.has(receipt.purpose) || Boolean(editorialPolicy().analysisPurposes?.includes(receipt.purpose));
+  const isAnalysisStep = ANALYSIS_PURPOSES.has(receipt.purpose) || Boolean(editorialPolicy().analysisPurposes?.includes(receipt.purpose));
   const article = isAnalysisStep ? /^article:([^@:#]+)/.exec(receipt.subject ?? "")?.[1] : undefined;
   if (!article) return false;
   const [a] = await db`UPDATE articles SET processing_state = 'new', processing_attempts = 0, processing_retry_at = NULL, processing_error = NULL

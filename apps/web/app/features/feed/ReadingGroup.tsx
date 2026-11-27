@@ -121,7 +121,7 @@ function LoadState({ loading, error, onRetry, empty, rows, tall = false }: { loa
       </ul>
     );
   }
-  if (error) return <button type="button" onClick={onRetry} className="min-h-11 py-1 text-ui-caption-lg text-hot lg:min-h-0">{t("加载失败，重试", "Couldn't load. Retry")}</button>;
+  if (error) return <button type="button" onClick={onRetry} className="min-h-11 py-1 text-ui-caption-lg text-hot lg:min-h-0 touch:min-h-11">{t("加载失败，重试", "Couldn't load. Retry")}</button>;
   return null;
 }
 

@@ -4,6 +4,8 @@
 //   today — money at risk or only the owner can act: sent at once, repeated at most daily, recovery reported.
 //   later — other follow-ups: one 09:00 list a day for the agent (the owner's only without one). A source's follow-up is
 //           closed on its own: a fix removes it, and one judged not worth fixing is closed with a reason.
+// A problem that turns more urgent is told at once. One that comes and goes (Finding.settles) recovers only after
+// staying gone that long; back sooner, it is the same incident and nothing new is sent.
 // A finding with agentOnly is still now or today, but it only wakes the agent: nothing is sent when it
 // opens, nothing is sent when it clears, and it stays off the 09:00 digest.
 // With an agent taking the alerts (notify/agent.ts), a now or today problem that is not the owner's own
@@ -37,6 +39,9 @@ const HANDED_MS: Record<Exclude<Level, "later">, number> = { now: 3600_000, toda
 /** The handoff that tells the owner a problem keeps coming back, counted over a day; told at most once a day. */
 const RETURNS = 3;
 const DAY_MS = 86_400_000;
+const LEVEL_RANK: Record<Level, number> = { later: 0, today: 1, now: 2 };
+/** An open problem told at one level that now needs a more urgent one (a provider's fault turning into the site's own). */
+const escalated = (open: AlertEntry, f: Finding) => !!open.level && LEVEL_RANK[f.level] > LEVEL_RANK[open.level];
 
 // Valves default off: read at call time, only an explicit "true" turns them on.
 const collecting = () => process.env.COLLECT_ENABLED === "true";
@@ -144,6 +149,12 @@ async function contentCollection(now: number, open: AlertState): Promise<Finding
  */
 const FAILING_SHARE = 0.15;
 const FAILING_SOURCES = 50;
+/**
+ * A provider's outage comes and goes: 2026-11-21..26 SocialData's alert opened and recovered 15 times (37
+ * messages; on 11-24 twelve), the share of failing sources swinging around the threshold. Back within three
+ * hours it is the same outage; replayed on those six days the owner would have had about 10 messages.
+ */
+const PROVIDER_OUTAGE_SETTLES_MS = 3 * 3600_000;
 const PROVIDER_ANSWER = "^([a-z_]+) HTTP 5[0-9]{2}:";
 
 async function sourcesFailing(now: number, open: AlertState): Promise<FindingWithCoverage[]> {
@@ -189,6 +200,7 @@ async function sourcesFailing(now: number, open: AlertState): Promise<FindingWit
     action: "不用处理，是对方的故障；恢复后会再发一条通知",
     detail,
     since,
+    settles: PROVIDER_OUTAGE_SETTLES_MS,
     // The provider alert already covers these failures. Other errors and other problems on the same
     // source still need their own follow-up (2026-11-23: 55 copies of a single SocialData outage).
     coveredSourceFailures: answered.map(id => `sources.failing.${id}`),
@@ -461,6 +473,11 @@ interface AlertEntry {
   title: string;
   since: string;
   sentAt?: string;
+  /** The level last told: a problem that turns more urgent is told at once (escalated). */
+  level?: Level;
+  /** Finding.settles of the latest finding, and the first round that no longer found it. */
+  settles?: number;
+  goneAt?: string;
   agentOnly?: true;
   privateOwner?: true;
   privateNotice?: PrivateNotice;
@@ -628,7 +645,7 @@ export async function checkAlerts(now = Date.now()) {
         continue;
       }
     }
-    if (open?.sentAt && now - Date.parse(open.sentAt) <= REPEAT_MS[f.level]) continue;
+    if (open?.sentAt && now - Date.parse(open.sentAt) <= REPEAT_MS[f.level] && !escalated(open, f)) continue;
     const since = open ? new Date(open.since) : (f.since ?? new Date(now));
     // Claim AI was notified only after the hub actually accepts this incident's wake; persist the occurrence
     // timestamp first so a failed owner send or crash after waking cannot mint a second incident ID on retry.
@@ -654,8 +671,16 @@ export async function checkAlerts(now = Date.now()) {
       continue;
     }
     await sendAlert(msg.title, msg.lines);
-    state[f.key] = { ...entry, sentAt: new Date(now).toISOString() };
+    state[f.key] = { ...entry, sentAt: new Date(now).toISOString(), level: f.level };
     sent.push(f.key);
+  }
+  for (const f of all) {
+    const open = state[f.key];
+    if (!open) continue;
+    const { settles: _settles, goneAt: _goneAt, ...entry } = open;
+    // An incident told before levels were kept: from here on its level is the one found now.
+    if (entry.sentAt && !entry.level) entry.level = f.level;
+    state[f.key] = f.settles ? { ...entry, settles: f.settles } : entry;
   }
   const found = new Set(all.map((f) => f.key));
   const dailies = await settleDailies(state, found, now);
@@ -667,7 +692,14 @@ export async function checkAlerts(now = Date.now()) {
       delete state[key];
       continue;
     }
-    const msg = formatRecovery(open.title, new Date(open.since), now);
+    // Gone for less than its settling time, counted from the first round that no longer found it: it may
+    // come back as the same incident, so nothing is told yet.
+    const goneAt = open.settles ? Date.parse(open.goneAt ?? new Date(now).toISOString()) : null;
+    if (goneAt !== null && now - goneAt < open.settles!) {
+      state[key] = { ...open, goneAt: new Date(goneAt).toISOString() };
+      continue;
+    }
+    const msg = formatRecovery(open.title, new Date(open.since), goneAt ?? now);
     if (open.privateOwner) {
       await tellPrivate(key, open, msg, true);
       continue;

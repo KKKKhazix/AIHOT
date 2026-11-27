@@ -1,6 +1,8 @@
 // SocialData (X search). Paid per request: every call goes through receipts and the budget.
+import { setTimeout as sleep } from "node:timers/promises";
 import { credential } from "../config.ts";
 import { guardedFetch } from "../lib/http-fetch.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
 import { assertAccepted, paidRequest, ProviderRejectedError, type CallOutcome, type ReceiptRequest, type ReceiptResult } from "./receipts.ts";
 
 export interface SdUser {
@@ -58,11 +60,43 @@ function apiBase(): string {
 }
 
 /**
+ * SocialData answered with a server error: it could not get the data from X this time. Its docs: try again
+ * later, a retry typically succeeds, and failed requests are not billed. Production 2026-11-21..26: its
+ * search answered 500 to one request in five (nine in ten in the worst hours) while its post and article
+ * lookups, and every website, kept working. It is not the account's own failure (sources/collect.ts).
+ */
+export function socialdataServerError(error: unknown): boolean {
+  return error instanceof ProviderRejectedError && (error.status ?? 0) >= 500 && error.message.startsWith("socialdata ");
+}
+
+/**
+ * Waits before each new try after a server error. In that outage the same search asked again 15 s later
+ * worked about a third of the time, and any search 10–60 s after a failure about half; asking at once
+ * did worse. Tests shorten it.
+ */
+export const serverErrorRetryDelaysMs = [15_000, 30_000];
+
+/**
  * One paid GET behind a receipt; `settle` turns the parsed answer into what the receipt keeps. A lookup
  * passes the usage of its 404 as `missing`: the post or article does not exist, an answer that costs
- * nothing. Any other status outside 2xx means SocialData did not take the request (assertAccepted).
+ * nothing. Any other status outside 2xx means SocialData did not take the request (assertAccepted); a
+ * server error is asked again after each delay above, each try its own attempt on the same receipt and
+ * budget. A timeout is never asked again here: SocialData may have answered, and billed, it.
  */
 async function get<T>(path: string, request: Omit<ReceiptRequest, "service">,
+  read: { timeoutMs: number; maxBytes: number; missing?: Record<string, unknown>; settle: (json: T) => CallOutcome }): Promise<ReceiptResult> {
+  for (let tries = 0; ; tries++) {
+    try {
+      return await getOnce(path, request, read);
+    } catch (error) {
+      const delay = serverErrorRetryDelaysMs[tries];
+      if (delay === undefined || !socialdataServerError(error)) throw error;
+      await sleep(delay, undefined, { signal: shutdownSignal.signal });
+    }
+  }
+}
+
+async function getOnce<T>(path: string, request: Omit<ReceiptRequest, "service">,
   read: { timeoutMs: number; maxBytes: number; missing?: Record<string, unknown>; settle: (json: T) => CallOutcome }): Promise<ReceiptResult> {
   const key = credential("collectors", "SOCIALDATA_API_KEY");
   if (!key) throw new Error("SOCIALDATA_API_KEY is not configured");

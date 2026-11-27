@@ -112,6 +112,11 @@ interface FindingFields {
    * stays on the ops list only.
    */
   agentOnly?: true;
+  /**
+   * How long it must stay gone before its recovery is told; back within that time it is the same incident and
+   * nothing is sent (operations/alerts.ts). For problems that come and go, such as a provider's outage.
+   */
+  settles?: number;
 }
 
 /**

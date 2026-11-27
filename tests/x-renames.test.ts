@@ -10,6 +10,7 @@ import { stopBoss } from "@aihot/backend/jobs/queue";
 import { republishKey } from "@aihot/backend/jobs/publication";
 import { followXRenames } from "@aihot/backend/sources/x-renames";
 import { ProviderRejectedError } from "@aihot/backend/providers/receipts";
+import { serverErrorRetryDelaysMs } from "@aihot/backend/providers/socialdata";
 
 const DAY = 86400_000;
 const PRIVATE_MESSAGE = "Forbidden: Requested resource cannot be viewed due to user's privacy settings";
@@ -43,6 +44,8 @@ const socialdata = await stub((_hit, req) => {
 process.env.SOCIALDATA_BASE_URL = socialdata.url;
 process.env.SOCIALDATA_API_KEY = "test-key";
 config.allowPrivateNetworkFetch = true;
+// Server errors are asked again at once here, not after the production waits.
+serverErrorRetryDelaysMs.fill(0);
 
 before(async () => {
   await sql`UPDATE budgets SET per_minute = 1000, per_hour = 10000, per_day = 100000 WHERE service = 'socialdata'`;

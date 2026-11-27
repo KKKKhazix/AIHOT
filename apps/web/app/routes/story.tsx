@@ -74,8 +74,6 @@ const STATUS = {
 // Section anchors keep the old page's ids so shared links still land in the right place.
 const SECTIONS = { overview: "event-overview", reports: "event-reports", heat: "event-heat" } as const;
 
-const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-
 /** A main-column card: 17px title, 24px padding. */
 function Panel({ id, title, sub, right, children, className = "" }: { id?: string; title: ReactNode; sub?: ReactNode; right?: ReactNode; children: ReactNode; className?: string }) {
   return (
@@ -112,7 +110,7 @@ function TimelineRow({ r }: { r: StoryReportView }) {
   const [clamped, setClamped] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
   // Against two of its lines, not the box's height, which a fold or unfold under way is still changing.
-  useIsoLayoutEffect(() => {
+  useLayoutEffect(() => {
     const el = ref.current;
     if (el && !open) setClamped(el.scrollHeight > 2 * parseFloat(getComputedStyle(el).lineHeight) + 1);
   }, [r.summary, open]);

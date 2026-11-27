@@ -276,7 +276,8 @@ test("modules do not import other modules", () => {
 // The web's own code: the app, the modules' pages, and the site's pages and drawings, stylesheets included.
 // Each line is read without its comments: a word in a comment is neither a class nor a call.
 const WEB_CODE = /\.(?:tsx?|css)$/;
-const webLines = () => [...sources("apps/web/app", WEB_CODE), ...moduleWeb(WEB_CODE), ...sources("site", WEB_CODE)].flatMap(({ file, text }) =>
+const webSources = (kind = WEB_CODE) => [...sources("apps/web/app", kind), ...moduleWeb(kind), ...sources("site", kind)];
+const webLines = () => webSources().flatMap(({ file, text }) =>
   text.split("\n")
     .map((line, i) => ({ file, at: `${file}:${i + 1}`, line: line.replace(/\/\*.*?\*\//g, "").replace(/(^|\s)\/\/.*$/, "") }))
     .filter(({ line }) => !/^\s*(\/\/|\/\*|\*)/.test(line)));
@@ -313,6 +314,12 @@ test("the clipboard is written only through lib/clipboard.ts", () => {
     .filter(({ file, line }) => file !== "apps/web/app/lib/clipboard.ts" && /navigator\.clipboard|execCommand\(\s*["']copy/.test(line))
     .map(({ at }) => at);
   assert.deepEqual(found, [], "copy with copyText from lib/clipboard.ts");
+});
+
+test("components use React's layout effect directly", () => {
+  const environmentChoice = /typeof\s+window\s*[!=]==?\s*["']undefined["']\s*\?\s*(?:useLayoutEffect\b|(?:useEffect|\(\s*\)\s*=>\s*\{\s*\})\s*:\s*useLayoutEffect\b)/;
+  const copies = webSources(/\.tsx?$/).filter(({ text }) => environmentChoice.test(text));
+  assert.deepEqual(copies.map(({ file }) => file), [], "直接使用 React 的 useLayoutEffect，服务端渲染会跳过它");
 });
 
 // Scripts read the reader's reduced-motion preference through apps/web/app/lib/motion.ts (reducedMotion,

@@ -9,8 +9,6 @@ import { markBack } from "./transitions";
 import { useNavigate } from "../../lib/link";
 import { useT, type Text } from "../../lib/i18n";
 
-const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-
 export interface BackTarget {
   /** Where back goes when this page was opened directly (no page of ours behind it). */
   to: string;
@@ -66,7 +64,7 @@ function BackButton({ to, label }: BackTarget) {
   const { key } = useLocation();
   const t = useT();
   const [text, setText] = useState(t(label));
-  useIsoLayoutEffect(() => {
+  useLayoutEffect(() => {
     if (historyIndex() === 0) return setText(t(label));
     const behind = previousScreen();
     setText(behind ? t(behind) : t("返回", "Back"));

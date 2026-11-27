@@ -100,7 +100,7 @@ export async function checkMpAccount(sourceId: string, reason: "schedule" | "man
       // A body fetched again arrives as a new revision (analysed again); stop retrying it.
       if (known) await sql`UPDATE articles SET raw = raw #- '{dajiala,bodyRetry}' WHERE id = ${known.id}`;
       if (res.created) created += 1;
-      if (res.created || res.revised || res.processingNeeded) await queueProcessing(res.articleId);
+      if (res.processingNeeded) await queueProcessing(res.articleId);
     }
     const cursor = { ...(source.cursor ?? {}), lastCheckedAt: new Date().toISOString(), lastPostTime: posts[0]?.post_time ?? source.cursor?.lastPostTime ?? null, remainMoney: history.remainMoney };
     await sql.begin(async tx => {

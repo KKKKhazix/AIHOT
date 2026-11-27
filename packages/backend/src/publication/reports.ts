@@ -2,6 +2,7 @@
 // listed; a missing date is a 404, never another day. Withdrawn citations are marked, not shown.
 import type { ReportCitation, ReportDetail, ReportIndexEntry, ReportNavigationEntry, ReportKind } from "@aihot/contracts/site";
 import { REPORTS, SITE, withSubject } from "@aihot/site";
+import { survivingStory } from "../events/identity.ts";
 import { sql } from "../db.ts";
 import { cached, type Cached } from "../lib/cache.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
@@ -41,14 +42,7 @@ async function availability(ids: string[]): Promise<Map<string, Availability>> {
     SELECT p.article_id AS id, (${listedCondition(new Date())}) AS available, p.summary, (s.tier = 'T1') AS first_party, p.source_id, s.name AS source_name, s.icon_url,
       live_st.public_id::text AS story_id, coalesce(p.published_at, p.discovered_at) AS at
     FROM publications p LEFT JOIN sources s ON s.id = p.source_id
-    LEFT JOIN LATERAL (
-      WITH RECURSIVE chain AS (
-        SELECT id, public_id, merged_into FROM stories WHERE id = p.story_id
-        UNION ALL
-        SELECT st.id, st.public_id, st.merged_into FROM stories st JOIN chain c ON st.id = c.merged_into
-      )
-      SELECT public_id FROM chain WHERE merged_into IS NULL LIMIT 1
-    ) live_st ON p.story_id IS NOT NULL
+    LEFT JOIN LATERAL (${survivingStory(sql`p.story_id`)}) live_st ON p.story_id IS NOT NULL
     WHERE p.article_id IN ${sql(ids)}`;
   for (const r of rows) {
     out.set(r.id, {

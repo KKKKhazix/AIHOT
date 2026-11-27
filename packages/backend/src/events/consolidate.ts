@@ -8,6 +8,7 @@ import { sql } from "../db.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt } from "../providers/receipts.ts";
 import { groupingEvidenceCondition } from "../publication/scope.ts";
+import { survivingStory } from "./identity.ts";
 import { mergeStoryInto } from "./merge.ts";
 import { RECALL_DAYS, rootFactOf } from "./recall.ts";
 import { firmTie, latestJudgements, RELATED_MIN_REPORTS } from "./related.ts";
@@ -62,17 +63,6 @@ async function judgeStories(capability: "group" | "groupReview", a: StoryRoot, b
   return { relation: res.data.relation, confidence: res.data.confidence, difference: res.data.difference, receiptId: res.receiptId };
 }
 
-export async function liveStory(id: number): Promise<number | null> {
-  const [story] = await sql<{ id: number }[]>`
-    WITH RECURSIVE chain AS (
-      SELECT id, merged_into FROM stories WHERE id = ${id}
-      UNION ALL
-      SELECT s.id, s.merged_into FROM stories s JOIN chain c ON s.id = c.merged_into
-    )
-    SELECT id FROM chain WHERE merged_into IS NULL`;
-  return story ? Number(story.id) : null;
-}
-
 export interface Consolidation {
   from: number;
   into: number;
@@ -94,8 +84,8 @@ export interface Consolidation {
 export async function consolidate(storyIds: number[]): Promise<Consolidation[]> {
   const live = new Set<number>();
   for (const id of storyIds) {
-    const s = await liveStory(id);
-    if (s !== null) live.add(s);
+    const [story] = await survivingStory(id);
+    if (story) live.add(story.id);
   }
   if (live.size < 2) return [];
   const roots = (await Promise.all([...live].map(storyRoot))).filter((r): r is StoryRoot => !!r && !r.roundup);

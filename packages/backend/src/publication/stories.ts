@@ -3,6 +3,7 @@
 import type { HeatPoint, HotResponse, StoryDetail, StoryReportView } from "@aihot/contracts/site";
 import { SITE } from "@aihot/site";
 import { sql } from "../db.ts";
+import { survivingStory } from "../events/identity.ts";
 import { shared } from "../lib/cache.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { behindSources, currentSignals, heatSeries, sourceClocks, type HotRanking } from "../events/hot.ts";
@@ -16,7 +17,7 @@ import { topicsOfStory } from "./topics.ts";
 import { mentionsIn } from "./mentions.ts";
 import { itemUrl, storyUrl, v1StoryApiUrl } from "./links.ts";
 
-export type StoryLookup = { kind: "found"; storyId: number; publicId: string } | { kind: "merged"; target: string } | { kind: "not_found" };
+export type StoryLookup = { kind: "found"; storyId: number; publicId: string } | { kind: "merged"; storyId: number; target: string } | { kind: "not_found" };
 
 function storyStatusFor(latestAt: Date | null, now: number): "active" | "watching" | "settled" {
   if (!latestAt) return "settled";
@@ -36,14 +37,8 @@ export async function resolveStory(publicId: string): Promise<StoryLookup> {
     targetId = alias.story_id;
   }
   if (targetId) {
-    const [target] = await sql<{ public_id: string }[]>`
-      WITH RECURSIVE chain AS (
-        SELECT id, public_id, merged_into FROM stories WHERE id = ${targetId}
-        UNION ALL
-        SELECT s.id, s.public_id, s.merged_into FROM stories s JOIN chain c ON s.id = c.merged_into
-      )
-      SELECT public_id::text FROM chain WHERE merged_into IS NULL`;
-    return target ? { kind: "merged", target: target.public_id } : { kind: "not_found" };
+    const [target] = await survivingStory(targetId);
+    return target ? { kind: "merged", storyId: target.id, target: target.public_id } : { kind: "not_found" };
   }
   return { kind: "found", storyId: s!.id, publicId };
 }

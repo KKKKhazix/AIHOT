@@ -1,9 +1,9 @@
-// Reader state kept only in this browser, and the site's one guarded way to browser storage. Keep the
-// keys and formats once readers have data under them: existing readers' data must stay readable as-is.
-// Storage failures degrade silently.
+// Reader state kept in this browser. Existing readers' keys and saved formats must stay readable as-is.
+import type { StarredItem } from "@aihot/contracts/sync";
 import { ARTICLE_ID_PATTERN } from "@aihot/contracts/taxonomy";
 import { useEffect, useSyncExternalStore } from "react";
 import { beijingDate } from "@aihot/contracts/time";
+import { isLocalStorageEvent, readJson, readRaw, writeRaw } from "./browser-storage.ts";
 import { L, pagePath, type Phrase } from "./i18n.ts";
 
 export const KEYS = {
@@ -24,67 +24,6 @@ const RECENT_SEARCH_LIMIT = 10;
 const RECENT_SEARCH_MAX_CHARS = 200;
 const IMPORT_MAX_CHARS = 2_000_000;
 
-export interface LocalStarredItem {
-  id: string;
-  title: string;
-  summary: string | null;
-  sourceName: string;
-  savedAt: string;
-  publishedAt: string | null;
-  score: number | null;
-  aiSelected: boolean;
-}
-
-type StorageKind = "local" | "session";
-
-// Reading the storage property itself throws where the browser blocks storage.
-function storage(kind: StorageKind): Storage | null {
-  try {
-    return kind === "local" ? window.localStorage : window.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
-/** A stored string; null when it is missing or storage is unavailable. */
-export function readRaw(key: string, kind: StorageKind = "local"): string | null {
-  try {
-    return storage(kind)?.getItem(key) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** A stored JSON value; null when it is missing, unreadable or not JSON. */
-export function readJson(key: string, kind: StorageKind = "local"): unknown {
-  const raw = readRaw(key, kind);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-/** Stores a string, or removes the key for null; false when nothing was saved (storage full or unavailable). */
-export function writeRaw(key: string, value: string | null, kind: StorageKind = "local"): boolean {
-  try {
-    const s = storage(kind);
-    if (!s) return false;
-    if (value === null) s.removeItem(key);
-    else s.setItem(key, value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** The keys in this browser's storage; none when it is unavailable. */
-export function storedKeys(kind: StorageKind): string[] {
-  const s = storage(kind);
-  return s ? Array.from({ length: s.length }, (_, i) => s.key(i)!) : [];
-}
-
 // change notification (same tab via events, other tabs via the storage event)
 const listeners = new Map<string, Set<() => void>>();
 let subscribers = 0;
@@ -94,7 +33,7 @@ function emit(key?: string) {
   }
 }
 function onStorage(event: StorageEvent) {
-  if (event.storageArea && event.storageArea !== storage("local")) return;
+  if (!isLocalStorageEvent(event)) return;
   if (event.key === null || event.key === KEYS.font) unsavedFont = undefined;
   if (event.key === null || event.key === KEYS.unreadOnly) unsavedUnreadOnly = undefined;
   if (event.key === null) cache.clear();
@@ -135,7 +74,9 @@ function invalidate(key: string) {
 }
 
 // starred
-function isStarredItem(v: unknown): v is LocalStarredItem {
+type StoredStar = Pick<StarredItem, "id" | "title"> & Record<string, unknown>;
+
+function isStoredStar(v: unknown): v is StoredStar {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
   return typeof o.id === "string" && ARTICLE_ID_PATTERN.test(o.id) && typeof o.title === "string";
@@ -152,10 +93,10 @@ function isDisplayableDate(value: unknown): value is string {
   }
 }
 
-function normalizeStarred(v: Record<string, unknown>): LocalStarredItem {
+function normalizeStarred(v: StoredStar): StarredItem {
   return {
-    id: String(v.id),
-    title: String(v.title),
+    id: v.id,
+    title: v.title,
     summary: typeof v.summary === "string" ? v.summary : null,
     sourceName: typeof v.sourceName === "string" ? v.sourceName : "",
     savedAt: isDisplayableDate(v.savedAt) ? v.savedAt : new Date().toISOString(),
@@ -165,14 +106,14 @@ function normalizeStarred(v: Record<string, unknown>): LocalStarredItem {
   };
 }
 
-export function getStarred(): LocalStarredItem[] {
+export function getStarred(): StarredItem[] {
   return cached(KEYS.starred, () => {
     const parsed = readJson(KEYS.starred);
-    return Array.isArray(parsed) ? parsed.filter(isStarredItem).map((v) => normalizeStarred(v as unknown as Record<string, unknown>)) : [];
+    return Array.isArray(parsed) ? parsed.filter(isStoredStar).map(normalizeStarred) : [];
   });
 }
 
-const starredSetCache = { items: null as LocalStarredItem[] | null, ids: new Set<string>() };
+const starredSetCache = { items: null as StarredItem[] | null, ids: new Set<string>() };
 function isStarred(id: string): boolean {
   const items = getStarred();
   if (starredSetCache.items !== items) {
@@ -182,7 +123,7 @@ function isStarred(id: string): boolean {
   return starredSetCache.ids.has(id);
 }
 
-export function toggleStar(item: Omit<LocalStarredItem, "savedAt">): boolean {
+export function toggleStar(item: Omit<StarredItem, "savedAt">): boolean {
   if (starredUnreadable()) return false;
   // Read this key again before editing: a different tab's storage event can still be on its way.
   cache.delete(KEYS.starred);
@@ -199,7 +140,7 @@ export const watchStarred = (listener: () => void) => subscribeStarred(listener)
 
 /** Stores this list as the stars, newest first; false when nothing was saved. */
 // Account merges can exceed the ordinary 500-item local window; never trim an imported account snapshot.
-export function replaceStarred(items: LocalStarredItem[]): boolean {
+export function replaceStarred(items: StarredItem[]): boolean {
   const saved = writeRaw(KEYS.starred, JSON.stringify(items));
   invalidate(KEYS.starred);
   return saved;
@@ -213,7 +154,7 @@ export function removeStar(id: string) {
 }
 
 /** Puts back a star just removed (收藏 page), as it was: its own savedAt, at its place among the newer and older ones. */
-export function restoreStar(item: LocalStarredItem): boolean {
+export function restoreStar(item: StarredItem): boolean {
   if (starredUnreadable()) return false;
   cache.delete(KEYS.starred);
   const list = getStarred();
@@ -408,7 +349,7 @@ export function lastPage(): string | null {
 // export / import (version 1)
 export interface ExportBundle {
   version: 1;
-  starred: LocalStarredItem[];
+  starred: StarredItem[];
   read: string[];
   theme: "light" | "dark" | "auto" | null;
   font?: "system" | "browser";
@@ -475,13 +416,13 @@ function mergeLocalData(incoming: { starred: unknown[]; read: unknown[]; theme: 
   cache.clear();
   const current = getStarred();
   const have = new Set(current.map((s) => s.id));
-  const additions: LocalStarredItem[] = [];
+  const additions: StarredItem[] = [];
   let starredSkipped = 0;
   for (const s of incoming.starred) {
-    if (!isStarredItem(s)) { starredSkipped++; continue; }
+    if (!isStoredStar(s)) { starredSkipped++; continue; }
     if (have.has(s.id)) continue;
     have.add(s.id);
-    additions.push(normalizeStarred(s as unknown as Record<string, unknown>));
+    additions.push(normalizeStarred(s));
   }
   const room = Math.max(0, STARRED_LIMIT - current.length);
   const accepted = additions.slice(0, room);
@@ -518,10 +459,10 @@ function mergeLocalData(incoming: { starred: unknown[]; read: unknown[]; theme: 
 export { mergeLocalData };
 
 // React hooks
-const EMPTY_STARRED: LocalStarredItem[] = [];
+const EMPTY_STARRED: StarredItem[] = [];
 const EMPTY_SET = new Set<string>();
 
-export function useStarred(): LocalStarredItem[] {
+export function useStarred(): StarredItem[] {
   return useSyncExternalStore(subscribeStarred, getStarred, () => EMPTY_STARRED);
 }
 

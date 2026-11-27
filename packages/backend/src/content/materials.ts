@@ -64,8 +64,12 @@ export interface MaterialResult {
   created: boolean;
   revised: boolean;
   backfill: boolean;
-  /** Provenance moved an unanalysed signal into editorial processing, without a material revision. */
-  processingNeeded?: boolean;
+  /** New or revised material, or an unanalysed signal that now belongs to an editorial source. */
+  processingNeeded: boolean;
+}
+
+function materialResult(articleId: string, change: "created" | "revised" | "promoted" | "unchanged", backfill: boolean): MaterialResult {
+  return { articleId, created: change === "created", revised: change === "revised", processingNeeded: change !== "unchanged", backfill };
 }
 
 // Material first discovered more than this long after its source time is archived by source time,
@@ -267,9 +271,9 @@ export async function upsertMaterial(m: MaterialInput, db: Db = sql): Promise<Ma
 }
 
 async function lockMaterial(db: Db, identityKey: string) {
-  const [existing] = await db<{ id: string; source_id: string; revision: number; content_hash: string | null; backfill: boolean; published_at: Date | null; publication_time: string | null; title: string; body_text: string | null; excerpt: string | null; participation_mode: string }[]>`
-    SELECT a.id, a.source_id, a.revision, a.content_hash, a.backfill, a.published_at, a.publication_time, a.title, a.body_text, a.excerpt, s.participation_mode
-    FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.identity_key = ${identityKey} FOR UPDATE OF a`;
+  const [existing] = await db<{ id: string; source_id: string; revision: number; content_hash: string | null; backfill: boolean; published_at: Date | null; publication_time: string | null; title: string; body_text: string | null; excerpt: string | null }[]>`
+    SELECT id, source_id, revision, content_hash, backfill, published_at, publication_time, title, body_text, excerpt
+    FROM articles WHERE identity_key = ${identityKey} FOR UPDATE`;
   return existing;
 }
 
@@ -306,24 +310,18 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
       await db`INSERT INTO article_discoveries (article_id, source_id, via, discovered_at)
                VALUES (${newId}, ${m.sourceId}, ${m.via}, ${discoveredAt}) ON CONFLICT DO NOTHING`;
       await reconcileMaterialSource(db, newId, { sourceId: m.sourceId, author: m.author });
-      return { articleId: newId, created: true, revised: false, backfill: t.backfill };
+      return materialResult(newId, "created", t.backfill);
     }
     existing = await lockMaterial(db, identityKey);
   }
   await db`INSERT INTO article_discoveries (article_id, source_id, via, discovered_at)
            VALUES (${existing!.id}, ${m.sourceId}, ${m.via}, ${discoveredAt}) ON CONFLICT DO NOTHING`;
-  const unchanged: MaterialResult = { articleId: existing!.id, created: false, revised: false, backfill: existing!.backfill };
+  const unchanged = materialResult(existing!.id, "unchanged", existing!.backfill);
   // Configuration may have gained a verified publisher since this same discovery channel last
   // saw the URL. Reconcile before accepting any of that channel's material changes.
-  if (await reconcileMaterialSource(db, existing!.id, { sourceId: m.sourceId, author: m.author })) {
-    if (existing!.participation_mode !== "editorial") {
-      const [pending] = await db`SELECT 1 FROM articles a JOIN sources s ON s.id = a.source_id
-        WHERE a.id = ${existing!.id} AND s.participation_mode = 'editorial'
-          AND NOT EXISTS (SELECT 1 FROM analyses an WHERE an.article_id = a.id AND an.input_revision = a.revision AND an.relevance IS NOT NULL)`;
-      if (pending) unchanged.processingNeeded = true;
-    }
-    return unchanged;
-  }
+  const attribution = await reconcileMaterialSource(db, existing!.id, { sourceId: m.sourceId, author: m.author });
+  if (attribution === "promoted") return materialResult(existing!.id, "promoted", existing!.backfill);
+  if (attribution === "reattributed") return unchanged;
   // Another source listing the same material (an aggregator, a translated mirror, a hot signal) is a
   // discovery only: its title and summary are its own rendering, and taking them made the article flip
   // between the two sources' versions on every fetch. Only the article's own source revises it.
@@ -345,7 +343,7 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   if (!time && existing!.content_hash === next) {
     const updated = await updatePresentation(db, existing!.id, { html: m.bodyHtml, media: m.media, xPost: m.xPost ?? undefined });
     if (updated === "revised") {
-      return { articleId: existing!.id, created: false, revised: true, backfill: existing!.backfill };
+      return materialResult(existing!.id, "revised", existing!.backfill);
     }
     return unchanged;
   }
@@ -364,19 +362,15 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
   // already. Any earlier version counts, however long ago: a rotation with many variants would
   // otherwise start over, and a real edit reverted later is rare and loses nothing.
   const [seen] = await db`SELECT 1 FROM article_revisions WHERE article_id = ${existing!.id} AND content_hash = ${next} LIMIT 1`;
-  if (!time && seen) {
+  // Text that differs only through character loss or rotating trailing counts is also a previously seen version.
+  const repeat = !time && (seen || (
+    sameBarringLoss(existing!.title, title) && sameBarringLoss(existing!.body_text, bodyText)
+    && (sameBarringLoss(existing!.excerpt, excerpt) || sameBarringLoss(maskTrailingCounts(existing!.excerpt), maskTrailingCounts(excerpt)))
+  ));
+  if (repeat) {
     if (editorialPolicy().reviewAnalysis && (m.bodyHtml !== undefined || m.media !== undefined || m.xPost !== undefined)) {
       const updated = await updatePresentation(db, existing!.id, { html: m.bodyHtml, media: m.media, xPost: m.xPost ?? undefined });
-      if (updated === "revised") return { articleId: existing!.id, created: false, revised: true, backfill: existing!.backfill };
-    }
-    return unchanged;
-  }
-  // Nor is the stored version with other characters lost in transit, or with them restored, or with other trailing counts.
-  if (!time && sameBarringLoss(existing!.title, title) && sameBarringLoss(existing!.body_text, bodyText)
-      && (sameBarringLoss(existing!.excerpt, excerpt) || sameBarringLoss(maskTrailingCounts(existing!.excerpt), maskTrailingCounts(excerpt)))) {
-    if (editorialPolicy().reviewAnalysis && (m.bodyHtml !== undefined || m.media !== undefined || m.xPost !== undefined)) {
-      const updated = await updatePresentation(db, existing!.id, { html: m.bodyHtml, media: m.media, xPost: m.xPost ?? undefined });
-      if (updated === "revised") return { articleId: existing!.id, created: false, revised: true, backfill: existing!.backfill };
+      if (updated === "revised") return materialResult(existing!.id, "revised", existing!.backfill);
     }
     return unchanged;
   }
@@ -391,7 +385,7 @@ async function upsertIn(db: Db, m: MaterialInput): Promise<MaterialResult> {
       x_post = coalesce(${m.xPost ? sql.json(m.xPost as never) : null}, x_post)`,
     hash: next, title, bodyText,
   });
-  return { articleId: existing!.id, created: false, revised: true, backfill: time?.backfill ?? existing!.backfill };
+  return materialResult(existing!.id, "revised", time?.backfill ?? existing!.backfill);
 }
 
 /** Caller holds the material lock. A presentation update preserves semantic state unless an editorial policy needs new HTML/media reviewed. */

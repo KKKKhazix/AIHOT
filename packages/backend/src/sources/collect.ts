@@ -289,7 +289,7 @@ async function store(sourceId: string, kind: string, candidates: CollectionCandi
     if (res.created) created += 1;
     if (res.revised) revised += 1;
     // Extraction first when the source wants full text and none came with the listing, else analysis.
-    if (res.created || res.revised || res.processingNeeded) await queueProcessing(res.articleId);
+    if (res.processingNeeded) await queueProcessing(res.articleId);
   }
   return { created, revised };
 }

@@ -62,19 +62,21 @@ test("concurrent changes to one article each get a revision", async () => {
 // limits, while body enrichment during a manual evaluation must retain its paid request identity.
 test("a material revision resets old processing failures without resetting unchanged material", async () => {
   const material = { sourceId: SOURCE, url: `https://example.com/retry-${tag()}`, title: "Needs a body", via: "fetch" as const };
-  const { articleId } = await upsertMaterial(material);
+  const { articleId, processingNeeded } = await upsertMaterial(material);
+  assert.equal(processingNeeded, true);
   const [failed] = await sql`UPDATE articles SET processing_state='failed', processing_attempts=9,
     processing_retry_at=now()+interval '6 hours', processing_error='previous revision failed',
     processing_queued_at=now(), processing_attempt_tag='admin:current-evaluation',
     grouping_status='complete', grouped_at=now(), selection_adds_value=false, selection_value_reason='old revision' WHERE id=${articleId}
     RETURNING processing_state, processing_attempts, processing_retry_at, processing_error, processing_queued_at, processing_attempt_tag,
       grouping_status, grouped_at, selection_adds_value, selection_value_reason`;
-  await upsertMaterial(material);
+  assert.equal((await upsertMaterial(material)).processingNeeded, false);
   const [unchanged] = await sql`SELECT processing_state, processing_attempts, processing_retry_at, processing_error, processing_queued_at, processing_attempt_tag,
     grouping_status, grouped_at, selection_adds_value, selection_value_reason
     FROM articles WHERE id=${articleId}`;
   assert.deepEqual({ ...unchanged }, { ...failed });
-  assert.equal((await upsertMaterial({ ...material, bodyText: "The corrected full material", bodyStatus: "ok" })).revised, true);
+  const correction = await upsertMaterial({ ...material, bodyText: "The corrected full material", bodyStatus: "ok" });
+  assert.ok(correction.revised && correction.processingNeeded);
   const [revised] = await sql`SELECT revision, processing_state, processing_attempts, processing_retry_at, processing_error, processing_queued_at, processing_attempt_tag,
     grouping_status, grouped_at, selection_adds_value, selection_value_reason
     FROM articles WHERE id=${articleId}`;

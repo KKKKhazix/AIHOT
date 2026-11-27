@@ -427,15 +427,27 @@ test("v1 story matches the website's content and fallback ordering", async () =>
 // An event's public id is kept by search engines and installed clients: once merged, it must lead to the
 // event that took it in, through a relative Location that keeps the reader on the domain they asked.
 test("a merged event's old public id answers 308 to the surviving event", async () => {
-  const current = await storyFor(await article());
+  const id = await article();
+  await publishArticle(id, released());
+  const current = await storyFor(id);
+  const old = randomUUID();
+  const [intermediate] = await sql<{ id: number }[]>`INSERT INTO stories (public_id, title, merged_into)
+    SELECT ${old}, 'Historical merged story', id FROM stories WHERE public_id = ${current} RETURNING id`;
   const merged = randomUUID();
-  await sql`INSERT INTO story_aliases (public_id, story_id) SELECT ${merged}, id FROM stories WHERE public_id = ${current}`;
+  await sql`INSERT INTO story_aliases (public_id, story_id) VALUES (${merged}, ${intermediate!.id})`;
   const res = await app.inject({ method: "GET", url: `/api/v1/stories/${merged}` });
   assert.equal(res.statusCode, 308, "a merged public id is a permanent redirect, not a 404");
   assert.equal(res.headers.location, `/api/v1/stories/${current}`, "relative Location to the surviving event");
   const og = await app.inject({ method: "GET", url: `/og/stories/${merged}.png` });
   assert.equal(og.statusCode, 308, "a merged story OG image redirects to the surviving story");
   assert.equal(og.headers.location, `/og/stories/${current}.png`);
+  const answer = await get(`/api/v1/agent/stories/${current}`);
+  assert.equal(answer.status, 200);
+  for (const oldId of [merged, old]) {
+    const followed = await get(`/api/v1/agent/stories/${oldId}`);
+    assert.equal(followed.status, 200);
+    assert.equal(followed.body, answer.body, "the Agent address reads the surviving story directly");
+  }
 });
 
 test('event neighbors disappear when their last readable evidence is withdrawn', async () => {

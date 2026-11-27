@@ -7,7 +7,8 @@ import type { Route } from "./+types/starred";
 import { Collapse } from "../components/ui/Presence";
 import { edgeTtl } from "../lib/api.server";
 import { pageMeta } from "../lib/seo";
-import { exportBundle, importBundle, ImportError, removeStar, restoreStar, useStarred, type ImportReport, type LocalStarredItem } from "../lib/local-state";
+import type { StarredItem } from "@aihot/contracts/sync";
+import { exportBundle, importBundle, ImportError, removeStar, restoreStar, useStarred, type ImportReport } from "../lib/local-state";
 import { fullDateTime } from "../lib/format";
 import { IconBookmark, IconDownload, IconClose } from "../components/icons";
 import { readSnapshot, restoreAnchor, useSaveOnLeave } from "../lib/restore";
@@ -52,7 +53,7 @@ export default function StarredPage() {
   useEffect(() => setMounted(true), []);
   // A row taken out here stays where it was, faded, for as long as the reader is on this page: pressing its
   // bookmark again puts it back as it was. It is gone the next time the page opens.
-  const [removed, setRemoved] = useState<Array<{ item: LocalStarredItem; index: number }>>([]);
+  const [removed, setRemoved] = useState<Array<{ item: StarredItem; index: number }>>([]);
   const rows = useMemo(() => {
     const list = starred.map((item) => ({ item, on: true }));
     for (const r of [...removed].sort((a, b) => a.index - b.index)) {
@@ -60,13 +61,13 @@ export default function StarredPage() {
     }
     return list;
   }, [starred, removed]);
-  const unstar = (item: LocalStarredItem, index: number) => {
+  const unstar = (item: StarredItem, index: number) => {
     setRemoved((rs) => [...rs.filter((r) => r.item.id !== item.id), { item, index }]);
     removeStar(item.id);
   };
   // Put back, its bookmark bumps as it does on a card.
   const [bumped, setBumped] = useState<Record<string, number>>({});
-  const restar = (item: LocalStarredItem) => {
+  const restar = (item: StarredItem) => {
     if (restoreStar(item)) {
       setRemoved((rs) => rs.filter((r) => r.item.id !== item.id));
       setBumped((b) => ({ ...b, [item.id]: (b[item.id] ?? 0) + 1 }));

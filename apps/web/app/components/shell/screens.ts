@@ -4,7 +4,7 @@
 import { useLayoutEffect, useState, type MouseEvent } from "react";
 import { useLocation, useMatches } from "react-router";
 import { useNavigate } from "../../lib/link";
-import { readJson, writeRaw } from "../../lib/local-state";
+import { readJson, writeRaw } from "../../lib/browser-storage";
 import type { Text } from "../../lib/i18n";
 import type { TabKey } from "./nav";
 

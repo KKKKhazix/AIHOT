@@ -21,9 +21,8 @@ function markdown(req: FastifyRequest, reply: FastifyReply, text: string, etagPr
 
 /** A daily's Agent answer in the asked language: the issue and its entries' notes. */
 async function dailyText(res: NonNullable<Awaited<ReturnType<typeof dailyWithNotes>>>, lang: "zh" | "en") {
-  const body = await inLanguage(res.body, english.v1DailyAnswer("text"), lang);
-  const notes = await inLanguage(res.notes, english.v1DailyNotes, lang);
-  return dailyAnswer(body.report, "http", notes, res.leadItemId, lang);
+  const daily = await inLanguage(res, english.v1DailyWithNotes("text"), lang);
+  return dailyAnswer(daily.body.report, "http", daily.notes, daily.leadItemId, lang);
 }
 
 function listParams(q: Record<string, string>) {
@@ -69,9 +68,8 @@ export function registerAgent(app: FastifyInstance) {
     const limit = intParam(q.limit, "limit", 1, 50, 20);
     const publicId = (req.params as { publicId: string }).publicId;
     if (publicId.length > 128) throw new QueryError("publicId must be a short opaque id.");
-    let found = await resolveStory(publicId);
-    if (found.kind === "merged") found = await resolveStory(found.target);
-    const body = found.kind === "found" ? await v1Story(found.storyId) : null;
+    const found = await resolveStory(publicId);
+    const body = found.kind !== "not_found" ? await v1Story(found.storyId) : null;
     if (!body) {
       const detail = lang === "en" ? "No such public story. Only use the “Full story” addresses the trending results give; don't guess." : "没有这个公开事件。只使用热点结果里给出的「来龙去脉」地址，不要猜。";
       return sendProblem(req, reply, { status: 404, code: "not_found", detail, cacheControl: "public, max-age=60" });

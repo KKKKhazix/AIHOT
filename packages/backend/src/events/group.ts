@@ -33,7 +33,8 @@ import { publishArticle, publishArticleTx, republishTx } from "../publication/pu
 import { isIndependentSelectedSource } from "../publication/rules.ts";
 import { groupingEvidenceCondition, latestCompositeCondition } from "../publication/scope.ts";
 import { alreadyOnCard, echoesOnCard, factHasCard, foldsUnder, ownArticleOnCard, readerOf, retireCardTx, seenOnCard } from "./cards.ts";
-import { consolidate, liveStory, type Consolidation } from "./consolidate.ts";
+import { survivingStory } from "./identity.ts";
+import { consolidate, type Consolidation } from "./consolidate.ts";
 import { HEAT_WINDOW_HOURS } from "./hot.ts";
 import { mergeFactInto, mergeStoryInto } from "./merge.ts";
 import { bestPerFact, candidateViews, cosine32, RECALL_DAYS, recallFacts, recallFactsByPosts, recallSelectedBackground, relatedPosts, vectorsFor, type Recalled, type CardRow } from "./recall.ts";
@@ -571,7 +572,8 @@ async function decide(articleId: string, opts: GroupOptions, revision: number, r
   if (tied.size > 1) {
     try {
       result.consolidated = await consolidate([...tied]);
-      result.storyId = (await liveStory(written.storyId!)) ?? written.storyId!;
+      const [story] = await survivingStory(written.storyId!);
+      result.storyId = story?.id ?? written.storyId!;
     } catch (error) {
       result.consolidationError = String(error).slice(0, 300);
     }

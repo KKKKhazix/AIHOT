@@ -10,6 +10,7 @@
 import { addDays } from "@aihot/contracts/time";
 import { SELECTION } from "@aihot/industry/selection";
 import { CATEGORIES } from "@aihot/industry/taxonomy";
+import { survivingStory } from "../events/identity.ts";
 import { sql } from "../db.ts";
 import { currentSignals } from "../events/hot.ts";
 import { pickRepresentative, representativePriority, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity } from "../publication/representative.ts";
@@ -112,14 +113,7 @@ const REPORT_FIELDS = sql`p.article_id AS id, p.title, p.summary, p.url, p.categ
   f.id AS fact_id, f.public_id AS fact_public_id, live_st.id AS story_id, live_st.public_id::text AS story_public_id`;
 
 /** Resolves f.story_id through any merged_into chain to the surviving live story. */
-const LIVE_STORY_JOIN = sql`LEFT JOIN LATERAL (
-  WITH RECURSIVE chain AS (
-    SELECT id, public_id, merged_into FROM stories WHERE id = f.story_id
-    UNION ALL
-    SELECT s.id, s.public_id, s.merged_into FROM stories s JOIN chain c ON s.id = c.merged_into
-  )
-  SELECT id, public_id FROM chain WHERE merged_into IS NULL LIMIT 1
-) live_st ON f.story_id IS NOT NULL`;
+const LIVE_STORY_JOIN = sql`LEFT JOIN LATERAL (${survivingStory(sql`f.story_id`)}) live_st ON f.story_id IS NOT NULL`;
 
 /**
  * The selected reports a period [start, end) carries. Each counts once, in the period readers first saw

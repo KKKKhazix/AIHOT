@@ -3,6 +3,18 @@
 // by entry and the later change wins, so a device that was offline cannot undo a newer change made elsewhere, and a
 // first sign-in drops nothing from either side.
 
+/** A reader's saved article, as kept in browser storage and carried in the account's stars. */
+export interface StarredItem {
+  id: string;
+  title: string;
+  summary: string | null;
+  sourceName: string;
+  savedAt: string;
+  publishedAt: string | null;
+  score: number | null;
+  aiSelected: boolean;
+}
+
 export interface Entry<T> {
   /** When this state was set, in ms. */
   t: number;

@@ -25,7 +25,7 @@ import { sha256 } from "../lib/ids.ts";
 import { mentionsIn } from "./mentions.ts";
 import type { V1ItemPayload } from "./items.ts";
 import { siteUrl } from "./links.ts";
-import { COMPOSED_OVERVIEW, type ComposedOverview, type DailyNote, type FeedIssue, type ReportKind, type v1Dailies, type v1Daily, type v1Period, type v1Periods } from "./reports.ts";
+import { COMPOSED_OVERVIEW, type ComposedOverview, type dailyWithNotes, type FeedIssue, type ReportKind, type v1Dailies, type v1Daily, type v1Period, type v1Periods } from "./reports.ts";
 import { publicSourceName } from "./rules.ts";
 import { cardText, type v1HotTopics, type v1Story } from "./stories.ts";
 import { monogramOf } from "./topics.ts";
@@ -470,9 +470,15 @@ export const v1DailyAnswer = (by: V1Reader): Overlay<V1Daily> => (r, c) => {
   };
 };
 
-/** What the Agent answer adds to a daily's entries: the event's other developments, by their titles. */
-export const v1DailyNotes: Overlay<Map<string, DailyNote>> = (notes, c) =>
-  new Map([...notes].map(([key, n]) => [key, { ...n, related: n.related.map((x) => ({ ...x, title: c.one("headline", x.title) })) }]));
+/** The Agent daily reads its body and the notes about related developments from the same translations. */
+type DailyWithNotes = NonNullable<Awaited<ReturnType<typeof dailyWithNotes>>>;
+export const v1DailyWithNotes = (by: V1Reader): Overlay<DailyWithNotes> => async (daily, c) => ({
+  ...daily,
+  body: await v1DailyAnswer(by)(daily.body, c),
+  notes: by === "json" ? daily.notes : new Map([...daily.notes].map(([key, n]) => [
+    key, { ...n, related: n.related.map((x) => ({ ...x, title: c.one("headline", x.title) })) },
+  ])),
+});
 
 type V1Period = NonNullable<Awaited<ReturnType<typeof v1Period>>>;
 /** A weekly or monthly; an overview composed by rule is said in English from the titles it names, as on its page. */

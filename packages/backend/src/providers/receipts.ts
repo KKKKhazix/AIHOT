@@ -11,6 +11,12 @@ import { sql, type Db } from "../db.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
 import { shutdownSignal } from "../lib/shutdown.ts";
 
+export const AUTO_RELEASE_NOTE = "自动放行：结果未知超过 30 分钟，未核对是否计费";
+
+/** Whether receipt r has used its automatic release, including attempts recorded before the flag. */
+export const alreadyAutoReleased = sql`EXISTS (SELECT 1 FROM receipt_attempts a WHERE a.receipt_id = r.id
+  AND (a.auto_released OR a.error LIKE ${AUTO_RELEASE_NOTE + "%"}))`;
+
 /** The text of a spent budget's error; with `%` for both parts it is the LIKE pattern that finds every saved one. */
 export const budgetMessage = (service: string, window: string) => `Budget for ${service} exhausted (${window})`;
 

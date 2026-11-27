@@ -11,10 +11,9 @@ import { sweepUngrouped } from "../jobs/events.ts";
 import { retryReleasedReceiptJobs } from "../jobs/queue.ts";
 import { closeInterruptedRuns } from "../jobs/runs.ts";
 import { markStaleDeliveries } from "../notify/deliver.ts";
-import { awaitingRelease, markStalePendingReceipts, releaseUnknownReceipt } from "../providers/receipts.ts";
+import { AUTO_RELEASE_NOTE, alreadyAutoReleased, awaitingRelease, markStalePendingReceipts, releaseUnknownReceipt } from "../providers/receipts.ts";
 
 const AUTO_RELEASE_AFTER_MS = 30 * 60_000;
-export const AUTO_RELEASE_NOTE = "自动放行：结果未知超过 30 分钟，未核对是否计费";
 
 async function release(id: number, error: string, actor: string, note: string, billed: boolean | null, autoReleased = false) {
   return sql.begin(async (tx) => {
@@ -47,7 +46,7 @@ export async function autoReleaseUnknownReceipts(now = Date.now()) {
   const rows = await sql<{ id: number }[]>`
     SELECT r.id FROM receipts r
     WHERE ${awaitingRelease(sql`r`)} AND r.updated_at < ${new Date(now - AUTO_RELEASE_AFTER_MS)}
-      AND NOT EXISTS (SELECT 1 FROM receipt_attempts a WHERE a.receipt_id = r.id AND (a.auto_released OR a.error LIKE ${AUTO_RELEASE_NOTE + "%"}))
+      AND NOT ${alreadyAutoReleased}
     ORDER BY r.id LIMIT 200`;
   let released = 0;
   let requeued = 0;

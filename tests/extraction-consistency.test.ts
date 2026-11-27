@@ -15,6 +15,7 @@ import { queueProcessing, registerExtractionJobs } from "@aihot/backend/jobs/con
 import { rerun } from "@aihot/backend/admin/content";
 import { fetchDetail } from "@aihot/backend/sources/web-list";
 import { fetchJsonList } from "@aihot/backend/sources/json-list";
+import { serverErrorRetryDelaysMs } from "@aihot/backend/providers/socialdata";
 
 const sourceId = `extract-consistency-${tag()}`;
 const body = "This is the original article, with enough substantive text to extract its paragraphs. ".repeat(12);
@@ -55,6 +56,8 @@ process.env.SOCIALDATA_API_KEY = "test-key";
 process.env.SOCIALDATA_BASE_URL = socialdata.url;
 process.env.JINA_API_KEY = "test-key";
 config.allowPrivateNetworkFetch = true;
+// Server errors are asked again at once here, not after the production waits.
+serverErrorRetryDelaysMs.fill(0);
 before(async () => {
   await sql`INSERT INTO sources(id,name,kind) VALUES (${sourceId},'Extraction consistency','rss')`;
   await sql`UPDATE budgets SET per_minute=1000,per_hour=1000,per_day=1000 WHERE service='socialdata'`;

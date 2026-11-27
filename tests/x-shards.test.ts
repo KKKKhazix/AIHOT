@@ -11,6 +11,8 @@ import { upsertMaterial } from "@aihot/backend/content/materials";
 import { collectSource, collectXShard, scheduleDueSources } from "@aihot/backend/sources/collect";
 import { refreshSourceIcons } from "@aihot/backend/sources/icons";
 import { planXShards, shardQuery, selfThreadHandle, fetchXSearch } from "@aihot/backend/sources/x";
+import { serverErrorRetryDelaysMs, socialdataServerError } from "@aihot/backend/providers/socialdata";
+import { ProviderRejectedError, ReceiptUnknownError } from "@aihot/backend/providers/receipts";
 
 const T = tag();
 const HANDLES = [`sa${T}`, `sb${T}`, `sc${T}`];
@@ -28,15 +30,21 @@ const tweet = (p: { id: bigint; handle: string }) => ({
   id_str: String(p.id), tweet_created_at: new Date().toISOString(), full_text: `Post ${p.id} ${T}`, lang: "en", user: { name: p.handle, screen_name: p.handle },
 });
 
-let failNext = false;
+/** Searches still to answer with a server error, and with a refusal (400). */
+let failSearches = 0;
+let refuseSearches = 0;
 let failPage2 = 0;
 const queries: string[] = [];
 const socialdata = await stub((_hit, req) => {
   const q = new URL(req.url, "http://stub").searchParams.get("query") ?? "";
   queries.push(q);
-  if (failNext) {
-    failNext = false;
+  if (failSearches > 0) {
+    failSearches -= 1;
     return new Reply(500, { error: "down" });
+  }
+  if (refuseSearches > 0) {
+    refuseSearches -= 1;
+    return new Reply(400, { error: "bad query" });
   }
   const handles = new Set([...q.matchAll(/from:(\w+)/g)].map((m) => m[1]!.toLowerCase()));
   const since = BigInt(/since_id:(\d+)/.exec(q)?.[1] ?? "0");
@@ -52,6 +60,8 @@ const socialdata = await stub((_hit, req) => {
 process.env.SOCIALDATA_BASE_URL = socialdata.url;
 process.env.SOCIALDATA_API_KEY = "test-key";
 config.allowPrivateNetworkFetch = true;
+// Server errors are asked again at once here, not after the production waits.
+serverErrorRetryDelaysMs.fill(0);
 
 const cursorOf = async (id: string) => (await sql<{ cursor: { lastTweetId: string } }[]>`SELECT cursor FROM sources WHERE id = ${id}`)[0]!.cursor;
 
@@ -109,7 +119,7 @@ test("a page failing after the first keeps what was read and goes on from there 
   // Another watermark (still below every post): paid responses are reused only for the same search.
   await sql`UPDATE sources SET cursor = (cursor - 'lastOkAt') || ${sql.json({ lastTweetId: String(WATERMARK - 1n) })} WHERE id IN ${sql(IDS)}`;
   await sql`DELETE FROM articles WHERE source_id IN ${sql(IDS)}`;
-  failPage2 = 2; // the page, and the same run's second try at it from the stretch kept
+  failPage2 = 6; // the page and the same run's try at it from the stretch kept, each asked three times
   const first = await collectXShard(`editorial:test-${T}`, IDS);
   assert.equal(first.status, "ok", "the accounts are not failed for a later page");
   assert.equal(first.found, 2, "the first page is kept");
@@ -177,13 +187,52 @@ test("a post in the ten minutes before a check leaves the next search those ten 
 test("a failed search fails every account of the shard and moves no watermark", async () => {
   await sql`UPDATE sources SET cursor = (cursor - 'lastOkAt') || ${sql.json({ lastTweetId: String(WATERMARK - 2n) })} WHERE id IN ${sql(IDS)}`;
   const watermark = String(WATERMARK - 2n);
-  failNext = true;
+  failSearches = 3; // the search and both of its retries
   const res = await collectXShard(`editorial:test-${T}`, IDS);
   assert.equal(res.status, "failed");
   for (const id of IDS) assert.equal((await cursorOf(id)).lastTweetId, watermark);
   const failed = await sql<{ n: number }[]>`
     SELECT count(*)::int AS n FROM (SELECT DISTINCT ON (source_id) status FROM fetch_runs WHERE source_id IN ${sql(IDS)} ORDER BY source_id, id DESC) r WHERE status = 'failed'`;
   assert.equal(failed[0]!.n, 3);
+});
+
+// 2026-11-21..26 SocialData's search answered 500 to one request in five; a search asked again soon after
+// often worked, and failed requests are not billed.
+test("a server error is asked again within the run, each try an attempt on the same receipt", async () => {
+  await sql`UPDATE sources SET cursor = (cursor - 'lastOkAt' - 'xBacklog') || ${sql.json({ lastTweetId: String(WATERMARK - 3n) })} WHERE id IN ${sql(IDS)}`;
+  const before = queries.length;
+  failSearches = 2;
+  assert.equal((await collectXShard(`editorial:test-${T}`, IDS)).status, "ok", "the third try's answer is used");
+  assert.equal(queries.length - before, 4, "the first page three times, then the second page");
+  const [first] = await sql<{ status: string; attempts: number }[]>`SELECT status, attempts FROM receipts
+    WHERE subject = ${`x-shard:editorial:test-${T}`} AND request->>'query' LIKE ${`%since_id:${WATERMARK - 3n}`} ORDER BY id LIMIT 1`;
+  assert.deepEqual([first!.status, first!.attempts], ["completed", 3]);
+});
+
+test("only SocialData's server errors are asked again", () => {
+  assert.ok(socialdataServerError(new ProviderRejectedError("socialdata HTTP 522: origin unreachable", 522, true)));
+  assert.ok(!socialdataServerError(new ProviderRejectedError("socialdata HTTP 429: slow down", 429, true)), "a rate limit is not");
+  assert.ok(!socialdataServerError(new ProviderRejectedError("jina HTTP 503: busy", 503, true)), "another provider's is not");
+  assert.ok(!socialdataServerError(new ReceiptUnknownError(1, "TimeoutError: The operation was aborted due to timeout")),
+    "a request SocialData may have answered, and billed, is never sent again");
+});
+
+// The same outage: failed shards waited one to six hours while other searches already worked again.
+test("SocialData failing a shard counts on its accounts at their usual pace; their own failures back off", async () => {
+  const pace = async () => (await sql<{ minutes: number; fail_count: number; health: string }[]>`
+    SELECT round(extract(epoch FROM next_fetch_at - now()) / 60)::int AS minutes, fail_count, health FROM sources WHERE id IN ${sql(IDS)} ORDER BY id`)
+    .map((r) => [r.minutes, r.fail_count, r.health]);
+  await sql`UPDATE sources SET fail_count = 1, health = 'degraded', cursor = (cursor - 'lastOkAt' - 'xBacklog') || ${sql.json({ lastTweetId: String(WATERMARK - 4n) })} WHERE id IN ${sql(IDS)}`;
+  try {
+    failSearches = 3;
+    assert.equal((await collectXShard(`editorial:test-${T}`, IDS)).status, "failed");
+    assert.deepEqual(await pace(), IDS.map(() => [30, 2, "degraded"]), "read again in its usual half hour, the failure still counted");
+    refuseSearches = 1;
+    assert.equal((await collectXShard(`editorial:test-${T}`, IDS)).status, "failed");
+    assert.deepEqual(await pace(), IDS.map(() => [120, 3, "degraded"]), "a refused search is not asked again and backs off");
+  } finally {
+    await sql`UPDATE sources SET fail_count = 0, health = 'ok', next_fetch_at = '2100-01-01' WHERE id IN ${sql(IDS)}`;
+  }
 });
 
 test("due accounts are scheduled by shard, not one by one", async () => {
@@ -275,7 +324,7 @@ test("a failure's run and source health either both commit or neither does", asy
       IF NEW.last_error IS NOT NULL THEN RAISE EXCEPTION 'injected source health failure'; END IF;
       RETURN NEW; END $$`);
     await sql`CREATE TRIGGER fail_source_health BEFORE UPDATE ON sources FOR EACH ROW EXECUTE FUNCTION fail_source_health()`;
-    failNext = true;
+    failSearches = 3;
     try {
       await assert.rejects(kind === "single" ? collectSource(IDS[0]!, { force: true }) : collectXShard(`editorial:health-${T}`, IDS), /injected source health failure/);
     } finally { await sql`DROP TRIGGER fail_source_health ON sources`; await sql`DROP FUNCTION fail_source_health()`; }

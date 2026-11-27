@@ -167,6 +167,54 @@ test("individual timeouts do not turn a provider outage into an hourly alert abo
   }
 });
 
+// 2026-11-21..26 SocialData's alert opened and recovered 15 times (37 messages) as the share of failing sources
+// swung around the threshold.
+test("a provider outage back within three hours is the same incident; turning into our own is told at once", async () => {
+  process.env.COLLECT_ENABLED = "true";
+  const now = Date.now();
+  const MIN = 60_000;
+  const ids = Array.from({ length: 400 }, (_, i) => `${SOURCE}-flap-${i}`);
+  const outage = ids.slice(0, 100);
+  const run = (sourceIds: string[], at: number, error: string | null) => sql`
+    INSERT INTO fetch_runs (source_id, started_at, finished_at, status, error)
+    SELECT id, ${new Date(at)}, ${new Date(at)}, ${error ? "failed" : "ok"}, ${error}
+    FROM unnest(${sourceIds}::text[]) id`;
+  const told = async (at: number) => (await checkAlerts(at)).sent.filter((k) => k.startsWith("content.fetch"));
+  const SOCIALDATA_500 = 'socialdata HTTP 500: {"status":"error","message":"Failed to fetch data from Twitter"}';
+  try {
+    await sql`INSERT INTO sources (id, name, kind, next_fetch_at) SELECT id, id, 'rss', '2100-01-01' FROM unnest(${ids}::text[]) id`;
+    await run(ids, now - MIN, null);
+    await run(outage, now, SOCIALDATA_500);
+    assert.deepEqual(await told(now), ["content.fetch"]);
+    await run(outage, now + 10 * MIN, null);
+    assert.deepEqual(await told(now + 10 * MIN), [], "gone for ten minutes: no recovery yet");
+    await run(outage, now + 120 * MIN, SOCIALDATA_500);
+    assert.deepEqual(await told(now + 120 * MIN), [], "back within three hours: the same outage, nothing new");
+    await run(outage, now + 130 * MIN, null);
+    assert.deepEqual(await told(now + 130 * MIN), [], "gone again: its three hours start with this round");
+    assert.deepEqual(await told(now + 301 * MIN), [], "three hours after it was last found is not three hours confirmed gone");
+    assert.deepEqual(await told(now + 311 * MIN), ["content.fetch:recovered"], "told once it stayed gone three hours");
+
+    await run(outage, now + 360 * MIN, SOCIALDATA_500);
+    assert.deepEqual(await told(now + 360 * MIN), ["content.fetch"], "a later outage is a new incident");
+    await run(ids.slice(100, 200), now + 370 * MIN, "TypeError: fetch failed");
+    assert.deepEqual(await told(now + 370 * MIN), ["content.fetch"], "our own connection failing as well is told at once, not after the hour");
+    await run(ids.slice(0, 200), now + 380 * MIN, null);
+    assert.deepEqual(await told(now + 390 * MIN), ["content.fetch:recovered"], "our own outage does not wait to settle");
+
+    // An incident told before levels were kept still escalates at once once it has been found again.
+    await sql`UPDATE settings SET value = value || ${sql.json({ "content.fetch": { title: "SocialData 出故障", since: new Date(now + 400 * MIN).toISOString(), sentAt: new Date(now + 400 * MIN).toISOString() } })} WHERE key = 'alerts.state'`;
+    await run(outage, now + 410 * MIN, SOCIALDATA_500);
+    assert.deepEqual(await told(now + 410 * MIN), [], "the provider's outage, told ten minutes ago");
+    await run(ids.slice(100, 200), now + 420 * MIN, "TypeError: fetch failed");
+    assert.deepEqual(await told(now + 420 * MIN), ["content.fetch"], "turning into our own is told at once");
+  } finally {
+    await sql`DELETE FROM sources WHERE id IN ${sql(ids)}`;
+    await sql`UPDATE settings SET value = value - 'content.fetch' WHERE key = 'alerts.state'`;
+    process.env.COLLECT_ENABLED = "false";
+  }
+});
+
 // A restart, a paused valve, or old failures leaving the initial detection window cannot
 // close an open incident. A partial repair must keep the remaining work visible.
 test("content incidents survive restarts, pauses, aging failures and partial recovery", async () => {

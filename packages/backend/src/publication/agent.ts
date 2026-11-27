@@ -9,7 +9,7 @@ import { CATEGORIES } from "@aihot/industry/taxonomy";
 import { ENGLISH } from "@aihot/contracts/english";
 import { translator, type Locale } from "@aihot/contracts/i18n";
 import { MCP_TOOL_NAMES as T } from "@aihot/contracts/mcp";
-import { REPORT_NAMES_EN } from "@aihot/contracts/site";
+import { REPORT_NAMES, REPORT_NAMES_EN } from "@aihot/contracts/site";
 import { categoryLabel, isCategoryKey, PUBLIC_API_CATEGORY_KEYS, toPublicApiCategory, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { beijingDate, beijingTime, beijingWeekday, weekdayEn } from "@aihot/contracts/time";
 import { serverModules } from "../modules.ts";
@@ -277,7 +277,7 @@ export function dailyAnswer(r: DailyReport, via: Via, notes: Map<string, DailyNo
   }
   const when = ENGLISH?.editionWhen.daily ?? EDITION_WHEN.daily;
   return answer([
-    t(`# ${SITE.name} 日报 · ${r.date}（${beijingWeekday(r.date)}）`, `# ${SITE.name} ${REPORT_NAMES_EN.daily} · ${r.date} (${weekdayEn(r.date)})`),
+    t(`# ${SITE.name} ${REPORT_NAMES.daily} · ${r.date}（${beijingWeekday(r.date)}）`, `# ${SITE.name} ${REPORT_NAMES_EN.daily} · ${r.date} (${weekdayEn(r.date)})`),
     "",
     t(
       `收录北京时间 ${stamp(r.windowStart)} 至 ${stamp(r.windowEnd)} 的动态，${EDITION_WHEN.daily} 发布。日报页：${r.links.aihot}`,
@@ -312,7 +312,7 @@ export interface PeriodReport {
 
 export function periodAnswer(r: PeriodReport, kind: "weekly" | "monthly", via: Via, lang: Locale = "zh"): string {
   const t = translator(lang);
-  const name = t(kind === "weekly" ? "周报" : "月报", REPORT_NAMES_EN[kind]);
+  const name = t(REPORT_NAMES[kind], REPORT_NAMES_EN[kind]);
   const unit = t(kind === "weekly" ? "周" : "月", kind === "weekly" ? "week" : "month");
   const key = r.week ?? r.month ?? "";
   const days = r.periodStart && r.periodEnd ? t(` ${r.periodStart} 至 ${r.periodEnd} `, `${r.periodStart} to ${r.periodEnd}`) : t(` ${key} `, key);
@@ -403,7 +403,7 @@ export function agentGuide(lang: Locale = "zh"): string {
     row(t("某家公司、产品、模型、人物或话题", "A company, product, model, person or topic"), t(`${search}（最近 7 天；只看今天加 window=24h）`, `${search} (the last 7 days; window=24h for today only; English titles and summaries are searchable when available)`)),
     row(t("现在最热、大家在讨论什么", "What's hot, what people are discussing"), u("/hot")),
     row(t("某个热点的来龙去脉、后续进展", "A trending story's background and developments"), t("热点结果里每个事件的「来龙去脉」地址", "the “Full story” address of each story in the trending results")),
-    row(t(`${SITE.name} 日报`, `The ${SITE.name} ${REPORT_NAMES_EN.daily}`), t(`${daily}（最新一期）；指定日期：${datedDaily}`, `${daily} (latest issue); a given date: ${datedDaily}`)),
+    row(t(`${SITE.name} ${REPORT_NAMES.daily}`, `The ${SITE.name} ${REPORT_NAMES_EN.daily}`), t(`${daily}（最新一期）；指定日期：${datedDaily}`, `${daily} (latest issue); a given date: ${datedDaily}`)),
     row(t("这一周、这个月的重点（周报、月报）", `This week's or month's top stories (${REPORT_NAMES_EN.weekly}, ${REPORT_NAMES_EN.monthly})`), t(`${periods}（最新一期）；指定一期：${datedPeriods}`, `${periods} (latest issue); a given issue: ${datedPeriods}`)),
     ...(en ? [] : abilities).map((a) => `| ${a.ask} | ${u(a.path)} |`),
     ...(en ? [] : pages).map((p) => `| ${p.ask} | ${p.where} |`),

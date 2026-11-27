@@ -10,7 +10,7 @@ import { v1Items } from "@aihot/backend/publication/v1";
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
 import { dailyWithNotes, isPeriodKey, v1Period } from "@aihot/backend/publication/reports";
 import * as english from "@aihot/backend/publication/english";
-import { REPORT_NAMES_EN } from "@aihot/contracts/site";
+import { REPORT_NAMES, REPORT_NAMES_EN } from "@aihot/contracts/site";
 import { serverModules } from "@aihot/backend/modules";
 import { QueryError, sendProblem, sendTextWithEtag, strictQuery } from "../http/respond.ts";
 import { enumParam, inLanguage, intParam, LANG, publicHandler, readerQuery, V1_OPERATIONS } from "./v1.ts";
@@ -100,14 +100,14 @@ export function registerAgent(app: FastifyInstance) {
   }));
 
   for (const p of [
-    { kind: "weekly", name: "周报", param: "week", form: "a real ISO week such as 2026-W39", latest: V1_OPERATIONS.latestWeekly.cacheControl, byKey: V1_OPERATIONS.weeklyByWeek.cacheControl },
-    { kind: "monthly", name: "月报", param: "month", form: "a real month such as 2026-09", latest: V1_OPERATIONS.latestMonthly.cacheControl, byKey: V1_OPERATIONS.monthlyByMonth.cacheControl },
+    { kind: "weekly", param: "week", form: "a real ISO week such as 2026-W39", latest: V1_OPERATIONS.latestWeekly.cacheControl, byKey: V1_OPERATIONS.weeklyByWeek.cacheControl },
+    { kind: "monthly", param: "month", form: "a real month such as 2026-09", latest: V1_OPERATIONS.latestMonthly.cacheControl, byKey: V1_OPERATIONS.monthlyByMonth.cacheControl },
   ] as const) {
     const nameEn = REPORT_NAMES_EN[p.kind].toLowerCase();
     app.get(`/api/v1/agent/${p.kind}`, publicHandler(async (req, reply) => {
       const { lang } = readerQuery(req, LANG);
       const body = await v1Period(p.kind, "latest");
-      if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: lang === "en" ? `No ${nameEn} has been published yet.` : `还没有发布过${p.name}。` });
+      if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: lang === "en" ? `No ${nameEn} has been published yet.` : `还没有发布过${REPORT_NAMES[p.kind]}。` });
       const report = (await inLanguage(body, english.v1PeriodAnswer(p.kind, "text"), lang)).report;
       return markdown(req, reply, periodAnswer(report, p.kind, "http", lang), `agent-${p.kind}`, p.latest);
     }));
@@ -117,7 +117,7 @@ export function registerAgent(app: FastifyInstance) {
       if (!isPeriodKey(p.kind, key)) throw new QueryError(`${p.param} must be ${p.form}.`);
       const body = await v1Period(p.kind, key);
       if (!body) {
-        const detail = lang === "en" ? `There is no ${nameEn} for ${key}; don't pass off another issue.` : `没有 ${key} 的${p.name}；不要换一期冒充。`;
+        const detail = lang === "en" ? `There is no ${nameEn} for ${key}; don't pass off another issue.` : `没有 ${key} 的${REPORT_NAMES[p.kind]}；不要换一期冒充。`;
         return sendProblem(req, reply, { status: 404, code: "not_found", detail, cacheControl: "public, max-age=60" });
       }
       const report = (await inLanguage(body, english.v1PeriodAnswer(p.kind, "text"), lang)).report;

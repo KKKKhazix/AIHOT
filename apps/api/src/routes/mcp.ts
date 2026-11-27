@@ -10,7 +10,7 @@ import { z } from "zod";
 import { DEPLOYMENT, POLICY, SITE } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import type { Locale } from "@aihot/contracts/i18n";
-import { REPORT_NAMES_EN } from "@aihot/contracts/site";
+import { REPORT_NAMES, REPORT_NAMES_EN } from "@aihot/contracts/site";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { MCP_TOOL_NAMES as T, mcpToolName } from "@aihot/contracts/mcp";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
@@ -238,9 +238,9 @@ function registerTools(server: McpServer) {
   );
 
   for (const p of [
-    { kind: "weekly", tool: T.weekly, input: WEEKLY_INPUT, key: (a: { week?: string }) => a.week, name: "周报", form: "有效的 ISO 周（例如 2026-W39）", formEn: "a real ISO week such as 2026-W39",
+    { kind: "weekly", tool: T.weekly, input: WEEKLY_INPUT, key: (a: { week?: string }) => a.week, form: "有效的 ISO 周（例如 2026-W39）", formEn: "a real ISO week such as 2026-W39",
       description: `Get ${SITE.name}'s edited weekly report: the week's most important events chosen from its dailies, grouped by section, with an overview. Use this for what happened this week or in a given ISO week; omit week for the latest.` },
-    { kind: "monthly", tool: T.monthly, input: MONTHLY_INPUT, key: (a: { month?: string }) => a.month, name: "月报", form: "有效的月份（例如 2026-09）", formEn: "a real month such as 2026-09",
+    { kind: "monthly", tool: T.monthly, input: MONTHLY_INPUT, key: (a: { month?: string }) => a.month, form: "有效的月份（例如 2026-09）", formEn: "a real month such as 2026-09",
       description: `Get ${SITE.name}'s edited monthly report: the month's most important events chosen from its dailies, grouped by section, with an overview. Use this for what happened this month or in a given month; omit month for the latest.` },
   ] as const) {
     server.registerTool(
@@ -255,8 +255,8 @@ function registerTools(server: McpServer) {
         const read = await recent(`${p.kind}:${key ?? "latest"}`, () => v1Period(p.kind, key ?? "latest"));
         if (!read) {
           return fail("not_found", key
-            ? (en ? `There is no ${name} for ${key}; don't pass off another issue.` : `没有 ${key} 的${p.name}；不要换一期冒充。`)
-            : (en ? `No ${name} has been published yet.` : `还没有发布过${p.name}。`));
+            ? (en ? `There is no ${name} for ${key}; don't pass off another issue.` : `没有 ${key} 的${REPORT_NAMES[p.kind]}；不要换一期冒充。`)
+            : (en ? `No ${name} has been published yet.` : `还没有发布过${REPORT_NAMES[p.kind]}。`));
         }
         const body = await both(read, english.v1PeriodAnswer(p.kind, "text"), english.v1PeriodAnswer(p.kind, "json"), lang);
         return ok(periodAnswer(body.text.report, p.kind, "mcp", lang), body.json);

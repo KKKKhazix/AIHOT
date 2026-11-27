@@ -1,7 +1,7 @@
 // Selected candidates waiting for a news identity: one reader-impact view for alerts and the admin.
 import type { AdminRuns, BeforeJson } from "@aihot/contracts/admin";
 import { sql } from "../db.ts";
-import { AUTO_RELEASE_NOTE } from "./recover.ts";
+import { alreadyAutoReleased } from "../providers/receipts.ts";
 
 export const GROUPING_WARN_AFTER_MS = 10 * 60_000;
 type WaitingNews = Omit<BeforeJson<AdminRuns>["grouping"]["items"][number], "since"> & { since: Date };
@@ -17,8 +17,7 @@ export async function waitingSelectedNews(): Promise<WaitingNews[]> {
            r.status AS receipt_status,
            EXISTS (SELECT 1 FROM pgboss.job j WHERE j.name = 'events.group' AND j.state IN ('created', 'retry', 'active')
                    AND j.data->>'articleId' = a.id) AS running,
-           EXISTS (SELECT 1 FROM receipt_attempts attempt WHERE attempt.receipt_id = r.id
-                   AND (attempt.auto_released OR attempt.error LIKE ${AUTO_RELEASE_NOTE + "%"})) AS released
+           ${alreadyAutoReleased} AS released
     FROM publications p JOIN articles a ON a.id = p.article_id LEFT JOIN receipts r ON r.id = a.grouping_receipt_id
     LEFT JOIN article_revisions revision ON revision.article_id = a.id AND revision.revision = a.revision
     WHERE p.selection_candidate AND p.eligible AND p.visibility = 'public' AND a.grouping_status <> 'complete'

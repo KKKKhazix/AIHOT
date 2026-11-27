@@ -3,14 +3,14 @@ import { inLanguage } from "@aihot/contracts/i18n";
 // feed is also at /en/feed…, in English (publication/feeds.ts).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { READER_LANGUAGES } from "@aihot/contracts/english";
-import { feedCacheControl, isFeedCategory, itemFeed, reportFeed, type FeedLanguage, type ItemFeedKind } from "@aihot/backend/publication/feeds";
+import { isFeedCategory, itemFeed, reportFeed, type FeedLanguage, type ItemFeedKind } from "@aihot/backend/publication/feeds";
 import { serverModules } from "@aihot/backend/modules";
 import { applyPublicHeaders, sendTextWithEtag } from "../http/respond.ts";
 
-async function sendFeed(req: FastifyRequest, reply: FastifyReply, xml: string, cacheControl: string, lang: FeedLanguage) {
+async function sendFeed(req: FastifyRequest, reply: FastifyReply, xml: string, lang: FeedLanguage) {
   applyPublicHeaders(reply, { cors: false });
   for (const m of serverModules()) m.on?.exitServed?.("rss", req);
-  return sendTextWithEtag(req, reply, xml, { etagPrefix: lang === "en" ? "rss-en" : "rss", cacheControl, contentType: "application/rss+xml; charset=utf-8" });
+  return sendTextWithEtag(req, reply, xml, { etagPrefix: lang === "en" ? "rss-en" : "rss", cacheControl: "public, max-age=300, s-maxage=300, must-revalidate", contentType: "application/rss+xml; charset=utf-8" });
 }
 
 function feedError(reply: FastifyReply) {
@@ -29,7 +29,7 @@ function registerIn(app: FastifyInstance, lang: FeedLanguage) {
   }
   const item = (kind: ItemFeedKind) => async (req: FastifyRequest, reply: FastifyReply) => {
     try {
-      return await sendFeed(req, reply, await itemFeed(kind, null, { lang }), feedCacheControl(kind), lang);
+      return await sendFeed(req, reply, await itemFeed(kind, null, { lang }), lang);
     } catch (error) {
       req.log.error({ err: error }, "feed error");
       return feedError(reply);
@@ -41,7 +41,7 @@ function registerIn(app: FastifyInstance, lang: FeedLanguage) {
   for (const kind of ["daily", "weekly", "monthly"] as const) {
     app.get(at(`/feed/${kind}.xml`), async (req, reply) => {
       try {
-        return await sendFeed(req, reply, await reportFeed(kind, lang), feedCacheControl(kind), lang);
+        return await sendFeed(req, reply, await reportFeed(kind, lang), lang);
       } catch (error) {
         req.log.error({ err: error }, "feed error");
         return feedError(reply);
@@ -55,7 +55,7 @@ function registerIn(app: FastifyInstance, lang: FeedLanguage) {
       if (!file.endsWith(".xml") || !isFeedCategory(slug)) return reply.code(404).type("text/plain; charset=utf-8").send("Not found");
       const kind = full ? "selected-full" : "selected";
       try {
-        return await sendFeed(req, reply, await itemFeed(kind, slug, { lang }), feedCacheControl(kind), lang);
+        return await sendFeed(req, reply, await itemFeed(kind, slug, { lang }), lang);
       } catch (error) {
         req.log.error({ err: error }, "feed error");
         return feedError(reply);

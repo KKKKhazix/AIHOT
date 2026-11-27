@@ -28,16 +28,6 @@ import { siteUrl } from "./links.ts";
 /** A feed's language: Chinese at /feed…, English at /en/feed… (on a site with an English edition). */
 export type FeedLanguage = Locale;
 
-interface FeedMeta {
-  id: string;
-  path: string;
-  title: string;
-  description: string;
-  homePath: string;
-  pollHintMinutes: number;
-  edgeCacheSeconds: number;
-}
-
 const ITEMS_KEPT = 50;
 const ISSUES_KEPT: Record<ReportKind, number> = { daily: 30, weekly: 12, monthly: 12 };
 const when = ENGLISH?.editionWhen ?? { daily: "daily", weekly: "weekly", monthly: "monthly" };
@@ -94,18 +84,13 @@ const FEEDS = {
 };
 
 /** A category feed inherits the metadata of the feed it narrows. */
-export function feedMeta(id: ItemFeedKind | ReportKind, lang: FeedLanguage = "zh"): FeedMeta {
+export function feedMeta(id: ItemFeedKind | ReportKind, lang: FeedLanguage = "zh") {
   const meta = FEEDS[id];
   return {
-    id, path: inLanguage(meta.path, lang), homePath: inLanguage(meta.homePath, lang),
+    path: inLanguage(meta.path, lang), homePath: inLanguage(meta.homePath, lang),
     title: meta.title[lang], description: meta.description[lang],
-    pollHintMinutes: meta.pollHintMinutes, edgeCacheSeconds: 300,
+    pollHintMinutes: meta.pollHintMinutes,
   };
-}
-
-export function feedCacheControl(id: ItemFeedKind | ReportKind): string {
-  const m = feedMeta(id);
-  return `public, max-age=${m.edgeCacheSeconds}, s-maxage=${m.edgeCacheSeconds}, must-revalidate`;
 }
 
 /** RSS <author> needs an address: a no-reply one on the site's own domain. */

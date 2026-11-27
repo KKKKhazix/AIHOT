@@ -324,7 +324,7 @@ test("the clipboard is written only through lib/clipboard.ts", () => {
 });
 
 test("components use React's layout effect directly", () => {
-  const environmentChoice = /typeof\s+window\s*[!=]==?\s*["']undefined["']\s*\?\s*(?:useLayoutEffect\b|(?:useEffect|\(\s*\)\s*=>\s*\{\s*\})\s*:\s*useLayoutEffect\b)/;
+  const environmentChoice = /typeof\s+window\s*[!=]==?\s*["']undefined["']\s*\?\s*(?:(?:[\w.]+|\(\s*\)\s*=>\s*\{\s*\})\s*:\s*)?(?:React\.)?useLayoutEffect\b/;
   const copies = webSources(/\.tsx?$/).filter(({ text }) => environmentChoice.test(text));
   assert.deepEqual(copies.map(({ file }) => file), [], "直接使用 React 的 useLayoutEffect，服务端渲染会跳过它");
 });

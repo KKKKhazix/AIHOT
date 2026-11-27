@@ -49,7 +49,10 @@ export function llmsTxt(opts: {
 }): string {
   const u = siteUrl;
   const v = PUBLIC_INTERFACE_VERSION;
-  const rss = (name: string, id: Parameters<typeof feedMeta>[0]) => `- [${name}](${u(feedMeta(id).path)}): ${feedMeta(id).description}`;
+  const rss = (name: string, id: Parameters<typeof feedMeta>[0]) => {
+    const { path, description } = feedMeta(id);
+    return `- [${name}](${u(path)}): ${description}`;
+  };
   const page = (name: string, path: string, covers: string | null) => `- [${name}](${u(path)})${covers ? `: ${covers}` : ""}`;
   // Examples use a real category: the second-to-last (papers in the AI pack).
   const sample = PUBLIC_API_CATEGORY_KEYS.at(-2) ?? PUBLIC_API_CATEGORY_KEYS[0];

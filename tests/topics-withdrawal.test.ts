@@ -3,27 +3,20 @@
 // The way it can go wrong: the page's or the index page's latest headline still shows the title from
 // the cached index after the withdrawal. Corrections can also leave an old headline or keep a report in
 // a company it no longer belongs to; check them before cache expiry.
-import { tag } from "./setup.ts";
+import { topicTag as T, withdrawalReports } from "./topic-fixtures.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
-import { upsertMaterial } from "@aihot/backend/content/materials";
 import { stopBoss } from "@aihot/backend/jobs/queue";
-import { publishArticle } from "@aihot/backend/publication/publish";
 import { listTopicSummaries, loadTopicPage } from "@aihot/backend/publication/topics";
 import { overrideFields } from "@aihot/backend/admin/content";
 
-const T = tag();
-const SOURCE = `test-topics-withdrawal-${T}`;
 let older: string;
 let newer: string;
 let corrected: string;
 
 before(async () => {
-  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at) VALUES (${SOURCE}, 'Media', 'rss', 'T2', 'editorial', '2100-01-01')`;
-  older = await report(1, 3);
-  newer = await report(2, 1);
-  corrected = await report(3, 2, "qwen");
+  ({ older, newer, corrected } = await withdrawalReports());
   // All scenarios share this one cold index, then exercise the cache without waiting a minute.
   await loadTopicPage("minimax", 1);
 });
@@ -31,18 +24,6 @@ after(async () => {
   await stopBoss();
   await closeDb();
 });
-
-async function report(n: number, hoursAgo: number, subject = "minimax"): Promise<string> {
-  const at = new Date(Date.now() - hoursAgo * 3600_000);
-  const { articleId } = await upsertMaterial({
-    sourceId: SOURCE, url: `https://example.com/withdrawal-${T}-${n}`, title: `MiniMax report ${n}`, bodyText: "body", bodyHtml: "<p>body</p>", bodyStatus: "ok", via: "fetch", publishedAt: at,
-  });
-  await sql`UPDATE articles SET discovered_at = ${at}, timeline_at = ${at}, grouped_at = now() WHERE id = ${articleId}`;
-  await sql`INSERT INTO analyses (article_id, input_revision, origin, relevance, category, title_zh, summary_zh, score, selected, subjects, tags)
-            VALUES (${articleId}, 1, 'rule', 'pass', 'ai-models', ${`${subject} 消息 ${n}`}, '摘要', 80, true, ${[subject]}, ${['模型发布']})`;
-  await publishArticle(articleId, { releasedAt: new Date(at.getTime() + 60_000) });
-  return articleId;
-}
 
 test("a withdrawn report leaves the topic page and the index while the topic index is still cached", async () => {
   // Both are read into the cached index.

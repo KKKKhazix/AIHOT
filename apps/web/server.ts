@@ -1,6 +1,7 @@
 // Production web server: built client assets, the shared redirect table and SSR. Api-owned paths are
 // proxied to the api process, so one port serves the whole site; a reverse proxy in front may also send
 // them to the api directly.
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -132,9 +133,70 @@ function pageResponse(req: import("node:http").IncomingMessage, res: import("nod
       res.setHeader("Cache-Control", seconds > 0
         ? `public, max-age=${Math.min(seconds, BROWSER_MAX_SECONDS)}, s-maxage=${seconds}, must-revalidate`
         : "no-cache");
+      if (seconds > 0 && req.method === "GET") return holdForValidation(req, res, status, writeHead);
     }
     return typeof messageOrHeaders === "string" ? writeHead(status, messageOrHeaders) : writeHead(status);
   }) as typeof res.writeHead;
+}
+
+/**
+ * The values a page takes from the clock rather than its content: when the browser may stop reusing it
+ * (cachedPage's expiresAt) and the server's now for a page's first paint (serverNow). Raw in navigation data,
+ * escaped inside the HTML's inline data.
+ */
+const CLOCK_VALUES = /((?:expiresAt|serverNow)\\?"),\d+/g;
+
+/**
+ * A shared page is held until complete and tagged with a fingerprint of everything but its clock values.
+ * A CDN in front revalidates each copy as it expires (every minute for the busiest pages), so a page whose content
+ * has not changed costs a 304 instead of the whole page again. The CDN keeps serving its copy, clock values and all:
+ * a past expiresAt only means the browser fetches the page again instead of reusing it in the same document.
+ */
+function holdForValidation(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse, status: number, writeHead: (status: number) => import("node:http").ServerResponse) {
+  const chunks: Buffer[] = [];
+  const write = res.write.bind(res);
+  const end = res.end.bind(res);
+  const release = () => {
+    res.write = write;
+    res.end = end;
+  };
+  // An error answer after this (server.ts's catch) replaces the page: let it through untouched.
+  const writeHeadAgain = res.writeHead;
+  res.writeHead = ((...args: Parameters<typeof res.writeHead>) => {
+    release();
+    res.writeHead = writeHeadAgain;
+    return res.writeHead(...args);
+  }) as typeof res.writeHead;
+  const take = (chunk: unknown, encoding?: unknown) => {
+    if (chunk === undefined || chunk === null || typeof chunk === "function") return;
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : typeof chunk === "string" ? Buffer.from(chunk, typeof encoding === "string" ? encoding as BufferEncoding : "utf8") : Buffer.from(chunk as Uint8Array));
+  };
+  res.write = ((chunk: unknown, encoding?: unknown, callback?: unknown) => {
+    take(chunk, encoding);
+    const done = typeof encoding === "function" ? encoding : callback;
+    if (typeof done === "function") queueMicrotask(() => done());
+    return true;
+  }) as typeof res.write;
+  res.end = ((chunk?: unknown, encoding?: unknown, callback?: unknown) => {
+    take(chunk, encoding);
+    release();
+    res.writeHead = writeHeadAgain;
+    const done = [chunk, encoding, callback].find((x) => typeof x === "function") as (() => void) | undefined;
+    const body = Buffer.concat(chunks);
+    const tag = `W/"p-${createHash("sha256").update(body.toString("utf8").replace(CLOCK_VALUES, "$1,0")).digest("hex").slice(0, 16)}"`;
+    res.setHeader("ETag", tag);
+    const asked = String(req.headers["if-none-match"] ?? "");
+    if (asked.split(",").some((value) => value.trim().replace(/^W\//, "") === tag.slice(2))) {
+      res.removeHeader("Content-Length");
+      res.removeHeader("Content-Type");
+      writeHead(304);
+      return end(done);
+    }
+    res.setHeader("Content-Length", body.length);
+    writeHead(status);
+    return end(body, done);
+  }) as typeof res.end;
+  return res;
 }
 
 async function handle(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) {

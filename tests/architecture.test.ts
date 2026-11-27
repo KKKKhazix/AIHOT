@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { assertNoViolations } from "./source-checks.ts";
+import { assertNoViolations, sourceFiles } from "./source-checks.ts";
 import { presentationAssertions, rawLoaderPaths } from "./lesson-checks.ts";
 import { clockViolationsByFile } from "./test-clock.ts";
 import { after, test } from "node:test";
@@ -55,6 +55,13 @@ function sources(dir: string, kind = /\.tsx?$/): Array<{ file: string; text: str
 
 /** Module specifiers a file imports (static, dynamic and type imports). */
 const specifiers = (text: string) => [...text.matchAll(/\b(?:from|import)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1]!);
+
+test("browser suites run in the web checks before the parallel backend tests", () => {
+  const misplaced = sourceFiles("*.test.ts").filter(file =>
+    /^(?:modules\/[^/]+\/)?tests\//.test(file)
+    && /\b(?:chromium|firefox|webkit)\.launch\s*\(/.test(readFileSync(path.join(ROOT, file), "utf8")));
+  assert.deepEqual(misplaced, [], `请把使用浏览器的测试放进 apps/web/tests 或本模块的 web/tests，随网页测试顺序运行：\n${misplaced.join("\n")}`);
+});
 
 /** A specifier as a path under packages/backend/src (`events/group.ts`), or null outside the backend. */
 function backendPath(file: string, spec: string): string | null {

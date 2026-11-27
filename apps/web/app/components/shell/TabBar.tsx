@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { useLocation, useRevalidator } from "react-router";
 import { IntentLink } from "../ui/IntentLink";
 import { tabs, type TabKey } from "./nav";
@@ -11,8 +11,6 @@ import { pagePath, useLocale, useT } from "../../lib/i18n";
 
 const subscribe = () => () => {};
 const serverTab = () => null;
-const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-
 /**
  * The phone tab bar (below lg). A page lights the tab it declares; pages reached from several tabs keep
  * the tab the reader came from. Tapping the tab you are on goes back to its first screen (sliding back,
@@ -33,7 +31,7 @@ export function TabBar({ changelogVersion }: { changelogVersion: string | null }
   const items = tabs(locale);
   const requested = screen.tab ?? restored ?? last.current ?? screen.home;
   const active = requested && !items.some((t) => t.key === requested) ? "featured" : requested;
-  useIsoLayoutEffect(() => {
+  useLayoutEffect(() => {
     // Do not overwrite a saved entry with the server fallback before hydration reads this browser's tab.
     if (restored === null) return;
     last.current = active;

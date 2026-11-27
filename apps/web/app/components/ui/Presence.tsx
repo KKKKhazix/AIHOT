@@ -12,8 +12,6 @@ import { LEAVE_MS, reducedMotion, type PresenceMotion } from "../../lib/motion";
 type Animatable = ReactElement<{ className?: string; inert?: boolean }>;
 type Phase = "rest" | "hidden" | "out" | "gone";
 
-const useIsoLayoutEffect = typeof window === "undefined" ? () => {} : useLayoutEffect;
-
 export function Presence({ show, children, motion, appear = false }: {
   show: boolean;
   /** One element; it receives the motion's classes. */
@@ -27,7 +25,7 @@ export function Presence({ show, children, motion, appear = false }: {
   const [phase, setPhase] = useState<Phase>(show ? (appear ? "hidden" : "rest") : "gone");
   const last = useRef<Animatable>(children);
   if (show) last.current = children;
-  useIsoLayoutEffect(() => {
+  useLayoutEffect(() => {
     if (show) {
       if (phase === "hidden" || phase === "gone") {
         // Settle the hidden style the element was inserted with, so letting it go is a change to transition.

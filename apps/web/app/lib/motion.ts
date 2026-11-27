@@ -2,8 +2,6 @@
 // preference, anchor jumps and the section being read.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-
 /** The lengths and curves of app.css ("Motion"), for scripts that animate (tests/architecture.test.ts compares). */
 export const MOTION = {
   feedback: 150,
@@ -78,7 +76,7 @@ export function useHeightTween(ref: { current: HTMLElement | null }, key: unknow
     watch.observe(el);
     return () => watch.disconnect();
   }, [ref]);
-  useIsoLayoutEffect(() => {
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const running = el.getAnimations?.().find((a) => a.id === "height-tween");

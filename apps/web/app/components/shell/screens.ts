@@ -1,7 +1,7 @@
 // What a page tells the phone shell about itself, as its route `handle` (a Screen): the tab it sits under, the short
 // name a back button shows when it leads there, and whether it brings its own bottom toolbar. Also the
 // names of the pages in this tab's history, so a back button can say where it goes ("‹ 精选").
-import { useEffect, useLayoutEffect, useState, type MouseEvent } from "react";
+import { useLayoutEffect, useState, type MouseEvent } from "react";
 import { useLocation, useMatches } from "react-router";
 import { useNavigate } from "../../lib/link";
 import { readJson, writeRaw } from "../../lib/local-state";
@@ -28,8 +28,6 @@ export function useScreen(): Screen {
   return out;
 }
 
-const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-
 /**
  * A desktop back link that goes where the phone bar's back goes: through the reader's history when a page of ours
  * is behind it, else to its own address (which the link keeps, for a new tab and for crawlers). `behind` lets it
@@ -39,7 +37,7 @@ export function useHistoryBack(): { behind: boolean; onClick: (event: MouseEvent
   const { key } = useLocation();
   const navigate = useNavigate();
   const [behind, setBehind] = useState(false);
-  useIsoLayoutEffect(() => setBehind(historyIndex() > 0), [key]);
+  useLayoutEffect(() => setBehind(historyIndex() > 0), [key]);
   const onClick = (event: MouseEvent) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || historyIndex() === 0) return;
     event.preventDefault();

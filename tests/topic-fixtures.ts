@@ -36,6 +36,16 @@ export async function report(r: Report): Promise<string> {
   return articleId;
 }
 
+/** Reports used by withdrawal and correction scenarios in the topic directory and chronicle. */
+export async function withdrawalReports() {
+  await sql`INSERT INTO sources (id, name, kind, tier, participation_mode, next_fetch_at) VALUES (${mediaSource}, 'Media', 'rss', 'T2', 'editorial', '2100-01-01')`;
+  const publish = (n: number, hoursAgo: number, subject = "minimax") => report({
+    at: new Date(Date.now() - hoursAgo * 3600_000), originalTitle: `MiniMax report ${n}`,
+    title: `${subject} 消息 ${n}`, subjects: [subject],
+  });
+  return { older: await publish(1, 3), newer: await publish(2, 1), corrected: await publish(3, 2, "qwen") };
+}
+
 export async function story(title: string): Promise<{ id: number; publicId: string }> {
   const publicId = randomUUID();
   const [s] = await sql<{ id: number }[]>`INSERT INTO stories (public_id, title, first_report_at, latest_at) VALUES (${publicId}, ${title}, now(), now()) RETURNING id`;

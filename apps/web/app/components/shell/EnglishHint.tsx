@@ -7,7 +7,8 @@ import { useLocation } from "react-router";
 import { ENGLISH } from "@aihot/contracts/english";
 import { IconArrowRight, IconClose } from "../icons";
 import { Presence } from "../ui/Presence";
-import { KEYS, readRaw, writeRaw } from "../../lib/local-state";
+import { KEYS } from "../../lib/local-state";
+import { readRaw, writeRaw } from "../../lib/browser-storage";
 import { counterpart, useLocale } from "../../lib/i18n";
 
 /** Whether any of the browser's languages is Chinese, in any script or region. */

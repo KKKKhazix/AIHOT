@@ -17,6 +17,17 @@ export function robotsForReaders(text: string): string {
   });
 }
 
+/** Error fields shared by the API and the clients that read its responses. */
+export interface ProblemDetails {
+  type: string;
+  title: string;
+  status: number;
+  detail: string;
+  code: string;
+  requestId: string;
+  retryAfter?: number;
+}
+
 /** CORS for /api/v1/* and /openapi-v1.json. */
 export const PUBLIC_API_CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",

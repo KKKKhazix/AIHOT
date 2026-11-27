@@ -86,7 +86,9 @@ for (const entrance of ["publisher", "source-mode"] as const) test(`${entrance} 
   if (entrance === "publisher") {
     await source("T1", { publisherUrlPrefixes: [scope] });
     for (const [id, name] of [[fresh, "new"], [judged, "already-judged"]]) {
-      assert.equal((await upsertMaterial({ sourceId: signal, url: `${scope}/${name}`, title: "Discovery", via: "fetch" })).articleId, id);
+      const promoted = await upsertMaterial({ sourceId: signal, url: `${scope}/${name}`, title: "Discovery", via: "fetch" });
+      assert.equal(promoted.articleId, id);
+      assert.equal(promoted.processingNeeded, id === fresh, "only a promotion without a current judgement needs processing");
     }
   } else {
     const [s] = await sql`SELECT updated_at FROM sources WHERE id=${signal}`;
@@ -124,7 +126,7 @@ test("attribution reuses an existing current-revision editorial judgement even a
   await settleNonEditorial(articleId);
   await source("T1", { publisherUrlPrefixes: [scope] });
   const result = await upsertMaterial({ sourceId: media, url, title: "Changed discovery", via: "fetch" });
-  assert.equal(result.processingNeeded, undefined);
+  assert.equal(result.processingNeeded, false);
   assert.equal((await jobs(articleId)).length, 0);
   assert.equal((await sql`SELECT 1 FROM analyses WHERE article_id = ${articleId}`).length, 1);
 });

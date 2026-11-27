@@ -18,9 +18,8 @@ type Member = RepresentativeIdentity & {
  * ordered by when they first appeared. Follows merged story aliases to the surviving story.
  */
 export async function loadStoryFollowups(storyPublicId: string, now = new Date()): Promise<StoryFollowupsResponse | null> {
-  let found = await resolveStory(storyPublicId);
-  if (found.kind === "merged") found = await resolveStory(found.target);
-  if (found.kind !== "found") return null;
+  const found = await resolveStory(storyPublicId);
+  if (found.kind === "not_found") return null;
   const members = await sql<Member[]>`
     SELECT p.fact_id, f.public_id AS fact_public_id, p.article_id AS id, p.title, s.id AS source_id, s.name AS source_name,
       p.body_mode, p.score, p.timeline_at, p.sort_at, ${REPRESENTATIVE_COLUMNS}

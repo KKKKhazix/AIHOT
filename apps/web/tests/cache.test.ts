@@ -17,6 +17,7 @@ let contactQr = "/qr.png";
 const apiCookies: Array<string | undefined> = [];
 const api = fakeApi(async (url, res, req) => {
   apiCookies.push(req.headers.cookie);
+  if (/^\/api\/site(?:\/en)?\/items\/long-lived(?:\/original)?$/.test(url.pathname)) return { id: "long-lived", title: url.pathname };
   // The English edition's answers (/api/site/en/…) as the Chinese ones here.
   if (url.pathname.startsWith("/api/site/en/")) url.pathname = url.pathname.replace("/api/site/en/", "/api/site/");
   if (url.pathname === "/api/site/timeline") {
@@ -35,7 +36,6 @@ const api = fakeApi(async (url, res, req) => {
     res.setHeader("Content-Disposition", 'attachment; filename="article.md"');
     return res.end("# Article");
   }
-  if (url.pathname === "/api/site/items/long-lived") return { id: "long-lived", title: "t" };
   if (url.pathname === "/api/site/contact") return { wechatQr: contactQr, feishuQr: "/qr.png" };
   if (url.pathname === "/api/site/stories/merged") {
     res.statusCode = 308;
@@ -198,13 +198,18 @@ test("filtered and later list pages stay in shared caches a minute at most", asy
   }
 });
 
-test("a shared cache may keep an item page longer than browsers", async () => {
-  const res = await fetch(`${origin}/items/long-lived.data`);
-  assert.equal(res.status, 200);
-  const cc = res.headers.get("Cache-Control")!;
-  assert.equal(Number(cc.match(/(?:^|,)\s*max-age=(\d+)/)![1]), 300);
-  assert.ok(Number(cc.match(/(?:^|,)\s*s-maxage=(\d+)/)![1]) > 300);
-  await res.text();
+test("article editions read the chosen text and share the same browser and edge lifetimes", async () => {
+  const item = "/items/long-lived";
+  const editions: Array<[string, string]> = [[item, item], [item + "/original", item + "/original"]];
+  if (ENGLISH) editions.push(["/en" + item, "/en" + item], ["/en" + item + "/original", "/en" + item]);
+  for (const [page, source] of editions) {
+    const res = await fetch(origin + page + ".data");
+    assert.equal(res.status, 200, page);
+    const cc = res.headers.get("Cache-Control")!;
+    assert.equal(Number(cc.match(/(?:^|,)\s*max-age=(\d+)/)![1]), 300, page);
+    assert.ok(Number(cc.match(/(?:^|,)\s*s-maxage=(\d+)/)![1]) > 300, page);
+    assert.ok((await res.text()).includes(JSON.stringify("/api/site" + source)), page);
+  }
 });
 
 // A CDN in front revalidates each copy as it expires; an unchanged page must cost a 304, not the page again, even

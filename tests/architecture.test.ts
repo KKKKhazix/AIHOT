@@ -8,6 +8,7 @@ import { assertNoViolations, sourceFiles } from "./source-checks.ts";
 import { presentationAssertions, rawLoaderPaths } from "./lesson-checks.ts";
 import { clockViolationsByFile } from "./test-clock.ts";
 import { after, test } from "node:test";
+import { importCycles, staticImportGraph, workspaceImportPath } from "./import-graph.ts";
 import { fontSizeViolations } from "./font-size.ts";
 import { cssMotionTokens, motionViolations } from "./motion.ts";
 import { routerLinkViolations, webTextViolations } from "./web-text.ts";
@@ -36,21 +37,9 @@ test("browser assertions describe visible behavior", () => {
 const ROOT = path.resolve(import.meta.dirname, "..");
 const BACKEND = "packages/backend/src";
 
-/**
- * The source files under a folder, each named by its path from the repository root with "/" between the
- * parts on every system (path.relative gives backslashes on Windows): the rules compare and join these
- * names as POSIX paths.
- */
 function sources(dir: string, kind = /\.tsx?$/): Array<{ file: string; text: string }> {
-  const out: Array<{ file: string; text: string }> = [];
-  for (const entry of readdirSync(path.join(ROOT, dir), { withFileTypes: true, recursive: true })) {
-    if (!entry.isFile() || !kind.test(entry.name)) continue;
-    const full = path.join(entry.parentPath, entry.name);
-    const file = path.relative(ROOT, full).split(path.sep).join("/");
-    if (/\/(node_modules|build|\.react-router)\//.test(file)) continue;
-    out.push({ file, text: readFileSync(full, "utf8") });
-  }
-  return out;
+  return sourceFiles(dir).filter(file => kind.test(file))
+    .map(file => ({ file, text: readFileSync(path.join(ROOT, file), "utf8") }));
 }
 
 /** Module specifiers a file imports (static, dynamic and type imports). */
@@ -75,13 +64,21 @@ function violations(files: Array<{ file: string; text: string }>, broken: (file:
   return files.flatMap(({ file, text }) => specifiers(text).filter((spec) => broken(file, spec)).map((spec) => `${file} → ${spec}`));
 }
 
+test("static imports and re-exports do not form initialization cycles", () => {
+  const paths = importCycles(staticImportGraph()).map(files => files.join(" → "));
+  assert.deepEqual(paths, [], `请把环中共享的规则放回业务所有者，移除反向依赖：\n${paths.join("\n")}`);
+});
+
 test("the web reaches the backend only over HTTP", () => {
-  const found = violations([...sources("apps/web"), ...moduleWeb()], (_file, spec) => spec.startsWith("@aihot/backend") || spec.includes("packages/backend") || spec === "postgres" || spec === "pg-boss");
-  assert.deepEqual(found, [], "apps/web imports backend code; read it through /api/site or /api/admin instead");
+  const server = /^(?:packages\/backend\/|apps\/(?:api|worker)\/|modules\/[^/]+\/(?:backend\/|api\/|server(?:\.|$))|site\/modules\/server(?:\.|$))/;
+  const found = violations([...sources("apps/web"), ...moduleWeb()], (file, spec) =>
+    spec === "postgres" || spec === "pg-boss" || server.test(workspaceImportPath(file, spec) ?? ""));
+  assert.deepEqual(found, [], "网页通过 HTTP 读取服务端数据；共享的类型和数据定义放在契约中");
 });
 
 test("packages never import the apps, and nothing below the admin imports it", () => {
-  assert.deepEqual(violations(sources("packages"), (_file, spec) => /(^|\/)apps\//.test(spec)), []);
+  assert.deepEqual(violations(sources("packages"), (file, spec) => workspaceImportPath(file, spec)?.startsWith("apps/") === true),
+    [], "共享包依赖应用代码，请将共用定义放回业务包或契约");
   const found = violations([...sources("packages/backend/src"), ...sources("apps/worker")], (file, spec) =>
     !file.startsWith("packages/backend/src/admin/") && (backendPath(file, spec)?.startsWith("admin/") ?? false));
   assert.deepEqual(found, [], "admin/ is the top layer: move what others need to the folder that owns it");
@@ -224,6 +221,12 @@ const COMPOSE = "docker-compose.yml";
 const DEPLOYMENT = [COMPOSE, "deploy/Caddyfile"].filter((file) => existsSync(path.join(ROOT, file)));
 const tracked = (pattern: string) => execFileSync("git", ["ls-files", "--", pattern], { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
 
+test("collection is enabled only through backend/config.ts", () => {
+  const copies = production().filter(({ file, text }) =>
+    file !== `${BACKEND}/config.ts` && envReads([{ text }]).has("COLLECT_ENABLED"));
+  assert.deepEqual(copies.map(({ file }) => file), [], "请使用 backend/config.ts 的 collectionEnabled()");
+});
+
 test("every environment variable the code reads is listed in a template, and every listed one is read", () => {
   const listed = new Set(tracked("*.env.example").flatMap((file) => assigned(file, /^#?\s*([A-Z][A-Z0-9_]+)=/gm)));
   const preset = new Set([
@@ -268,7 +271,8 @@ test("Beijing time is converted only in contracts/time.ts", () => {
 // A module can use the engine, but it does not reach into another module; the site composes capabilities.
 test("modules do not import other modules", () => {
   const installed = existsSync(path.join(ROOT, "modules")) ? readdirSync(path.join(ROOT, "modules"), { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name) : [];
-  const found = violations(modules(), (file, spec) => {
+  const implementations = sources("modules", /\.(?:tsx?|m?js)$/).filter(({ file }) => !/\/tests?\/|\.test\./.test(file));
+  const found = violations(implementations, (file, spec) => {
     const owner = file.split("/")[1];
     if (spec.startsWith(".")) {
       const target = path.posix.join(path.posix.dirname(file), spec).split("/");

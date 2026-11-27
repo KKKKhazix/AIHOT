@@ -9,10 +9,9 @@ import { ITEM_COPY, SITE, withSubject } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import { linkMentions } from "@aihot/contracts/mentions";
 import { addressRuns } from "@aihot/contracts/addresses";
-import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
-import { loadFollowups } from "../features/item/followups.server";
+import { loadItemPage } from "../features/item/page.server";
 import { pageReuse } from "../lib/page-reuse";
-import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled, titleCacheSeconds } from "../lib/seo";
+import { articleLd, breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
 import { fullDateTime, timeAgo } from "../lib/format";
 import { markRead } from "../lib/local-state";
 import { copyText } from "../lib/clipboard";
@@ -37,17 +36,15 @@ import { IconArrowLeft, IconCopy, IconDownload, IconExternal, IconImage, IconLis
 import { BarButton, PhoneBar } from "../components/shell/PhoneBar";
 import { historyIndex, isPhone, type Screen } from "../components/shell/screens";
 import { Link, useNavigate } from "../lib/link";
-import { apiIn, localeOf, localizePath, translator, useLocale, useT, type Locale } from "../lib/i18n";
+import { localeOf, localizePath, translator, useLocale, useT, type Locale } from "../lib/i18n";
 
 export const handle: Screen = { home: "featured", toolbar: true };
 export { pageHeaders as headers } from "../lib/api.server";
 
 const PosterSheet = lazy(() => import("../features/item/PosterSheet"));
 
-export async function loader({ params, request }: Route.LoaderArgs) {
-  const locale = localeOf(pagePathname(request));
-  const item = await loadOr404<SiteItemDetail>(apiIn(`/items/${encodeURIComponent(params.id)}`, locale), { signal: request.signal });
-  return cachedPage(titleCacheSeconds(600, locale, item.indexable ? item.title : null), { item, followups: await loadFollowups(item, locale, request.signal) });
+export function loader({ params, request }: Route.LoaderArgs) {
+  return loadItemPage(request, params.id, "default");
 }
 
 type Loaded = { item: SiteItemDetail; followups: StoryFollowupsResponse | null };

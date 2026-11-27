@@ -64,7 +64,7 @@ export async function ingestItems(body: { sourceId?: unknown; sourceName?: unkno
       backfill: flags.backfill ? "reported-backfill" : flags.baseline ? "reported-baseline" : null,
     });
     if (res.created) created += 1;
-    if (res.created || res.revised || res.processingNeeded) await queueProcessing(res.articleId);
+    if (res.processingNeeded) await queueProcessing(res.articleId);
   }
   await sql`UPDATE sources SET last_fetch_at = now(), last_ok_at = now() WHERE id = ${source!.id}`;
   await sql`INSERT INTO ingest_events (client, kind, status, summary) VALUES ('ingest-items', 'items', 'ok', ${sql.json({ sourceId: source!.id, received: items.length, created })})`;

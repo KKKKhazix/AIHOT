@@ -524,6 +524,22 @@ test("v1, the Agent addresses and the MCP tools in English: English pages, the n
   assert.ok(HAN.test((await tool(MCP_TOOL_NAMES.hot, {})).content[0]!.text), "without lang it answers in Chinese");
 });
 
+test("a tool's Markdown and JSON see one set of stored translations", { skip: ENGLISH === null }, async () => {
+  let reads = 0;
+  const debug = sql.options.debug;
+  sql.options.debug = (_connection, query) => { if (/\bFROM\s+english_copy\b/i.test(query)) reads++; };
+  try {
+    const answer = await tool(MCP_TOOL_NAMES.story, { public_id: site.story, lang: "en" });
+    assert.ok(!answer.isError);
+    assert.ok(answer.content[0]!.text.includes(answer.structuredContent.story.title));
+    assert.equal(reads, 1, "a translation arriving between two reads could give the same story two titles");
+    await tool(MCP_TOOL_NAMES.story, { public_id: site.story });
+    assert.equal(reads, 1, "the Chinese tool answer does not need translations");
+  } finally {
+    sql.options.debug = debug;
+  }
+});
+
 test("the English pages' share images: articles, posters, issues, events, topics and pages in English, the Chinese ones as they were", { skip: ENGLISH === null }, async () => {
   const get = (url: string) => app.inject({ method: "GET", url });
   const card = await loadItemOgCard(site.a, "en");

@@ -31,6 +31,9 @@ function bool(name: string, fallback: boolean): boolean {
   return value === "true";
 }
 
+/** Collection schedules, workers and ingest endpoints all honor the same opt-in. */
+export const collectionEnabled = () => bool("COLLECT_ENABLED", false);
+
 export const isProduction = env.NODE_ENV === "production";
 
 /** AIHOT_CREDENTIALS_DIR, else the site's own default (relative to the repository). */
@@ -63,8 +66,7 @@ export const config = {
   dataDir: str("AIHOT_DATA_DIR", path.join(REPO_ROOT, ".data")),
   // Name of this deployment in alerts ("production" sends them without a prefix).
   environmentName: str("AIHOT_ENVIRONMENT", isProduction ? "production" : "development"),
-  // External-action valve: off unless the environment turns it on, like COLLECT_ENABLED (read by the
-  // worker).
+  // Model calls require an explicit opt-in at startup.
   modelCallsEnabled: bool("MODEL_CALLS_ENABLED", false),
   devAdmin: env.DEV_AUTH_ROLE === "admin" ? { displayName: env.DEV_AUTH_DISPLAY_NAME || "Dev Admin" } : null,
   /** The admin password (at least 12 characters), for sites with admin pages. */

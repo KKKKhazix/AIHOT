@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { POLICY } from "@aihot/site";
-import { NO_STORE, PUBLIC_API_CORS } from "@aihot/contracts/http-policy";
+import { NO_STORE, PUBLIC_API_CORS, type ProblemDetails } from "@aihot/contracts/http-policy";
 import { siteUrl } from "@aihot/backend/publication/links";
 import type { JsonNotice } from "@aihot/backend/modules";
 
@@ -17,27 +17,23 @@ const PROBLEM_TITLES: Record<number, string> = {
   503: "Temporarily unavailable",
 };
 
-export interface ProblemInit {
-  status: number;
-  code: string;
-  detail: string;
-  type?: string;
-  title?: string;
-  retryAfter?: number;
+export interface ProblemInit extends Pick<ProblemDetails, "status" | "code" | "detail" | "retryAfter">, Partial<Pick<ProblemDetails, "type" | "title">> {
   cacheControl?: string;
+  extensions?: Record<string, unknown> & { [Field in keyof ProblemDetails]?: never };
 }
 
 export function sendProblem(req: FastifyRequest, reply: FastifyReply, p: ProblemInit) {
-  const body: Record<string, unknown> = {
+  const body: ProblemDetails = {
     type: p.type ?? `/problems/${p.code.replace(/_/g, "-")}`,
     title: p.title ?? PROBLEM_TITLES[p.status] ?? "Error",
     status: p.status,
     detail: p.detail,
     code: p.code,
     requestId: req.id,
+    retryAfter: p.retryAfter,
+    ...p.extensions,
   };
   if (p.retryAfter !== undefined) {
-    body.retryAfter = p.retryAfter;
     reply.header("Retry-After", String(p.retryAfter));
   }
   return reply

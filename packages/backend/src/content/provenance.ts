@@ -55,13 +55,13 @@ export function publisherOwnsUrl(source: Publisher, rawUrl: string): boolean {
   });
 }
 
-/** The caller holds the article row lock. A provenance-only repair preserves the material revision. */
-export async function reconcileMaterialSource(db: Db, articleId: string, observed?: { sourceId: string; author?: string | null }): Promise<boolean> {
+/** The caller holds the article row lock. Only "promoted" resets processing for a first editorial judgement. */
+export async function reconcileMaterialSource(db: Db, articleId: string, observed?: { sourceId: string; author?: string | null }): Promise<"unchanged" | "reattributed" | "promoted"> {
   const [article] = await db<{ source_id: string; url: string; author: string | null; participation_mode: string; analyzed: boolean }[]>`
     SELECT a.source_id, a.url, a.author, s.participation_mode,
       EXISTS (SELECT 1 FROM analyses an WHERE an.article_id = a.id AND an.input_revision = a.revision AND an.relevance IS NOT NULL) AS analyzed
     FROM articles a JOIN sources s ON s.id = a.source_id WHERE a.id = ${articleId} FOR UPDATE OF a`;
-  if (!article) return false;
+  if (!article) return "unchanged";
   const candidates = await db<Publisher[]>`
     SELECT s.id, s.kind, s.config, s.participation_mode FROM sources s
     WHERE s.tier = 'T1'
@@ -71,9 +71,9 @@ export async function reconcileMaterialSource(db: Db, articleId: string, observe
       OR (s.kind = 'web_list' AND NOT (s.config ? 'publisherUrlPrefixes')
         AND EXISTS (SELECT 1 FROM article_discoveries d WHERE d.article_id = ${articleId} AND d.source_id = s.id)))`;
   const owned = candidates.filter((s) => publisherOwnsUrl(s, article.url));
-  if (owned.length !== 1) return false;
+  if (owned.length !== 1) return "unchanged";
   const publisher = owned[0]!;
-  if (publisher.id === article.source_id) return false;
+  if (publisher.id === article.source_id) return "unchanged";
   const [previous] = await db<{ visibility: string }[]>`SELECT visibility FROM publications WHERE article_id = ${articleId}`;
   const wasReadable = !!previous && hasItemPage({ visibility: previous.visibility, sourceMode: article.participation_mode });
   // Aggregator submitters are not article authors. Keep a name only from the publisher discovery.
@@ -89,5 +89,5 @@ export async function reconcileMaterialSource(db: Db, articleId: string, observe
   // This changes attribution and the public seat, not the judgement or selection threshold.
   const published = await publishArticleTx(db as Parameters<typeof publishArticleTx>[0], articleId);
   if (wasReadable && published?.changed) await emit("articleChanged", { id: articleId, kind: "content", reduced: published.reduced, reason: "publisher attribution" }, db);
-  return true;
+  return needsProcessing ? "promoted" : "reattributed";
 }

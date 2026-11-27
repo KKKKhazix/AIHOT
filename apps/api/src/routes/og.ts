@@ -5,7 +5,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ENGLISH, READER_LANGUAGES, WAITING_ENGLISH_SECONDS, needsEnglish } from "@aihot/contracts/english";
 import { namesEn, type Locale } from "@aihot/contracts/i18n";
-import { REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn } from "@aihot/contracts/site";
+import { REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn } from "@aihot/contracts/site";
 import { topicDefinition, topicName } from "@aihot/contracts/taxonomy";
 import { TOPIC_GROUP_EN } from "@aihot/industry/english";
 import * as english from "@aihot/backend/publication/english";
@@ -48,8 +48,6 @@ async function send(req: FastifyRequest, reply: FastifyReply, card: OgCard, maxA
 function notFound(reply: FastifyReply) {
   return reply.code(404).header("Cache-Control", "public, max-age=300").type("text/plain; charset=utf-8").send("Not found");
 }
-
-const REPORT_NAMES: Record<ReportKind, string> = { daily: withSubject("日报"), weekly: withSubject("周报"), monthly: withSubject("月报") };
 
 export function registerOg(app: FastifyInstance) {
   for (const lang of READER_LANGUAGES) registerIn(app, lang);
@@ -109,7 +107,7 @@ function registerIn(app: FastifyInstance, lang: Locale) {
       }, 3600, CONTENT_IMAGE_CACHE);
     }
     return send(req, reply, {
-      kicker: `${REPORT_NAMES[r.kind]} · ${reportDateLabel(r.kind, r.key)}`,
+      kicker: `${withSubject(REPORT_NAMES[r.kind])} · ${reportDateLabel(r.kind, r.key)}`,
       title: r.lead?.title ?? r.title,
       subtitle: r.lead?.leadParagraph ?? r.overview,
       meta: count > 0 ? `${count} ${REPORTS.shareUnit} · 约 ${r.readingMinutes} 分钟读完` : null,

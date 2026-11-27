@@ -16,7 +16,7 @@ import {
 } from "@aihot/backend/admin/auth";
 import { adminPagePrincipal, previewPrincipal } from "@aihot/backend/admin/preview";
 import type { Previewer } from "@aihot/backend/modules";
-import { sendProblem } from "../http/respond.ts";
+import { clientIp, sendProblem } from "../http/respond.ts";
 
 /**
  * A cookie is Secure when the request itself arrived over HTTPS: the browser judges it against the
@@ -77,54 +77,48 @@ function handlerError(req: FastifyRequest, reply: FastifyReply, error: unknown) 
   return sendProblem(req, reply, { status: 500, code: "internal_error", detail: String((error as Error).message).slice(0, 300) });
 }
 
-/** Gray data is read-only, for engine admins or module-approved previewers. */
-export function previewHandler(fn: (req: FastifyRequest, reply: FastifyReply, previewer: Previewer) => Promise<unknown>) {
+function readOnlyAccessHandler(
+  load: (cookieHeader: string | undefined) => Promise<Previewer | null>,
+  label: string,
+  fn: (req: FastifyRequest, reply: FastifyReply, previewer: Previewer) => Promise<unknown>,
+) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     reply.header("Cache-Control", "no-store");
     if (req.method !== "GET" && req.method !== "HEAD") {
       reply.header("Allow", "GET, HEAD");
-      return sendProblem(req, reply, { status: 405, code: "method_not_allowed", detail: "Preview data is read-only." });
+      return sendProblem(req, reply, { status: 405, code: "method_not_allowed", detail: `${label} data is read-only.` });
     }
-    const previewer = await previewPrincipal(req.headers.cookie);
-    if (!previewer) return sendProblem(req, reply, { status: 401, code: "unauthorized", detail: "Preview access required." });
+    const previewer = await load(req.headers.cookie);
+    if (!previewer) return sendProblem(req, reply, { status: 401, code: "unauthorized", detail: `${label} access required.` });
     try {
       return await fn(req, reply, previewer);
     } catch (error) {
       return handlerError(req, reply, error);
     }
   };
+}
+
+/** Gray data is read-only, for engine admins or module-approved previewers. */
+export function previewHandler(fn: (req: FastifyRequest, reply: FastifyReply, previewer: Previewer) => Promise<unknown>) {
+  return readOnlyAccessHandler(previewPrincipal, "Preview", fn);
 }
 
 export function adminPageHandler(fn: (req: FastifyRequest, reply: FastifyReply, previewer: Previewer) => Promise<unknown>) {
-  return async (req: FastifyRequest, reply: FastifyReply) => {
-    reply.header("Cache-Control", "no-store");
-    if (req.method !== "GET" && req.method !== "HEAD") {
-      reply.header("Allow", "GET, HEAD");
-      return sendProblem(req, reply, { status: 405, code: "method_not_allowed", detail: "Admin page data is read-only." });
-    }
-    const previewer = await adminPagePrincipal(req.headers.cookie);
-    if (!previewer) return sendProblem(req, reply, { status: 401, code: "unauthorized", detail: "Admin page access required." });
-    try {
-      return await fn(req, reply, previewer);
-    } catch (error) {
-      return handlerError(req, reply, error);
-    }
-  };
+  return readOnlyAccessHandler(adminPagePrincipal, "Admin page", fn);
 }
 
 export function registerAdminAuth(app: FastifyInstance) {
-  app.get("/api/admin/preview", async (req, reply) => {
-    reply.header("Cache-Control", "private, no-store");
-    const previewer = await previewPrincipal(req.headers.cookie);
-    if (!previewer) return sendProblem(req, reply, { status: 401, code: "unauthorized", detail: "Preview access required.", cacheControl: "private, no-store" });
-    return { name: previewer.name };
-  });
-  app.get("/api/admin/page-access", async (req, reply) => {
-    reply.header("Cache-Control", "private, no-store");
-    const admin = await adminPagePrincipal(req.headers.cookie);
-    if (!admin) return sendProblem(req, reply, { status: 401, code: "unauthorized", detail: "Admin page access required.", cacheControl: "private, no-store" });
-    return { name: admin.name };
-  });
+  for (const [path, load, label] of [
+    ["/api/admin/preview", previewPrincipal, "Preview"],
+    ["/api/admin/page-access", adminPagePrincipal, "Admin page"],
+  ] as const) {
+    app.get(path, async (req, reply) => {
+      reply.header("Cache-Control", "private, no-store");
+      const principal = await load(req.headers.cookie);
+      if (!principal) return sendProblem(req, reply, { status: 401, code: "unauthorized", detail: `${label} access required.`, cacheControl: "private, no-store" });
+      return { name: principal.name };
+    });
+  }
   if (!ADMIN) return;
 
   // The web admin sends a signed-out visitor here with ?return=.
@@ -146,7 +140,7 @@ export function registerAdminAuth(app: FastifyInstance) {
       const b = (req.body ?? {}) as Record<string, string>;
       const returnTo = String(b.return ?? SIGN_IN_HOME);
       reply.header("Cache-Control", "no-store");
-      if (tooManyAttempts(String(req.ip))) return reply.redirect(loginPage(returnTo, "too-many"), 303);
+      if (tooManyAttempts(clientIp(req))) return reply.redirect(loginPage(returnTo, "too-many"), 303);
       try {
         const { token, returnTo: target } = await passwordLogin(String(b.password ?? ""), returnTo, req.headers["user-agent"]);
         reply.header("Set-Cookie", cookie(SESSION_COOKIE, token, SESSION_DAYS * 86400, secure(req)));

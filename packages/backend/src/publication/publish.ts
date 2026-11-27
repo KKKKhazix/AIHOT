@@ -8,10 +8,11 @@ import type { XPostData } from "../content/materials.ts";
 import { originalPostCopy } from "../content/posts.ts";
 import { API_ITEM_COLUMNS, API_ITEM_FROM, rowToV1, type ApiItemRow, type V1ItemPayload } from "./items.ts";
 import { pickRepresentative, REPRESENTATIVE_COLUMNS, type RepresentativeIdentity } from "./representative.ts";
-import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
-import { editorialPolicy, emit } from "../modules.ts";
+import { enqueue, QUEUES } from "../jobs/queue.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
+import { emit } from "../modules.ts";
 import {
-  bodyModeOf, channelOf, displayTags, isIndexable, isPoolEligible, isSelectable, isIndependentSelectedSource, mayRedistribute, publicSourceName, type SourceFacts,
+  bodyModeOf, channelOf, displayTags, isAwaitingReview, isIndexable, isOriginalSuppressed, isPoolEligible, isSelectable, isIndependentSelectedSource, mayRedistribute, publicSourceName, type SourceFacts,
 } from "./rules.ts";
 import { foldableSelectionCondition, latestCompositeCondition, ownFactEvidenceCondition } from "./scope.ts";
 
@@ -233,10 +234,8 @@ export async function publishArticleTx(tx: Tx, articleId: string, options: Publi
   const f = override?.fields ?? {};
   // While an editorial policy reviews material, an unanalysed revision withholds its new raw text and media
   // until that revision's own analysis commits; any vetted copy from the prior revision remains available.
-  const awaitingReview = Boolean(editorialPolicy().reviewAnalysis)
-    && source.participation_mode === "editorial"
-    && (!analysis || analysis.input_revision < article.revision);
-  const suppressOriginal = awaitingReview || (typeof f.suppressOriginal === "boolean" ? f.suppressOriginal : analysis?.output?.suppressOriginal === true);
+  const awaitingReview = isAwaitingReview({ participationMode: source.participation_mode, revision: article.revision, analysisRevision: analysis?.input_revision });
+  const suppressOriginal = isOriginalSuppressed({ awaitingReview, override, analysis });
   const withdrawnByAnalysis = analysis?.output?.withdrawn === true;
   const isChineseTitle = isChineseText(article.title, article.language);
   // An X post carries its Chinese in the summary and translation; without a Chinese title its own

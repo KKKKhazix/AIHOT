@@ -1,5 +1,5 @@
 // Names, dates and grouping for daily, weekly and monthly reports.
-import { REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn, type ReportNavigationEntry, type ReportKind } from "@aihot/contracts/site";
+import { REPORT_KINDS, REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn, type ReportNavigationEntry, type ReportKind } from "@aihot/contracts/reports";
 import { beijingDate, isoWeekLabel, isoWeekRange, longDateEn, monthDay as engineMonthDay, monthDayEn } from "@aihot/contracts/time";
 import { EDITION_WHEN, REPORTS, SITE, subjectAfter } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
@@ -8,7 +8,7 @@ import { RELEASE_UNIT_EN } from "@aihot/industry/english";
 import { monthDay, weekdayLong, weekdayShort } from "../../lib/format.ts";
 import { feedPath, L, pagePath, translator, zh, type Locale, type Phrase } from "../../lib/i18n.ts";
 
-export const KINDS: ReportKind[] = ["daily", "weekly", "monthly"];
+export const KINDS: readonly ReportKind[] = REPORT_KINDS;
 export const KIND_PATH: Record<ReportKind, string> = { daily: "/daily", weekly: "/weekly", monthly: "/monthly" };
 
 /** The kind of report a page's address is for, the English edition's (/en/weekly) as well. */

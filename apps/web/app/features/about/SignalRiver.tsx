@@ -9,6 +9,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { SITE, withSubject } from "@aihot/site";
 import { EDITION } from "../report/format";
+import { easeInOut, readPalette, rgba, smooth, trackPointer, type Palette } from "../../lib/canvas";
 import { watchAppearance } from "../../lib/local-state";
 import { MOTION, reducedMotion, seededRandom } from "../../lib/motion";
 import { useT, type Translate } from "../../lib/i18n";
@@ -36,12 +37,6 @@ function kindName(kind: string | undefined, t: Translate): string {
 }
 const FLASH_MS = 900;
 const INTRO_MS = 1800;
-/** Slow in, slow out: the river starts gently, crosses, and settles. */
-const easeInOut = (u: number) => (1 - Math.cos(Math.PI * Math.min(1, Math.max(0, u)))) / 2;
-
-type RGB = [number, number, number];
-const rgba = (c: RGB, a: number) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
-const smooth = (u: number) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
 
 interface Strand {
   /** y at x = i * STEP. */
@@ -146,38 +141,7 @@ function trace(ctx: CanvasRenderingContext2D, s: Strand, from: number, to: numbe
   for (let c = a + 1; c <= b; c++) ctx.lineTo(Math.min(c * STEP, to), s.ys[c]!);
 }
 
-interface Colors {
-  ink: RGB;
-  accent: RGB;
-  line: RGB;
-  surface: RGB;
-  bg: RGB;
-  dark: boolean;
-}
-
-function readColors(probe: CanvasRenderingContext2D): Colors {
-  const root = getComputedStyle(document.documentElement);
-  const parse = (css: string, fallback: RGB): RGB => {
-    if (!css) return fallback;
-    probe.clearRect(0, 0, 1, 1);
-    probe.fillStyle = `rgb(${fallback.join(",")})`;
-    probe.fillStyle = css;
-    probe.fillRect(0, 0, 1, 1);
-    const d = probe.getImageData(0, 0, 1, 1).data;
-    return [d[0]!, d[1]!, d[2]!];
-  };
-  const bg = parse(getComputedStyle(document.body).backgroundColor, [250, 249, 246]);
-  return {
-    ink: parse(root.getPropertyValue("--ink").trim(), [32, 42, 48]),
-    accent: parse(root.getPropertyValue("--accent").trim(), [23, 107, 117]),
-    line: parse(root.getPropertyValue("--line-strong").trim(), [200, 205, 205]),
-    surface: parse(root.getPropertyValue("--surface").trim(), [255, 255, 255]),
-    bg,
-    dark: bg[0] * 0.3 + bg[1] * 0.59 + bg[2] * 0.11 < 110,
-  };
-}
-
-function paintStatic(ctx: CanvasRenderingContext2D, L: Layout, col: Colors) {
+function paintStatic(ctx: CanvasRenderingContext2D, L: Layout, col: Palette) {
   const base = col.dark ? 0.2 : 0.13;
   ctx.clearRect(0, 0, L.w, L.h);
   ctx.lineWidth = 1;
@@ -244,7 +208,7 @@ function paintStatic(ctx: CanvasRenderingContext2D, L: Layout, col: Colors) {
 }
 
 /** The day's paper: a nameplate bar, the headline and two columns of rules. `glow` lights it. */
-function paintPaper(ctx: CanvasRenderingContext2D, L: Layout, col: Colors, glow: number) {
+function paintPaper(ctx: CanvasRenderingContext2D, L: Layout, col: Palette, glow: number) {
   const p = L.paper;
   ctx.save();
   if (glow > 0) {
@@ -314,13 +278,12 @@ export function SignalRiver({
     const label = labelRef.current;
     const ctx = canvas?.getContext("2d");
     if (!wrap || !canvas || !label || !ctx) return;
-    const probe = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
     const layer = document.createElement("canvas");
     const lctx = layer.getContext("2d")!;
     const still = reducedMotion();
 
     let L: Layout | null = null;
-    let col = readColors(probe);
+    let col = readPalette();
     let dpr = 1;
     let pulses: Pulse[] = [];
     let passing: number[] = [];
@@ -487,11 +450,14 @@ export function SignalRiver({
       label.style.transform = `translate(${left}px, ${top}px)`;
     };
 
-    const onMove = (e: PointerEvent) => {
-      if (!L) return;
-      const box = wrap.getBoundingClientRect();
-      const x = e.clientX - box.left;
-      const y = e.clientY - box.top;
+    const onPoint = (pt: { x: number; y: number } | null) => {
+      if (!pt || !L) {
+        hover = null;
+        label.hidden = true;
+        redraw();
+        return;
+      }
+      const { x, y } = pt;
       const p = L.paper;
       if (x >= p.x - 8 && x <= p.x + p.w + 8 && y >= p.y - 8 && y <= p.y + p.h + 8) {
         hover = { s: null, bundle: null, paper: true };
@@ -511,7 +477,9 @@ export function SignalRiver({
         }
       });
       if (best < 0) {
-        onLeave();
+        hover = null;
+        label.hidden = true;
+        redraw();
         return;
       }
       const s = L.strands[best]!;
@@ -528,18 +496,13 @@ export function SignalRiver({
       }
       redraw();
     };
-    const onLeave = () => {
-      hover = null;
-      label.hidden = true;
-      redraw();
-    };
 
     const resize = new ResizeObserver(() => {
       build();
       redraw();
     });
     const recolour = () => {
-      col = readColors(probe);
+      col = readPalette();
       if (L) paintStatic(lctx, L, col);
       redraw();
     };
@@ -559,9 +522,8 @@ export function SignalRiver({
     resize.observe(wrap);
     seen.observe(wrap);
     const unwatch = watchAppearance((change) => change === "theme" && recolour());
+    const untrack = trackPointer(wrap, onPoint);
     document.addEventListener("visibilitychange", onVisibility);
-    wrap.addEventListener("pointermove", onMove);
-    wrap.addEventListener("pointerleave", onLeave);
     return () => {
       disposed = true;
       if (frame) cancelAnimationFrame(frame);
@@ -569,16 +531,15 @@ export function SignalRiver({
       resize.disconnect();
       seen.disconnect();
       unwatch();
+      untrack();
       document.removeEventListener("visibilitychange", onVisibility);
-      wrap.removeEventListener("pointermove", onMove);
-      wrap.removeEventListener("pointerleave", onLeave);
     };
   }, [sources, t]);
 
   return (
     <div ref={wrapRef} className={`relative ${className}`}>
       <canvas ref={canvasRef} aria-hidden="true" className="absolute inset-0 size-full" />
-      <div ref={labelRef} hidden className="pointer-events-none absolute left-0 top-0 z-10 max-w-[240px] rounded-control bg-surface px-2.5 py-1.5 shadow-[0_6px_20px_rgba(0,0,0,0.08)] ring-1 ring-line">
+      <div ref={labelRef} hidden className="pointer-events-none absolute left-0 top-0 z-10 max-w-[240px] rounded-control bg-raised px-2.5 py-1.5 shadow-[var(--shadow-pop)] ring-1 ring-line">
         <div className="truncate text-ui-caption-lg font-semibold text-ink" />
         <div className="mt-0.5 truncate text-ui-caption-md text-ink-4" />
       </div>

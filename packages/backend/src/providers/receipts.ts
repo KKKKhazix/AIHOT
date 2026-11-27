@@ -94,6 +94,15 @@ export function failedReceiptId(error: unknown): number | null {
   return error instanceof ModelOutputError || error instanceof ReceiptUnknownError ? error.receiptId : null;
 }
 
+/**
+ * A failure that ends a batch run without counting against its items: model calls switched off, a full
+ * budget, an account refusal, the same request in flight, or the provider down for now.
+ */
+export function stopsBatchRun(error: unknown): boolean {
+  return ["off", "budget", "busy", "outage"].includes(failureKind(error))
+    || (error instanceof ProviderRejectedError && error.accessRefused);
+}
+
 /** The provider boundary accepts both OpenAI-compatible nested errors and flat provider errors. */
 function rejectionDetail(body: string): { code: string; message: string } {
   let data: unknown;

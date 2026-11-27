@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { useRouteLoaderData } from "react-router";
 import { POLICY, SITE } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
@@ -9,6 +9,7 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import { topicsInNav } from "../components/shell/nav";
 import type { Screen } from "../components/shell/screens";
 import { edgeTtl } from "../lib/api.server";
+import { useHydrated } from "../lib/hydration";
 import { webModules } from "../site-modules";
 import { pageMeta } from "../lib/seo";
 import { useStarred } from "../lib/local-state";
@@ -86,8 +87,7 @@ export default function MorePage() {
   const changelogDot = useChangelogDot(root?.changelogVersion ?? null);
   const starred = useStarred();
   // The count is this browser's: shown once the page runs here, never in the shared server copy.
-  const [here, setHere] = useState(false);
-  useEffect(() => setHere(true), []);
+  const here = useHydrated();
   const Account = webModules().find((m) => m.account)?.account;
   return (
     <div className="mx-auto max-w-[var(--page-max-reading)] pb-8">

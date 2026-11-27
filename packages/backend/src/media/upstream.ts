@@ -6,7 +6,8 @@
 import { beijingDate } from "@aihot/contracts/time";
 import { DEPLOYMENT } from "@aihot/site";
 import { sql } from "../db.ts";
-import type { Finding } from "../notify/feishu.ts";
+import { logError } from "../lib/log-error.ts";
+import type { Finding } from "../lib/alerts.ts";
 
 function budget(env: string | undefined, site: number | undefined, unit: number): number {
   const value = env ?? site;
@@ -36,7 +37,9 @@ function trip(window: "minute" | "day", now: number): { ok: false; reason: strin
   if (tripped !== window) {
     tripped = window;
     void sql`INSERT INTO settings (key, value, updated_by) VALUES ('egress.imgproxy', ${sql.json({ window, reason, at: new Date(now).toISOString(), dayBytes: day.bytes })}, 'api')
-             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`.catch(() => {});
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`.catch((error) => {
+      console.warn(JSON.stringify({ level: "warn", msg: "imgproxy upstream trip persist failed", window, err: logError(error) }));
+    });
   }
   return { ok: false, reason };
 }

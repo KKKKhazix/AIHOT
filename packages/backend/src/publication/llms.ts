@@ -78,8 +78,8 @@ export function llmsTxt(opts: {
   if (ENGLISH) lines.push(`- 英文版：网页在 [/en](${u("/en")})；RSS 地址前加 /en（如 ${u("/en/feed.xml")}）；读新闻的 JSON 接口和给 Agent 的新闻地址加 lang=en，MCP 新闻工具传 lang: "en"（精选同步和其他能力只有中文，不收这个参数）。标题、摘要等有英文的用英文，还没翻好的少数仍是中文。`);
   lines.push(rss("精选摘要 RSS（推荐）", "selected"), rss("精选全文 RSS（按需）", "selected-full"), rss("全部动态 RSS", "all"));
   if (opts.hasDailies) lines.push(rss("日报 RSS", "daily"));
-  if (opts.hasWeekly) lines.push(`- [周报 RSS](${u("/feed/weekly.xml")}): ${EDITION_WHEN.weekly}（北京时间）发布的周报，每期附总述和按栏目分好的${REPORTS.entry.noun}目录，保留最近 12 期。`);
-  if (opts.hasMonthly) lines.push(`- [月报 RSS](${u("/feed/monthly.xml")}): ${EDITION_WHEN.monthly}（北京时间）发布的月报，每期附总述和按栏目分好的${REPORTS.entry.noun}目录，保留最近 12 期。`);
+  if (opts.hasWeekly) lines.push(rss("周报 RSS", "weekly"));
+  if (opts.hasMonthly) lines.push(rss("月报 RSS", "monthly"));
   lines.push(`- [分类 RSS](${u(`/feed/category/${sample}.xml`)}): 按分类订阅精选，slug 支持 ${PUBLIC_API_CATEGORY_KEYS.join(" / ")}`);
   lines.push(`- [OpenAPI 规范](${u("/openapi-v1.json")}): REST API 的机器可读定义（版本 ${v}，路径是 /api/v1）`);
   lines.push(`- [公开 API · 最近资讯](${u("/api/v1/items")}): JSON，支持 mode=selected/all、window=24h/7d、by=timeline/published（时间口径：默认与网页一致的时间轴，对账原文发布时间用 published）、category、q、limit 与 cursor`);

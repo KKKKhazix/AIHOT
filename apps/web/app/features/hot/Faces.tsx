@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { HOT_FACE_LIMIT, type HotParticipant } from "@aihot/contracts/site";
 import { SourceAvatar } from "../../components/ui/SourceAvatar";
 import { Presence } from "../../components/ui/Presence";
+import { formatCount } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 
 /**
@@ -79,7 +80,7 @@ function FacesButton({ participants, total, names, children }: { participants: H
         title={names}
         aria-expanded={open}
         aria-controls={id}
-        aria-label={t(`${total} 位参与者，查看名单`, `${total.toLocaleString("en-US")} ${total === 1 ? "participant" : "participants"}, show the list`)}
+        aria-label={t(`${total} 位参与者，查看名单`, `${formatCount(total, "en")} ${total === 1 ? "participant" : "participants"}, show the list`)}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -96,7 +97,7 @@ function FacesButton({ participants, total, names, children }: { participants: H
         <Presence show={open} motion="pop">
           <span ref={popup} id={id} role="dialog" aria-label={t("参与讨论的来源", "Sources in the discussion")} style={shownAt.current ? { top: shownAt.current.top, bottom: shownAt.current.bottom, left: shownAt.current.left } : undefined} className={`fixed z-50 max-h-[240px] w-[240px] overflow-y-auto rounded-control border border-line bg-raised p-3 text-ui-caption-lg leading-relaxed text-ink-2 shadow-[var(--shadow-pop)] ${shownAt.current?.below === false ? "origin-bottom-left" : "origin-top-left"}`}>
             <span className="block">{listed.map((p) => p.name).join(t("、", ", "))}</span>
-            {more > 0 && <span className="mt-2 block text-ui-caption-md text-ink-4">{t(<>另有 {more} 位未列出</>, <>{more.toLocaleString("en-US")} more not listed</>)}</span>}
+            {more > 0 && <span className="mt-2 block text-ui-caption-md text-ink-4">{t(<>另有 {more} 位未列出</>, <>{formatCount(more, "en")} more not listed</>)}</span>}
           </span>
         </Presence>, document.body
       )}

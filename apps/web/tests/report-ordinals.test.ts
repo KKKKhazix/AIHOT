@@ -4,7 +4,7 @@
 // daily archive counting 400 issues beside a masthead that numbers 405.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import type { ReportDetail, ReportKind, ReportNavigationEntry } from "@aihot/contracts/site";
+import type { ReportDetail, ReportKind, ReportNavigationEntry } from "@aihot/contracts/reports";
 import { isoWeekLabel } from "@aihot/contracts/time";
 import { archiveGroups, neighbourLabel, periodGrid, recentIssues } from "../app/features/report/format.ts";
 import { fakeApi, startWebServer, type WebServer } from "./web-server.ts";

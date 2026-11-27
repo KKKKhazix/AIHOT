@@ -1,11 +1,11 @@
 import { useLoaderData } from "react-router";
 import type { Route } from "./+types/report-latest";
-import { REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn, type ReportLatestPage } from "@aihot/contracts/site";
+import { REPORT_NAMES, REPORT_NAMES_EN, reportDateLabel, reportDateLabelEn, type ReportLatestPage } from "@aihot/contracts/reports";
 import { REPORTS, SEO_TITLES, SITE, subjectAfter, withSubject } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { breadcrumbLd, pageMeta, reportDescription, reportLd } from "../lib/seo";
+import { breadcrumbLd, pageMeta, reportDescription, reportLd, titled } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
 import { EmptyState } from "../components/ui/Page";
 import { ReportLayout } from "../features/report/ReportLayout";
@@ -28,13 +28,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 export function meta({ loaderData, location }: Route.MetaArgs) {
   const locale = localeOf(location.pathname);
   const t = translator(locale);
-  const kind = loaderData?.kind ?? "daily";
-  const report = loaderData?.report;
+  const kind = loaderData?.kind ?? kindFromPath(location.pathname);
+  const name = t(withSubject(REPORT_NAMES[kind]), withSubject(REPORT_NAMES_EN[kind]));
+  if (!loaderData) return [{ title: titled(name) }];
+  const report = loaderData.report;
   // What this issue says, so a search result shows today's date and news rather than what the page is.
   const description = (report && reportDescription(report, locale)) ?? t(`${REPORTS.descriptions[kind]}。`, `${ENGLISH?.reports.descriptions[kind] ?? REPORTS.descriptions[kind]}.`);
   // One address however it was written (/daily/, a different case): the router matches them all.
   const path = KIND_PATH[kind];
-  const name = t(withSubject(REPORT_NAMES[kind]), withSubject(REPORT_NAMES_EN[kind]));
   return [...pageMeta({
     locale,
     title: report ? t(SEO_TITLES.latestReport(kind, reportDateLabel(kind, report.key)), (ENGLISH?.seoTitles ?? SEO_TITLES).latestReport(kind, reportDateLabelEn(kind, report.key))) : name,

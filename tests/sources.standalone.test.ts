@@ -12,7 +12,12 @@ import { after, test } from "node:test";
 import { config } from "@aihot/backend/config";
 import { extractFromUrl, pageRules } from "@aihot/backend/content/extract";
 import { sanitizeBody, trimTrailingChrome } from "@aihot/backend/content/sanitize";
+import { isValidPublisherPrefix } from "@aihot/backend/content/provenance";
+import { ANALYSIS_PURPOSES } from "@aihot/backend/editorial/models";
+import { stripJinaPrefix } from "@aihot/backend/providers/jina";
 import { unsupportedConfig } from "@aihot/backend/sources/config-keys";
+import { sourceFetchesBody } from "@aihot/backend/sources/uses";
+import { xIdAt, xIdTimestampMs } from "@aihot/backend/sources/x";
 import { fetchDetail, fetchWebList, fromHtml, fromMarkdown } from "@aihot/backend/sources/web-list";
 import { fetchRss } from "@aihot/backend/sources/rss";
 import { fetchJsonList } from "@aihot/backend/sources/json-list";
@@ -393,4 +398,27 @@ test("generic detail metadata does not promote modified or unlabelled time eleme
   }
   const published = await fetchDetail(site + "/date-published", detailSource, { date: true, title: false, summary: false });
   assert.equal(published.publishedAt?.toISOString(), "2020-02-15T00:00:00.000Z");
+});
+
+test("single-source backend helpers agree on body fetching, Jina prefixes, X snowflakes, publisher prefixes and analysis steps", () => {
+  assert.equal(sourceFetchesBody("web_list", {}), true);
+  assert.equal(sourceFetchesBody("rss", { fetchPublicContent: true }), true);
+  assert.equal(sourceFetchesBody("rss", { detail: { maxFetches: 1 } }), true);
+  assert.equal(sourceFetchesBody("rss", {}), false);
+
+  assert.equal(stripJinaPrefix("https://r.jina.ai/https://example.com/a"), "https://example.com/a");
+  assert.equal(stripJinaPrefix("http://r.jina.ai/https://example.com/a"), "https://example.com/a");
+  assert.equal(stripJinaPrefix("https://example.com/a"), "https://example.com/a");
+
+  const ms = Date.parse("2026-10-01T00:00:00Z");
+  assert.equal(xIdTimestampMs(String(xIdAt(ms))), ms);
+
+  assert.equal(isValidPublisherPrefix("https://openai.com/news"), true);
+  assert.equal(isValidPublisherPrefix("https://openai.com/news?a=1"), false);
+  assert.equal(isValidPublisherPrefix("https://user:pass@openai.com/news"), false);
+
+  assert.deepEqual(
+    [...ANALYSIS_PURPOSES].sort(),
+    ["mend_wording", "prefilter_article", "score_article", "structure_article", "summarize_article", "understand_article"],
+  );
 });

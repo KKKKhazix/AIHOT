@@ -1,3 +1,5 @@
+import { sql } from "../db.ts";
+
 type Rate = string | number | null;
 
 interface ServicePrice {
@@ -8,6 +10,15 @@ interface ServicePrice {
   cached_per_mtok: Rate;
   output_per_mtok: Rate;
   per_request?: Rate;
+}
+
+/** SQL expression for cached prompt tokens across OpenAI-style and DeepSeek/DashScope usage payloads. */
+export const cachedTokensSql = (usageCol: ReturnType<typeof sql> = sql`usage`) =>
+  sql`coalesce((${usageCol}->'prompt_tokens_details'->>'cached_tokens')::bigint, (${usageCol}->>'prompt_cache_hit_tokens')::bigint, 0)`;
+
+/** Uncached prompt tokens billed at the regular input tariff; never negative if a provider reports cached > prompt. */
+export function freshTokens(prompt: number, cached: number): number {
+  return Math.max(0, prompt - cached);
 }
 
 /** A model's own tariff takes precedence over its service's default. */

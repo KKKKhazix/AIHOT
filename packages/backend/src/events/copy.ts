@@ -2,6 +2,7 @@ import type { Db } from "../db.ts";
 import { enqueue, QUEUES } from "../jobs/queue.ts";
 import { collapseWhitespace } from "../lib/text.ts";
 import { editorialPolicy } from "../modules.ts";
+import { isAwaitingReview, isOriginalSuppressed } from "../publication/rules.ts";
 
 /**
  * Reconciles stored fact/story titles, conditions and raw evidence quotes after an article's
@@ -35,13 +36,11 @@ export async function syncArticleEventCopyTx(tx: Db, articleId: string): Promise
   if (!memberships.length) return;
 
   const f = override?.fields ?? {};
-  const awaitingReview = Boolean(editorialPolicy().reviewAnalysis)
-    && article.participation_mode === "editorial"
-    && (!analysis || analysis.input_revision < article.revision);
-  const suppressOriginal = awaitingReview
-    || (typeof f.suppressOriginal === "boolean" ? f.suppressOriginal : analysis ? analysis.output?.suppressOriginal === true : pub?.suppress_original === true)
+  const awaitingReview = isAwaitingReview({ participationMode: article.participation_mode, revision: article.revision, analysisRevision: analysis?.input_revision });
+  const suppressOriginal = isOriginalSuppressed({ awaitingReview, override, analysis, publishedSuppressOriginal: pub?.suppress_original })
     || override?.visibility === "summary-only";
-  const withdrawn = override?.visibility === "withdrawn"
+  const withdrawn = article.participation_mode === "isolated"
+    || override?.visibility === "withdrawn"
     || (!override?.visibility && (analysis ? analysis.output?.withdrawn === true : pub?.visibility === "withdrawn"));
 
   const dirtyStories = new Set<number>();

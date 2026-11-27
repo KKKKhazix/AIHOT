@@ -16,17 +16,16 @@ import { resolveDelivery } from "@aihot/backend/notify/deliver";
 import { releaseReceipt } from "@aihot/backend/operations/recover";
 import { replaceContactQr, setTargetEnabled, settingsOverview, updateBudget } from "@aihot/backend/admin/settings";
 import { createSource, fetchNow, listSources, previewSource, previewStoredSource, sourceDetail, updateSource } from "@aihot/backend/admin/sources";
-import { sendProblem } from "../http/respond.ts";
+import { clampedInt, sendProblem } from "../http/respond.ts";
 import { adminHandler } from "./admin-auth.ts";
 
-// What every admin route reads its request with (the modules' admin routes too).
 type Q = Record<string, string | undefined>;
-export const q = (req: FastifyRequest) => req.query as Q;
-export const body = <T = Record<string, unknown>>(req: FastifyRequest) => (req.body ?? {}) as T;
-export const param = (req: FastifyRequest, name: string) => (req.params as Record<string, string>)[name]!;
+const q = (req: FastifyRequest) => req.query as Q;
+const body = <T = Record<string, unknown>>(req: FastifyRequest) => (req.body ?? {}) as T;
+const param = (req: FastifyRequest, name: string) => (req.params as Record<string, string>)[name]!;
 const notFound = (req: FastifyRequest, reply: FastifyReply) => sendProblem(req, reply, { status: 404, code: "not_found", detail: "Not found." });
-export const orNotFound = <T>(req: FastifyRequest, reply: FastifyReply, value: T | null) => (value === null || value === undefined ? notFound(req, reply) : value);
-export const page = (req: FastifyRequest) => Math.max(1, Number(q(req).page) || 1);
+const orNotFound = <T>(req: FastifyRequest, reply: FastifyReply, value: T | null) => (value === null || value === undefined ? notFound(req, reply) : value);
+const page = (req: FastifyRequest) => clampedInt(q(req).page, 1, 10_000, 1);
 
 function decodeImage(dataUrl: unknown): Buffer {
   const m = /^data:image\/(png|jpeg|webp);base64,(.+)$/s.exec(String(dataUrl ?? ""));
@@ -115,7 +114,7 @@ export function registerAdmin(app: FastifyInstance) {
 
 
   // Models and evaluation
-  app.get("/api/admin/models", adminHandler(async (req) => modelsOverview(Math.min(90, Number(q(req).days) || 7))));
+  app.get("/api/admin/models", adminHandler(async (req) => modelsOverview(clampedInt(q(req).days, 1, 90, 7))));
   app.post("/api/admin/models/:capability", adminHandler(async (req, _reply, admin) => {
     const b = body<{ model: string | null; reason: string }>(req);
     return switchModel(param(req, "capability"), b.model ?? null, String(b.reason ?? ""), actorOf(admin));

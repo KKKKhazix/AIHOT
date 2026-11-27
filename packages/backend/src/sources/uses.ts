@@ -21,6 +21,11 @@ export function useLabels(): Record<string, string> {
 /** Whether a source's posts are wanted whole, not only as the feed gives them: the news judges an editorial source's, a module reads a used one's. */
 export const readsWhole = (s: { participation_mode: string; uses: readonly string[] }) => s.participation_mode === "editorial" || s.uses.length > 0;
 
+/** Whether a source is configured to fetch each article's own page body (not just feed excerpts). */
+export function sourceFetchesBody(kind: string, config: Record<string, unknown> | null | undefined): boolean {
+  return config?.fetchPublicContent === true || !!config?.detail || kind === "web_list";
+}
+
 /** The longest a source may wait between reads for its uses' sake; Infinity when none asks. */
 export function usePace(uses: readonly string[]): number {
   const declared = sourceUses();

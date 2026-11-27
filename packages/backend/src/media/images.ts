@@ -8,7 +8,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp, { type Sharp } from "sharp";
 import { config } from "../config.ts";
-import { guardedFetch, type GuardedResponse } from "../lib/http-fetch.ts";
+import { guardedFetch, HttpStatusError, type GuardedResponse } from "../lib/http-fetch.ts";
 import { AVIF_MODE_SUFFIX } from "@aihot/contracts/site";
 import { IMAGE_WIDTHS } from "./renditions.ts";
 import { GIF_VIDEO_MODE, isGifUrl, X_VIDEO_MODE } from "./imgproxy.ts";
@@ -37,21 +37,13 @@ const inflight = new Map<string, Promise<PreparedImage>>();
 const originals = new Map<string, Promise<GuardedResponse>>();
 const failures = new Map<string, { until: number; error: unknown }>();
 
-/** The image's server answered, but not with the image. */
-class UpstreamStatus extends Error {
-  readonly status: number;
-  constructor(status: number) {
-    super(`upstream ${status}`);
-    this.status = status;
-  }
-}
 /**
  * How long a failed image is kept failed, in seconds (here and at the CDN). A server that refuses it or no
  * longer has it keeps doing so: production 10-20..10-28, the same images were refused for days and fetched
  * ~1,400 times each at a minute apiece. A timeout, a 5xx or a dropped connection may be gone a minute later.
  */
 export function failureSeconds(error: unknown): number {
-  return error instanceof UpstreamStatus && [401, 403, 404, 410].includes(error.status) ? 6 * 3600 : 60;
+  return error instanceof HttpStatusError && [401, 403, 404, 410].includes(error.status) ? 6 * 3600 : 60;
 }
 
 // Responsive candidates and a later lightbox can request the same source in successive turns.
@@ -118,7 +110,7 @@ async function fetchOriginal(url: string, maxBytes: number): Promise<GuardedResp
     ...(video ? { redirectPolicy: "same-origin" as const } : {}),
   });
   recordUpstream(res.body.length);
-  if (res.status !== 200) throw new UpstreamStatus(res.status);
+  if (res.status !== 200) throw new HttpStatusError(res.status, `upstream ${res.status}`);
   if (res.body.length > PROXY_MAX_BYTES && res.body.toString("ascii", 0, 3) !== "GIF") throw new Error("large preview source is not GIF");
   return res;
 }

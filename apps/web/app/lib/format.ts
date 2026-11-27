@@ -52,9 +52,15 @@ export function fullDateTime(iso: string): string {
   return `${beijingDate(iso)} ${beijingTime(iso)}`;
 }
 
-/** "9月24日 10:51" / "Sep 24, 10:51" (Beijing), for lists that span days. */
+/** "9月24日 10:51" / "Sep 24, 10:51" (Beijing, carrying the year on archived dates), for lists that span days. */
 export function monthDayTime(iso: string, locale: Locale = "zh"): string {
-  return locale === "en" ? `${monthDayEn(beijingDate(iso))}, ${beijingTime(iso)}` : `${monthDay(beijingDate(iso))} ${beijingTime(iso)}`;
+  const date = monthDay(beijingDate(iso), undefined, locale);
+  return locale === "en" ? `${date}, ${beijingTime(iso)}` : `${date} ${beijingTime(iso)}`;
+}
+
+/** A count as the page's language writes it: 1240 in Chinese, 1,240 in English. */
+export function formatCount(n: number, locale: Locale = "zh"): string {
+  return locale === "en" ? n.toLocaleString("en-US") : String(n);
 }
 
 export function sourceInitial(name: string): string {

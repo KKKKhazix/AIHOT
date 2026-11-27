@@ -27,7 +27,6 @@ export const SECTIONS: readonly ReportSectionDef[] = (() => {
 })();
 /** Each category's section; several categories may share one, in the order the pack lists them. */
 export const SECTION_OF: Record<string, string> = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.section]));
-export const SECTION_ORDER: readonly string[] = SECTIONS.map((s) => s.label);
 export const SECTION_KEY_ORDER: readonly string[] = SECTIONS.map((s) => s.key);
 export const SECTION_KEY_OF: Record<string, string> = Object.fromEntries(
   CATEGORIES.map((c) => [c.key, SECTIONS.find((s) => s.label === c.section)!.key]),

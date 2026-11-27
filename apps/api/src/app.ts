@@ -64,7 +64,13 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (!logs.failures.has(req.raw) && (reply.statusCode >= 500 || (ms >= 1000 && path !== "/api/mcp" && !path.startsWith("/api/img-proxy")))) {
       req.log.warn({ method: req.method, path, status: reply.statusCode, ms }, "request");
     }
-    for (const m of serverModules()) m.on?.requestAnswered?.(req, reply, path);
+    for (const m of serverModules()) {
+      try {
+        m.on?.requestAnswered?.(req, reply, path);
+      } catch (error) {
+        req.log.warn({ err: error, module: m.name }, "requestAnswered hook failed");
+      }
+    }
   });
 
   // Central redirect table (shared with the web server).

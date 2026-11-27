@@ -73,6 +73,43 @@ function invalidate(key: string) {
   emit(key);
 }
 
+/**
+ * One JSON-backed localStorage key, sharing the single cross-tab storage listener (with isLocalStorageEvent filtering).
+ * Returns `none` during SSR/hydration; when storage is blocked or full, keeps this visit's last saved value in memory.
+ */
+export function createLocalStore<T>(key: string, parse: (raw: unknown) => T, none: T) {
+  let unsaved: { value: T } | null = null;
+  const current = (): T => (unsaved ? unsaved.value : cached(key, () => parse(readJson(key))));
+  const reread = () => {
+    if (!unsaved) cache.delete(key);
+  };
+  const onKey = subscribeKey(key);
+  const subscribe = (listener: () => void) => {
+    // Another tab may have changed it while nothing here was subscribed.
+    if (!listeners.get(key)?.size) reread();
+    return onKey(listener);
+  };
+  return {
+    use: (): T => useSyncExternalStore(subscribe, current, () => none),
+    /** Calls `listener` on every change, in this tab or another, for code outside React (e.g. account sync). */
+    watch: subscribe,
+    /** Re-reads storage before a change, so one made in another tab is not overwritten. */
+    fresh: (): T => {
+      reread();
+      return current();
+    },
+    /** Saves it; the page keeps the change for this visit even when the browser will not store it. */
+    save: (next: T): boolean => {
+      const saved = writeRaw(key, JSON.stringify(next));
+      unsaved = saved ? null : { value: next };
+      if (saved) cache.set(key, next);
+      else cache.delete(key);
+      emit(key);
+      return saved;
+    },
+  };
+}
+
 // starred
 type StoredStar = Pick<StarredItem, "id" | "title"> & Record<string, unknown>;
 
@@ -244,7 +281,7 @@ export function resolvedTheme(pref: ThemePreference = getThemePreference()): "li
   }
 }
 
-const THEME_COLOR = { light: "#faf9f6", dark: "#13191c" } as const;
+export const THEME_COLOR = { light: "#faf9f6", dark: "#13191c" } as const;
 
 /** Puts a theme on the page: the document's data-theme and the browser's theme colour. */
 export function applyTheme(theme: "light" | "dark", followsSystem: boolean) {

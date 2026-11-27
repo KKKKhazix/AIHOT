@@ -1,6 +1,5 @@
 import { namesEn } from "@aihot/contracts/i18n";
 import { useEffect, useState } from "react";
-import { IntentLink } from "../components/ui/IntentLink";
 import { useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/agent";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
@@ -9,9 +8,9 @@ import { ENGLISH } from "@aihot/contracts/english";
 import { apiGet, cachedPage } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { breadcrumbLd, listPath, pageMeta, siteUrl } from "../lib/seo";
-import { IconArrowUpRight, IconChevronRight, IconCode, IconPlug, IconRss } from "../components/icons";
+import { IconArrowUpRight, IconCode, IconPlug, IconRss } from "../components/icons";
 import { Kicker } from "../components/ui/Kicker";
-import { AsideCard, ReadingLayout } from "../components/ui/Page";
+import { AsideCard, MoreLink, ReadingLayout } from "../components/ui/Page";
 import { AGENT_PARTS, GUIDE_CLIENTS, TAG } from "../features/agent/module-parts";
 import { ApiPanel, McpPanel, mcpToolCount, RssPanel } from "../features/agent/panels";
 import type { AgentTrack } from "../modules";
@@ -227,9 +226,9 @@ export default function AgentPage() {
       </AsideCard>
       <AsideCard title={t("没接上？", "Can't connect?")}>
         <p className="text-ui-label leading-[1.75] text-ink-3">{t("把平台、版本和报错写在反馈页，别发 token 或本地文件。", "Tell us your platform, version and the error on the feedback page. Don't send tokens or local files.")}</p>
-        <IntentLink viewTransition to="/feedback" className="mt-3 inline-flex items-center gap-1 text-ui-label font-medium text-accent hover:underline">
-          {t("去反馈 ", "Send feedback ")}<IconChevronRight size={14} />
-        </IntentLink>
+        <MoreLink size="md" to="/feedback" className="mt-3">
+          {t("去反馈", "Send feedback")}
+        </MoreLink>
       </AsideCard>
     </>
   );

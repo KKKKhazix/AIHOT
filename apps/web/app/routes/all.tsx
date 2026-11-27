@@ -18,6 +18,7 @@ import { PhoneBar } from "../components/shell/PhoneBar";
 import { isPhone, type Screen } from "../components/shell/screens";
 import { openSearch } from "../features/search/SearchOverlay";
 import { addRecentSearch } from "../lib/local-state";
+import { formatCount } from "../lib/format";
 import { Link } from "../lib/link";
 import { apiIn, L, localeOf, localizePath, pagePath, translator, useLocale, useT } from "../lib/i18n";
 
@@ -92,7 +93,7 @@ export default function AllPage() {
   const clearFilters = feedListPath("/all", params, { category: null, channel: null, tag: null });
   const title = f.q ? t(`搜索“${f.q}”`, `Search: “${f.q}”`) : f.tag ? (shownTag ? `#${shownTag}` : t("标签筛选", "Tag filter")) : null;
   const updated = beijingTime(data.freshness);
-  const found = data.total >= 2000 ? t("2000+", "2,000+") : t(String(data.total), data.total.toLocaleString("en-US"));
+  const found = data.total >= 2000 ? t("2000+", "2,000+") : formatCount(data.total, locale);
   // Searches are remembered in this browser for the phone search (listed in the privacy notice).
   useEffect(() => {
     if (f.q) addRecentSearch(f.q);
@@ -162,13 +163,13 @@ export default function AllPage() {
                 (f.q && f.tab === "time") || filtered ? (
                   <span className="flex flex-wrap justify-center gap-x-5 gap-y-1">
                     {f.q && f.tab === "time" && (
-                      <Link to={searchTabHref("relevance")} className="inline-flex min-h-11 items-center text-ui-label font-medium text-accent hover:underline lg:min-h-0">
+                      <Link to={searchTabHref("relevance")} className="inline-flex min-h-11 items-center text-ui-label font-medium text-accent hover:underline lg:min-h-0 touch:min-h-11">
                         {t("试试“按相关度”，连正文一起搜", "Try “Most relevant” to search the full text too")}
                       </Link>
                     )}
                     {/* The way out the text suggests, one press away. */}
                     {filtered && (
-                      <Link to={clearFilters} rel={clearFilters.includes("?") ? "nofollow" : undefined} className="inline-flex min-h-11 items-center text-ui-label font-medium text-accent hover:underline lg:min-h-0">
+                      <Link to={clearFilters} rel={clearFilters.includes("?") ? "nofollow" : undefined} className="inline-flex min-h-11 items-center text-ui-label font-medium text-accent hover:underline lg:min-h-0 touch:min-h-11">
                         {t("去掉筛选", "Clear filters")}
                       </Link>
                     )}

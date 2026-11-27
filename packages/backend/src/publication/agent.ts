@@ -9,13 +9,13 @@ import { CATEGORIES } from "@aihot/industry/taxonomy";
 import { ENGLISH } from "@aihot/contracts/english";
 import { translator, type Locale } from "@aihot/contracts/i18n";
 import { MCP_TOOL_NAMES as T } from "@aihot/contracts/mcp";
-import { REPORT_NAMES, REPORT_NAMES_EN } from "@aihot/contracts/site";
+import { REPORT_NAMES, REPORT_NAMES_EN } from "@aihot/contracts/reports";
 import { categoryLabel, isCategoryKey, PUBLIC_API_CATEGORY_KEYS, toPublicApiCategory, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { beijingDate, beijingTime, beijingWeekday, weekdayEn } from "@aihot/contracts/time";
 import { serverModules } from "../modules.ts";
 import { siteUrl } from "./links.ts";
 import type { V1ItemPayload } from "./items.ts";
-import type { DailyNote } from "./reports.ts";
+import type { DailyNote, V1DailyFlash, V1DailyItem, V1DailyReport, V1PeriodItem, V1PeriodReport, V1ReportLinks } from "./reports.ts";
 import { publicSourceName } from "./rules.ts";
 import type { v1HotTopics, v1Story } from "./stories.ts";
 import { v1Items, type V1ItemsResult } from "./v1.ts";
@@ -222,19 +222,14 @@ export function storyAnswer(s: Story, limit: number, via: Via, lang: Locale = "z
   ], lang);
 }
 
-type Links = { aihot: string | null; original: string };
-/** The v1 daily report (its sections are read from stored JSON, so v1Daily leaves them untyped). */
-export interface DailyReport {
-  date: string;
-  windowStart: string;
-  windowEnd: string;
-  links: { aihot: string };
-  lead: { title: string; leadParagraph: string } | null;
-  sections: { label: string; items: { id?: string | null; title: string; summary: string; source: { id?: string; name: string }; links: Links }[] }[];
-  flashes: { id?: string | null; title: string; publishedAt: string; source: { id?: string; name: string }; links: Links }[];
-  /** 今日看点 as the page lists them after the lead; a thin issue's include reports outside its sections. */
-  highlights?: { id?: string | null; title: string; summary: string; source: { id?: string; name: string }; links: Links }[];
-}
+/** The v1 daily fields dailyAnswer formats (derived from V1DailyReport; optional id/highlights for compact unit fixtures). */
+type DailyItemView = Omit<V1DailyItem, "id" | "attribution"> & { id?: string | null };
+type DailyFlashView = Omit<V1DailyFlash, "id" | "attribution"> & { id?: string | null };
+export type DailyReport = Pick<V1DailyReport, "date" | "windowStart" | "windowEnd" | "links" | "lead"> & {
+  sections: Array<{ label: string; items: DailyItemView[] }>;
+  flashes: DailyFlashView[];
+  highlights?: DailyItemView[];
+};
 
 /** A daily entry's note: other sources, the daily it follows, and the event's other developments. */
 function noteLines(note: DailyNote | undefined, lang: Locale): string[] {
@@ -249,7 +244,7 @@ function noteLines(note: DailyNote | undefined, lang: Locale): string[] {
 export function dailyAnswer(r: DailyReport, via: Via, notes: Map<string, DailyNote> = new Map(), leadItemId?: string | null, lang: Locale = "zh"): string {
   const t = translator(lang);
   const data: string[] = [];
-  const itemKey = (it: { id?: string | null; links: Links }) => it.id ?? it.links.aihot ?? it.links.original;
+  const itemKey = (it: { id?: string | null; links: V1ReportLinks }) => it.id ?? it.links.aihot ?? it.links.original;
   // The lead is the issue's first entry in its own words: name it, not its summary twice.
   const own = leadItemId
     ? r.sections.some((s) => s.items.some((it) => it.id === leadItemId))
@@ -298,17 +293,10 @@ export function dailyAnswer(r: DailyReport, via: Via, notes: Map<string, DailyNo
   ], lang);
 }
 
-/** A v1 weekly or monthly report (read from stored JSON by v1Period). */
-export interface PeriodReport {
-  week?: string;
-  month?: string;
-  periodStart: string | null;
-  periodEnd: string | null;
-  links: { aihot: string };
-  headline: string | null;
-  overview: string | null;
-  sections: { label: string; summary: string | null; items: { title: string; summary: string; source: { name: string }; links: Links; publishedAt: string | null }[] }[];
-}
+/** The v1 weekly or monthly fields periodAnswer formats (derived from V1PeriodReport). */
+export type PeriodReport = Pick<V1PeriodReport, "week" | "month" | "periodStart" | "periodEnd" | "links" | "headline" | "overview"> & {
+  sections: Array<{ label: string; summary: string | null; items: Array<Pick<V1PeriodItem, "title" | "summary" | "source" | "links" | "publishedAt">> }>;
+};
 
 export function periodAnswer(r: PeriodReport, kind: "weekly" | "monthly", via: Via, lang: Locale = "zh"): string {
   const t = translator(lang);

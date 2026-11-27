@@ -1,8 +1,8 @@
 import { useLoaderData } from "react-router";
 import { IntentLink } from "../components/ui/IntentLink";
-import { REPORT_NAMES_EN, type ReportIndexEntry, type ReportIndexResponse } from "@aihot/contracts/site";
+import { REPORT_NAMES_EN, type ReportIndexEntry, type ReportIndexResponse } from "@aihot/contracts/reports";
 import { SITE, withSubject } from "@aihot/site";
-import { apiGet, cachedPage, pagePathname } from "../lib/api.server";
+import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
 import { archiveLd, breadcrumbLd, pageMeta } from "../lib/seo";
 import { beijingDate } from "@aihot/contracts/time";
@@ -12,6 +12,7 @@ import { archiveGroups, entriesUnit } from "../features/report/format";
 import { Rows, SectionPage } from "../features/report/ReportPaper";
 import { Nameplate } from "../features/report/Nameplate";
 import type { Screen } from "../components/shell/screens";
+import { formatCount } from "../lib/format";
 import { apiIn, L, localeOf, translator, useLocale, useT } from "../lib/i18n";
 
 export const handle: Screen = { tab: "daily", name: L("合订本", "Archive") };
@@ -19,7 +20,7 @@ export { pageHeaders as headers } from "../lib/api.server";
 export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
-  const { items: index } = await apiGet<ReportIndexResponse>(apiIn("/reports/daily", localeOf(pagePathname(request))), { signal: request.signal });
+  const { items: index } = await loadOr404<ReportIndexResponse>(apiIn("/reports/daily", localeOf(pagePathname(request))), { signal: request.signal });
   return cachedPage(600, { index, today: beijingDate(Date.now()) });
 }
 
@@ -58,7 +59,7 @@ export default function DailyArchive() {
           <div className="flex items-center justify-between gap-4 text-ui-caption text-ink-4">
             <span>{t(`${SITE.name} · ${withSubject("日报")}`, `${SITE.name} · ${withSubject(REPORT_NAMES_EN.daily)}`)}</span>
             <span>
-              {t(<>共 <span className="num">{issues}</span> 期</>, <><span className="num">{issues.toLocaleString("en-US")}</span> {issues === 1 ? "issue" : "issues"}</>)}
+              {t(<>共 <span className="num">{issues}</span> 期</>, <><span className="num">{formatCount(issues, "en")}</span> {issues === 1 ? "issue" : "issues"}</>)}
             </span>
           </div>
           <div className="py-6 @[880px]:py-8">

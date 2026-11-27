@@ -15,7 +15,7 @@ import { sql } from "../db.ts";
 import { ENTITIES, entityNames } from "../editorial/vocabulary.ts";
 import { cached, type Cached } from "../lib/cache.ts";
 import { sha256, stableJson } from "../lib/ids.ts";
-import { serverModules } from "../modules.ts";
+import { serverModules, type ServerModule } from "../modules.ts";
 import { ITEM_COLUMNS, ITEM_FROM, toFeedItemSummary, type ItemRow } from "./items.ts";
 import { evidenceCondition, listedCondition, ownFactEvidenceCondition, seatedCondition, selectedCondition, storyReportCondition } from "./scope.ts";
 
@@ -224,10 +224,20 @@ async function readIndex(now: Date): Promise<TopicIndex> {
   return { at: now, bySlug, modules: new Map(await Promise.all(parts.map(async (p) => [p.name, await p.index(members, now)] as const))) };
 }
 
-const indexCache = cached(() => readIndex(new Date()), { freshMs: 60_000, maxStaleMs: 60_000 });
+const indexCaches = new WeakMap<readonly ServerModule[], Cached<TopicIndex>>();
+
+function topicIndexCache(): Cached<TopicIndex> {
+  const modules = serverModules();
+  let c = indexCaches.get(modules);
+  if (!c) {
+    c = cached(() => readIndex(new Date()), { freshMs: 60_000, maxStaleMs: 60_000 });
+    indexCaches.set(modules, c);
+  }
+  return c;
+}
 
 /** A given `now` reads afresh (tests, a clock other than this minute's). */
-const topicIndex = (now?: Date) => (now ? readIndex(now) : indexCache.get());
+const topicIndex = (now?: Date) => (now ? readIndex(now) : topicIndexCache().get());
 
 const DAY = 86400_000;
 const RECENT_DAYS = 30;

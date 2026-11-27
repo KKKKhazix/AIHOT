@@ -6,20 +6,42 @@
 // paused by a moderator; unverified contact details never link automatic bans across sources.
 // A cheap model reads each report before it is pushed: one with nothing in it stays here, marked spam.
 import { createHash, createHmac, randomUUID } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { z } from "zod";
 import { beijingStamp } from "@aihot/contracts/time";
 import { MODULES } from "@aihot/site/modules";
-import { config, credential } from "../config.ts";
+import { config, credential, feishuInternalEnabled } from "../config.ts";
 import { sql, type Db } from "../db.ts";
 import { audit } from "../audit.ts";
 import { modelFor } from "../editorial/models.ts";
+import { logError } from "../lib/log-error.ts";
 import { serverModules } from "../modules.ts";
-import { feishuInternalEnabled, forwardFeedbackToFeishu } from "../notify/feishu.ts";
+import { downloadImage, ImageRefusedError, sendToChat, uploadImage } from "../notify/feishu.ts";
 import { chatJson } from "../providers/llm.ts";
 import { completeReceipt } from "../providers/receipts.ts";
+
+export const FEEDBACK_SCREENSHOTS_DIR = "feedback-screenshots";
+
+export const feedbackScreenshotsDir = () => path.join(config.dataDir, FEEDBACK_SCREENSHOTS_DIR);
+
+export function feedbackScreenshotPath(key: string | null): string | null {
+  if (!key?.startsWith("local:")) return null;
+  const name = key.slice("local:".length);
+  return /^[\w.-]+$/.test(name) ? path.join(feedbackScreenshotsDir(), name) : null;
+}
+
+export async function readFeedbackScreenshotData(key: string | null): Promise<Buffer | null> {
+  if (key?.startsWith("feishu:")) return downloadImage(key.slice("feishu:".length));
+  const file = feedbackScreenshotPath(key);
+  return file ? readFile(file).catch(() => null) : null;
+}
+
+export async function deleteFeedbackScreenshotFile(key: string | null): Promise<void> {
+  const file = feedbackScreenshotPath(key);
+  if (file) await unlink(file).catch(() => {});
+}
 
 export class FeedbackRejected extends Error {
   readonly status: number;
@@ -186,7 +208,7 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
       let screenshotKey: string | null = null;
       if (input.screenshot && mime) {
         const name = `${randomUUID()}.${mime.split("/")[1]}`;
-        const dir = path.join(config.dataDir, "feedback-screenshots");
+        const dir = feedbackScreenshotsDir();
         await mkdir(dir, { recursive: true });
         file = path.join(dir, name);
         await writeFile(file, input.screenshot.data);
@@ -202,7 +224,9 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ id: number
     });
     // Rejections are thrown after commit so their counters and temporary bans survive.
     if (result instanceof FeedbackRejected) throw result;
-    if (result.fresh) void pushFeedback(result.id).catch(() => {});
+    if (result.fresh) void pushFeedback(result.id).catch((error) => {
+      console.warn(JSON.stringify({ level: "warn", msg: "feedback forward failed", id: result.id, err: logError(error) }));
+    });
     return { id: result.id };
   } catch (error) {
     if (file) await unlink(file).catch(() => {});
@@ -265,6 +289,75 @@ async function judgeFeedback(fb: { id: number; content: string; screenshot_key: 
   });
 }
 
+/** A screenshot that still cannot be uploaded this long after the feedback is given up: the text goes without it. */
+const SCREENSHOT_GIVE_UP_MS = 24 * 3600_000;
+
+/**
+ * The screenshot to attach, uploaded now or on an earlier try. Only the Feishu image key is kept (privacy
+ * notice): the local file is removed once uploaded, or once the upload is given up.
+ */
+async function screenshotFor(fb: { id: number; screenshot_key: string | null; created_at: Date }): Promise<{ imageKey: string | null; note: string | null }> {
+  const key = fb.screenshot_key;
+  if (key?.startsWith("feishu:")) return { imageKey: key.slice("feishu:".length), note: null };
+  if (key === "gone:upload") return { imageKey: null, note: "（截图未能上传，已删除）" };
+  if (key === "gone:missing") return { imageKey: null, note: "（截图文件已不存在）" };
+  const file = feedbackScreenshotPath(key);
+  if (!file) return { imageKey: null, note: null };
+  const data = await readFile(file).catch(() => null);
+  if (!data) {
+    await sql`UPDATE feedback SET screenshot_key = 'gone:missing' WHERE id = ${fb.id}`;
+    return { imageKey: null, note: "（截图文件已不存在）" };
+  }
+  try {
+    const imageKey = await uploadImage(data, path.basename(file));
+    await sql`UPDATE feedback SET screenshot_key = ${`feishu:${imageKey}`} WHERE id = ${fb.id}`;
+    await unlink(file).catch(() => {});
+    return { imageKey, note: null };
+  } catch (error) {
+    // The forwarding sweep tries again; after a day, or at once when Feishu refuses the picture itself,
+    // the text goes without it.
+    if (!(error instanceof ImageRefusedError) && Date.now() - fb.created_at.getTime() < SCREENSHOT_GIVE_UP_MS) throw error;
+    await sql`UPDATE feedback SET screenshot_key = 'gone:upload' WHERE id = ${fb.id}`;
+    await unlink(file).catch(() => {});
+    return { imageKey: null, note: "（截图未能上传，已删除）" };
+  }
+}
+
+/**
+ * Forwards one feedback to the internal chat, with its screenshot. Until that succeeds the feedback keeps
+ * the reason in forward_error, and the forwarding sweep tries it again.
+ * `tell` false: the chat is not told, and only the screenshot goes to Feishu ("kept").
+ */
+export async function forwardFeedbackToFeishu(id: number, tell = true): Promise<"sent" | "kept" | "disabled"> {
+  if (!feishuInternalEnabled()) return "disabled";
+  const chat = credential("integrations", "FEISHU_INTERNAL_CHAT_ID");
+  if (!chat) return "disabled";
+  const [fb] = await sql<{ id: number; content: string; email: string | null; note: string | null; page_url: string | null; screenshot_key: string | null; created_at: Date }[]>`
+    SELECT id, content, email, note, page_url, screenshot_key, created_at FROM feedback WHERE id = ${id} AND forwarded_at IS NULL`;
+  if (!fb) return "disabled";
+  try {
+    const shot = await screenshotFor(fb);
+    if (!tell) {
+      await sql`UPDATE feedback SET forward_error = NULL WHERE id = ${id}`;
+      return "kept";
+    }
+    const paragraphs: unknown[][] = [
+      [{ tag: "text", text: fb.content }],
+      [{ tag: "text", text: `页面：${fb.page_url ?? "—"}` }],
+      [{ tag: "text", text: `邮箱：${fb.email ?? "（未留）"}` }],
+    ];
+    if (fb.note) paragraphs.push([{ tag: "text", text: fb.note }]);
+    if (shot.imageKey) paragraphs.push([{ tag: "img", image_key: shot.imageKey }]);
+    else if (shot.note) paragraphs.push([{ tag: "text", text: shot.note }]);
+    await sendToChat(chat, "post", { zh_cn: { title: `反馈 #${fb.id}`, content: paragraphs } });
+    await sql`UPDATE feedback SET forwarded_at = now(), forward_error = NULL WHERE id = ${id}`;
+    return "sent";
+  } catch (error) {
+    await sql`UPDATE feedback SET forward_error = ${String(error instanceof Error ? error.message : error).slice(0, 300)} WHERE id = ${id}`;
+    throw error;
+  }
+}
+
 /**
  * Tells the internal chat about a report, unless the model reads it as empty: then it is settled as spam, and the
  * sweep lets go of it. A model that cannot answer (off, out of budget, down) never holds a report back.
@@ -314,7 +407,8 @@ export async function forwardPendingFeedback(): Promise<{ sent: number; failed: 
   for (const r of rows) {
     try {
       if ((await pushFeedback(r.id)) === "sent") sent += 1;
-    } catch {
+    } catch (error) {
+      console.warn(JSON.stringify({ level: "warn", msg: "pending feedback forward failed", id: r.id, err: logError(error) }));
       failed += 1;
     }
   }

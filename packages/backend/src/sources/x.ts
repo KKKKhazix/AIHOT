@@ -210,6 +210,16 @@ const MAX_BACKLOG = 5;
  * the site's archive window anyway, and every further page buys posts that are already stored.
  */
 const MAX_BACKLOG_AGE_MS = 3 * 86_400_000;
+/** Twitter/X Snowflake epoch (2010-11-04T01:42:54.657Z). */
+export const X_SNOWFLAKE_EPOCH_MS = 1288834974657;
+const X_SNOWFLAKE_EPOCH = BigInt(X_SNOWFLAKE_EPOCH_MS);
+
+/** The smallest X Snowflake id created at or after `ms`. */
+export const xIdAt = (ms: number): bigint => BigInt(Math.max(0, ms - X_SNOWFLAKE_EPOCH_MS)) << 22n;
+
+/** The millisecond timestamp encoded in an X Snowflake id. */
+export const xIdTimestampMs = (id: string): number => Number((BigInt(id) >> 22n) + X_SNOWFLAKE_EPOCH);
+
 /** The oldest instant a post id can name (the id scheme starts 2010-11-04); an invented id names none. */
 const ID_TIME_FLOOR_MS = Date.parse("2011-01-01T00:00:00Z");
 
@@ -227,7 +237,7 @@ function stretchSince(stretch: XBacklog): number | null {
   if (Number.isFinite(recorded)) return recorded;
   const sinceId = /since_id:(\d+)/.exec(stretch.query)?.[1];
   if (!sinceId) return null;
-  const instant = Number((BigInt(sinceId) >> 22n) + 1288834974657n);
+  const instant = xIdTimestampMs(sinceId);
   return instant >= ID_TIME_FLOOR_MS ? instant : null;
 }
 

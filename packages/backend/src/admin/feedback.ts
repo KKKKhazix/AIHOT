@@ -1,14 +1,12 @@
 // Feedback handling: list, status, kind and note, the pool of suggested ideas, per-source bans, and
 // deletion on request (privacy notice: feedback material is removed once handling ends or when the sender asks).
 import type { AdminFeedback, BeforeJson } from "@aihot/contracts/admin";
-import { readFile, unlink } from "node:fs/promises";
-import path from "node:path";
 import sharp from "sharp";
-import { config } from "../config.ts";
 import { sql } from "../db.ts";
 import { audit, Conflict } from "../audit.ts";
-import { downloadImage } from "../notify/feishu.ts";
-import { feedbackEmailKey, resetFeedbackSubmissionState } from "../operations/feedback.ts";
+import {
+  deleteFeedbackScreenshotFile, feedbackEmailKey, feedbackScreenshotPath, readFeedbackScreenshotData, resetFeedbackSubmissionState,
+} from "../operations/feedback.ts";
 
 export const FEEDBACK_STATUSES = ["new", "triaged", "replied", "resolved", "spam"] as const;
 export type FeedbackStatus = (typeof FEEDBACK_STATUSES)[number];
@@ -117,15 +115,9 @@ export async function unbanSource(sourceHash: string, actor: string) {
   });
 }
 
-function screenshotPath(key: string | null): string | null {
-  if (!key?.startsWith("local:")) return null;
-  const name = key.slice("local:".length);
-  return /^[\w.-]+$/.test(name) ? path.join(config.dataDir, "feedback-screenshots", name) : null;
-}
-
 export async function feedbackScreenshot(id: number): Promise<string | null> {
   const [row] = await sql<{ screenshot_key: string | null }[]>`SELECT screenshot_key FROM feedback WHERE id = ${id}`;
-  return screenshotPath(row?.screenshot_key ?? null);
+  return feedbackScreenshotPath(row?.screenshot_key ?? null);
 }
 
 /**
@@ -134,9 +126,7 @@ export async function feedbackScreenshot(id: number): Promise<string | null> {
  */
 export async function readFeedbackScreenshot(id: number): Promise<Buffer | null> {
   const [row] = await sql<{ screenshot_key: string | null }[]>`SELECT screenshot_key FROM feedback WHERE id = ${id}`;
-  const key = row?.screenshot_key ?? null;
-  const file = screenshotPath(key);
-  const data = key?.startsWith("feishu:") ? await downloadImage(key.slice("feishu:".length)) : file ? await readFile(file).catch(() => null) : null;
+  const data = await readFeedbackScreenshotData(row?.screenshot_key ?? null);
   return data && sharp(data, { limitInputPixels: 60_000_000 }).png().toBuffer();
 }
 
@@ -145,8 +135,7 @@ export async function eraseFeedback(id: number, reason: string, actor: string) {
   if (!reason.trim()) throw new Error("reason is required");
   const [row] = await sql<{ screenshot_key: string | null }[]>`SELECT screenshot_key FROM feedback WHERE id = ${id}`;
   if (!row) return null;
-  const file = screenshotPath(row.screenshot_key);
-  if (file) await unlink(file).catch(() => {});
+  await deleteFeedbackScreenshotFile(row.screenshot_key);
   await sql`UPDATE feedback SET content = '（已按要求删除）', email = NULL, page_url = NULL, screenshot_key = NULL, updated_at = now() WHERE id = ${id}`;
   await audit(actor, "feedback.erase", `feedback:${id}`, reason, null, null);
   return { erased: true };

@@ -7,7 +7,7 @@
 // sit in rows of two whose rules run across the page, each story as tall as its neighbour.
 import { IntentLink } from "../../components/ui/IntentLink";
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { REPORT_NAMES, reportDateLabel, reportDateLabelEn, type ReportCitation, type ReportDetail, type ReportNavigationEntry } from "@aihot/contracts/site";
+import { REPORT_NAMES, reportDateLabel, reportDateLabelEn, type ReportCitation, type ReportDetail, type ReportNavigationEntry } from "@aihot/contracts/reports";
 import { REPORTS, SEO_TITLES, SITE, subjectAfter, withSubject } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import { linkMentions, type MentionRun } from "@aihot/contracts/mentions";
@@ -22,7 +22,7 @@ import { Halftone } from "./Halftone";
 import { Nameplate } from "./Nameplate";
 import { IssueDots } from "./IssueDots";
 import { Picture } from "../../components/ui/Picture";
-import { monthDay } from "../../lib/format.ts";
+import { formatCount, monthDay } from "../../lib/format.ts";
 import { EDITION, MOTTO, dateLine, dateMark, headline, kindName, metricItems, neighbourLabel, reportPath, shortDay } from "./format";
 import { Link } from "../../lib/link";
 import { L, translator, useLocale, useT, type Locale } from "../../lib/i18n";
@@ -80,7 +80,7 @@ function Masthead({ report, index, quiet }: { report: ReportDetail; index: Repor
         <div className="flex flex-wrap items-baseline gap-x-8 gap-y-1.5 border-y border-line-strong py-3">
           {metricItems(report.metrics, locale).map((m) => (
             <span key={m.unit} className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
-              <span className="num text-ui-heading-lg-sm font-bold leading-none tracking-[-0.02em] text-ink @[880px]:text-ui-heading-lg">{locale === "en" ? m.value.toLocaleString("en-US") : m.value}</span>
+              <span className="num text-ui-heading-lg-sm font-bold leading-none tracking-[-0.02em] text-ink @[880px]:text-ui-heading-lg">{formatCount(m.value, locale)}</span>
               <span className="text-ui-caption text-ink-4">{m.unit}</span>
             </span>
           ))}

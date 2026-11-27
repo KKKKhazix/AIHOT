@@ -49,8 +49,8 @@ export function parseCookies(header: string | undefined): Record<string, string>
   return out;
 }
 
-export function cookie(name: string, value: string, maxAgeSeconds: number, secure: boolean): string {
-  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? "; Secure" : ""}`;
+export function cookie(name: string, value: string, maxAgeSeconds: number, secure: boolean, path = "/"): string {
+  return `${name}=${encodeURIComponent(value)}; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? "; Secure" : ""}`;
 }
 
 export class LoginRejected extends Error {}

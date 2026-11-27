@@ -10,11 +10,10 @@ import { z } from "zod";
 import { DEPLOYMENT, POLICY, SITE } from "@aihot/site";
 import { ENGLISH } from "@aihot/contracts/english";
 import type { Locale } from "@aihot/contracts/i18n";
-import { REPORT_NAMES, REPORT_NAMES_EN } from "@aihot/contracts/site";
+import { isReportKey, REPORT_NAMES, REPORT_NAMES_EN } from "@aihot/contracts/reports";
 import { PUBLIC_INTERFACE_VERSION } from "@aihot/contracts/http-policy";
 import { MCP_TOOL_NAMES as T, mcpToolName } from "@aihot/contracts/mcp";
 import { PUBLIC_API_CATEGORY_KEYS } from "@aihot/contracts/taxonomy";
-import { isValidDate } from "@aihot/contracts/time";
 import { config } from "@aihot/backend/config";
 import { cachedByKey } from "@aihot/backend/lib/cache";
 import { logError } from "@aihot/backend/lib/log-error";
@@ -23,7 +22,7 @@ import { SELECTION } from "@aihot/industry/selection";
 import { v1Items } from "@aihot/backend/publication/v1";
 import { SearchBusyError } from "@aihot/backend/publication/pool";
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
-import { dailyWithNotes, isPeriodKey, v1Period } from "@aihot/backend/publication/reports";
+import { dailyWithNotes, v1Period } from "@aihot/backend/publication/reports";
 import * as english from "@aihot/backend/publication/english";
 import { serverModules } from "@aihot/backend/modules";
 import { inLanguage } from "./v1.ts";
@@ -53,8 +52,8 @@ const TRUST_STRUCTURED = { contentTrust: "untrusted_external_data", instructionP
 const MAX_REQUEST_BODY_SIZE = 256 * 1024;
 
 /** The text is the same answer /api/v1/agent gives (external data already fenced off inside it). */
-function ok(text: string, structured: Record<string, unknown>) {
-  return { _meta: TRUST_META, content: [{ type: "text" as const, text }], structuredContent: { ...structured, [`_${SITE.mcpPrefix}`]: TRUST_STRUCTURED } };
+function ok(text: string, structured: object) {
+  return { _meta: TRUST_META, content: [{ type: "text" as const, text }], structuredContent: { ...(structured as Record<string, unknown>), [`_${SITE.mcpPrefix}`]: TRUST_STRUCTURED } };
 }
 
 function fail(code: string, message: string) {
@@ -230,7 +229,7 @@ function registerTools(server: McpServer) {
     safe(T.daily, async (args) => {
       const lang = langOf(args);
       const en = lang === "en";
-      if (args.date && !isValidDate(args.date)) return fail("invalid_request", en ? `${args.date} is not a real date.` : `${args.date} 不是有效日期。`);
+      if (args.date && !isReportKey("daily", args.date)) return fail("invalid_request", en ? `${args.date} is not a real date.` : `${args.date} 不是有效日期。`);
       const res = await recent(`daily:${args.date ?? "latest"}`, () => dailyWithNotes(args.date ?? "latest"));
       if (!res) return fail("not_found", args.date ? (en ? `There is no daily for ${args.date}.` : `没有 ${args.date} 的日报。`) : (en ? "No daily has been published yet." : "还没有发布过日报。"));
       const daily = await both(res, english.v1DailyWithNotes, lang);
@@ -247,12 +246,12 @@ function registerTools(server: McpServer) {
     server.registerTool(
       p.tool,
       { description: p.description, inputSchema: p.input, annotations: ANNOTATIONS },
-      safe(p.tool, async (args: { week?: string; month?: string; lang?: "zh" | "en" }) => {
+      safe(p.tool, async (args: { week?: string; month?: string; lang?: Locale }) => {
         const lang = langOf(args);
         const en = lang === "en";
         const name = REPORT_NAMES_EN[p.kind].toLowerCase();
         const key = p.key(args);
-        if (key && !isPeriodKey(p.kind, key)) return fail("invalid_request", en ? `${key} is not ${p.formEn}.` : `${key} 不是${p.form}。`);
+        if (key && !isReportKey(p.kind, key)) return fail("invalid_request", en ? `${key} is not ${p.formEn}.` : `${key} 不是${p.form}。`);
         const read = await recent(`${p.kind}:${key ?? "latest"}`, () => v1Period(p.kind, key ?? "latest"));
         if (!read) {
           return fail("not_found", key

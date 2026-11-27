@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { parse } from "@babel/parser";
-import { sourceFiles, type Violation } from "./source-checks.ts";
+import { webFiles, type Violation } from "./source-checks.ts";
 
 const CJK = /[\u3400-\u9fff\uf900-\ufaff\u3000-\u303f\uff00-\uffef]/;
 
@@ -72,8 +72,7 @@ function fileTextViolations(source: string): Violation[] {
 
 export function webTextViolations(): Map<string, Violation[]> {
   const result = new Map<string, Violation[]>();
-  for (const file of sourceFiles("apps/web/app", "modules/*/web.*", "modules/*/web/**")) {
-    if (!/\.tsx?$/.test(file) || /\/(?:tests?|__tests__)\//.test(file) || file.endsWith(".d.ts")) continue;
+  for (const file of webFiles(/\.tsx?$/)) {
     if (CHINESE_ONLY.some(({ pattern }) => pattern.test(file))) continue;
     const hits = fileTextViolations(readFileSync(new URL("../" + file, import.meta.url), "utf8"));
     if (hits.length) result.set(file, hits);
@@ -81,18 +80,71 @@ export function webTextViolations(): Map<string, Violation[]> {
   return result;
 }
 
+const ROUTER_LINK_EXPORTS = new Set(["Link", "NavLink", "useNavigate"]);
+
+export function fileRouterLinkViolations(source: string): Violation[] {
+  const ast = parse(source, { sourceType: "module", plugins: ["typescript", "jsx"], errorRecovery: false }) as unknown as Node;
+  const body = ((ast.program as Node).body as Node[]);
+  const hits: Violation[] = [];
+  const namespaces = new Set<string>();
+  for (const stmt of body) {
+    if (stmt.type !== "ImportDeclaration" || stmt.importKind === "type" || (stmt.source as Node).value !== "react-router") continue;
+    const names: string[] = [];
+    for (const spec of stmt.specifiers as Node[]) {
+      if (spec.importKind === "type") continue;
+      if (spec.type === "ImportSpecifier") {
+        const imported = spec.imported as Node;
+        const name = imported.type === "Identifier" ? (imported.name as string) : (imported.value as string);
+        if (ROUTER_LINK_EXPORTS.has(name)) names.push(name);
+      } else if (spec.type === "ImportNamespaceSpecifier" || spec.type === "ImportDefaultSpecifier") {
+        namespaces.add((spec.local as Node).name as string);
+      }
+    }
+    if (names.length) hits.push({ line: stmt.loc?.start.line ?? 0, fix: `${names.join("、")} 从 lib/link 取：它让英文页上的链接留在 /en` });
+  }
+  if (namespaces.size > 0) {
+    const visit = (node: Node) => {
+      if (node.type === "MemberExpression" && (node.object as Node).type === "Identifier" && namespaces.has((node.object as Node).name as string)) {
+        const prop = node.property as Node;
+        const name = !node.computed && prop.type === "Identifier" ? (prop.name as string)
+          : node.computed && prop.type === "StringLiteral" ? (prop.value as string)
+          : null;
+        if (name && ROUTER_LINK_EXPORTS.has(name)) {
+          hits.push({ line: node.loc?.start.line ?? 0, fix: `${name} 从 lib/link 取：它让英文页上的链接留在 /en` });
+        }
+      } else if (node.type === "JSXMemberExpression" && (node.object as Node).type === "JSXIdentifier" && namespaces.has((node.object as Node).name as string)) {
+        const prop = node.property as Node;
+        if (prop.type === "JSXIdentifier" && ROUTER_LINK_EXPORTS.has(prop.name as string)) {
+          hits.push({ line: node.loc?.start.line ?? 0, fix: `${prop.name as string} 从 lib/link 取：它让英文页上的链接留在 /en` });
+        }
+      } else if (node.type === "VariableDeclarator" && (node.init as Node | null)?.type === "Identifier" && namespaces.has((node.init as Node).name as string) && (node.id as Node).type === "ObjectPattern") {
+        const names: string[] = [];
+        for (const prop of ((node.id as Node).properties as Node[])) {
+          if (prop.type !== "ObjectProperty") continue;
+          const key = prop.key as Node;
+          const name = !prop.computed && key.type === "Identifier" ? (key.name as string) : key.type === "StringLiteral" ? (key.value as string) : null;
+          if (name && ROUTER_LINK_EXPORTS.has(name)) names.push(name);
+        }
+        if (names.length) hits.push({ line: node.loc?.start.line ?? 0, fix: `${names.join("、")} 从 lib/link 取：它让英文页上的链接留在 /en` });
+      }
+      for (const key of Object.keys(node)) {
+        if (key === "loc" || key === "start" || key === "end" || key === "extra" || key.endsWith("Comments")) continue;
+        const value = node[key];
+        if (Array.isArray(value)) { for (const v of value) if (v && typeof v === "object" && typeof (v as Node).type === "string") visit(v as Node); }
+        else if (value && typeof value === "object" && typeof (value as Node).type === "string") visit(value as Node);
+      }
+    };
+    visit(ast);
+  }
+  return hits;
+}
+
 /** Link, NavLink and useNavigate taken from react-router instead of lib/link.tsx (which keeps the page's language). */
 export function routerLinkViolations(): Map<string, Violation[]> {
   const result = new Map<string, Violation[]>();
-  const IMPORT = /import\s*\{([^}]*)\}\s*from\s*["']react-router["']/g;
-  for (const file of sourceFiles("apps/web/app", "modules/*/web.*", "modules/*/web/**")) {
-    if (!/\.tsx?$/.test(file) || file === "apps/web/app/lib/link.tsx" || /\/(?:tests?|__tests__)\//.test(file)) continue;
-    const source = readFileSync(new URL("../" + file, import.meta.url), "utf8");
-    const hits: Violation[] = [];
-    for (const m of source.matchAll(IMPORT)) {
-      const names = m[1]!.split(",").map((s) => s.trim()).filter((s) => ["Link", "NavLink", "useNavigate"].includes(s));
-      if (names.length) hits.push({ line: source.slice(0, m.index).split("\n").length, fix: `${names.join("、")} 从 lib/link 取：它让英文页上的链接留在 /en` });
-    }
+  for (const file of webFiles(/\.tsx?$/)) {
+    if (file === "apps/web/app/lib/link.tsx") continue;
+    const hits = fileRouterLinkViolations(readFileSync(new URL("../" + file, import.meta.url), "utf8"));
     if (hits.length) result.set(file, hits);
   }
   return result;

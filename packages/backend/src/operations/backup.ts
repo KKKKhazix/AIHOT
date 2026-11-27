@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 import { beijingDate, beijingWeekday } from "@aihot/contracts/time";
 import { config } from "../config.ts";
 import { sql } from "../db.ts";
-import { screenshotsForwarded } from "./feedback.ts";
+import { FEEDBACK_SCREENSHOTS_DIR, screenshotsForwarded } from "./feedback.ts";
 
 const run = promisify(execFile);
 const KEEP_LOCAL = 3;
@@ -210,7 +210,7 @@ export async function runBackup(now = new Date()) {
   // key remains). Without the internal chat they stay here for good, referred to as local: files.
   let filesError: string | null = null;
   try {
-    for (const d of screenshotsForwarded() ? ["uploads"] : ["uploads", "feedback-screenshots"]) {
+    for (const d of screenshotsForwarded() ? ["uploads"] : ["uploads", FEEDBACK_SCREENSHOTS_DIR]) {
       const info = await stat(path.join(config.dataDir, d)).catch((error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") return null;
         throw error;
@@ -250,4 +250,16 @@ export async function runBackup(now = new Date()) {
   if (!s) throw new Error("backup made locally but not uploaded: object store credentials are not configured");
   if (filesError) throw new Error(`database backed up, but the file archive failed: ${filesError}`);
   return summary;
+}
+
+export interface BackupSummary {
+  at: string;
+  uploaded: boolean;
+  filesError?: string;
+}
+
+/** Reads the latest recorded backup status from settings (`backup.last`). */
+export async function lastBackupStatus(): Promise<BackupSummary | null> {
+  const [row] = await sql<{ value: BackupSummary }[]>`SELECT value FROM settings WHERE key = 'backup.last'`;
+  return row?.value ?? null;
 }

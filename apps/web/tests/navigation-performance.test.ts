@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { before, after, test } from "node:test";
 import { chromium, webkit, expect, type Browser } from "@playwright/test";
-import type { ReportDetail } from "@aihot/contracts/site";
+import type { ReportDetail } from "@aihot/contracts/reports";
 import { FIXTURE_AT as at, fakeApi, feedItem, itemDetail, startWebServer, visit, type WebServer } from "./web-server.ts";
 
 const item = feedItem({id:'navigation-fixture',title:'性能检查文章'});

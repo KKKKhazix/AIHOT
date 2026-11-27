@@ -6,10 +6,10 @@ import { TOPIC_GROUP_EN } from "@aihot/industry/english";
 import { topicDefinition, topicName } from "@aihot/contracts/taxonomy";
 import type { Route } from "./+types/topics";
 import type { TopicGroup, TopicSummary, TopicsResponse } from "@aihot/contracts/site";
-import { apiGet, cachedPage, pagePathname } from "../lib/api.server";
+import { cachedPage, loadOr404, pagePathname } from "../lib/api.server";
 import { pageReuse } from "../lib/page-reuse";
-import { breadcrumbLd, pageMeta, siteUrl } from "../lib/seo";
-import { relativeTime } from "../lib/format";
+import { breadcrumbLd, pageMeta, siteUrl, titled } from "../lib/seo";
+import { formatCount, relativeTime } from "../lib/format";
 import { IconChevronRight } from "../components/icons";
 import { IntentLink } from "../components/ui/IntentLink";
 import { BrandMark } from "../components/BrandMark";
@@ -23,7 +23,7 @@ export { pageHeaders as headers } from "../lib/api.server";
 export const { clientLoader, shouldRevalidate } = pageReuse<typeof loader>();
 
 export async function loader({ request }: { request: Request }) {
-  return cachedPage(300, await apiGet<TopicsResponse>(apiIn("/topics", localeOf(pagePathname(request))), { signal: request.signal }));
+  return cachedPage(300, await loadOr404<TopicsResponse>(apiIn("/topics", localeOf(pagePathname(request))), { signal: request.signal }));
 }
 
 /** A topic group's name and line in the page's language (the industry pack's English). */
@@ -36,7 +36,7 @@ export function meta({ loaderData, location }: Route.MetaArgs) {
   const locale = localeOf(location.pathname);
   const t = translator(locale);
   const title = t(SITE.topicsTitle, ENGLISH?.topicsTitle ?? SITE.topicsTitle);
-  if (!loaderData) return pageMeta({ locale, title, path: "/topics", image: "/og/pages/topics.png" });
+  if (!loaderData) return [{ title: titled(title) }];
   const { groups, topics } = loaderData;
   const by = t(groups.map((g) => g.name).join("、"), namesEn(groups.map((g) => groupIn(g, locale).name)));
   const indexed = topics.filter((topic) => topic.indexable);
@@ -111,7 +111,7 @@ function TopicCard({ topic }: { topic: TopicSummary }) {
                   近 30 天 <span className="num font-semibold text-ink-3">{topic.recent}</span> 条
                 </>,
                 <>
-                  <span className="num font-semibold text-ink-3">{topic.recent.toLocaleString("en-US")}</span> in the last 30 days
+                  <span className="num font-semibold text-ink-3">{formatCount(topic.recent, "en")}</span> in the last 30 days
                 </>,
               )
             ) : (

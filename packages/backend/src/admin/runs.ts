@@ -3,7 +3,7 @@
 // operations/recover.ts and notify/deliver.ts).
 import type { AdminRuns, BeforeJson } from "@aihot/contracts/admin";
 import { sql } from "../db.ts";
-import type { Heartbeat } from "../operations/heartbeat.ts";
+import { listHeartbeats } from "../operations/heartbeat.ts";
 import { audit } from "../audit.ts";
 import { failureGroupSql, requeueFailed } from "../jobs/content.ts";
 import { groupingOverview, waitingSelectedNews } from "../operations/grouping.ts";
@@ -29,7 +29,7 @@ export async function runsOverview(): Promise<Runs> {
     grouping,
     [retrying],
   ] = await Promise.all([
-    sql<{ key: string; value: Heartbeat; updated_at: Date }[]>`SELECT key, value, updated_at FROM settings WHERE key LIKE 'heartbeat.%' ORDER BY key`,
+    listHeartbeats(),
     sql<Runs["jobs"]>`
       WITH current_jobs AS (
         -- Start with live schedules, so each indexed lookup reads one task rather than all history; a task
@@ -82,7 +82,7 @@ export async function runsOverview(): Promise<Runs> {
   return {
     checkedAt: new Date(now).toISOString(),
     processes: heartbeats.map((h) => ({
-      role: h.key.slice("heartbeat.".length),
+      role: h.role,
       ...h.value,
       at: h.updated_at,
       alive: now - h.updated_at.getTime() < STALE_HEARTBEAT_MS,

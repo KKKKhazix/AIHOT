@@ -6,7 +6,7 @@ import { itemUrl } from "./links.ts";
 import { POLICY, SITE } from "@aihot/site";
 import { sql, type Db } from "../db.ts";
 import { isChineseText } from "../lib/text.ts";
-import { isEmptyOrLinkOnly, withXArticle } from "../content/posts.ts";
+import { isEmptyOrLinkOnly, quotedTweetIdSql, withXArticle } from "../content/posts.ts";
 import { proxiedImage, proxiedImageSet } from "../media/imgproxy.ts";
 import { sourceOwnsPost } from "../sources/account.ts";
 import { displayTags, publicSourceName } from "./rules.ts";
@@ -117,7 +117,7 @@ export const ITEM_FROM = sql`
   JOIN articles a ON a.id = p.article_id
   LEFT JOIN stories st ON st.id = p.story_id AND st.merged_into IS NULL
   LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh' AND tr.revision >= a.revision
-  LEFT JOIN quote_translations qt ON p.channel = 'x' AND qt.tweet_id = coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)'))`;
+  LEFT JOIN quote_translations qt ON p.channel = 'x' AND qt.tweet_id = ${quotedTweetIdSql()}`;
 
 export function channelCondition(channel: ChannelKey | null | undefined) {
   if (!channel || channel === "all") return sql``;

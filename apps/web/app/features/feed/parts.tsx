@@ -1,7 +1,7 @@
 // Small building blocks shared by feed items, detail pages and lists.
 import { useRef, useState } from "react";
 import type { FeedItemSummary, MediaView } from "@aihot/contracts/site";
-import { IconBookmark } from "../../components/icons";
+import { IconBookmark, IconPlay } from "../../components/icons";
 import { SourceAvatar } from "../../components/ui/SourceAvatar";
 import { Lightbox } from "../../components/ui/Lightbox";
 import { Picture } from "../../components/ui/Picture";
@@ -46,9 +46,7 @@ export function MediaThumbs({ media, className = "" }: { media: MediaView[]; cla
           {m.kind === "video" && (
             <span className="absolute inset-0 grid place-items-center" aria-hidden="true">
               <span className="grid size-8 place-items-center rounded-full bg-black/55 text-white">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="ml-px">
-                  <path d="M7 4.5v15a1 1 0 001.5.87l13-7.5a1 1 0 000-1.74l-13-7.5A1 1 0 007 4.5z" />
-                </svg>
+                <IconPlay size={12} className="ml-px" />
               </span>
             </span>
           )}

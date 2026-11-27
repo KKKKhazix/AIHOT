@@ -1,6 +1,19 @@
 // Textless and link-only posts keep their own text and media instead of model-written copy.
+import { sql } from "../db.ts";
 import { collapseWhitespace } from "../lib/text.ts";
+import { tweetIdFromUrl } from "../lib/url.ts";
 import { textToHtml } from "./sanitize.ts";
+
+/** SQL expression extracting the quoted tweet ID from an x_post jsonb column (stored id or status URL). */
+export const quotedTweetIdSql = (col: ReturnType<typeof sql> = sql`a.x_post`) =>
+  sql`coalesce(${col}->'quoted'->>'tweetId', substring(${col}->'quoted'->>'url' from '/status(?:es)?/([0-9]+)'))`;
+
+/** JS counterpart of quotedTweetIdSql: prefers stored tweetId, else parses the quoted status URL. */
+export function quotedTweetId(xPost: { quoted?: { tweetId?: string | null; url?: string | null } | null } | null | undefined): string | null {
+  if (xPost?.quoted?.tweetId) return xPost.quoted.tweetId;
+  const url = xPost?.quoted?.url;
+  return url ? tweetIdFromUrl(url) ?? (/\/status(?:es)?\/(\d+)/.exec(url)?.[1] ?? null) : null;
+}
 
 export const isEmptyOrLinkOnly = (text: string) => !text.replace(/https?:\/\/\S+/giu, "").trim();
 

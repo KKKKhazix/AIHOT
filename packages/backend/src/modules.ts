@@ -8,9 +8,9 @@ import type { z } from "zod";
 import type { MentionTarget } from "@aihot/contracts/mentions";
 import type { Brand } from "@aihot/contracts/site";
 import type { Db } from "./db.ts";
+import type { EditorialPolicy } from "./editorial/policy.ts";
 import type { QueueOptions } from "./jobs/queue.ts";
-import type { Finding, FollowUp } from "./notify/feishu.ts";
-import type { ContentPart } from "./providers/llm.ts";
+import type { Finding, FollowUp } from "./lib/alerts.ts";
 import type { WantedText } from "./publication/english.ts";
 import type { Topic, TopicMember } from "./publication/topics.ts";
 
@@ -159,11 +159,6 @@ export interface JsonNotice {
   private?: boolean;
 }
 
-/** A reminder for the person behind a JSON request; the first module with one gives it. */
-export interface RequestNotices {
-  json: (req: FastifyRequest) => JsonNotice | null;
-}
-
 export interface Previewer {
   name: string;
   actor: string;
@@ -251,8 +246,8 @@ export interface ServerModule {
   queues?: ModuleQueue[];
   /** Follow-ups (level later), after the engine's (operations/alerts.ts). */
   followUps?: (now: number) => Promise<FollowUp[]>;
-  /** Reminders for the person behind a JSON request (RequestNotices). */
-  notices?: Partial<RequestNotices>;
+  /** Reminder for the person behind a JSON request; the first module returning one supplies it. */
+  jsonNotice?: (req: FastifyRequest) => JsonNotice | null;
   /** More keys a feedback sender is known by; a ban under any of them holds (operations/feedback.ts). */
   feedbackKeys?: (ip: string) => string[];
   /**
@@ -262,108 +257,6 @@ export interface ServerModule {
   feedbackPages?: readonly string[];
   /** Publication suitability review before analysis, translation or event digests are stored (editorial/analyze.ts, editorial/translate.ts, events/digest.ts). */
   editorial?: EditorialPolicy;
-}
-
-export interface EditorialFact {
-  title: string;
-  subject?: string | null;
-  action?: string | null;
-  object?: string | null;
-  occurredAt?: string | null;
-  evidence: string | null;
-  conditions: Array<{ text: string; quote: string }>;
-}
-
-export interface EditorialLoadedImages {
-  parts: ContentPart[];
-  /** Images that could not be inspected (transient fetch failure, unsupported format or beyond review cap). */
-  unverifiedCount: number;
-}
-
-export interface EditorialReviewInput {
-  articleId: string;
-  revision: number;
-  attemptTag?: string;
-  title: string;
-  url: string;
-  excerpt: string;
-  bodyText: string;
-  xPostText: string;
-  xQuotedText: string;
-  xArticleText?: string;
-  imageCount?: number;
-  loadImages?: () => Promise<EditorialLoadedImages>;
-  relevance: "pass" | "block" | "unknown";
-  selected: boolean;
-  score: number | null;
-  titleZh: string | null;
-  summaryZh: string | null;
-  reasonZh: string | null;
-  fact: EditorialFact | null;
-  contentRefused: boolean;
-}
-
-export interface EditorialReviewOutcome {
-  relevance?: "pass" | "block" | "unknown";
-  selected?: boolean;
-  score?: number | null;
-  titleZh?: string | null;
-  summaryZh?: string | null;
-  reasonZh?: string | null;
-  fact?: EditorialFact | null;
-  suppressOriginal?: boolean;
-  withdrawn?: boolean;
-  reused?: boolean;
-  receiptIds?: number[];
-  review?: Record<string, unknown>;
-}
-
-export interface EditorialTranslationReviewInput {
-  subject: string;
-  title: string;
-  sourceText: string;
-  translatedText: string;
-  contentRefused?: boolean;
-}
-
-export interface EditorialStoryDigestReviewInput {
-  storyId: number;
-  title: string;
-  digest: string;
-  fallbackTitle?: string;
-  fallbackDigest?: string;
-}
-
-export interface EditorialEventCopyInput {
-  title: string;
-  /** The member report's title and summary, to disambiguate a shorter event title. */
-  reportContext?: string;
-  fallbackTitle?: string | null;
-  conditions?: string | null;
-  subject?: string | null;
-  action?: string | null;
-  object?: string | null;
-}
-
-export interface EditorialEventCopyOutcome {
-  title: string;
-  conditions: string | null;
-  subject: string | null;
-  action: string | null;
-  object: string | null;
-}
-
-export interface EditorialPolicy {
-  /** Receipt purposes produced during analyzeArticle that should resume the article when an unknown receipt is released (jobs/content.ts). */
-  analysisPurposes?: readonly string[];
-  /** Reviews an analysed or provider-refused item before its analysis row is saved (editorial/analyze.ts). */
-  reviewAnalysis?: (input: EditorialReviewInput) => Promise<EditorialReviewOutcome | null>;
-  /** Reviews translated body or quote text before it is stored (editorial/translate.ts). */
-  reviewTranslation?: (input: EditorialTranslationReviewInput) => Promise<{ allow: boolean; reason?: string; receiptIds?: number[] }>;
-  /** Reviews a generated event title and digest before saving (events/digest.ts). */
-  reviewStoryDigest?: (input: EditorialStoryDigestReviewInput) => Promise<{ title: string; digest: string; receiptIds?: number[] } | null>;
-  /** Sanitizes stored fact and story copy when a report is grouped, revised or overridden. */
-  sanitizeEventCopy?: (input: EditorialEventCopyInput) => EditorialEventCopyOutcome;
 }
 
 export function editorialPolicy(): EditorialPolicy {
@@ -377,9 +270,29 @@ export function defineServerModule(module: ServerModule): ServerModule {
 
 let installed: readonly ServerModule[] = [];
 
+function assertUniqueKeys(kind: string, entries: Iterable<readonly [string, string]>) {
+  const owners = new Map<string, string>();
+  for (const [key, mod] of entries) {
+    const prev = owners.get(key);
+    if (prev !== undefined) throw new Error(`Duplicate module ${kind} "${key}" in "${prev}" and "${mod}"`);
+    owners.set(key, mod);
+  }
+}
+
 /** Called once by each process's entry point, and by a module's tests for that module. */
 export function installModules(modules: readonly ServerModule[]): void {
-  if (modules.filter((module) => module.preview).length > 1) throw new Error("Only one module may provide preview identity");
+  if (modules.filter((m) => m.preview).length > 1) throw new Error("Only one module may provide preview identity");
+  if (modules.filter((m) => m.admin).length > 1) throw new Error("Only one module may provide admin identity");
+  if (modules.filter((m) => m.editorial).length > 1) throw new Error("Only one module may provide editorial policy");
+  assertUniqueKeys("name", modules.map((m) => [m.name, m.name] as const));
+  assertUniqueKeys("agent path", modules.flatMap((m) => (m.agent?.abilities ?? []).map((a) => [a.path, m.name] as const)));
+  assertUniqueKeys("MCP tool", modules.flatMap((m) => (m.agent?.abilities ?? []).map((a) => [a.mcp.tool, m.name] as const)));
+  assertUniqueKeys("model step", modules.flatMap((m) => Object.keys(m.models ?? {}).map((k) => [k, m.name] as const)));
+  assertUniqueKeys("provider", modules.flatMap((m) => Object.keys(m.providers ?? {}).map((k) => [k, m.name] as const)));
+  assertUniqueKeys("source use", modules.flatMap((m) => Object.keys(m.sourceUses ?? {}).map((k) => [k, m.name] as const)));
+  assertUniqueKeys("source kind", modules.flatMap((m) => Object.keys(m.sourceKinds ?? {}).map((k) => [k, m.name] as const)));
+  assertUniqueKeys("schedule", modules.flatMap((m) => (m.schedules ?? []).map((s) => [s.name, m.name] as const)));
+  assertUniqueKeys("queue", modules.flatMap((m) => (m.queues ?? []).map((q) => [q.name, m.name] as const)));
   installed = modules;
 }
 
@@ -387,11 +300,10 @@ export function serverModules(): readonly ServerModule[] {
   return installed;
 }
 
-/** The first installed module's reminder for the person behind this request, at this exit. */
-export function requestNotice<K extends keyof RequestNotices>(exit: K, ...args: Parameters<RequestNotices[K]>): ReturnType<RequestNotices[K]> | null {
+/** The first installed module's reminder for the person behind a JSON request. */
+export function requestJsonNotice(req: FastifyRequest): JsonNotice | null {
   for (const m of installed) {
-    const ask = m.notices?.[exit] as ((...a: Parameters<RequestNotices[K]>) => ReturnType<RequestNotices[K]>) | undefined;
-    const notice = ask?.(...args);
+    const notice = m.jsonNotice?.(req);
     if (notice) return notice;
   }
   return null;

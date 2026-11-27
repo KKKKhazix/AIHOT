@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { IconChevronRight } from "../icons";
-import { Link } from "../../lib/link";
+import { IntentLink } from "./IntentLink";
 
 /**
  * The reading template, one of the site's two page widths (the other is the full-width feeds and
@@ -86,13 +86,14 @@ export function AsideCard({ title, children, className = "" }: { title: ReactNod
   );
 }
 
-/** "完整榜单 →" style link used in card headers; `className` adds to it (a larger hit area where it needs one). */
-export function MoreLink({ to, children, className = "" }: { to: string; children: ReactNode; className?: string }) {
+/** "完整榜单 →" style link used in card headers and action footers; `className` adds layout or hit-area rules. */
+export function MoreLink({ to, children, size = "sm", className = "" }: { to: string; children: ReactNode; size?: "sm" | "md"; className?: string }) {
+  const tone = size === "md" ? "gap-1 text-ui-label font-medium" : "gap-0.5 text-ui-caption font-semibold";
   return (
-    <Link viewTransition to={to} className={`inline-flex items-center gap-0.5 whitespace-nowrap text-ui-caption font-semibold text-accent hover:text-accent-ink ${className}`}>
+    <IntentLink viewTransition to={to} className={`inline-flex items-center whitespace-nowrap text-accent transition-colors hover:text-accent-ink ${tone} ${className}`}>
       {children}
-      <IconChevronRight size={13} />
-    </Link>
+      <IconChevronRight size={size === "md" ? 14 : 13} />
+    </IntentLink>
   );
 }
 

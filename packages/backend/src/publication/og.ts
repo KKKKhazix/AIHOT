@@ -7,9 +7,9 @@ import { beijingDate, longDateEn } from '@aihot/contracts/time';
 import { ITEM_COPY, withSubject } from '@aihot/site';
 import type { OgCard } from '../media/og.ts';
 import type { Poster } from '../media/poster.ts';
-import { config } from '../config.ts';
 import { sql } from '../db.ts';
 import { inEnglish } from './english.ts';
+import { itemUrl } from './links.ts';
 import { hasItemPage, publicSourceName } from './rules.ts';
 
 export async function loadItemShare(id: string, lang: Locale = 'zh') {
@@ -61,7 +61,7 @@ export async function loadItemPoster(id: string, lang: Locale = 'zh'): Promise<P
   if (!d) return null;
   const en = lang === 'en';
   return {
-    url: `${config.siteUrl}${en ? '/en' : ''}/items/${d.id}`,
+    url: itemUrl(d.id, lang),
     kicker: d.category ? categoryLabel(d.category, lang) : withSubject(en ? 'News' : '动态'),
     title: d.title,
     summary: d.summary,

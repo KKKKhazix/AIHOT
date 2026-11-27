@@ -10,6 +10,7 @@
 import { sql } from "../db.ts";
 import { beijingDate } from "@aihot/contracts/time";
 import { sha256 } from "../lib/ids.ts";
+import { quotedTweetId } from "../content/posts.ts";
 import { embeddingsAvailable, ensureEmbeddings } from "../providers/embeddings.ts";
 import { GROUP_BODY_CHARS, lexicalSimilarity, reportText, signalText, type CandidateView, type ReportView, type ReadingContext } from "./relate.ts";
 import { groupingEvidenceCondition, ownFactEvidenceCondition, seatedCondition, selectedCondition } from "../publication/scope.ts";
@@ -349,7 +350,7 @@ export async function relatedPosts(a: { id: string; url: string; x_post: { reply
     FROM articles b JOIN fact_articles fa ON fa.article_id = b.id AND fa.role IN ('primary', 'report')
     JOIN facts f ON f.id = fa.fact_id JOIN stories st ON st.id = f.story_id AND st.merged_into IS NULL
     WHERE b.url = ${a.url} AND b.id <> ${a.id} AND ${groupingEvidenceCondition(sql`fa.article_id`)} ORDER BY fa.created_at LIMIT 1`;
-  const quotedId = a.x_post?.quoted?.tweetId ?? (a.x_post?.quoted?.url ? (/\/status\/(\d+)/.exec(a.x_post.quoted.url)?.[1] ?? null) : null);
+  const quotedId = quotedTweetId(a.x_post);
   const ids = [a.x_post?.replyTo ?? null, quotedId].filter((x): x is string => !!x);
   const referenced = ids.length
     ? await sql<PoolRow[]>`

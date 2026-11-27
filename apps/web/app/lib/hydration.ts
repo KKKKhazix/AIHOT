@@ -10,6 +10,15 @@ export function isHydrated(): boolean {
   return hydrated;
 }
 
+/** True once the page has hydrated: false during SSR and the initial client render, true immediately on later navigations. */
+export function useHydrated(): boolean {
+  const [ready, setReady] = useState(isHydrated);
+  useEffect(() => {
+    if (!ready) setReady(true);
+  }, []);
+  return ready;
+}
+
 /** True when this component mounted after the first hydration, so an entrance animation is safe. */
 export function useEntrance(): boolean {
   const [entrance] = useState(isHydrated);

@@ -2,15 +2,15 @@
 // page ask the image proxy for is fetched and resized once (a first reader otherwise waits seconds
 // for the source site), animations are re-encoded, AVIF variants are made while the original is at
 // hand, and the share image is rendered before the content push makes chat apps fetch it.
-import { convertAnimated, convertAvif, prepareGifVideo, produceImage } from "./images.ts";
-import { GIF_VIDEO_MODE } from "./imgproxy.ts";
-import { AVIF_MODES } from "./renditions.ts";
 import { AVIF_MODE_SUFFIX } from "@aihot/contracts/site";
+import { logError } from "../lib/log-error.ts";
+import { convertAnimated, convertAvif, prepareGifVideo, produceImage } from "../media/images.ts";
+import { GIF_VIDEO_MODE } from "../media/imgproxy.ts";
+import { renderOg } from "../media/og.ts";
+import { AVIF_MODES } from "../media/renditions.ts";
 import { loadItemDetail } from "../publication/detail.ts";
 import { toFeedItemSummary } from "../publication/items.ts";
 import { loadItemOgCard } from "../publication/og.ts";
-import { renderOg } from "./og.ts";
-import { logError } from "../lib/log-error.ts";
 
 /** The (source, mode) pairs the proxy URLs in these public answers point at. AVIF variants are made from their rendition. */
 export function proxiedRenditions(answers: unknown[]): Array<{ url: string; mode: string }> {

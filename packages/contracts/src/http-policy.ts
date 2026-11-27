@@ -51,6 +51,31 @@ export const PUBLIC_INTERFACE_VERSION = SITE.interfaceVersion;
 
 export const NO_STORE = "no-store";
 
+/** Weak HTTP ETag comparison for `If-None-Match` (RFC 9110 §13.1.2): handles bare `*`, `W/`, and quote-safe tag lists. */
+export function etagMatches(header: string | undefined, etag: string): boolean {
+  if (!header) return false;
+  const raw = header.trim();
+  if (!raw) return false;
+  if (raw === "*") return true;
+  const strip = (t: string) => t.trim().replace(/^W\//, "");
+  const target = strip(etag);
+  let start = 0;
+  let inQuotes = false;
+  for (let i = 0; i <= raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '"') inQuotes = !inQuotes;
+    else if ((ch === "," && !inQuotes) || i === raw.length) {
+      const tag = strip(raw.slice(start, i));
+      if (tag && tag !== "*" && tag === target) return true;
+      start = i + 1;
+    }
+  }
+  return false;
+}
+
+/** Standard brand icons served at the site root (site/brand/). */
+export const STANDARD_ROOT_ICONS = ["favicon.ico", "icon.png", "icon-192.png", "apple-icon.png", "logo.svg"] as const;
+
 export interface RedirectRule {
   match: "exact" | "regex" | "prefix" | "canonical";
   /** For canonical, the fixed lowercase address, whose aliases redirect to this path. */
@@ -127,7 +152,7 @@ export function resolveRedirect(pathname: string, search: string): RedirectDecis
       if (!inTree) continue;
       location = rule.location ? rule.location.replace("*", path.slice(rule.path.length)) : null;
     } else {
-      const m = new RegExp(rule.path).exec(path);
+      const m = rule.pattern!.exec(path);
       if (!m) continue;
       location = rule.location ? rule.location.replace(/\$(\d)/g, (_s, i: string) => m[Number(i)] ?? "") : null;
     }
@@ -233,7 +258,7 @@ const ENGINE_API_PATHS: RegExp[] = [
   /^\/(llms\.txt|robots\.txt|sitemap\.xml|manifest\.webmanifest)$/,
   /^\/sitemaps\//,
   /^\/\.well-known\//,
-  /^\/(favicon\.ico|icon\.png|icon-192\.png|apple-icon\.png|logo\.svg)$/,
+  new RegExp(`^\\/(${STANDARD_ROOT_ICONS.map(literal).join("|")})$`),
   ...(SITE.rootIcons.length ? [new RegExp(`^\\/(${SITE.rootIcons.map(literal).join("|")})$`)] : []),
   /^\/(og|contact)\//,
   ...(CONTACT_ALIASES.length ? [new RegExp(`^\\/(${CONTACT_ALIASES.map((a) => literal(a.file)).join("|")})$`)] : []),
@@ -241,11 +266,15 @@ const ENGINE_API_PATHS: RegExp[] = [
   /^\/items\/[^/]+\/markdown$/,
 ];
 
+type CompiledRedirect = RedirectRule & { pattern?: RegExp };
+
 /** Read on first use, so a browser bundle that only needs this module's constants leaves the modules' tables out. */
-let built: { redirects: RedirectRule[]; apiPaths: RegExp[] } | null = null;
+let built: { redirects: CompiledRedirect[]; apiPaths: RegExp[] } | null = null;
 function tables() {
   built ??= {
-    redirects: [...ENGINE_REDIRECTS, ...MODULES.flatMap((m) => (m.redirects ?? []).map((r) => ({ readerPage: m.en, ...r })))],
+    redirects: [...ENGINE_REDIRECTS, ...MODULES.flatMap((m) => (m.redirects ?? []).map((r) => ({ readerPage: m.en, ...r })))].map((r) =>
+      r.match === "regex" ? { ...r, pattern: new RegExp(r.path) } : r,
+    ),
     apiPaths: [...ENGINE_API_PATHS, ...MODULES.flatMap((m) => m.apiPaths ?? [])],
   };
   return built;

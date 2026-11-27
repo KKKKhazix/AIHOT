@@ -9,10 +9,10 @@ import { InvalidCursorError } from "@aihot/backend/lib/cursor";
 import { SearchBusyError } from "@aihot/backend/publication/pool";
 import { selectedChanges, selectedSnapshot, SnapshotRequiredError, v1Items } from "@aihot/backend/publication/v1";
 import { resolveStory, v1HotTopics, v1Story } from "@aihot/backend/publication/stories";
-import { isPeriodKey, v1Dailies, v1Daily, v1Period, v1Periods } from "@aihot/backend/publication/reports";
-import { isValidDate } from "@aihot/contracts/time";
+import { isReportKey } from "@aihot/contracts/reports";
+import { v1Dailies, v1Daily, v1Period, v1Periods } from "@aihot/backend/publication/reports";
 import * as english from "@aihot/backend/publication/english";
-import { requestNotice } from "@aihot/backend/modules";
+import { requestJsonNotice } from "@aihot/backend/modules";
 import { applyPublicHeaders, QueryError, sendJsonWithNotice, sendJsonWithEtag, sendProblem, strictQuery } from "../http/respond.ts";
 
 type Handler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
@@ -76,7 +76,7 @@ export async function inLanguage<T>(body: T, overlay: english.Overlay<T>, lang: 
 
 /** Every v1 JSON answer: with a weak ETag, 304 when it matches, and a module's reminder for the person behind the request on top. */
 export function sendV1(req: FastifyRequest, reply: FastifyReply, body: object, opts: SendOptions) {
-  return sendJsonWithNotice(req, reply, body, requestNotice("json", req), opts);
+  return sendJsonWithNotice(req, reply, body, requestJsonNotice(req), opts);
 }
 
 /** Wraps a v1 handler with shared error mapping. Errors never leak internals. */
@@ -160,7 +160,7 @@ export function registerV1(app: FastifyInstance) {
   app.get("/api/v1/dailies/:date", publicHandler(async (req, reply) => {
     const { lang } = readerQuery(req, V1_OPERATIONS.dailyByDate.queryKeys);
     const date = (req.params as { date: string }).date;
-    if (!isValidDate(date)) throw new QueryError("date must be a real YYYY-MM-DD calendar date.");
+    if (!isReportKey("daily", date)) throw new QueryError("date must be a real YYYY-MM-DD calendar date.");
     const body = await v1Daily(date);
     if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `No daily report exists for ${date}.`, cacheControl: "public, max-age=60" });
     return sendV1(req, reply, await inLanguage(body, english.v1DailyAnswer("json"), lang), { etagPrefix: "v1-daily", cacheControl: V1_OPERATIONS.dailyByDate.cacheControl });
@@ -185,7 +185,7 @@ export function registerV1(app: FastifyInstance) {
     app.get(`/api/v1/${p.path}/:${p.param}`, publicHandler(async (req, reply) => {
       const { lang } = readerQuery(req, p.byKey.queryKeys);
       const key = (req.params as Record<string, string>)[p.param]!;
-      if (!isPeriodKey(p.kind, key)) throw new QueryError(`${p.param} must be ${p.form}.`);
+      if (!isReportKey(p.kind, key)) throw new QueryError(`${p.param} must be ${p.form}.`);
       const body = await v1Period(p.kind, key);
       if (!body) return sendProblem(req, reply, { status: 404, code: "not_found", detail: `No ${p.name} report exists for ${key}.`, cacheControl: "public, max-age=60" });
       return sendV1(req, reply, await inLanguage(body, english.v1PeriodAnswer(p.kind, "json"), lang), { etagPrefix: `v1-${p.name}`, cacheControl: p.byKey.cacheControl });

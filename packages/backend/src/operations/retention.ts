@@ -6,8 +6,9 @@ import { readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.ts";
 import { sql } from "../db.ts";
-import { expireFeedbackBans, pruneFeedbackSubmissionState, screenshotsForwarded } from "./feedback.ts";
+import { expireFeedbackBans, feedbackScreenshotsDir, pruneFeedbackSubmissionState, screenshotsForwarded } from "./feedback.ts";
 import { serverModules } from "../modules.ts";
+import { pruneAcceptedAgentEvents } from "../notify/agent.ts";
 
 /** Removes files under `dir` last written more than `maxAgeMs` ago. */
 async function removeOlderThan(dir: string, maxAgeMs: number, now: number): Promise<number> {
@@ -44,12 +45,11 @@ export async function dailyRetention(now = new Date()) {
   // Events the hub took (notify/agent.ts): their readers look back a day (handoff counts) or a week (Token
   // 羊毛's effectiveness). Undelivered ones stay for their retries. An agent-only problem still open after
   // the month is handed over once more, which is wanted.
-  const agentEvents = await sql`DELETE FROM settings WHERE key LIKE 'webhook.event.%' AND value->>'accepted' = 'true'
-    AND (value->>'queuedAt')::timestamptz < ${new Date(now.getTime() - monthMs)}`;
+  const deletedAgentEvents = await pruneAcceptedAgentEvents(new Date(now.getTime() - monthMs));
   // Feedback screenshots that only wait to be forwarded (the database then keeps just the Feishu image
   // key). The forwarding sweep gives up after a week; anything older is removed, whether or not
   // forwarding ever ran for it. Without the internal chat they are the screenshots themselves and stay.
-  const deletedScreenshots = screenshotsForwarded() ? await removeOlderThan(path.join(config.dataDir, "feedback-screenshots"), 8 * 86400_000, now.getTime()) : 0;
+  const deletedScreenshots = screenshotsForwarded() ? await removeOlderThan(feedbackScreenshotsDir(), 8 * 86400_000, now.getTime()) : 0;
   // Derived caches (proxied images, share cards and posters) are rebuilt on demand.
   const prunedCache = (await removeOlderThan(path.join(config.dataDir, "imgcache"), monthMs, now.getTime())) + (await removeOlderThan(path.join(config.dataDir, "ogcache"), monthMs, now.getTime()));
   return {
@@ -58,7 +58,7 @@ export async function dailyRetention(now = new Date()) {
     expiredFeedbackBans,
     expiredFeedbackState,
     deletedJobRuns: runs.count,
-    deletedAgentEvents: agentEvents.count,
+    deletedAgentEvents,
     deletedScreenshots,
     prunedCache,
   };

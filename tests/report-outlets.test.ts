@@ -13,9 +13,14 @@ import { publishArticle } from '@aihot/backend/publication/publish';
 import { feedIssues, loadReport, v1Dailies, v1Daily, v1Period, v1Periods } from '@aihot/backend/publication/reports';
 import { reportFeed } from '@aihot/backend/publication/feeds';
 import { llmsTxt } from '@aihot/backend/publication/llms';
+import { quotedTweetId, quotedTweetIdSql } from '@aihot/backend/content/posts';
+import { publicSourceName, publicSourceNameSql } from '@aihot/backend/publication/rules';
 import { stopBoss } from '@aihot/backend/jobs/queue';
 import { buildApp } from '../apps/api/src/app.ts';
-import type { ReportKind, SiteItemDetail } from '@aihot/contracts/site';
+import { appendLink } from '../apps/api/src/http/respond.ts';
+import type { FastifyReply } from 'fastify';
+import type { ReportKind } from '@aihot/contracts/reports';
+import type { SiteItemDetail } from '@aihot/contracts/site';
 
 const T = tag();
 const source = `report-outlets-${T}`;
@@ -287,4 +292,64 @@ test('an article page names the first daily whose page lists it, not one that on
   await sql`UPDATE publications SET eligible = false WHERE article_id = ${parent.itemId}`;
   assert.equal((await loadReport('daily', first))!.sections[0]!.items[0]!.related, undefined);
   assert.deepEqual(await dailyOf(developments[0]!.itemId), { key: later, lead: true }, 'that issue leads with its only entry');
+});
+
+test('publicSourceNameSql and quotedTweetIdSql match JS, report routes validate boundary years, ETag rejects quoted *, pool clamps non-integers, and appendLink handles empty Link', async () => {
+  const samples = [
+    'OpenAI：官网动态（RSS · 排除企业/客户案例）',
+    '某媒体（外层（内层注释）补充）',
+    '某媒体（一（二（三）））',
+    'X：Clément Delangue（Hugging Face CEO） (@ClementDelangue)',
+    'X：（备注） (@onlyhandle)',
+    '  Plain Name  ',
+  ];
+  for (const name of samples) {
+    const [row] = await sql<{ v: string }[]>`SELECT ${publicSourceNameSql(sql`${name}`)} AS v`;
+    assert.equal(row?.v, publicSourceName(name), name);
+  }
+
+  for (const xPost of [
+    { quoted: { tweetId: '111', url: 'https://x.com/a/status/222' } },
+    { quoted: { url: 'https://x.com/a/status/222' } },
+    { quoted: { url: 'https://twitter.com/a/statuses/333?s=20' } },
+    { quoted: { url: 'https://example.com/other' } },
+    null,
+  ]) {
+    const [row] = await sql<{ v: string | null }[]>`SELECT ${quotedTweetIdSql(sql`${sql.json(xPost as never)}::jsonb`)} AS v`;
+    assert.equal(row?.v ?? null, quotedTweetId(xPost), JSON.stringify(xPost));
+  }
+
+  for (const bad of [
+    '/api/site/reports/daily/2026-02-31',
+    '/api/site/reports/daily/2026-W39',
+    '/api/site/reports/monthly/2026-13',
+    '/api/site/reports/daily/months/2026-13',
+    '/api/site/reports/monthly/0001-12',
+    '/api/site/reports/monthly/9999-12',
+    '/api/v1/reports/monthly/0001-12',
+    '/api/v1/reports/monthly/9999-12',
+    '/og/reports/monthly/9999-12.png',
+  ]) {
+    const res = await app.inject({ method: 'GET', url: bad });
+    assert.equal(res.statusCode, 404, `${bad} → ${res.statusCode} ${res.body}`);
+  }
+
+  const openapi = await app.inject({ method: 'GET', url: '/openapi-v1.json', headers: { 'if-none-match': '"other,*,tag"' } });
+  assert.equal(openapi.statusCode, 200, 'quoted ETag containing comma and * must not trigger 304');
+  const openapi304 = await app.inject({ method: 'GET', url: '/openapi-v1.json', headers: { 'if-none-match': String(openapi.headers.etag) } });
+  assert.equal(openapi304.statusCode, 304);
+
+  const pool = await app.inject({ method: 'GET', url: '/api/site/pool?page=1.5' });
+  assert.equal(pool.statusCode, 200, pool.body);
+  assert.equal(pool.json().page, 1);
+
+  const headers = new Map<string, string | string[]>();
+  const fakeReply = {
+    getHeader: (k: string) => headers.get(k),
+    header: (k: string, v: string) => { headers.set(k, v); return fakeReply; },
+  } as unknown as FastifyReply;
+  appendLink(fakeReply, '<https://example.com/a>; rel="canonical"');
+  assert.equal(headers.get('Link'), '<https://example.com/a>; rel="canonical"');
+  appendLink(fakeReply, '<https://example.com/b>; rel="alternate"');
+  assert.equal(headers.get('Link'), '<https://example.com/a>; rel="canonical", <https://example.com/b>; rel="alternate"');
 });

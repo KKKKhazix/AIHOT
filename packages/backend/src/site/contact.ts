@@ -29,6 +29,12 @@ export async function loadContact(): Promise<ContactSettings> {
   return { ...DEFAULTS, ...(row?.value ?? {}) };
 }
 
+/** Saves about-page contact QR paths into settings (`contact_qr`). */
+export async function saveContact(next: ContactSettings, actor: string): Promise<void> {
+  await sql`INSERT INTO settings (key, value, updated_by) VALUES ('contact_qr', ${sql.json({ ...next })}, ${actor})
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`;
+}
+
 /** The maker's avatar at 400px through the image proxy, or null without a maker source or icon. */
 export async function loadMakerAvatar(): Promise<string | null> {
   const sourceId = ABOUT.maker?.avatarSourceId;

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation } from "react-router";
 import { IntentLink } from "../ui/IntentLink";
 import { useContainedScroll } from "../ui/Page";
 import { SITE } from "@aihot/site";
 import { RingMark, Wordmark } from "@aihot/site/brand/Logo.tsx";
+import { useHydrated } from "../../lib/hydration";
 import { getReadIds, setChangelogSeen, useChangelogSeen } from "../../lib/local-state";
 import { activeSidebarItem, rail, railIsActive, sidebar, type NavItem } from "./nav";
 import { useScreen } from "./screens";
@@ -21,8 +22,7 @@ import { pagePath, useLocale, useT } from "../../lib/i18n";
  */
 export function useChangelogDot(latestVersion: string | null): boolean {
   const seen = useChangelogSeen();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useHydrated();
   useEffect(() => {
     if (mounted && latestVersion && !seen && getReadIds().length === 0) setChangelogSeen(latestVersion);
   }, [mounted, latestVersion, seen]);
@@ -62,7 +62,7 @@ function Rail({ dot }: { dot: boolean }) {
   const { tab: screenTab, home } = useScreen();
   const [railRef, railOverscroll] = useContainedScroll<HTMLElement>();
   return (
-    <aside ref={railRef} className={`scrollbar-thin sticky top-0 hidden h-dvh w-16 shrink-0 flex-col items-center border-r border-line bg-sidebar px-1.5 pb-[max(14px,env(safe-area-inset-bottom))] pt-5 lg:flex wide:hidden short:overflow-y-auto short:pt-3 ${railOverscroll}`}>
+    <aside ref={railRef} className={`scrollbar-thin sticky top-0 z-30 hidden h-dvh w-16 shrink-0 flex-col items-center border-r border-line bg-sidebar px-1.5 pb-[max(14px,env(safe-area-inset-bottom))] pt-5 lg:flex wide:hidden short:overflow-y-auto short:pt-3 ${railOverscroll}`}>
       <Link to="/" className="mb-3 flex size-11 shrink-0 items-center justify-center text-accent short:mb-1" aria-label={t(`${SITE.name} 首页`, `${SITE.name} home`)}>
         <RingMark className="size-7" />
       </Link>

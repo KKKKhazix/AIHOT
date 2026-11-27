@@ -5,7 +5,8 @@ import { editionAt, gate, Reply, stub, tag } from "./setup.ts";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { closeDb, sql } from "@aihot/backend/db";
-import { shutdownSignal, stopBoss } from "@aihot/backend/jobs/queue";
+import { stopBoss } from "@aihot/backend/jobs/queue";
+import { shutdownSignal } from "@aihot/backend/lib/shutdown";
 import { composeDaily, composeDueReports } from "@aihot/backend/reports/compose";
 
 const T = tag();

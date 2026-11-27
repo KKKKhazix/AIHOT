@@ -1,6 +1,7 @@
 // Cron-style schedules (Asia/Shanghai), the engine's and then the site's modules'. Each run is recorded in
 // job_runs; missed slots run once.
 import { collectionEnabled } from "@aihot/backend/config";
+import { BEIJING_TIMEZONE } from "@aihot/contracts/time";
 import type { PgBoss } from "pg-boss";
 import { ensureQueue, recordRun } from "@aihot/backend/jobs/queue";
 import { serverModules, type Scheduled } from "@aihot/backend/modules";
@@ -24,8 +25,6 @@ import { recoverStaleWork } from "@aihot/backend/operations/recover";
 import { forwardPendingFeedback } from "@aihot/backend/operations/feedback";
 import { backupConfigured, runBackup } from "@aihot/backend/operations/backup";
 import { sourceHealthWeekly } from "@aihot/backend/operations/reports";
-
-const collecting = collectionEnabled();
 
 const ENGINE_SCHEDULES: Scheduled[] = [
   { name: "content.sweep", cron: "*/5 * * * *", run: sweepUnprocessed },
@@ -54,20 +53,16 @@ const ENGINE_SCHEDULES: Scheduled[] = [
   { name: "ops.digest", cron: "0 9 * * *", missed: "once", run: () => sendDigest() },
   // Feedback that did not reach the internal Feishu chat when it was sent (off with FEISHU_INTERNAL_ENABLED).
   { name: "feedback.forward", cron: "*/10 * * * *", run: () => forwardPendingFeedback() },
-  ...(backupConfigured() ? [{ name: "ops.backup", cron: "10 4 * * *", missed: "once" as const, run: () => runBackup() }] : []),
+  { name: "ops.backup", cron: "10 4 * * *", missed: "once", run: () => runBackup(), when: backupConfigured },
   { name: "reports.source-health", cron: "0 9 * * 1", missed: "once", run: () => sourceHealthWeekly() },
-  ...(collecting
-    ? [
-        { name: "sources.schedule", cron: "* * * * *", run: () => scheduleDueSources() },
-        { name: "sources.adapt-intervals", cron: "20 4 * * *", missed: "once" as const, run: adaptIntervals },
-        // X accounts quiet for a day: a renamed one is followed to its new handle (SocialData, paid per lookup).
-        { name: "sources.x-renames", cron: "50 4 * * *", missed: "once" as const, run: () => followXRenames() },
-        // Icons are read from the sources' own sites, so they stop with collection.
-        { name: "sources.icons", cron: "40 4 * * *", missed: "once" as const, run: () => refreshSourceIcons() },
-      ]
-    : []),
+  { name: "sources.schedule", cron: "* * * * *", run: () => scheduleDueSources(), when: collectionEnabled },
+  { name: "sources.adapt-intervals", cron: "20 4 * * *", missed: "once", run: adaptIntervals, when: collectionEnabled },
+  // X accounts quiet for a day: a renamed one is followed to its new handle (SocialData, paid per lookup).
+  { name: "sources.x-renames", cron: "50 4 * * *", missed: "once", run: () => followXRenames(), when: collectionEnabled },
+  // Icons are read from the sources' own sites, so they stop with collection.
+  { name: "sources.icons", cron: "40 4 * * *", missed: "once", run: () => refreshSourceIcons(), when: collectionEnabled },
   // WeChat official accounts through Dajiala (paid), each once per its interval; only with its key.
-  ...(collecting && dajialaConfigured() ? [{ name: "sources.mp-reconcile", cron: "*/15 * * * *", run: () => scheduleMpReconcile() }] : []),
+  { name: "sources.mp-reconcile", cron: "*/15 * * * *", run: () => scheduleMpReconcile(), when: () => collectionEnabled() && dajialaConfigured() },
 ];
 
 export async function registerSchedules(boss: PgBoss) {
@@ -75,7 +70,7 @@ export async function registerSchedules(boss: PgBoss) {
   for (const s of schedules) {
     const queue = `cron.${s.name}`;
     await ensureQueue(queue, { policy: "singleton", retryLimit: 1, expireInSeconds: 3600 });
-    await boss.schedule(queue, s.cron, {}, { tz: "Asia/Shanghai", missed: s.missed ?? "skip" });
+    await boss.schedule(queue, s.cron, {}, { tz: BEIJING_TIMEZONE, missed: s.missed ?? "skip" });
     // Schedules fire at minute boundaries; a 15 s pickup keeps them on time with a third of the polling.
     await boss.work(queue, { pollingIntervalSeconds: 15 }, async () => recordRun(s.name, s.run));
   }

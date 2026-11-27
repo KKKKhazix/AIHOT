@@ -28,6 +28,13 @@ function ownershipUrl(raw: string): URL | null {
   } catch { return null; }
 }
 
+/** Valid explicit publisher URL prefix: http(s), no credentials, query or fragment. */
+export function isValidPublisherPrefix(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const u = ownershipUrl(value);
+  return u !== null && !u.search && !u.hash;
+}
+
 /** Explicit ownership scopes also work for shared hosts (e.g. one repository or publication). */
 export function publisherOwnsUrl(source: Publisher, rawUrl: string): boolean {
   // Identity normalization folds www/http and strips tracking parameters; that is too broad for

@@ -25,7 +25,7 @@ import { modelFor, modelRoute, modelSupportsVision } from "./models.ts";
 import { buildMaterial, firstImagePart, loadAnalyzeInput, loadArticleImageParts, type AnalyzeInputArticle } from "./input.ts";
 import { pageFetchable } from "../content/extract.ts";
 import { syncArticleEventCopyTx } from "../events/copy.ts";
-import { shutdownSignal } from "../jobs/queue.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
 import {
   buildArticlePrompt, buildLongTweetPrompt, buildShortTweetPrompt, finalizeCopy, isShortTweetInput, looksZh, MAX_BODY_CHARS, missingEvidence,
   needsShortTweetTranslation, parseTranslateOutput, PREFILTER_SYSTEM, prefilterUser, translateInputOf, UNDERSTAND_SYSTEM, understandUser,

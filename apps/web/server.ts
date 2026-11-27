@@ -9,7 +9,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequestListener } from "@react-router/node";
 import type { ServerBuild } from "react-router";
-import { isApiOwned, isPrivatePage, resolveRedirect } from "@aihot/contracts/http-policy";
+import { etagMatches, isApiOwned, isPrivatePage, resolveRedirect } from "@aihot/contracts/http-policy";
 import { BROWSER_MAX_SECONDS } from "./app/lib/api.server.ts";
 import { proxyToApi } from "./app/lib/api-proxy.server.ts";
 import { logError } from "./app/lib/errors.server.ts";
@@ -185,8 +185,8 @@ function holdForValidation(req: import("node:http").IncomingMessage, res: import
     const body = Buffer.concat(chunks);
     const tag = `W/"p-${createHash("sha256").update(body.toString("utf8").replace(CLOCK_VALUES, "$1,0")).digest("hex").slice(0, 16)}"`;
     res.setHeader("ETag", tag);
-    const asked = String(req.headers["if-none-match"] ?? "");
-    if (asked.split(",").some((value) => value.trim().replace(/^W\//, "") === tag.slice(2))) {
+    const asked = req.headers["if-none-match"];
+    if (etagMatches(Array.isArray(asked) ? asked.join(", ") : asked, tag)) {
       res.removeHeader("Content-Length");
       res.removeHeader("Content-Type");
       writeHead(304);

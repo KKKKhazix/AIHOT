@@ -7,7 +7,7 @@
 // (a body written in Chinese, none).
 import { inLanguage, L, type Locale } from "@aihot/contracts/i18n";
 import { ENGLISH, needsEnglish } from "@aihot/contracts/english";
-import { REPORT_NAMES, REPORT_NAMES_EN } from "@aihot/contracts/site";
+import { REPORT_NAMES, REPORT_NAMES_EN, type ReportKind } from "@aihot/contracts/reports";
 import { feedCategoryLabelIn, PUBLIC_API_CATEGORY_KEYS, toPublicApiCategory, type PublicApiCategoryKey } from "@aihot/contracts/taxonomy";
 import { EDITION_WHEN, REPORTS, SITE, subjectAfter } from "@aihot/site";
 import { config } from "../config.ts";
@@ -15,11 +15,11 @@ import { sql } from "../db.ts";
 import { escapeXml } from "../lib/text.ts";
 import { proxyBodyImages } from "../media/imgproxy.ts";
 import { withCover, type Cover } from "../content/cover.ts";
-import { feedIssues, type FeedIssue, type ReportKind } from "./reports.ts";
+import { feedIssues, type FeedIssue } from "./reports.ts";
 import { textToHtml } from "../content/sanitize.ts";
 import { isChineseText } from "../lib/text.ts";
 import * as english from "./english.ts";
-import { xArticleBody } from "../content/posts.ts";
+import { quotedTweetIdSql, xArticleBody } from "../content/posts.ts";
 import { PUBLIC_ITEM_COLUMNS, publicCategoryCondition, exportTranslation, xView, type ItemRow } from "./items.ts";
 import { publicSourceName } from "./rules.ts";
 import { browsedCondition, seatedCondition } from "./scope.ts";
@@ -220,7 +220,7 @@ export async function itemFeed(kind: ItemFeedKind, category: PublicApiCategoryKe
     FROM page JOIN publications p ON p.article_id = page.article_id JOIN sources s ON s.id = p.source_id
     ${includeContent ? sql`LEFT JOIN articles a ON a.id = p.article_id AND p.syndicate
       LEFT JOIN translations tr ON tr.article_id = p.article_id AND tr.lang = 'zh' AND tr.revision >= a.revision
-      LEFT JOIN quote_translations qt ON p.channel = 'x' AND qt.tweet_id = coalesce(a.x_post->'quoted'->>'tweetId', substring(a.x_post->'quoted'->>'url' from '/status/([0-9]+)'))` : sql``}
+      LEFT JOIN quote_translations qt ON p.channel = 'x' AND qt.tweet_id = ${quotedTweetIdSql()}` : sql``}
     ORDER BY coalesce(p.published_at, p.discovered_at) DESC, p.article_id DESC`;
   const named = rows.map((r) => ({ ...r, source_name: publicSourceName(r.source_name) }));
   // In English, an article whose title or summary is not yet is left out.

@@ -6,9 +6,11 @@ import { PresentationMismatch } from "../content/presentation.ts";
 import { HttpStatusError } from "../lib/http-fetch.ts";
 import { identityKeyForUrl } from "../lib/url.ts";
 import { sha256 } from "../lib/ids.ts";
-import { enqueue, QUEUES, shutdownSignal } from "../jobs/queue.ts";
+import { enqueue, QUEUES } from "../jobs/queue.ts";
+import { shutdownSignal } from "../lib/shutdown.ts";
 import { runOwner } from "../jobs/runs.ts";
 import { queueProcessing } from "../jobs/content.ts";
+import { JINA_URL_PATTERN } from "../providers/jina.ts";
 import { BudgetExceededError, completeReceipt } from "../providers/receipts.ts";
 import { socialdataServerError } from "../providers/socialdata.ts";
 import { fetchRss } from "./rss.ts";
@@ -16,7 +18,7 @@ import { fetchDetail, fetchWebList, isCallToActionTitle, needsTitle, type Detail
 import { unsupportedConfig } from "./config-keys.ts";
 import { admitListing, filterPublicationWindow } from "./filters.ts";
 import { fetchJsonList } from "./json-list.ts";
-import { fetchXSearch, planXShards, readXSearch, shardHandle, shardQuery, selfThreadHandle, SHARDABLE_SQL, tweetToCandidate, type XBacklog } from "./x.ts";
+import { fetchXSearch, planXShards, readXSearch, shardHandle, shardQuery, selfThreadHandle, SHARDABLE_SQL, tweetToCandidate, xIdAt, type XBacklog } from "./x.ts";
 import { xHandle } from "./account.ts";
 import { FetchError, type Candidate, type SourceRow } from "./types.ts";
 import { readsWhole, usePace } from "./uses.ts";
@@ -461,9 +463,6 @@ export async function collectSource(sourceId: string, opts: { force?: boolean; x
   }
 }
 
-/** X ids begin with their millisecond timestamp (since 2010-11-04): the smallest id of a post made at `ms`. */
-const xIdAt = (ms: number) => (BigInt(Math.max(0, ms - 1288834974657)) << 22n);
-
 /**
  * Where an account's posts are known to be read up to. A quiet account's newest post can be months
  * old, but its last successful check read everything up to then; bounding a shard's search by the
@@ -605,7 +604,7 @@ const X_SHARD_MINUTES: Record<string, number> = { editorial: 30, hot_signal: 60 
 const shardMinutes = (mode: string, uses: readonly string[]) => X_SHARD_MINUTES[mode] ?? (Number.isFinite(usePace(uses)) ? usePace(uses) : 60);
 
 /** Listings read through Jina, paid per read. */
-const paidListing = sql`coalesce(config->>'url', '') LIKE 'https://r.jina.ai/%'`;
+const paidListing = sql`coalesce(config->>'url', '') LIKE ${JINA_URL_PATTERN}`;
 /** They are not looked at more than hourly: busy ones would outrun Jina's daily budget. */
 const PAID_LISTING_FLOOR = 60;
 

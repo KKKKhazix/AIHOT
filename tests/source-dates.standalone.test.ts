@@ -47,6 +47,22 @@ test('"at" between the date and the time joins them like a space', () => {
   assert.deepEqual(readPublicationDate("2026-09-26 at 10:30").publicationTime, "2026-09-26T02:30:00.000Z");
 });
 
+test("a Japanese time written with 時 and 分 keeps its clock", () => {
+  // ITmedia's news list prints "2026年11月25日 15時12分" (https://www.itmedia.co.jp/news/).
+  assert.equal(iso("2026年11月25日 15時12分"), "2026-11-25T07:12:00.000Z");
+  assert.equal(iso("2026年11月25日 15時12分", "+09:00"), "2026-11-25T06:12:00.000Z");
+  assert.equal(iso("2026年11月25日 15時12分30秒"), "2026-11-25T07:12:30.000Z");
+  assert.equal(iso("2026年11月25日 午後3時12分"), "2026-11-25T07:12:00.000Z");
+  assert.equal(iso("2026年11月25日 午前3時12分"), "2026-11-24T19:12:00.000Z");
+  assert.equal(readPublicationDate("2026年11月25日 15時12分").publicationTime, "2026-11-25T07:12:00.000Z");
+  // A weekday between the day and the clock ("2026年11月27日（金）16時47分") is a clock these rules do
+  // not reach, so the date keeps only its calendar day instead of claiming that midnight.
+  assert.deepEqual(readPublicationDate("2026年11月27日（金）16時47分"), {
+    publishedAt: new Date("2026-11-26T16:00:00.000Z"),
+    publicationTime: "2026-11-27",
+  });
+});
+
 test("an abbreviated month may end with a period", () => {
   assert.equal(iso("Sept. 26, 2026"), "2026-09-25T16:00:00.000Z");
   assert.equal(iso("Published Sept. 26, 2026"), "2026-09-25T16:00:00.000Z");

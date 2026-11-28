@@ -32,16 +32,18 @@ function atOffset(y: string | number, mo: string | number, d: string | number, h
  */
 function normalizePrintedTime(value: string): string {
   return value.replace(
-    /(午前|午後)?\s*(\d{1,2})\s*[時时]\s*(\d{1,2})\s*分(?:\s*(\d{1,2})\s*秒)?/g,
+    /(?:(午前|午後)\s*)?(\d{1,2})\s*[時时]\s*(\d{1,2})\s*分(?:\s*(\d{1,2})\s*秒)?/g,
     (match, meridiem: string | undefined, hour: string, minute: string, second: string | undefined) => {
       const h = Number(hour);
       if (h > 23 || Number(minute) > 59 || (second !== undefined && Number(second) > 59)) return match;
-      const clock = `${hour}:${minute}${second === undefined ? "" : `:${second}`}`;
+      // The space ahead of the hour stays (it parts "2026/11/2" from "9時"), and the minute and second
+      // take two digits, as the clock rules read them.
+      const clock = `${hour}:${minute.padStart(2, "0")}${second === undefined ? "" : `:${second.padStart(2, "0")}`}`;
       if (!meridiem) return clock;
       if (h > 12) return match;
       // 午前12時 is midnight and 午後12時 is noon, as 12 AM and 12 PM are.
       const hour12 = h === 0 ? 12 : h;
-      return `${hour12}:${minute}${second === undefined ? "" : `:${second}`} ${meridiem === "午後" ? "PM" : "AM"}`;
+      return `${clock.replace(/^\d+/, String(hour12))} ${meridiem === "午後" ? "PM" : "AM"}`;
     },
   );
 }
@@ -67,6 +69,7 @@ function parsePrintedDate(value: string | null | undefined, utcOffset: string): 
   if (compact) return { at: atOffset(compact[1]!, compact[2]!, compact[3]!, compact[4]!, compact[5]!, compact[6]!, utcOffset), timed: true };
   const yearFirst = /(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?(?:(?:T|\s*)(\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(v);
   const monthFirst = /\b(\d{1,2})\/(\d{1,2})\/(\d{4})(?:(?:T|\s+)(\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(v);
+  const numericMatch = yearFirst ?? monthFirst;
   const numeric = yearFirst ?? monthFirst?.map((part, i, match) => i === 1 ? match[3]! : i === 2 ? match[1]! : i === 3 ? match[2]! : part);
   if (numeric && !calendarDay(numeric[1]!, numeric[2]!, numeric[3]!)) return none;
   const english = /\b([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?[,]?\s+(\d{4})\b/i.exec(v)
@@ -87,7 +90,10 @@ function parsePrintedDate(value: string | null | undefined, utcOffset: string): 
   const m = numeric;
   if (m) {
     const [, y, mo, d, h = "00", mi = "00", s = "00"] = m;
-    const meridiem = /\d:\d{2}(?::\d{2})?\s*([AP]M)\b/i.exec(v)?.[1]?.toUpperCase();
+    // Only an AM/PM right after the clock read here is its own: another time later in the text
+    // ("2026年11月27日 4:47（更新：午後5時30分）") has its own, and a day read alone has none.
+    const after = m[4] === undefined ? "" : v.slice(numericMatch!.index + numericMatch![0].length);
+    const meridiem = /^\s*([AP]M)\b/i.exec(after)?.[1]?.toUpperCase();
     if (meridiem && (Number(h) < 1 || Number(h) > 12)) return none;
     const hour = meridiem ? Number(h) % 12 + (meridiem === "PM" ? 12 : 0) : h;
     // The time group is what makes it timed: a clock the date rules here do not reach (a weekday

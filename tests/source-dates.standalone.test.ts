@@ -253,6 +253,16 @@ test("a byline ahead of the date in the same element is no part of it", () => {
   assert.deepEqual(readRelativeDate("20社 · 昨天 09:00", now), readRelativeDate("昨天 09:00", now));
 });
 
+test("an element that opens with the separator ahead of its date is read as the date alone", () => {
+  const now = new Date("2026-10-24T10:30:00.000Z");
+  // 钛媒体 prints no byline and starts its date element with the separator: "· 37分钟前", "· 2小时前".
+  assert.deepEqual(readRelativeDate("· 2小时前", now), readRelativeDate("2小时前", now));
+  assert.deepEqual(readRelativeDate("· 37分钟前", now), readRelativeDate("37分钟前", now));
+  assert.deepEqual(readRelativeDate("· 今天 15:46", now), readRelativeDate("今天 15:46", now));
+  // Attached to the words, "·" is punctuation inside one text, not a separator: still no date.
+  assert.deepEqual(readRelativeDate("·今天 15:46", now), { publishedAt: null, publicationTime: null });
+});
+
 test("an age in short English units reads like the long ones", () => {
   const now = new Date("2026-10-24T10:30:00.000Z");
   // DealStreetAsia and TNW listings: "16h ago", "29m ago".

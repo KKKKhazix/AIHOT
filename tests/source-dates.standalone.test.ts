@@ -61,6 +61,17 @@ test("a Japanese time written with 時 and 分 keeps its clock", () => {
     publishedAt: new Date("2026-11-26T16:00:00.000Z"),
     publicationTime: "2026-11-27",
   });
+  // An AM/PM there is no reason to drop the day either.
+  assert.deepEqual(readPublicationDate("2026年11月27日（金）午後4時47分"), {
+    publishedAt: new Date("2026-11-26T16:00:00.000Z"),
+    publicationTime: "2026-11-27",
+  });
+  // The space between the day and the hour is kept, and one-digit minutes and seconds still read.
+  assert.equal(iso("2026/11/2 9時47分"), "2026-11-02T01:47:00.000Z");
+  assert.equal(iso("2026年11月27日 9時7分"), "2026-11-27T01:07:00.000Z");
+  assert.equal(iso("2026年11月27日 午後4時47分7秒"), "2026-11-27T08:47:07.000Z");
+  // The AM/PM of a later time is no part of the clock read.
+  assert.equal(iso("2026年11月27日 4:47（更新：午後5時30分）"), "2026-11-26T20:47:00.000Z");
 });
 
 test("an abbreviated month may end with a period", () => {

@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type { MentionRun } from "@aihot/contracts/mentions";
 import { Link } from "../../lib/link";
 
@@ -13,7 +14,12 @@ export function MentionText({ runs }: { runs: MentionRun[] }) {
           run
         ) : /^https?:\/\//.test(run.href) ? (
           <a key={i} href={run.href} target="_blank" rel="noopener noreferrer nofollow" className="text-accent hover:underline">
-            {run.text}
+            {run.text.split(/(?=[./?#&][\p{L}\p{N}])/u).map((part, index) => (
+              <Fragment key={index}>
+                {index > 0 && <wbr />}
+                {part}
+              </Fragment>
+            ))}
           </a>
         ) : (
           <Link key={i} viewTransition to={run.href} className="text-accent hover:underline">

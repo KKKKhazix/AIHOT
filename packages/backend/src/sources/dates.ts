@@ -158,7 +158,10 @@ function dayAt(at: Date, utcOffset: string): string {
  * source's offset, and "今天/昨天/前天 HH:MM" is that time on that day there.
  */
 export function readRelativeDate(value: string | null | undefined, now: Date, utcOffset = "+08:00"): PublicationDate {
-  const v = collapse(value).replace(/^[^·]+·\s*/, "");
+  // A byline leads the date in the same element ("版面之外·今天 15:46"), and some pages print no byline
+  // at all but still open the element with the separator ("· 37分钟前", 钛媒体). A separator attached to
+  // the words ("·今天 15:46") is punctuation inside one text, not a separator.
+  const v = collapse(value).replace(/^(?:[^·]+·\s*|·\s+)/, "");
   const none = { publishedAt: null, publicationTime: null };
   if (!v) return none;
   const dayTime = /^(今天|昨天|前天)\s*(\d{1,2}):(\d{2})$/.exec(v);

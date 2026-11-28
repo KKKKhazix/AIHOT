@@ -72,6 +72,11 @@ test("a Japanese time written with 時 and 分 keeps its clock", () => {
   assert.equal(iso("2026年11月27日 午後4時47分7秒"), "2026-11-27T08:47:07.000Z");
   // The AM/PM of a later time is no part of the clock read.
   assert.equal(iso("2026年11月27日 4:47（更新：午後5時30分）"), "2026-11-26T20:47:00.000Z");
+  // 午前/午後 right after a numeric day keeps the day apart from the hour.
+  assert.equal(iso("2026/11/2午前9時47分"), "2026-11-02T01:47:00.000Z");
+  assert.equal(iso("2026/11/3午後4時47分"), "2026-11-03T08:47:00.000Z");
+  // A clock inside parentheses goes unread, so the date stays a calendar day.
+  assert.equal(readPublicationDate("Nov 27, 2026 (午後4時47分)").publicationTime, "2026-11-27");
 });
 
 test("an abbreviated month may end with a period", () => {

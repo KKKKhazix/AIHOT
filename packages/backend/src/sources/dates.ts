@@ -33,7 +33,7 @@ function atOffset(y: string | number, mo: string | number, d: string | number, h
 function normalizePrintedTime(value: string): string {
   return value.replace(
     /(?:(午前|午後)\s*)?(\d{1,2})\s*[時时]\s*(\d{1,2})\s*分(?:\s*(\d{1,2})\s*秒)?/g,
-    (match, meridiem: string | undefined, hour: string, minute: string, second: string | undefined) => {
+    (match, meridiem: string | undefined, hour: string, minute: string, second: string | undefined, at: number, whole: string) => {
       const h = Number(hour);
       if (h > 23 || Number(minute) > 59 || (second !== undefined && Number(second) > 59)) return match;
       // The space ahead of the hour stays (it parts "2026/11/2" from "9時"), and the minute and second
@@ -43,7 +43,9 @@ function normalizePrintedTime(value: string): string {
       if (h > 12) return match;
       // 午前12時 is midnight and 午後12時 is noon, as 12 AM and 12 PM are.
       const hour12 = h === 0 ? 12 : h;
-      return `${clock.replace(/^\d+/, String(hour12))} ${meridiem === "午後" ? "PM" : "AM"}`;
+      // 午前 may sit right after a day ("2026/11/2午前9時47分"): a space keeps the hour out of it.
+      const gap = /\d$/.test(whole.slice(0, at)) ? " " : "";
+      return `${gap}${clock.replace(/^\d+/, String(hour12))} ${meridiem === "午後" ? "PM" : "AM"}`;
     },
   );
 }
@@ -107,7 +109,8 @@ function parsePrintedDate(value: string | null | undefined, utcOffset: string): 
   const utc = new Date(Number.isFinite(en) ? en : englishDay);
   return {
     at: atOffset(utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate(), utc.getUTCHours(), utc.getUTCMinutes(), utc.getUTCSeconds(), utcOffset),
-    timed: /\d{1,2}:\d{2}/.test(text),
+    // Date.parse skips a parenthesized comment, so a clock inside one ("Nov 27, 2026 (4:47 PM)") is not read.
+    timed: /\d{1,2}:\d{2}/.test(text.replace(/\([^)]*\)/g, "")),
   };
 }
 

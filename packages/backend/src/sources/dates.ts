@@ -159,7 +159,7 @@ function dayAt(at: Date, utcOffset: string): string {
  */
 export function readRelativeDate(value: string | null | undefined, now: Date, utcOffset = "+08:00"): PublicationDate {
   // A byline leads the date in the same element ("版面之外·今天 15:46"), and some pages print no byline
-  // at all but still open the element with the separator ("· 37分钟前", 钛媒体). A separator attached to
+  // at all but still open the element with the separator ("· 37分钟前"). A separator attached to
   // the words ("·今天 15:46") is punctuation inside one text, not a separator.
   const v = collapse(value).replace(/^(?:[^·]+·\s*|·\s+)/, "");
   const none = { publishedAt: null, publicationTime: null };
